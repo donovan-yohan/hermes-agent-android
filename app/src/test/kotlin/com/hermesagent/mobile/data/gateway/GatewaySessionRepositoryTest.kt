@@ -65,6 +65,34 @@ import org.junit.Test
 class GatewaySessionRepositoryTest {
 
     @Test
+    fun `queued REST delete cannot resolve a replacement endpoint`() = runTest {
+        val first = FakeGatewayRest { GatewayHttpResult.Rejected(503, "unavailable") }
+        val second = FakeGatewayRest { GatewayHttpResult.Rejected(503, "unavailable") }
+        var transport: GatewayHttp = first
+        val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())
+        val repository = LiveGatewaySessionRepository(
+            SessionCache(),
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+            http = { transport },
+            restContext = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler),
+        ) { CLOCK }
+        runCurrent()
+        val deletion = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            runCatching { repository.deleteSession("old-durable") }
+        }
+        assertFalse(deletion.isCompleted)
+        assertTrue(first.requests.none { it.method == "DELETE" })
+        transport = second
+        clients.value = FakeRpc()
+        runCurrent()
+        deletion.await()
+        assertTrue("old delete must never reach B", second.requests.none { it.method == "DELETE" })
+        assertEquals(1, first.requests.count { it.method == "DELETE" })
+    }
+
+    @Test
     fun `explicit profile resume rejects blank profile before any RPC`() = runTest {
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
@@ -5147,7 +5175,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `an unscoped leg keeps the Gateway's launch profile out of the row`() = runTest {
+    fun `an unscoped leg preserves backend row ownership`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val http = FakeGatewayRest { restPage(REST_PAGE_LAUNCH_PROFILE) }
@@ -5165,17 +5193,12 @@ class GatewaySessionRepositoryTest {
         runCurrent()
         assertNull(http.requests.last().query["profile"])
 
-        // The route stamped these rows with the profile the Gateway process
-        // itself was launched under (`sessions.py:146,152` →
-        // `web_server.py:12461-12478`), which is a fact about the Gateway, not
-        // about the row. Unstamped is what the RPC lane produces for the same
-        // rows, and unstamped is the `default` bucket.
+        // The backend stamp is the row's owner, including on an omitted scope.
         val row = cache.session("launch-row")!!
         assertEquals("Under a named profile", row.title)
-        assertNull(row.remoteProfile)
-        // The whole point: the row is in the list a fresh install renders,
-        // rather than filtered out of it into an empty sidebar.
-        val visible = filterSessionsByProfileScope(cache.state.value.sessions.values.toList(), DEFAULT_PROFILE)
+        assertEquals("kani-backend", row.remoteProfile)
+        // It belongs under its real owner, not under literal default.
+        val visible = filterSessionsByProfileScope(cache.state.value.sessions.values.toList(), "kani-backend")
         assertTrue("launch-row" in visible.map(SessionSummary::id))
 
         // The scoped leg is the opposite case. When a profile *is* asked for,
@@ -5430,6 +5453,89 @@ class GatewaySessionRepositoryTest {
         assertSame(settled, cache.state.value)
         // Still running, after all of it.
         assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
+    }
+
+    @Test
+    fun `explicit default from initialization probes absent REST route and falls back to scoped RPC`() = runTest {
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { GatewayHttpResult.Rejected(404, "Not found") }
+        val repository = LiveGatewaySessionRepository(
+            SessionCache(),
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        repository.setProfileRouting(ProfileRouting(activeProfile = DEFAULT_PROFILE, listProfiles = listOf(DEFAULT_PROFILE)))
+        runCurrent()
+        repository.refreshSessions()
+        assertEquals(listOf(DEFAULT_PROFILE, null), http.requests.map { it.query["profile"] })
+        assertTrue(rpc.calls.any { it.method == "session.list" && it.params.string("profile") == DEFAULT_PROFILE })
+        repository.refreshSessions()
+        assertEquals(2, http.requests.size)
+    }
+
+    @Test
+    fun `a scoped list 404 preserves REST for other profiles`() = runTest {
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            if (request.query["profile"] == "gone") GatewayHttpResult.Rejected(404, "Not found")
+            else restPage(REST_PAGE_RICH)
+        }
+        val repository = LiveGatewaySessionRepository(
+            SessionCache(),
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+            http = { http },
+            restContext = EmptyCoroutineContext,
+        ) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(listProfiles = listOf("gone")))
+        http.requests.clear()
+        rpc.calls.clear()
+        val failure = runCatching { repository.refreshSessions() }.exceptionOrNull()
+        assertEquals(listOf("gone", null), http.requests.map { it.query["profile"] })
+        assertTrue(rpc.calls.none { it.method == "session.list" })
+        repository.setProfileRouting(ProfileRouting(listProfiles = listOf("work")))
+        repository.refreshSessions()
+        assertEquals("work", http.requests.last().query["profile"])
+        assertTrue(failure is GatewayRpcException)
+    }
+
+    @Test
+    fun `inconclusive unscoped probes preserve profile failure and REST capability`() = runTest {
+        for (status in listOf(0, 401, 403, 500, 503)) {
+            val rpc = FakeRpc()
+            val http = FakeGatewayRest { request ->
+                when (request.query["profile"]) {
+                    "gone" -> GatewayHttpResult.Rejected(404, "Not found")
+                    null -> GatewayHttpResult.Rejected(status, "Probe failed")
+                    else -> restPage(REST_PAGE_RICH)
+                }
+            }
+            val repository = LiveGatewaySessionRepository(
+                SessionCache(),
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc),
+                backgroundScope,
+                http = { http },
+                restContext = EmptyCoroutineContext,
+            ) { CLOCK }
+            repository.setProfileRouting(ProfileRouting(activeProfile = "work", listProfiles = listOf("work")))
+            runCurrent()
+            http.requests.clear()
+            rpc.calls.clear()
+            repository.setProfileRouting(ProfileRouting(activeProfile = "gone", listProfiles = listOf("gone")))
+            val failure = runCatching { repository.refreshSessions() }.exceptionOrNull()
+            assertTrue(failure is GatewayRpcException)
+            assertEquals(listOf("gone", null), http.requests.map { it.query["profile"] })
+            assertTrue(rpc.calls.none { it.method == "session.list" })
+            repository.setProfileRouting(ProfileRouting(activeProfile = "work", listProfiles = listOf("work")))
+            repository.refreshSessions()
+            assertEquals("work", http.requests.last().query["profile"])
+        }
     }
 
     @Test
@@ -5855,7 +5961,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `deleteSession with live runtime id calls session_delete RPC and cleans up cache and runtime maps`() = runTest {
+    fun `deleteSession with live runtime sends durable id to session_delete RPC`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
@@ -5872,7 +5978,7 @@ class GatewaySessionRepositoryTest {
         repository.deleteSession("durable-a")
 
         assertEquals("session.delete", rpc.calls.last().method)
-        assertEquals("runtime-a", rpc.calls.last().params.string("session_id"))
+        assertEquals("durable-a", rpc.calls.last().params.string("session_id"))
         assertNull(cache.session("durable-a"))
     }
 
@@ -5902,7 +6008,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `deleteSession handles RPC 4007 not found as already deleted`() = runTest {
+    fun `deleteSession RPC 4007 preserves the durable row and runtime binding`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val repository = LiveGatewaySessionRepository(
@@ -5917,8 +6023,11 @@ class GatewaySessionRepositoryTest {
         runCurrent()
 
         rpc.deleteFailure = GatewayRpcError(4007, "Session not found")
+        assertTrue(runCatching { repository.deleteSession("durable-a") }.exceptionOrNull() is GatewayRpcException)
+        assertEquals("To delete", cache.session("durable-a")?.title)
+        rpc.deleteFailure = null
         repository.deleteSession("durable-a")
-
+        assertEquals("session.delete", rpc.calls.last().method)
         assertNull(cache.session("durable-a"))
     }
 
@@ -5951,7 +6060,34 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `deleteSession handles REST 404 as success and removes session from cache`() = runTest {
+    fun `a delayed delete response cannot remove a different endpoints same id`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val held = CompletableDeferred<JsonElement>()
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            clients,
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Old endpoint", "", CLOCK))
+        repository.loadComposerControls("durable-a")
+        rpc.deleteResponse = held
+        val deletion = async { runCatching { repository.deleteSession("durable-a") } }
+        runCurrent()
+        clients.value = FakeRpc()
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "New endpoint", "", CLOCK))
+        held.complete(json("""{"ok":true}"""))
+        assertTrue(deletion.await().isFailure)
+        assertEquals("New endpoint", cache.session("durable-a")?.title)
+    }
+
+    @Test
+    fun `deleteSession REST 404 is not a confirmed tombstone`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
         val http = FakeGatewayRest {
@@ -5965,11 +6101,18 @@ class GatewaySessionRepositoryTest {
             http = { http },
         ) { CLOCK }
         runCurrent()
-        cache.upsertSession(SessionSummary("durable-b", "To delete", "", CLOCK))
+        // runCurrent cannot drain Dispatchers.IO: the startup REST 404 can
+        // still fall back to session.list and repaint this row as "Other".
+        // Await the serialized refresh before seeding the deletion fixture.
+        repository.refreshSessions()
+        val original = SessionSummary("durable-b", "To delete", "", CLOCK)
+        cache.upsertSession(original)
 
-        repository.deleteSession("durable-b")
-
-        assertNull(cache.session("durable-b"))
+        val failure = runCatching { repository.deleteSession("durable-b") }.exceptionOrNull()
+        assertTrue(failure is GatewayRpcException)
+        assertEquals(404, (failure as GatewayRpcException).statusCode)
+        assertEquals(1, http.requests.count { it.method == "DELETE" && it.path == "api/sessions/durable-b" })
+        assertEquals(original, cache.session("durable-b"))
     }
 
     // -----------------------------------------------------------------------
@@ -7088,13 +7231,9 @@ class GatewaySessionRepositoryTest {
     }
 
     /**
-     * The default topology is one profile and an unscoped list, and its rows name
-     * no profile at all: the route stamps every row it serves
-     * (`hermes_cli/web_routers/sessions.py:211-219` @ `72a3277cd7`) and this app
-     * strips that stamp back off the unscoped leg, because there it describes the
-     * Gateway rather than the row. So "did this read go to the store that listed
-     * the row?" cannot be asked of the stamp. It is asked of the unscoped leg's
-     * own answer, which opened the same `state.db` an unscoped read opens.
+     * An unscoped REST listing still supplies authoritative row ownership.
+     * A transcript read uses that owner, so corroborating RPC history can
+     * distinguish an absent route from a row requested from the wrong store.
      */
     @Test
     fun `a Gateway without the paged transcript route keeps the whole-history RPC`() = runTest {
@@ -7125,9 +7264,7 @@ class GatewaySessionRepositoryTest {
         repository.refreshSessions()
         runCurrent()
         assertEquals("First", cache.session("durable-a")?.title)
-        // The row the leg listed carries no profile, which is exactly why the
-        // stamp cannot be the question.
-        assertNull(cache.session("durable-a")?.remoteProfile)
+        assertEquals("default", cache.session("durable-a")?.remoteProfile)
 
         repository.openSession("durable-a")
         runCurrent()
@@ -7519,6 +7656,7 @@ class GatewaySessionRepositoryTest {
         var titleFailure: Throwable? = null
         var titleResponse: CompletableDeferred<JsonElement>? = null
         var deleteFailure: Throwable? = null
+        var deleteResponse: CompletableDeferred<JsonElement>? = null
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += RpcCall(method, params)
@@ -7678,6 +7816,7 @@ class GatewaySessionRepositoryTest {
                     titleResponse?.await() ?: json("""{"title":"$t"}""")
                 }
                 "session.delete" -> {
+                    deleteResponse?.let { return it.await() }
                     deleteFailure?.let { failure ->
                         deleteFailure = null
                         throw failure

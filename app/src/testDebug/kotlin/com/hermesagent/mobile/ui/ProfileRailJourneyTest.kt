@@ -219,7 +219,7 @@ class ProfileRailJourneyTest {
         compose.onNodeWithContentDescription("Switch to default").performClick()
         compose.waitForIdle()
 
-        assertNull(repository.routing.activeProfile)
+        assertEquals("default", repository.routing.activeProfile)
     }
 
     /**
@@ -359,9 +359,8 @@ class ProfileRailJourneyTest {
         compose.onNodeWithTag(profilePickerRowTag("default")).performClick()
         compose.waitForIdle()
 
-        // `default` is "whatever this Gateway launched with", so the session
-        // RPCs carry no profile parameter again.
-        assertNull(repository.routing.activeProfile)
+        // Explicit default must not resolve to a named Gateway launch profile.
+        assertEquals("default", repository.routing.activeProfile)
         assertEquals(0, compose.onAllNodesWithTag(profilePickerRowTag("default")).fetchSemanticsNodes().size)
     }
 

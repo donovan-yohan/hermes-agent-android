@@ -803,24 +803,29 @@ class GatewayRestClient(
         timeoutMillis: Long,
         maxResponseBytes: Long,
         parse: (ByteArray) -> T?,
-    ): GatewayRestResult<T> = withContext(ioContext) {
+    ): GatewayRestResult<T> {
+        // Bind before the dispatcher hop: a queued mutation belongs to the
+        // transport selected by its caller, never the replacement connection.
+        // Production GatewayHttp instances capture their endpoint and auth scope.
         val transport = http()
-            ?: return@withContext GatewayRestResult.Failed(0, RECONNECT_MESSAGE)
-        val request = GatewayHttpRequest(
-            path = path,
-            method = verb.name,
-            body = body,
-            timeoutMillis = timeoutMillis,
-            query = query,
-            maxResponseBytes = maxResponseBytes,
-        )
-        when (val result = transport.execute(request)) {
-            is GatewayHttpResult.Rejected ->
-                GatewayRestResult.Failed(result.statusCode, result.safeMessage)
+            ?: return GatewayRestResult.Failed(0, RECONNECT_MESSAGE)
+        return withContext(ioContext) {
+            val request = GatewayHttpRequest(
+                path = path,
+                method = verb.name,
+                body = body,
+                timeoutMillis = timeoutMillis,
+                query = query,
+                maxResponseBytes = maxResponseBytes,
+            )
+            when (val result = transport.execute(request)) {
+                is GatewayHttpResult.Rejected ->
+                    GatewayRestResult.Failed(result.statusCode, result.safeMessage)
 
-            is GatewayHttpResult.Success -> result.consumeBody(parse)
-                ?.let { GatewayRestResult.Success(it) }
-                ?: GatewayRestResult.Failed(null, UNUSABLE_RESPONSE_MESSAGE)
+                is GatewayHttpResult.Success -> result.consumeBody(parse)
+                    ?.let { GatewayRestResult.Success(it) }
+                    ?: GatewayRestResult.Failed(null, UNUSABLE_RESPONSE_MESSAGE)
+            }
         }
     }
 }

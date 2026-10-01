@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.data.gateway
 
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
@@ -22,6 +23,40 @@ import org.junit.Test
  * proves nothing.
  */
 class GatewayRestClientTest {
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `every queued REST mutation retains its original transport`() = runTest {
+        val mutations: List<suspend (GatewayRestClient) -> Any> = listOf(
+            { it.deleteSession("old-session") },
+            { it.updateSession("old-session", title = "renamed") },
+            { it.updateSession("old-session", pinned = true) },
+            { it.updateSession("old-session", archived = true) },
+            { it.updateSession("old-session", unread = true) },
+            { it.setDashboardTheme("dark") },
+            { it.startHermesUpdate() },
+            { it.restartGateway("work") },
+        )
+        for (mutate in mutations) {
+            val first = RecordingGatewayHttp(GatewayHttpResult.Rejected(503, "unavailable"))
+            val second = RecordingGatewayHttp(GatewayHttpResult.Rejected(503, "unavailable"))
+            var selected: GatewayHttp = first
+            val client = GatewayRestClient(
+                ioContext = kotlinx.coroutines.test.StandardTestDispatcher(testScheduler),
+                http = { selected },
+            )
+            val pending = async(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                mutate(client)
+            }
+            assertFalse(pending.isCompleted)
+            assertTrue(first.requests.isEmpty())
+            selected = second
+            testScheduler.runCurrent()
+            pending.await()
+            assertTrue("replacement must receive no old mutation", second.requests.isEmpty())
+            assertEquals(1, first.requests.size)
+        }
+    }
 
     @Test
     fun `gets dashboard themes and puts an exactly echoed selection`() = runTest {

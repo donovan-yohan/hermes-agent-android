@@ -46,8 +46,8 @@ class ProfileScopeTest {
     }
 
     @Test
-    fun `the default scope sends no profile parameter`() {
-        assertNull(ProfileScope().sessionProfileParam)
+    fun `explicit default is distinct from unspecified launch scope`() {
+        assertEquals("default", ProfileScope().sessionProfileParam)
         assertNull(ProfileScope(activeProfile = "  ").sessionProfileParam)
         assertEquals("work", ProfileScope(activeProfile = "work").sessionProfileParam)
     }
@@ -60,33 +60,26 @@ class ProfileScopeTest {
     }
 
     @Test
-    fun `the fan-out asks the launch profile first`() {
-        // Load-bearing order: a profile the Gateway cannot resolve falls back
-        // to the launch handle (`tui_gateway/server.py:1556-1571,1599-1613`),
-        // so the refresh has to know which rows the launch profile claimed
-        // before it stamps anything with a named owner.
+    fun `the fan-out asks literal default first`() {
         val roster = listOf(profile("work"), profile("default", isDefault = true), profile("lab"))
 
-        assertEquals(null, sessionListProfiles(ProfileScope(showAllProfiles = true), roster).first())
+        assertEquals("default", sessionListProfiles(ProfileScope(showAllProfiles = true), roster).first())
     }
 
     @Test
-    fun `the unified scope fans out over the launch profile and every named one`() {
+    fun `the unified scope fans out over default and every named profile`() {
         val roster = listOf(profile("default", isDefault = true), profile("work"), profile("lab"))
         val scope = ProfileScope(activeProfile = "work", showAllProfiles = true)
 
-        assertEquals(listOf(null, "work", "lab"), sessionListProfiles(scope, roster))
+        assertEquals(listOf("default", "work", "lab"), sessionListProfiles(scope, roster))
         assertEquals(ALL_PROFILES, scope.key)
     }
 
     @Test
-    fun `the unified scope never repeats the launch profile as a named request`() {
-        // A roster whose default row is literally named "default" must not
-        // produce a second request for it: the null entry already covers the
-        // profile the Gateway launched with.
+    fun `the unified scope never repeats default as a named request`() {
         val roster = listOf(profile("default", isDefault = false))
 
-        assertEquals(listOf(null), sessionListProfiles(ProfileScope(showAllProfiles = true), roster))
+        assertEquals(listOf("default"), sessionListProfiles(ProfileScope(showAllProfiles = true), roster))
     }
 
     @Test

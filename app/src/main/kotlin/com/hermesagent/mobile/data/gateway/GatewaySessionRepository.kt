@@ -16,7 +16,6 @@ import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.attachments.ImageRefLines
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
-import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.parseTurnErrorDetails
 import com.hermesagent.mobile.data.session.ComposerBackgroundProcess
@@ -57,6 +56,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1052,8 +1052,22 @@ internal class LiveGatewaySessionRepository(
      * cannot land on top of a newer `config.set`.
      */
     private var approvalModeRevision = 0L
+    private var pendingApprovalWrite: Long? = null
+    private var approvalRefreshDeferred = false
+    private val approvalRefreshRequests = Channel<Unit>(Channel.CONFLATED)
 
     init {
+        scope.launch {
+            for (ignored in approvalRefreshRequests) {
+                try {
+                    refreshApprovalMode()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    // A notification can outlive its connection; keep the collector alive.
+                }
+            }
+        }
         scope.launch {
             clientFlow.collect { next ->
                 eventJob?.cancel()
@@ -1352,38 +1366,10 @@ internal class LiveGatewaySessionRepository(
                 val rows = if (profile == null) {
                     launchLegAnswered = true
                     parsed.mapTo(launchRowIds, SessionSummary::id)
-                    // And the stamp the REST route put on them comes off.
-                    //
-                    // That route stamps *every* row with a profile even when
-                    // the request named none: `row_profile = profile_name or
-                    // _cron_default_profile()`, written onto each row as
-                    // `s["profile"]` (`hermes_cli/web_routers/sessions.py:211-219`
-                    // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). That
-                    // fallback resolves the Gateway process's *own* active
-                    // profile, and answers `"default"` only when that profile
-                    // is literally `default` or `custom` — otherwise the
-                    // launch profile's real name
-                    // (`hermes_cli/web_server.py:12461-12478`).
-                    //
-                    // So on a Gateway launched under a named profile the
-                    // unscoped leg's rows come back stamped with that name,
-                    // and `filterSessionsByProfileScope` (`ProfileScope.kt:88`)
-                    // would drop every one of them from the `default` scope a
-                    // fresh install carries — an empty list on a backend with
-                    // sessions. The RPC lane never had that: `session.list`
-                    // reports no profile at all, and unstamped *is* the default
-                    // bucket by the rule Desktop filters with
-                    // (`app/chat/sidebar/profile-scope.ts:12`).
-                    //
-                    // Both contracts have to put the same rows in the same
-                    // bucket, so the stamp is dropped rather than trusted. It
-                    // is not a fact about the row: this leg asked for no
-                    // profile, so what came back is the Gateway describing
-                    // itself. A named leg is the opposite case — there the
-                    // stamp is the canonicalised name that was *asked for*
-                    // (`sessions.py:95-97`), which is the truth for that scope
-                    // and is kept.
-                    parsed.map { it.copy(remoteProfile = null) }
+                    // REST ownership is authoritative even for an omitted scope:
+                    // sessions.py:212-216 @ 333898b353c27e57dbd9446f631f7fb0a5aa5918.
+                    // Only genuinely unstamped legacy RPC rows remain unspecified.
+                    parsed
                 } else if (launchLegRequested && !launchLegAnswered) {
                     // The leg that would have told us which rows are the launch
                     // profile's failed. Without it there is no way to tell a
@@ -1515,10 +1501,21 @@ internal class LiveGatewaySessionRepository(
                     )
                 }
 
-                is GatewayRestResult.Failed -> if (result.statusCode == HTTP_NOT_FOUND) {
+                // A scoped 404 can name a missing profile, not a missing route
+                // (web_server_cron.py:121-122 @ 333898b353c27e57dbd9446f631f7fb0a5aa5918).
+                is GatewayRestResult.Failed -> {
+                    if (result.statusCode != HTTP_NOT_FOUND) throw GatewayRpcException(result.safeMessage)
+                    synchronized(stateLock) { ensureCurrent(connection) }
+                    // Probe the collection without a profile before interpreting
+                    // a scoped 404 as absent REST support. Never publish this
+                    // unscoped page or mask a missing/inaccessible profile.
+                    val routeMissing = if (profile == null) true else {
+                        val probe = rest.listSessions(limit = 1, minMessages = 0, profile = null)
+                        synchronized(stateLock) { ensureCurrent(connection) }
+                        probe is GatewayRestResult.Failed && probe.statusCode == HTTP_NOT_FOUND
+                    }
+                    if (!routeMissing) throw GatewayRpcException(result.safeMessage)
                     markCapabilityUnsupported(GatewayOptionalCapability.SessionListRest, connection)
-                } else {
-                    throw GatewayRpcException(result.safeMessage)
                 }
             }
         }
@@ -1971,11 +1968,11 @@ internal class LiveGatewaySessionRepository(
 
     /**
      * The `profile` parameter for acting on one known row: its own owner, or
-     * null for the Gateway's own profile and for a row nothing is known about.
+     * null only for a row with no known owner. Explicit default is not launch.
      */
     private fun owningProfileParam(durableId: String): String? =
         cache.session(durableId)?.remoteProfile?.trim()
-            ?.takeIf { it.isNotEmpty() && it != DEFAULT_PROFILE }
+            ?.takeIf(String::isNotEmpty)
 
     /** Layer one listed row over what the cache already knows about it. */
     private fun mergeListedSession(row: SessionSummary): SessionSummary =
@@ -2507,9 +2504,17 @@ internal class LiveGatewaySessionRepository(
      */
     override suspend fun refreshApprovalMode() {
         val connection = connectionSnapshot()
-        val revision = synchronized(stateLock) { ++approvalModeRevision }
+        val (revision, params) = synchronized(stateLock) {
+            // A read must not invalidate the rollback fence of an optimistic
+            // write. In particular, a failed broadcast read confirms nothing.
+            if (pendingApprovalWrite == approvalModeRevision) {
+                approvalRefreshDeferred = true
+                return
+            }
+            ++approvalModeRevision to approvalModeParams()
+        }
         val mode = try {
-            val response = connection.client.request("config.get", approvalModeParams()).asObject("config.get")
+            val response = connection.client.request("config.get", params).asObject("config.get")
             // Inside the `try` so the whole read is silent: an endpoint switch
             // mid-flight makes [ensureCurrent] throw, and that is a stale
             // answer to drop rather than an error to raise.
@@ -2533,26 +2538,27 @@ internal class LiveGatewaySessionRepository(
      * outside `manual|smart|off`, or a transport failure — rolls back to the
      * last confirmed mode. The Gateway also re-emits `session.info` for every
      * live session on success (`:14594-14597`), which reconciles the same value
-     * through [applyStreamedApprovalMode] for any other client on this host.
+     * by requesting a scoped read through [applyStreamedApprovalMode].
      */
     override suspend fun setApprovalMode(mode: ApprovalMode): ApprovalModeOutcome {
         val connection = connectionSnapshot()
         // The paint happens inside the same critical section that produced the
         // fence it is guarded by, so a concurrent publish cannot be overwritten
         // by an optimistic value from between the bump and the assignment.
-        val revision = synchronized(stateLock) {
+        val (revision, params) = synchronized(stateLock) {
             val fence = ++approvalModeRevision
+            pendingApprovalWrite = fence
             approvalModeFlow.value = approvalModeFlow.value.copy(mode = mode)
-            fence
+            fence to buildJsonObject {
+                put("key", JsonPrimitive(APPROVALS_MODE_KEY))
+                put("value", JsonPrimitive(mode.wireValue))
+                profileRouting.activeProfile?.let { put("profile", JsonPrimitive(it)) }
+            }
         }
         return try {
             val response = connection.client.request(
                 "config.set",
-                buildJsonObject {
-                    put("key", JsonPrimitive(APPROVALS_MODE_KEY))
-                    put("value", JsonPrimitive(mode.wireValue))
-                    activeProfileParam()?.let { put("profile", JsonPrimitive(it)) }
-                },
+                params,
             ).asObject("config.set")
             synchronized(stateLock) { ensureCurrent(connection) }
             // The echo is `{"key": …, "value": raw}` (`server.py:14598`), and it
@@ -2573,6 +2579,16 @@ internal class LiveGatewaySessionRepository(
                 }
             }
             ApprovalModeOutcome.Rejected(APPROVAL_MODE_REJECTED)
+        } finally {
+            synchronized(stateLock) {
+                if (pendingApprovalWrite == revision) {
+                    pendingApprovalWrite = null
+                    if (approvalRefreshDeferred) {
+                        approvalRefreshDeferred = false
+                        approvalRefreshRequests.trySend(Unit)
+                    }
+                }
+            }
         }
     }
 
@@ -2593,49 +2609,16 @@ internal class LiveGatewaySessionRepository(
     }
 
     /**
-     * Reconcile the `approval_mode` / `yolo` pair a streamed `session.info`
-     * carries (`tui_gateway/server.py:2051` @ `72a3277cd7`).
-     *
-     * **Only while the app is scoped to the Gateway's launch profile.** Those
-     * two fields come from `_load_approval_mode()`, which resolves under
-     * whichever `HERMES_HOME` is bound when the event is emitted
-     * (`server.py:5953-5971`). The `config.set` handler emits inside its own
-     * `@_profile_scoped` binding, so that one reports the profile that was
-     * written; every other emit — a turn start, a turn end, a resume — happens
-     * outside any binding and reports the *launch* profile's config. Accepting
-     * those while scoped elsewhere would flip the control to another profile's
-     * posture, so a named scope takes its answer from the scoped `config.get`
-     * and `config.set` echo alone.
-     *
-     * The scope test and the publish are **one** critical section. Read under a
-     * separate acquisition, a [setProfileRouting] landing between the two would
-     * let a launch-profile event repaint — and confirm — the mode the profile
-     * switch had just dropped, which is exactly the answer that clear exists to
-     * remove; it would then survive a failed scoped `config.get`, because that
-     * read is silent.
-     *
-     * `internal` so the two-thread race can be driven directly: a single test
-     * dispatcher cannot interleave two threads inside one function.
+     * A broadcast is an invalidation, never an approval-policy answer. Upstream
+     * methods_config_set.py:40-42,338 @ 333898b353c27e57dbd9446f631f7fb0a5aa5918
+     * emits every live session inside the writing profile's binding. Even a
+     * launch-profile session can therefore carry another profile's values.
+     * Coalesce bursts and read the current scope through config.get; its revision
+     * fence drops answers overtaken by a profile switch. Never trust streamed yolo.
      */
     internal fun applyStreamedApprovalMode(payload: JsonObject) {
         if ("approval_mode" !in payload && "yolo" !in payload) return
-        synchronized(stateLock) {
-            if (profileRouting.activeProfile != null) return
-            // This is an authoritative answer, so it also fences any read or
-            // write still in flight: whatever they were told is older.
-            approvalModeRevision++
-            val next = if ("approval_mode" in payload) {
-                confirmedApprovalMode = ApprovalMode.fromWire(payload.string("approval_mode"))
-                approvalModeFlow.value.copy(mode = confirmedApprovalMode)
-            } else {
-                approvalModeFlow.value
-            }
-            approvalModeFlow.value = if ("yolo" in payload) {
-                next.copy(bypassActive = payload.boolean("yolo") == true)
-            } else {
-                next
-            }
-        }
+        approvalRefreshRequests.trySend(Unit)
     }
 
     override suspend fun setLiveModel(
@@ -3867,11 +3850,12 @@ internal class LiveGatewaySessionRepository(
 
     override suspend fun deleteSession(durableId: String) {
         require(durableId.isNotBlank()) { "Cannot delete a session without a durable id." }
+        val connection = connectionSnapshot()
         val runtimeId = synchronized(stateLock) { identities.runtimeFor(durableId) }
-        val client = clientFlow.value
+        val client = connection.client
         val profile = cache.session(durableId)?.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
 
-        if (runtimeId != null && client != null) {
+        if (runtimeId != null) {
             val isRunning = synchronized(stateLock) {
                 liveTurnRuntimeIds.contains(runtimeId) || activeRuntimeIds.contains(runtimeId)
             }
@@ -3880,7 +3864,9 @@ internal class LiveGatewaySessionRepository(
             }
             try {
                 val params = buildJsonObject {
-                    put("session_id", JsonPrimitive(runtimeId))
+                    // Stored identity, never the resume/runtime handle:
+                    // methods_session.py:991-1010 @ 333898b353c27e57dbd9446f631f7fb0a5aa5918.
+                    put("session_id", JsonPrimitive(durableId))
                     if (profile != null) put("profile", JsonPrimitive(profile))
                 }
                 client.request("session.delete", params)
@@ -3890,9 +3876,8 @@ internal class LiveGatewaySessionRepository(
                     if (failure.code == 4023) {
                         throw GatewayRpcException("Cannot delete a running session. Stop the turn first and try again.")
                     }
-                    if (failure.code != 4007) {
-                        throw GatewayRpcException("Delete failed. Check the Gateway and try again.")
-                    }
+                    // Not found is not a confirmed tombstone for the cached row.
+                    throw GatewayRpcException("Delete failed. Check the Gateway and try again.")
                 } else if (failure is GatewayRpcException) {
                     throw failure
                 } else {
@@ -3900,6 +3885,7 @@ internal class LiveGatewaySessionRepository(
                 }
             }
             synchronized(stateLock) {
+                ensureCurrent(connection)
                 identities.unbindRuntime(runtimeId)
                 assistantByRuntime.remove(runtimeId)
                 reasoningByRuntime.remove(runtimeId)
@@ -3911,22 +3897,23 @@ internal class LiveGatewaySessionRepository(
                 ephemeralSessions.remove(durableId)
                 branchByDurableId.remove(durableId)
                 worktreeByDurableId.remove(durableId)
+                cache.removeSession(durableId)
             }
-            cache.removeSession(durableId)
             return
         }
 
         val result = rest.deleteSession(sessionId = durableId, profile = profile)
         when (result) {
             is GatewayRestResult.Success -> {
-                cache.removeSession(durableId)
+                synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    cache.removeSession(durableId)
+                }
             }
             is GatewayRestResult.Failed -> {
-                if (result.statusCode == 404) {
-                    cache.removeSession(durableId)
-                } else {
-                    throw GatewayRpcException("Delete failed. Check the Gateway and try again.", statusCode = result.statusCode)
-                }
+                // A missing route/profile is also 404. Only a successful
+                // delete (including an explicit already_absent) tombstones.
+                throw GatewayRpcException("Delete failed. Check the Gateway and try again.", statusCode = result.statusCode)
             }
         }
     }

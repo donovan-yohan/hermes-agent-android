@@ -89,6 +89,7 @@ import com.hermesagent.mobile.data.session.isUnread
 import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import com.hermesagent.mobile.ui.common.JoinedChromeStack
 import com.hermesagent.mobile.ui.common.JoinedPane
@@ -219,6 +220,19 @@ internal const val CHAT_SUBTITLE_TAG = "chat-subtitle"
 /** The status line and the two figures that share it. */
 internal const val CHAT_SUBTITLE_ROW_TAG = "chat-subtitle-row"
 
+/**
+ * The chat header's `+` — the pane's own direct new-session door.
+ *
+ * Desktop puts it on the pane's tab strip, after the last tab
+ * (`components/pane-shell/tree/renderer/tree-group.tsx:313-319,726-742` @
+ * `95f20517c25ee418da5337f4ead347008baaa2b3`), and a phone has no tab strip to
+ * put it on. The control is the same action and the same glyph; the words are
+ * Desktop's own `New session` (`i18n/en.ts:3057`), the label the two sidebar
+ * controls for this action already carry, rather than the strip's
+ * `New session tab` (`:4250`), which names a tab this platform does not have.
+ */
+internal const val CHAT_HEADER_NEW_SESSION_TAG = "chat-header-new-session"
+
 @Composable
 private fun CompactLayout(
     state: ChatUiState,
@@ -323,6 +337,12 @@ private fun CompactLayout(
                 onOpenContextUsage = onOpenContextUsage,
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
+                // Not `takeUnless { state.botChat }`, unlike the session-actions
+                // control above it: `createSession` is the one mutation a Bot
+                // Chat accepts, and the ViewModel treats it as the person's
+                // explicit escape, clearing the bot-chat capability first.
+                onCreateSession = actions.onCreateSession,
+                canCreateSession = state.canCreateSession,
                 modifier = Modifier.statusBarsPadding(),
             )
             TranscriptPane(
@@ -419,6 +439,8 @@ private fun WideLayout(
                 onOpenContextUsage = onOpenContextUsage,
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
+                onCreateSession = actions.onCreateSession,
+                canCreateSession = state.canCreateSession,
             )
             TranscriptPane(
                 state = state,
@@ -1238,6 +1260,10 @@ private fun ChatTopBar(
     onOpenContextUsage: () -> Unit = {},
     approvalMode: ApprovalMode? = null,
     onSelectApprovalMode: (ApprovalMode) -> Unit = {},
+    /** Desktop's pane-strip `+`; null hides it, the way a mintless strip does. */
+    onCreateSession: (() -> Unit)? = null,
+    /** The same gate the sidebar's nav row uses; a disconnected Gateway starts nothing. */
+    canCreateSession: Boolean = false,
 ) {
     val tokens = HermesTheme.tokens
     Column(modifier.fillMaxWidth().background(tokens.chatSurface)) {
@@ -1333,6 +1359,20 @@ private fun ChatTopBar(
                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(sessionId, pinned) } },
                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(sessionId, unread) } },
                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(sessionId, archived) } },
+                )
+            }
+            // Desktop's tab-strip `+`, at the trailing end of the pane's own
+            // chrome (`tree-group.tsx:726-742` @ `95f20517`): the direct
+            // "start another session here" door, ahead of the settings door it
+            // sits beside on Desktop's strip.
+            if (onCreateSession != null) {
+                HermesIconButton(
+                    icon = HermesIcon.Add,
+                    contentDescription = "New session",
+                    onClick = onCreateSession,
+                    enabled = canCreateSession,
+                    tint = tokens.textSecondary,
+                    modifier = Modifier.testTag(CHAT_HEADER_NEW_SESSION_TAG),
                 )
             }
             QuietIconButton(
