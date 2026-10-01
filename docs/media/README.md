@@ -21,6 +21,13 @@ Screenshots are PNG at the device's native resolution. Demos are recorded as
 MP4 and exported to GIF; commit both, with matching base names, so the README
 can show the GIF while a reader can still open the sharper MP4.
 
+## Toolsets selection supplement
+
+[Toolsets selection v1](bot-toolsets-v1/REPORT.md): 24 actual Android state/theme
+captures with canonical receipts and 14 genuine current Desktop reference images.
+Explicit Save/default-reset adaptation, not autosave equivalence; Desktop observations
+remain noncanonical. See [capture index](CAPTURE.md#toolsets-selection-supplement).
+
 ## Model editor supplement
 
 [Model editor v2](bot-model-v2/REPORT.md): paired Android/Electron evidence,

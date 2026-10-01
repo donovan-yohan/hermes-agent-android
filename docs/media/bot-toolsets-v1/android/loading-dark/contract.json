@@ -1,0 +1,852 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-01T22:16:55.602617+00:00",
+  "surface": "bot-toolsets",
+  "state": "loading",
+  "fixture_id": "bot-toolsets-synthetic-v1",
+  "theme": "dark",
+  "android_git_sha": "0d08856c6dcd720b62fa2aa97e6bf3ac82503902",
+  "apk_sha256": "52b931f852cf6f88f6e9d38ebea1983d634fa48c433e8e5a3aecbd6141111f96",
+  "installed_apk_sha256": "52b931f852cf6f88f6e9d38ebea1983d634fa48c433e8e5a3aecbd6141111f96",
+  "apk_kind": "debug",
+  "interactions": [],
+  "ordered_action_evidence": [],
+  "viewport": {
+    "size": "Physical size: 1280x2856",
+    "density": "Physical density: 480"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity",
+    "focused_window": "mCurrentFocus=Window{27e1222 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity}\nmFocusedApp=ActivityRecord{179934336 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity t691}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  },
+  "accessibility": {
+    "expected_description": "Reading toolsets\u2026",
+    "nodes": [
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]",
+        "class": "android.widget.FrameLayout",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]",
+        "class": "android.widget.LinearLayout",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]",
+        "class": "android.widget.FrameLayout",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]",
+        "class": "androidx.compose.ui.platform.ComposeView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1280,2856]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,156][1280,2784]",
+        "class": "android.widget.ScrollView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Edit profile",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,204][294,263]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Toolsets",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,299][195,338]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Choose the toolsets saved for this bot\u2019s profile.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,374][860,420]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Reading toolsets\u2026",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,456][365,502]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,538][1232,682]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Save toolsets",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[523,587][757,633]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,718][358,862]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Restore defaults",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[60,767][346,813]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,898][257,1042]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "Skills. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,898][257,1042]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[33,898][177,1042]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "Skills",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[60,947][150,993]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[168,946][257,994]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,1078][389,1222]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "MCP servers. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,1078][389,1222]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[48,1078][294,1222]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "MCP servers",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[60,1127][282,1173]",
+        "class": "android.widget.TextView",
+        "checkable": false,
+        "checked": false
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[300,1126][389,1174]",
+        "class": "android.view.View",
+        "checkable": false,
+        "checked": false
+      }
+    ]
+  },
+  "screenshot_bracket": {
+    "before": {
+      "expected_description": "Reading toolsets\u2026",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.widget.FrameLayout",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.widget.LinearLayout",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.widget.FrameLayout",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "androidx.compose.ui.platform.ComposeView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,156][1280,2784]",
+          "class": "android.widget.ScrollView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Edit profile",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,204][294,263]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Toolsets",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,299][195,338]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Choose the toolsets saved for this bot\u2019s profile.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,374][860,420]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Reading toolsets\u2026",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,456][365,502]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,538][1232,682]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Save toolsets",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[523,587][757,633]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,718][358,862]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Restore defaults",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[60,767][346,813]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,898][257,1042]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "Skills. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,898][257,1042]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[33,898][177,1042]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Skills",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[60,947][150,993]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[168,946][257,994]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,1078][389,1222]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "MCP servers. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,1078][389,1222]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,1078][294,1222]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[60,1127][282,1173]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[300,1126][389,1174]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        }
+      ]
+    },
+    "after": {
+      "expected_description": "Reading toolsets\u2026",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.widget.FrameLayout",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.widget.LinearLayout",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.widget.FrameLayout",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "androidx.compose.ui.platform.ComposeView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1280,2856]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,156][1280,2784]",
+          "class": "android.widget.ScrollView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Edit profile",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,204][294,263]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Toolsets",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,299][195,338]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Choose the toolsets saved for this bot\u2019s profile.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,374][860,420]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Reading toolsets\u2026",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,456][365,502]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,538][1232,682]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Save toolsets",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[523,587][757,633]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,718][358,862]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Restore defaults",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[60,767][346,813]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,898][257,1042]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "Skills. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,898][257,1042]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[33,898][177,1042]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "Skills",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[60,947][150,993]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[168,946][257,994]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,1078][389,1222]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "MCP servers. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,1078][389,1222]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[48,1078][294,1222]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[60,1127][282,1173]",
+          "class": "android.widget.TextView",
+          "checkable": false,
+          "checked": false
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[300,1126][389,1174]",
+          "class": "android.view.View",
+          "checkable": false,
+          "checked": false
+        }
+      ]
+    },
+    "timing": {
+      "basis": "monotonic-before-fixture-launch",
+      "deadline_seconds": 20,
+      "screenshot_start_seconds": 4.922116200999881,
+      "screenshot_end_seconds": 5.171222014003433,
+      "postcheck_seconds": 8.032197432003159
+    }
+  },
+  "device": {
+    "model": "sdk_gphone16k_arm64",
+    "manufacturer": "Google",
+    "android": "17",
+    "sdk": "37",
+    "font_scale": "1.0"
+  },
+  "screenshot_sha256": "3ae2ffac6ef32e1a7b0d19bf98ef346bc3c673450c2c03e8f71763603d1c4227",
+  "capture_scope": "production section fixture; actions staged by fixture, no recorded user gestures"
+}

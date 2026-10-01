@@ -23,7 +23,10 @@ class BotManagementParityFixtureTest {
         runCurrent()
         assertEquals(BotManagementDialog.Edit, fixture.model.state.value.dialog)
         assertEquals("Review synthetic release plans.", fixture.model.state.value.draft.soul)
-        assertEquals(listOf("profiles.describe", "model.options", "profiles.get_asset", "profiles.describe", "profiles.list"), fixture.host.calls)
+        // Model, Toolsets, avatar and identity each read their own authoritative section.
+        assertEquals(listOf("profiles.describe", "model.options", "profiles.describe", "profiles.get_asset", "profiles.describe", "profiles.list"), fixture.host.calls)
+        assertFalse(fixture.host.calls.any { it == "profiles.configure" })
+        assertEquals(fixture.model.state.value.target, fixture.model.toolsets.state.value.ticket?.target)
         assertEquals(buildJsonObject { put("name", "synthetic-planner"); put("asset", "avatar") },
             fixture.host.requests.single { it.method == "profiles.get_asset" }.params)
         assertFalse(fixture.host.calls.contains("profiles.set_asset"))

@@ -1,0 +1,78 @@
+{
+  "state": "error",
+  "theme": "light",
+  "normalization": {
+    "skin": "mono",
+    "mode": "light",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clock": "2026-09-17T16:00:00.000Z"
+  },
+  "text": "Edit profile\n\nAppearance and role for Synthetic Toolsets (synthetic-toolsets).\n\nBot\nGenerate\nUpload\nPet\nAuto\nRandomize\nLock face\nFace follows the name.\nClassic shapes\nTitle\nDescription\nAdvanced — model, skills, toolsets, SOUL.md\nProvider (Custom)\nModel (Custom)\n← Back to dropdowns\nCapabilities (applies immediately — skills, tools, MCP)\nSkills\n53\nTools\nConnectors\nPlugins\n\nSkills failed to load\n\nRefresh skills\nSOUL.md (persona + agent-messaging protocol)\nCancel\nSave\nClose",
+  "nodes": "- dialog \"Edit profile\":\n  - heading \"Edit profile\" [level=2]\n  - paragraph: Appearance and role for Synthetic Toolsets (synthetic-toolsets).\n  - button \"Bot\" [pressed]\n  - button \"Generate\"\n  - button \"Upload\"\n  - button \"Pet\"\n  - button \"Auto — the name decides\": Auto\n  - button \"round\"\n  - button \"organic\"\n  - button \"boxy\"\n  - button \"capsule\"\n  - button \"nub\"\n  - button \"cloud\"\n  - button \"droplet\"\n  - button \"hexagon\"\n  - button \"sun\"\n  - button \"triangle\"\n  - button \"Randomize\"\n  - button \"Lock face\"\n  - text: Face follows the name.\n  - button \"Classic shapes\"\n  - text: Title\n  - textbox \"Synthetic Toolsets\"\n  - text: Description\n  - textbox \"What should this bot help with?\": Synthetic Toolsets\n  - button \"Advanced — model, skills, toolsets, SOUL.md\"\n  - text: Provider (Custom)\n  - textbox \"omnirouter / inferx / 9router\": fixture\n  - text: Model (Custom)\n  - textbox \"antigravity/gemini-3.6-flash-high\": model-alpha\n  - button \"← Back to dropdowns\"\n  - text: Capabilities (applies immediately — skills, tools, MCP)\n  - img\n  - textbox \"Search tools...\"\n  - button \"Skills 53\"\n  - button \"Tools\"\n  - button \"Connectors\"\n  - button \"Plugins\"\n  - paragraph: Skills failed to load\n  - button \"Refresh skills\"\n  - text: SOUL.md (persona + agent-messaging protocol)\n  - textbox: Synthetic toolsets reference.\n  - button \"Cancel\"\n  - button \"Save\"\n  - button \"Close\":\n    - img\n    - text: Close",
+  "probe": {
+    "scenario": "error",
+    "log": [
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets"
+        },
+        "phase": "refused",
+        "at": 1790890643461,
+        "result": null
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets"
+        },
+        "phase": "refused",
+        "at": 1790890645157,
+        "result": null
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets"
+        },
+        "phase": "refused",
+        "at": 1790890647210,
+        "result": null
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets"
+        },
+        "phase": "refused",
+        "at": 1790890651210,
+        "result": null
+      }
+    ],
+    "pendingReads": 0,
+    "pendingWrites": 0,
+    "selected": [
+      "web"
+    ],
+    "pinned": false
+  },
+  "rpc": [
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "profiles.describe",
+      "params": {
+        "name": "synthetic-toolsets"
+      }
+    }
+  ]
+}
