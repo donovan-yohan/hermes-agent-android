@@ -17,7 +17,6 @@ jobs:
     timeout-minutes: 35
     env:
       ANDROID_SERIAL: emulator-5580
-      ANDROID_AVD_HOME: ${{ runner.temp }}/focus-avds
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +35,8 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
           test -r /dev/kvm && test -w /dev/kvm
-          mkdir -p "$ANDROID_AVD_HOME"
+          mkdir -p "$RUNNER_TEMP/focus-avds"
+          echo "ANDROID_AVD_HOME=$RUNNER_TEMP/focus-avds" >> "$GITHUB_ENV"
       - name: Build matching APK pair once from exact head
         timeout-minutes: 20
         run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
