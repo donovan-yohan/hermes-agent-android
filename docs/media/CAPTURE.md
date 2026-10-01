@@ -1,8 +1,20 @@
 # How the README media was captured
 
-Every file under `docs/media/` was recorded from the app running on an emulator,
+The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
+
+## Routine inspector v2 supplement
+
+The [bounded inspector report](routine-inspector-v2/REPORT.md) and its
+[per-file image manifest](routine-inspector-v2/provenance.json) log all 28 added
+PNGs: seven synthetic states in both modes on Android and actual Electron Desktop.
+The manifest records every image path, dimensions and digest; adjacent receipts
+record state, application and normalization. Android ARM64 emulator frames use
+the original dirty base/diff/APK identity, not a publication commit artifact.
+These synthetic-only frames contain no real user data. APKs, private capture
+scripts, serials and raw execution logs are deliberately excluded. The README
+media's older provenance below does not apply to this supplement.
 
 ## Provenance
 

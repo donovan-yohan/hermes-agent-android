@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
+/** Fixture-local formatting; never changes device or process defaults. */
+internal val LocalRoutineTimestampFormat = androidx.compose.runtime.compositionLocalOf { defaultRoutineTimestampFormat() }
+
 /** Phone adaptation of Desktop's read-only detail dialog; no mutation actions. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +45,7 @@ internal fun RoutineInspectorSheet(job: RoutineRow, nowMillis: Long, stale: Bool
             Text("What this job runs, and when it runs next.", style = HermesTheme.type.caption, color = tokens.textTertiary)
             if (stale) Text(BotsRoutinesCopy.STALE_NOTICE, style = HermesTheme.type.caption, color = tokens.textTertiary)
             job.issue?.let { Text(routineDisplay(it, 1024), style = HermesTheme.type.body, color = tokens.textPrimary) }
-            routineDetailRows(job, nowMillis).forEach { field ->
+            routineDetailRows(job, nowMillis, LocalRoutineTimestampFormat.current).forEach { field ->
                 Column {
                     Text(field.label, style = HermesTheme.type.caption, color = tokens.textTertiary)
                     Text(field.value, style = HermesTheme.type.body, color = tokens.textPrimary)

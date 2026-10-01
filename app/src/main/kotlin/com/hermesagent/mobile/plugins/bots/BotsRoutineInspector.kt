@@ -21,7 +21,11 @@ fun RoutineRow.overdueMillis(nowMillis: Long): Long? {
 data class RoutineDetailField(val label: String, val value: String)
 
 /** Held-list facts only; no request, full prompt, or editable draft belongs here. */
-fun routineDetailRows(job: RoutineRow, nowMillis: Long): List<RoutineDetailField> = buildList {
+fun routineDetailRows(
+    job: RoutineRow,
+    nowMillis: Long,
+    timestampFormat: DateTimeFormatter = defaultRoutineTimestampFormat(),
+): List<RoutineDetailField> = buildList {
     fun field(label: String, value: String?) {
         value?.takeIf { it.isNotBlank() }?.let { add(RoutineDetailField(label, it)) }
     }
@@ -35,22 +39,25 @@ fun routineDetailRows(job: RoutineRow, nowMillis: Long): List<RoutineDetailField
     field("Schedule (raw)", job.rawSchedule?.takeIf { it != job.scheduleLabel }?.let { routineDisplay(it) })
     field("Repeat", job.repeat?.let { routineDisplay(it) })
     if (job.active) field(if (job.overdueMillis(nowMillis) != null) "Overdue since" else "Next run",
-        job.nextRunMillis?.let { routineTimestamp(it, nowMillis) })
-    field("Last run", job.lastRunMillis?.let { routineTimestamp(it, nowMillis) })
+        job.nextRunMillis?.let { routineTimestamp(it, nowMillis, timestampFormat) })
+    field("Last run", job.lastRunMillis?.let { routineTimestamp(it, nowMillis, timestampFormat) })
     field("Last result", job.lastResult?.let { routineDisplay(it) })
     field("Deliver to", job.delivery?.let { routineDisplay(it) })
     field("Model", job.model?.let { routineDisplay(it) })
     field("Working directory", job.workdir?.let { routineDisplay(it) })
 }
 
-private fun routineTimestamp(at: Long, now: Long): String =
-    "${routineRelativeLabel(at, now)} · ${DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(at))}"
+internal fun defaultRoutineTimestampFormat(): DateTimeFormatter =
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withZone(ZoneId.systemDefault())
+
+private fun routineTimestamp(at: Long, now: Long, format: DateTimeFormatter): String =
+    "${routineRelativeLabel(at, now)} · ${format.format(Instant.ofEpochMilli(at))}"
 
 internal fun routineLastResult(raw: String?): String? = when (raw?.trim()) {
     null, "" -> null
     "ok" -> "Succeeded"
     "error" -> "Failed"
-    "delivery_failed" -> "Delivery failed"
+    "delivery_failed" -> "Ran, but delivery failed"
     "blocked_config" -> "Blocked by configuration (not run)"
     else -> routineDisplay(raw)
 }

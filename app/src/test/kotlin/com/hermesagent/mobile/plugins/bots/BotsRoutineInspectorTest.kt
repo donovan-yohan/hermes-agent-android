@@ -112,7 +112,7 @@ class BotsRoutineInspectorTest {
             "prompt_preview":"Short instruction", "prompt":"FULL PRIVATE INSTRUCTION"""")
         val fields = routineDetailRows(job, job.nextRunMillis!! + 900_001)
         assertEquals(listOf("Status", "Schedule", "Schedule (raw)", "Repeat", "Overdue since", "Last run", "Last result", "Deliver to", "Model", "Working directory"), fields.map { it.label })
-        assertEquals("Delivery failed", fields.first { it.label == "Last result" }.value)
+        assertEquals("Ran, but delivery failed", fields.first { it.label == "Last result" }.value)
         assertEquals("Short instruction", job.instructionPreview)
         assertNull(row(""", "prompt":"FULL PRIVATE INSTRUCTION"""").instructionPreview)
         assertFalse(job.toString().contains("FULL PRIVATE INSTRUCTION"))

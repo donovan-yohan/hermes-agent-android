@@ -142,6 +142,36 @@ claim. Compose journey and debug `inspector`/`overdue` states are authored for t
 coordinated parent lane. `bot-routine-inspector` has a separate current-pin capture
 catalog entry; historical `bot-routines` provenance remains intact.
 
+## Inspector acceptance follow-up (new-capture boundary)
+
+The genuine scratch packet at Desktop `587e673e2a2fae0616d8b750bb189217080f621a`
+exposed Android's shortened delivery-result label. Android now preserves the
+execution outcome with **Ran, but delivery failed**. The debug fixture also
+opens sparse, paused, completed and overdue inspectors directly and includes the
+same synthetic completed job as Desktop. Completed remains **Completed**, cannot
+resume, and has no next run: the documented terminal-state safety adaptation is
+unchanged even though Desktop's disabled completed inspector says **Paused**.
+
+The v2 inspector catalog/workflow choices target **new captures only**. The old
+`bot-routines` pin and all historical image/receipt identities remain unchanged.
+Inspector fixtures now supply en-US/UTC timestamp formatting locally, without
+changing device or process defaults; mono remains the capture skin. See the
+[new capture handoff](../workflows/routine-inspector-capture.md) for exact inputs,
+Desktop normalization, dispatch commands and receipt boundaries. The subsequent
+[v2 rendered report](../media/routine-inspector-v2/REPORT.md) now publishes actual
+Android/Desktop pixels with their original dirty-source/APK provenance, not a
+claim that the publication or integration commit produced that APK.
+
+Local verification for this follow-up: the copy regression failed before the
+fix; completed state failed before fixture support; non-US/non-UTC fixture
+formatting failed before local injection. Focused inspector/capture/journey
+checks passed, then an unfiltered rerun of `testDebugUnitTest check assembleDebug`
+passed: **3,241 tests, zero failures/errors, one skipped** across 280 debug JVM
+suites. `check` also ran 2,576 release JVM tests with zero failures/errors and one
+skip; no release APK assembly was requested. The workflow/receipt Python checks
+passed (16 tests). These results are
+working-tree verification, not a committed-source or installed-device receipt.
+
 ## Copy and navigation
 
 The roster row's tap opens the bot's chat, exactly as before; Routines is a
@@ -182,12 +212,15 @@ rendered text. Run state remains a closed enum; unknown state has no invented la
 | Desktop row controls are enabled without a scope receipt and without terminal-state checks (`cron.tsx:489,559-569`) | drift | Unknown/stale owner scope cannot authorize a write; completed and disabled failed rows cannot toggle but can be deleted. Unknown records remain WIP even when disabled, with no invented paused label; completed records render completed. Legacy remains WIP | #316 / PR #317 F1. A tag fallback licenses display, not a write to a profile's store. Disabled is not evidence of resumability; production-shaped disabled completed/unknown rows are covered through repository, VM and UI |
 | Delete is hover-revealed (`cron.tsx:567`) | mobile-adaptation | Trash remains visible with the Android touch-target floor; switch comes first, no menu or separators, no confirmation | #316. A touch screen has no persistent hover; `BotsRoutinesJourneyTest` checks direct delete |
 | The pane polls every 20s and refetches on its socket opening (`cron.tsx:183-189`) | mobile-adaptation | The destination re-reads when it is entered and when the connection comes back; there is no RPC polling timer (a resumed-only 30s display clock updates overdue labels) | A phone does not leave this destination mounted while the person works elsewhere, so entering it is the trigger, and a background poll would spend the device's battery on a surface nobody is looking at |
-| Desktop's title opens a held-list detail dialog (`cron.tsx:370-475` @ e27448b) | mobile-adaptation | Scrollable read-only bottom sheet, same field order, title-only opener and sibling mutation controls | #191; phone viewport/touch adaptation. Model/VM and Compose regressions added; rendered comparison still pending |
+| Desktop's title opens a held-list detail dialog (`cron.tsx:370-475` @ e27448b) | mobile-adaptation | Scrollable read-only bottom sheet, same field order, title-only opener and sibling mutation controls | #191; phone viewport/touch adaptation. [Rendered v2 comparison](../media/routine-inspector-v2/REPORT.md): stacked sheet rows, unboxed text and text Close differ from Desktop's two-column bordered dialog |
 | Desktop inspector treats any enabled non-paused state as Active | drift | Completed stays Completed; unknown omits status and next run; disabled failed jobs do not promise another run | #191; existing terminal/unknown safeguards retained in inspector regression tests |
 | Desktop renders backend detail text directly | mobile-adaptation | Shared redaction and finite display bounds apply to every backend display field; full prompt never shown | #191; bounded phone display and secret-safe rendering; model tests cover all parsed display fields |
+| Desktop disabled completed inspector says Paused / Succeeded | drift | Completed / Succeeded; no next run/overdue or Resume | [v2 completed captures](../media/routine-inspector-v2/REPORT.md); intentional terminal-state safeguard, not a mobile-only rationale; preserve it |
+| Desktop uses year/seconds and Intl relative wording | drift | Short localized year/no seconds, in 17 hr, 1 day ago and 7 hr ago | [v2 inspector captures](../media/routine-inspector-v2/REPORT.md); UTC hours now agree, but formatter drift remains a Concern under #191 |
 
 ## Visual report
 
+- [Routine inspector v2 rendered side-by-side report](../media/routine-inspector-v2/REPORT.md): 28 original images and 28 validated receipts, seven states in both modes/platforms. Dirty Android base/diff/APK identity is retained; this is not exact integrated-head APK evidence or whole-Bot parity.
 - pending: #316
 - pending: #191
 
