@@ -7367,6 +7367,121 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `uncollected endpoint transition retires live A binding before ordinary or endpoint bound B open`() = runTest {
+        for (endpointBound in listOf(false, true)) {
+            val cache = SessionCache()
+            val fence = EndpointDispatchFence()
+            val first = FakeRpc()
+            val clients = MutableStateFlow<GatewayRpcClient?>(first)
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope,
+                endpointDispatchFence = fence) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "shared-profile", 0L)
+            fence.invalidate()
+            clients.value = null
+            cache.resetForEndpointSwitch()
+            val second = FakeRpc().apply { resumeA = RESUME_A.replace("runtime-a", "runtime-b") }
+            clients.value = second
+            cache.upsertSession(SessionSummary("durable-a", "B chat", "", CLOCK, remoteProfile = "shared-profile"))
+            // Deliberately no drain at null OR B: A's identity is still cached.
+            // Matching profile names are not proof of runtime ownership.
+            if (endpointBound) repository.openSessionAtEndpoint("durable-a", "shared-profile", cache.endpointGeneration.value)
+            else repository.openSession("durable-a")
+            assertEquals("shared-profile", second.call("session.resume").params.string("profile"))
+            assertTrue(second.calls.none { it.params.string("session_id") == "runtime-a" })
+            assertEquals(1, second.calls.count { it.method == "session.resume" })
+            runCurrent()
+            repository.openSession("durable-a")
+            assertEquals("runtime-b", second.calls.last { it.method == "session.activate" }.params.string("session_id"))
+            assertEquals("Collector must not discard B's newly established binding", 1,
+                second.calls.count { it.method == "session.resume" })
+        }
+    }
+
+    @Test
+    fun `uncollected same endpoint reconnect retains runtime owner rather than sidebar owner`() = runTest {
+        for (profile in listOf(null, "researcher")) for (working in listOf(false, true)) {
+            val cache = SessionCache()
+            val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope) { CLOCK }
+            runCurrent()
+            if (profile == null) repository.openSession("durable-a")
+            else repository.openSessionAtEndpoint("durable-a", profile, 0L)
+            if (working) repository.submit("durable-a", "A prompt")
+            cache.upsertSession(cache.session("durable-a")!!.copy(remoteProfile = "sidebar-owner"))
+            clients.value = null
+            val second = FakeRpc().apply { resumeA = RESUME_A.replace("runtime-a", "runtime-b") }
+            clients.value = second
+            repository.openSession("durable-a")
+            assertEquals(profile, second.call("session.resume").params.string("profile"))
+            assertTrue(second.calls.none { it.params.string("session_id") == "runtime-a" })
+            runCurrent()
+            repository.openSession("durable-a")
+            assertEquals(1, second.calls.count { it.method == "session.resume" })
+        }
+    }
+
+    @Test
+    fun `uncollected endpoint transition cannot reuse A binding for submit`() = runTest {
+        for (endpointBound in listOf(false, true)) {
+            val cache = SessionCache()
+            val fence = EndpointDispatchFence()
+            val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope,
+                endpointDispatchFence = fence) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "shared-profile", 0L)
+            fence.invalidate()
+            clients.value = null
+            cache.resetForEndpointSwitch()
+            val second = FakeRpc().apply { resumeA = RESUME_A.replace("runtime-a", "runtime-b") }
+            clients.value = second
+            cache.upsertSession(SessionSummary("durable-a", "B chat", "", CLOCK, remoteProfile = "shared-profile"))
+            if (endpointBound) repository.submitAtEndpoint("durable-a", "B prompt", false, cache.endpointGeneration.value)
+            else repository.submit("durable-a", "B prompt")
+            assertEquals("shared-profile", second.call("session.resume").params.string("profile"))
+            assertEquals("runtime-b", second.call("prompt.submit").params.string("session_id"))
+            assertTrue(second.calls.none { it.params.string("session_id") == "runtime-a" })
+        }
+    }
+
+    @Test
+    fun `uncollected endpoint transition refuses old observed turn corrections without resuming`() = runTest {
+        for (operation in listOf("steer", "redirect", "interrupt")) {
+            val cache = SessionCache()
+            val fence = EndpointDispatchFence()
+            val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope,
+                endpointDispatchFence = fence) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "shared-profile", 0L)
+            repository.submit("durable-a", "A prompt")
+            val turn = repository.observedTurnGeneration("durable-a")
+            assertTrue(turn >= 0L)
+            fence.invalidate()
+            clients.value = null
+            cache.resetForEndpointSwitch()
+            val second = FakeRpc()
+            clients.value = second
+            assertFalse(repository.hasLiveRuntime("durable-a"))
+            assertEquals(-1L, repository.observedTurnGeneration("durable-a"))
+            when (operation) {
+                "steer" -> assertEquals(GatewaySteerOutcome.Failed,
+                    repository.steerAtEndpoint("durable-a", "correction", cache.endpointGeneration.value, turn))
+                "redirect" -> assertEquals(GatewayRedirectOutcome.Failed,
+                    repository.redirectAtEndpoint("durable-a", "correction", cache.endpointGeneration.value, turn))
+                "interrupt" -> assertEquals(GatewayInterruptOutcome.NotActive,
+                    repository.requestInterruptAtEndpoint("durable-a", cache.endpointGeneration.value, turn))
+            }
+            assertTrue("$operation must not send or resume on B", second.calls.isEmpty())
+        }
+    }
+
+    @Test
     fun `retained reconnect profile cannot override B before its client collector runs`() = runTest {
         val cache = SessionCache()
         val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())

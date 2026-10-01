@@ -1084,22 +1084,39 @@ internal class LiveGatewaySessionRepository(
     }
 
     override fun observedTurnGeneration(durableId: String): Long = synchronized(stateLock) {
+        if (!runtimeStateIsCurrent()) return@synchronized -1L
         identities.runtimeFor(durableId)?.takeIf { it in activeRuntimeIds }
             ?.let { observedTurnGenerations[it] } ?: -1L
     }
 
-    private fun observedBinding(durableId: String, runtimeId: String) = SessionBinding(
-        durableId, runtimeId, observedTurnGenerations[runtimeId] ?: 0L,
-    )
+    private fun runtimeStateIsCurrent(): Boolean =
+        observedClient != null && observedClient === clientFlow.value &&
+            reconnectEndpointGeneration == cache.endpointGeneration.value
+
+    private fun observedBinding(durableId: String, runtimeId: String): SessionBinding {
+        val owner = ConnectionSnapshot(
+            observedClient ?: throw GatewayRpcException("The gateway connection changed."),
+            connectionGeneration,
+            reconnectEndpointGeneration,
+        )
+        ensureCurrent(owner)
+        return SessionBinding(durableId, runtimeId, owner, observedTurnGenerations[runtimeId] ?: 0L)
+    }
 
     private fun isObservedTurn(binding: SessionBinding): Boolean =
-        identities.runtimeFor(binding.durableId) == binding.runtimeId &&
+        runtimeStateIsCurrent() && binding.connection.client === observedClient &&
+            binding.connection.generation == connectionGeneration &&
+            binding.connection.endpointGeneration == reconnectEndpointGeneration &&
+            identities.runtimeFor(binding.durableId) == binding.runtimeId &&
             (binding.turnGeneration == null ||
                 binding.turnGeneration == (observedTurnGenerations[binding.runtimeId] ?: 0L))
     private val activeRuntimeIds = linkedSetOf<String>()
     // Runtime provenance must outlive disconnect and bootstrap list/project writes.
     // A present null is the launch store, not missing ownership metadata.
     private val reconnectProfiles = mutableMapOf<String, String?>()
+    // Idle bindings retain provenance too, but only interrupted work is retried
+    // automatically. Merely remembering an owner must not activate every tab.
+    private val reconnectSessionIds = linkedSetOf<String>()
     // Owns both retained retries and the runtimes awaiting disconnect collection.
     // Read synchronously: the endpoint and client collectors can run in either order.
     private var reconnectEndpointGeneration = cache.endpointGeneration.value
@@ -1185,107 +1202,11 @@ internal class LiveGatewaySessionRepository(
                 eventJob?.cancel()
                 bootstrapRefreshJob?.cancel()
                 val reset = synchronized(stateLock) {
-                    val previous = observedClient
-                    val endpointGeneration = cache.endpointGeneration.value
-                    val sameEndpoint = reconnectEndpointGeneration == endpointGeneration
-                    if (!sameEndpoint) reconnectProfiles.clear()
-                    reconnectEndpointGeneration = endpointGeneration
-                    observedClient = next
-                    connectionGeneration++
-                    mutableLiveNotificationMessages.value = LiveNotificationMessages(connectionGeneration)
-                    if (sameEndpoint && previous != null && previous !== next) {
-                        connectionScopedRuntimeIds().forEach { runtimeId ->
-                            identities.durableFor(runtimeId)?.let { durableId ->
-                                settleConnectionLoss(durableId, runtimeId)
-                                reconnectProfiles[durableId] = if (runtimeProfiles.containsKey(runtimeId)) {
-                                    runtimeProfiles[runtimeId]
-                                } else {
-                                    owningProfileParam(durableId)
-                                }
-                            }
-                        }
-                    }
-                    identities.clear()
-                    assistantByRuntime.clear()
-                    reasoningByRuntime.clear()
-                    toolsByRuntime.clear()
-                    todoToolIdsByRuntime.clear()
-                    todoClearJobsByDurableId.values.forEach(Job::cancel)
-                    todoClearJobsByDurableId.clear()
-                    optimisticUserByRuntime.clear()
-                    optimisticCorrectionsByRuntime.clear()
-                    progressRuntimeIds.clear()
-                    composerStatusRuntimeIds.clear()
-                    queuedPromptDrainReadyBatchIdsByRuntime.clear()
-                    contextBreakdownBySession.clear()
-                    // The next backend is a different host with its own
-                    // approvals config; nothing read from the previous one may
-                    // survive, and nothing may be shown until it answers.
-                    approvalModeRevision++
-                    confirmedApprovalMode = null
-                    approvalModeFlow.value = ApprovalModeState()
-                    // A replay epoch names one gateway process, so it — and the
-                    // seq watermarks it guards — die with the connection.
-                    globalEvents.clearConnectionState()
-                    // Branch labels are connection-scoped server truth; the
-                    // next session.info re-reports them after reconnect.
-                    branchByDurableId.clear()
-                    worktreeByDurableId.clear()
-                    unsupportedCapabilities.clear()
-                    // Offsets are facts about one backend's rows, cleared with
-                    // that backend's capabilities just above. So is which rows
-                    // the launch profile's own store answered with.
-                    sessionPageCursors.clear()
-                    launchListedRowIds.clear()
-                    // A fence outranks a page from the backend it was written
-                    // against. A new connection's pages are not that backend's,
-                    // so the fence goes with the offsets — and so does the
-                    // reconciliation that was waiting to retire it.
-                    pendingFlagWrites.clear()
-                    flagWriteReconcileJob?.cancel()
-                    flagWriteReconcileJob = null
-                    sessionPagingFlow.value = SessionListPaging()
-                    transcriptWindows.clear()
-                    publishEarlierMessagesLocked()
-                    processRefreshesInFlight.clear()
-                    runtimeEventRevisions.clear()
-                    runtimeProfiles.clear()
-                    observedTurnGenerations.clear()
-                    activeRuntimeIds.clear()
-                    localSubmitStartedAtByRuntime.clear()
-                    liveTurnRuntimeIds.clear()
-                    locallyRequestedInterruptRuntimeIds.clear()
-                    // Pending prompts are connection-scoped memory; a new
-                    // client rehydrates only through fresh resume responses.
-                    // These are stranded, not retired: the requests may still
-                    // be parked on the Gateway, so nothing here may later read
-                    // as "already answered".
-                    mutablePendingInputs.value = emptyMap()
-                    retiredKeys.clear()
-                    clearUnscopedRuntime()
-                    updateActiveTurnsLocked()
-                    val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
-                    if (next != null) ephemeralSessions.clear()
-                    ConnectionReset(
-                        generation = connectionGeneration,
-                        endpointGeneration = endpointGeneration,
-                        ephemeralDurableIds = ghosts,
-                        reconnectDurableIds = reconnectProfiles.keys.toList(),
-                        clearProjects = previous !== next,
-                    )
-                }
-                // A just-created session is persisted lazily on first submit.
-                // Keep it useful while disconnected, then let the next
-                // authoritative list decide whether it really exists.
-                reset.ephemeralDurableIds.forEach(cache::removeSession)
-                if (reset.clearProjects) {
-                    cache.clearProjects()
-                    cache.clearConnectionScopedFields(
-                        preserveGatewayQueue = reset.reconnectDurableIds.isNotEmpty(),
-                    )
+                    if (clientFlow.value !== next) return@collect
+                    synchronizeConnectionLocked(next)
                 }
                 if (next != null) {
-                    val sourceEndpointGeneration = cache.endpointGeneration.value
+                    val sourceEndpointGeneration = reset.endpointGeneration
                     eventJob = scope.launch {
                         launch {
                             next.events.collect { event ->
@@ -1318,7 +1239,8 @@ internal class LiveGatewaySessionRepository(
                         launch {
                             next.serverRequests.collect { request ->
                                 val unhandled = synchronized(stateLock) {
-                                    if (reset.generation == connectionGeneration && clientFlow.value === next) {
+                                    if (reset.generation == connectionGeneration && clientFlow.value === next &&
+                                        sourceEndpointGeneration == cache.endpointGeneration.value) {
                                         adoptOrRefuseServerRequest(
                                             durableId = null,
                                             runtimeId = request.runtimeSessionId,
@@ -2442,6 +2364,8 @@ internal class LiveGatewaySessionRepository(
             }
             reconnectProfiles.remove(durableId)
             reconnectProfiles.remove(canonicalId)
+            reconnectSessionIds.remove(durableId)
+            reconnectSessionIds.remove(canonicalId)
             if (canonicalId != durableId) {
                 rehomeEvents.tryEmit(SessionRehome(durableId, canonicalId))
             }
@@ -2513,7 +2437,7 @@ internal class LiveGatewaySessionRepository(
      */
     override suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> = navigationMutex.withLock {
         val binding = ensureRuntime(durableId)
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         val historyResult = connection.client.request("session.history", historyParams(binding.runtimeId))
         synchronized(stateLock) { ensureCurrent(connection) }
         parseHistory(historyResult, binding.runtimeId, clock())
@@ -2526,7 +2450,7 @@ internal class LiveGatewaySessionRepository(
      */
     override suspend fun branchSession(durableId: String, count: Int?): String = navigationMutex.withLock {
         val binding = ensureRuntime(durableId)
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         val result = connection.client.request(
             "session.branch",
             buildJsonObject {
@@ -2570,7 +2494,7 @@ internal class LiveGatewaySessionRepository(
     }
     override suspend fun loadModelOptions(durableId: String?): ModelCatalog {
         val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         val result = connection.client.request(
             "model.options",
             buildJsonObject {
@@ -2587,7 +2511,7 @@ internal class LiveGatewaySessionRepository(
 
     override suspend fun loadComposerState(durableId: String?): ComposerControlState {
         val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         fun params(key: String): JsonObject = buildJsonObject {
             put("key", JsonPrimitive(key))
             binding?.runtimeId?.let { put("session_id", JsonPrimitive(it)) }
@@ -2624,7 +2548,7 @@ internal class LiveGatewaySessionRepository(
 
     override fun hasLiveRuntime(durableId: String): Boolean {
         val trimmed = durableId.trim().takeIf(String::isNotEmpty) ?: return false
-        return synchronized(stateLock) { identities.runtimeFor(trimmed) != null }
+        return synchronized(stateLock) { runtimeStateIsCurrent() && identities.runtimeFor(trimmed) != null }
     }
 
     override suspend fun loadContextBreakdown(durableId: String): ContextBreakdown? {
@@ -2635,9 +2559,14 @@ internal class LiveGatewaySessionRepository(
         // from anyway. Desktop asks the same question by only ever passing a
         // session that is already active (`use-context-breakdown.ts:41` @
         // `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
-        val runtimeId = synchronized(stateLock) { identities.runtimeFor(trimmed) }
-            ?: return synchronized(stateLock) { contextBreakdownBySession[trimmed] }
-        val connection = connectionSnapshot()
+        val connection = synchronized(stateLock) {
+            if (!runtimeStateIsCurrent()) return null
+            connectionSnapshot()
+        }
+        val runtimeId = synchronized(stateLock) {
+            ensureCurrent(connection)
+            identities.runtimeFor(trimmed)
+        } ?: return synchronized(stateLock) { contextBreakdownBySession[trimmed] }
         val params = buildJsonObject {
             put("session_id", JsonPrimitive(runtimeId))
             // `_sess_nowait` (`tui_gateway/server.py:3564-3584` @ the same SHA)
@@ -2830,7 +2759,7 @@ internal class LiveGatewaySessionRepository(
 
     override suspend fun completePath(durableId: String?, query: String, cwd: String): CompletionResult {
         val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         val result = connection.client.request(
             "complete.path",
             buildJsonObject {
@@ -2889,7 +2818,7 @@ internal class LiveGatewaySessionRepository(
             throw GatewayRpcException("Reopen this session before attaching files.")
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             if (failure is CancellationException) throw failure
             throw GatewayRpcException("Reconnect to the Gateway and try again.")
@@ -3101,10 +3030,9 @@ internal class LiveGatewaySessionRepository(
         return submitMutexes.withLock(durableId) {
             require(wireText.isNotEmpty())
             val binding = ensureRuntime(durableId, expectedEndpointGeneration)
-            val connection = connectionSnapshot()
-            // The snapshot can be the replacement's (the endpoint moved while
-            // this call was queued); the fence is what says so before any
-            // prompt would cross.
+            val connection = connectionSnapshot(binding)
+            // Keep the connection that minted the binding. The endpoint fence
+            // additionally rejects a caller queued across an endpoint switch.
             requireEndpoint(expectedEndpointGeneration)
             submitInternalLocked(
                 binding,
@@ -3127,7 +3055,7 @@ internal class LiveGatewaySessionRepository(
         val endpoint = expectedEndpointGeneration
         requireEndpoint(endpoint)
         val binding = ensureRuntime(durableId, endpoint)
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         val snapshot = requestAtEndpointDispatch(connection, endpoint, "session.activate", objectParams("session_id", binding.runtimeId))
             .asObject("session.activate")
         val projection = parseLiveSessionProjection(snapshot, clock())
@@ -3217,7 +3145,7 @@ internal class LiveGatewaySessionRepository(
         return submitMutexes.withLock(durableId) {
             require(prompt.isNotEmpty())
             val binding = ensureRuntime(durableId, endpoint)
-            val connection = connectionSnapshot()
+            val connection = connectionSnapshot(binding)
             requireEndpoint(endpoint)
             val currentTranscript = cache.transcript(durableId)
             val prefixCutoff = currentTranscript.indexOfFirst { it.id == truncateBeforeEntryId }.let { index ->
@@ -3437,6 +3365,7 @@ internal class LiveGatewaySessionRepository(
                 if (failure is CancellationException) throw failure
                 return PendingInputResponse.Retryable
             }
+            if (key.connectionGeneration != connection.generation) return PendingInputResponse.Unanswerable
             // The answer is a JSON-RPC *response*, not a new call: one frame
             // carrying the question's own id, back over the socket that asked
             // it, so nothing below resolves a session or a runtime. The id is
@@ -3657,6 +3586,7 @@ internal class LiveGatewaySessionRepository(
             return interruptPreflightFailureOutcome(failure)
         }
         val (binding, interruptEpoch) = synchronized(stateLock) {
+            if (!runtimeStateIsCurrent()) return GatewayInterruptOutcome.NotActive
             val runtimeId = identities.runtimeFor(durableId) ?: return GatewayInterruptOutcome.NotActive
             if (expectedTurnGeneration != null && expectedTurnGeneration != observedTurnGenerations[runtimeId]) {
                 return GatewayInterruptOutcome.NotActive
@@ -3673,7 +3603,7 @@ internal class LiveGatewaySessionRepository(
             observedBinding(durableId, runtimeId) to nextEpoch
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             return interruptPreflightFailureOutcome(failure)
         }
@@ -3781,7 +3711,7 @@ internal class LiveGatewaySessionRepository(
             return redirectPreflightFailureOutcome(failure)
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             return redirectPreflightFailureOutcome(failure)
         }
@@ -3854,7 +3784,7 @@ internal class LiveGatewaySessionRepository(
             return steerPreflightFailureOutcome(failure)
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             return steerPreflightFailureOutcome(failure)
         }
@@ -3905,7 +3835,7 @@ internal class LiveGatewaySessionRepository(
             return processListPreflightFailureOutcome(failure)
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             return processListPreflightFailureOutcome(failure)
         }
@@ -3945,7 +3875,7 @@ internal class LiveGatewaySessionRepository(
             return processKillPreflightFailureOutcome(failure)
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             return processKillPreflightFailureOutcome(failure)
         }
@@ -3984,7 +3914,7 @@ internal class LiveGatewaySessionRepository(
             return goalStatusPreflightFailureOutcome(failure)
         }
         val connection = try {
-            connectionSnapshot()
+            connectionSnapshot(binding)
         } catch (failure: Throwable) {
             return goalStatusPreflightFailureOutcome(failure)
         }
@@ -4025,8 +3955,13 @@ internal class LiveGatewaySessionRepository(
     override suspend fun renameSession(durableId: String, title: String): String {
         require(durableId.isNotBlank()) { "Cannot rename a session without a durable id." }
         val trimmed = title.trim()
-        val runtimeId = synchronized(stateLock) { identities.runtimeFor(durableId) }
-        val client = clientFlow.value
+        val connection = synchronized(stateLock) {
+            if (runtimeStateIsCurrent()) connectionSnapshot() else null
+        }
+        val runtimeId = synchronized(stateLock) {
+            connection?.let { ensureCurrent(it); identities.runtimeFor(durableId) }
+        }
+        val client = connection?.client
 
         // Resolution rule:
         // Live runtime id -> session.title RPC
@@ -4419,7 +4354,9 @@ internal class LiveGatewaySessionRepository(
     private suspend fun correctionBinding(durableId: String, endpoint: Long?, expectedTurn: Long?): SessionBinding {
         if (endpoint == null) ensureRuntime(durableId)
         requireEndpoint(endpoint)
+        val connection = connectionSnapshot()
         return synchronized(stateLock) {
+            ensureCurrent(connection)
             val binding = observedBinding(durableId, identities.runtimeFor(durableId)
                 ?: throw GatewayRpcException("Open this Bot Chat again before correcting it."))
             if (expectedTurn != null && expectedTurn != binding.turnGeneration) {
@@ -4520,7 +4457,7 @@ internal class LiveGatewaySessionRepository(
         modelSwitch: Boolean = false,
     ): ControlMutationResult {
         val binding = ensureRuntime(durableId)
-        val connection = connectionSnapshot()
+        val connection = connectionSnapshot(binding)
         return try {
             val result = connection.client.request(
                 "config.set",
@@ -4567,18 +4504,23 @@ internal class LiveGatewaySessionRepository(
         durableId: String,
         expectedEndpointGeneration: Long? = null,
     ): SessionBinding {
+        val connection = connectionSnapshot()
+        requireEndpoint(expectedEndpointGeneration)
         synchronized(stateLock) {
-            identities.runtimeFor(durableId)?.let { return SessionBinding(durableId, it) }
+            ensureCurrent(connection)
+            identities.runtimeFor(durableId)?.let { return SessionBinding(durableId, it, connection) }
         }
         // The read above found no runtime, so this is a resume — and an
         // endpoint-bound caller's resume has to happen on the endpoint it
         // observed, not on whatever the slot holds now.
         val canonicalId = openSessionInternal(durableId, null, expectedEndpointGeneration)
         return synchronized(stateLock) {
+            ensureCurrent(connection)
             SessionBinding(
                 canonicalId,
                 identities.runtimeFor(canonicalId)
                     ?: throw GatewayRpcException("Hermes did not activate this session."),
+                connection,
             )
         }
     }
@@ -6071,11 +6013,137 @@ internal class LiveGatewaySessionRepository(
         DiagnosticsResult.Failed
     }
 
-    private fun connectionSnapshot(): ConnectionSnapshot {
+    /**
+     * Runtime state belongs to an exact client and endpoint, not to the last
+     * StateFlow emission collected. Public calls can run before either collector
+     * (and StateFlow can conflate the intervening null). Retire the old state
+     * synchronously before exposing any of its bindings to a new connection.
+     * The collector shares this transition so it cannot erase a binding already
+     * resumed by an immediate caller. Must hold stateLock.
+     */
+    private fun synchronizeConnectionLocked(next: GatewayRpcClient?): ConnectionReset {
+        val endpoint = cache.endpointGeneration.value
+        if (connectionGeneration != 0L && observedClient === next && reconnectEndpointGeneration == endpoint) {
+            return ConnectionReset(connectionGeneration, endpoint, emptyList(), reconnectSessionIds.toList(), false)
+        }
+        val previous = observedClient
+        val endpointGeneration = endpoint
+        val sameEndpoint = reconnectEndpointGeneration == endpointGeneration
+        if (!sameEndpoint) {
+            reconnectProfiles.clear()
+            reconnectSessionIds.clear()
+        }
+        reconnectEndpointGeneration = endpointGeneration
+        observedClient = next
+        connectionGeneration++
+        mutableLiveNotificationMessages.value = LiveNotificationMessages(connectionGeneration)
+        if (sameEndpoint && previous != null && previous !== next) {
+            val interruptedRuntimes = connectionScopedRuntimeIds()
+            (interruptedRuntimes + runtimeProfiles.keys).forEach { runtimeId ->
+                identities.durableFor(runtimeId)?.let { durableId ->
+                    if (runtimeId in interruptedRuntimes) {
+                        settleConnectionLoss(durableId, runtimeId)
+                        reconnectSessionIds += durableId
+                    }
+                    reconnectProfiles[durableId] = if (runtimeProfiles.containsKey(runtimeId)) {
+                        runtimeProfiles[runtimeId]
+                    } else {
+                        owningProfileParam(durableId)
+                    }
+                }
+            }
+        }
+        identities.clear()
+        assistantByRuntime.clear()
+        reasoningByRuntime.clear()
+        toolsByRuntime.clear()
+        todoToolIdsByRuntime.clear()
+        todoClearJobsByDurableId.values.forEach(Job::cancel)
+        todoClearJobsByDurableId.clear()
+        optimisticUserByRuntime.clear()
+        optimisticCorrectionsByRuntime.clear()
+        progressRuntimeIds.clear()
+        composerStatusRuntimeIds.clear()
+        queuedPromptDrainReadyBatchIdsByRuntime.clear()
+        contextBreakdownBySession.clear()
+        // The next backend is a different host with its own
+        // approvals config; nothing read from the previous one may
+        // survive, and nothing may be shown until it answers.
+        approvalModeRevision++
+        confirmedApprovalMode = null
+        approvalModeFlow.value = ApprovalModeState()
+        // A replay epoch names one gateway process, so it — and the
+        // seq watermarks it guards — die with the connection.
+        globalEvents.clearConnectionState()
+        // Branch labels are connection-scoped server truth; the
+        // next session.info re-reports them after reconnect.
+        branchByDurableId.clear()
+        worktreeByDurableId.clear()
+        unsupportedCapabilities.clear()
+        // Offsets are facts about one backend's rows, cleared with
+        // that backend's capabilities just above. So is which rows
+        // the launch profile's own store answered with.
+        sessionPageCursors.clear()
+        launchListedRowIds.clear()
+        // A fence outranks a page from the backend it was written
+        // against. A new connection's pages are not that backend's,
+        // so the fence goes with the offsets — and so does the
+        // reconciliation that was waiting to retire it.
+        pendingFlagWrites.clear()
+        flagWriteReconcileJob?.cancel()
+        flagWriteReconcileJob = null
+        sessionPagingFlow.value = SessionListPaging()
+        transcriptWindows.clear()
+        publishEarlierMessagesLocked()
+        processRefreshesInFlight.clear()
+        runtimeEventRevisions.clear()
+        runtimeProfiles.clear()
+        observedTurnGenerations.clear()
+        activeRuntimeIds.clear()
+        localSubmitStartedAtByRuntime.clear()
+        liveTurnRuntimeIds.clear()
+        locallyRequestedInterruptRuntimeIds.clear()
+        // Pending prompts are connection-scoped memory; a new
+        // client rehydrates only through fresh resume responses.
+        // These are stranded, not retired: the requests may still
+        // be parked on the Gateway, so nothing here may later read
+        // as "already answered".
+        mutablePendingInputs.value = emptyMap()
+        retiredKeys.clear()
+        clearUnscopedRuntime()
+        updateActiveTurnsLocked()
+        val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
+        if (next != null) ephemeralSessions.clear()
+        val reset = ConnectionReset(
+            generation = connectionGeneration,
+            endpointGeneration = endpointGeneration,
+            ephemeralDurableIds = ghosts,
+            reconnectDurableIds = reconnectSessionIds.toList(),
+            clearProjects = previous !== next || !sameEndpoint,
+        )
+        // A just-created session is persisted lazily on first submit.
+        // Keep it useful while disconnected, then let the next
+        // authoritative list decide whether it really exists.
+        reset.ephemeralDurableIds.forEach(cache::removeSession)
+        if (reset.clearProjects) {
+            cache.clearProjects()
+            cache.clearConnectionScopedFields(
+                preserveGatewayQueue = reset.reconnectDurableIds.isNotEmpty(),
+            )
+        }
+        return reset
+    }
+
+    private fun connectionSnapshot(binding: SessionBinding? = null): ConnectionSnapshot {
+        if (binding != null) return synchronized(stateLock) {
+            ensureCurrent(binding.connection)
+            binding.connection
+        }
         val client = clientFlow.value ?: throw GatewayRpcException("Connect to a Gateway first.")
         return synchronized(stateLock) {
             if (clientFlow.value !== client) throw GatewayRpcException("The gateway connection changed.")
-            ConnectionSnapshot(client, connectionGeneration)
+            synchronizeConnectionLocked(client)
+            ConnectionSnapshot(client, connectionGeneration, reconnectEndpointGeneration).also(::ensureCurrent)
         }
     }
 
@@ -6138,7 +6206,8 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun ensureCurrent(connection: ConnectionSnapshot) {
-        if (connection.generation != connectionGeneration || clientFlow.value !== connection.client) {
+        if (connection.generation != connectionGeneration || clientFlow.value !== connection.client ||
+            connection.endpointGeneration != cache.endpointGeneration.value) {
             throw GatewayRpcException("The gateway connection changed.")
         }
     }
@@ -6324,7 +6393,7 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    private data class ConnectionSnapshot(val client: GatewayRpcClient, val generation: Long)
+    private data class ConnectionSnapshot(val client: GatewayRpcClient, val generation: Long, val endpointGeneration: Long)
     private data class ProjectScopeSnapshot(val profile: String?, val revision: Long)
     private data class ProjectCreateAcceptance(
         val projectId: String,
@@ -6339,7 +6408,12 @@ internal class LiveGatewaySessionRepository(
         val reconnectDurableIds: List<String>,
         val clearProjects: Boolean,
     )
-    private data class SessionBinding(val durableId: String, val runtimeId: String, val turnGeneration: Long? = null)
+    private data class SessionBinding(
+        val durableId: String,
+        val runtimeId: String,
+        val connection: ConnectionSnapshot,
+        val turnGeneration: Long? = null,
+    )
     private data class OptimisticSubmit(
         val session: SessionSummary?,
         val transcript: List<TranscriptEntry>,
