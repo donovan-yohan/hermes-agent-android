@@ -1,6 +1,10 @@
 name: Disposable API34 focus diagnosis
 on:
   workflow_dispatch:
+  # Branch-only fallback: GitHub refuses dispatch of workflows absent on main.
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['.github/workflows/api34-focus-diagnostic.yml', '.github/diagnostics/api34_focus.py']
 permissions:
   contents: read
 concurrency:
@@ -8,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   focus:
-    if: github.ref == 'refs/heads/diagnostic/api34-focus'
+    if: github.ref == 'refs/heads/diagnostic/api34-focus' || (github.event_name == 'pull_request' && github.head_ref == 'diagnostic/api34-focus' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -17,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/setup-java@v4
         with:
@@ -70,7 +74,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: disposable-api34-focus-${{ github.sha }}
+          name: disposable-api34-focus-${{ github.event.pull_request.head.sha || github.sha }}
           retention-days: 2
           if-no-files-found: warn
           path: |
