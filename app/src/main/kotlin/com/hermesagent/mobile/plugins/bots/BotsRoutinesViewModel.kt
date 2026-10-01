@@ -114,8 +114,13 @@ data class BotsRoutinesUiState(
     val selection: Long = 0L,
     val pendingJobs: Set<String> = emptySet(),
     val actionFailed: Boolean = false,
+    val inspectorTarget: RoutineTarget? = null,
     val creation: RoutineCreationUiState = RoutineCreationUiState(),
 ) {
+    val inspectedJob: RoutineRow? get() = inspectorTarget?.takeIf {
+        phase == BotsRoutinesPhase.Ready && it.owner == owner && it.endpoint == endpointGeneration && it.selection == selection
+    }?.let { target -> jobs.singleOrNull { it.id == target.jobId } }
+
     fun target(job: RoutineRow): RoutineTarget? = owner?.let {
         RoutineTarget(it, endpointGeneration, selection, job.id)
     }
@@ -317,6 +322,18 @@ class BotsRoutinesViewModel(
     private fun isCurrent(target: RoutineTarget): Boolean =
         ownsVisibleScope(target) && target.selection == selection
 
+    /** Read-only admission deliberately works offline over the last held list. */
+    fun openInspector(target: RoutineTarget) {
+        if (dropIfEndpointChanged() || !isCurrent(target)) return
+        if (_uiState.value.phase != BotsRoutinesPhase.Ready || _uiState.value.jobs.count { it.id == target.jobId } != 1) return
+        _uiState.update { it.copy(inspectorTarget = target) }
+    }
+
+    fun closeInspector(target: RoutineTarget) {
+        if (dropIfEndpointChanged() || !isCurrent(target)) return
+        _uiState.update { if (it.inspectorTarget == target) it.copy(inspectorTarget = null) else it }
+    }
+
     private fun creationAdmitted(): Boolean = connected.value &&
         jobsEndpoint == endpointGeneration.value && _uiState.value.canCreate
 
@@ -485,6 +502,7 @@ class BotsRoutinesViewModel(
                 phase = BotsRoutinesPhase.Loading,
                 all = emptyList(),
                 jobs = emptyList(),
+                inspectorTarget = null,
                 scoped = null,
                 creationScopeConfirmed = false,
                 filterHint = null,
@@ -653,6 +671,11 @@ class BotsRoutinesViewModel(
                 endpointGeneration = jobsEndpoint,
                 phase = phase ?: if (selected.isEmpty()) BotsRoutinesPhase.Empty else BotsRoutinesPhase.Ready,
                 all = jobs,
+                inspectorTarget = state.inspectorTarget?.takeIf { target ->
+                    (phase == null || phase == BotsRoutinesPhase.Ready) &&
+                        target.owner == profile && target.endpoint == jobsEndpoint && target.selection == selection &&
+                        selected.count { it.id == target.jobId } == 1
+                },
                 jobs = selected,
                 scoped = scoped,
                 filterHint = routineFilterHint(jobs, selected),
@@ -697,6 +720,7 @@ class BotsRoutinesViewModel(
                 phase = BotsRoutinesPhase.Loading,
                 all = emptyList(),
                 jobs = emptyList(),
+                inspectorTarget = null,
                 scoped = null,
                 creationScopeConfirmed = false,
                 filterHint = null,

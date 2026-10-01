@@ -111,13 +111,14 @@ These are **omissions**, not invented backend limitations:
    Desktop opens a workspace through `screen-open.tsx:37`; that workspace host facility
    is not an Android plugin SDK door. `screen-autoraise.ts:34` identifies browser/computer
    tool activity; the current disabled controls do not implement its event/lifecycle policy.
-6. **Routine management:** full inspector, edit, run-now, run history and legacy
+6. **Routine management:** edit, run-now, run history and legacy
    auto-pause/delete policy. `cron.manage` explicitly accepts only list/add/remove/pause/
    resume and rejects other actions (`methods_tools.py:1354-1378`). Core REST supports
    detail/history/update/trigger at `hermes_cli/web_routers/cron.py:616-624,657-674`,
    but the Android plugin's namespaced REST door cannot access `/api/cron`. The list
-   already carries useful inspector fields; presenting those is still Android work,
-   not a backend blocker. Legacy pause/remove can use existing RPC; policy/UX is missing.
+   already carries inspector fields, now implemented as a read-only held-list sheet
+   (see `bot-routines.md` follow-up). Full prompt/history fetch is not implemented.
+   Legacy pause/remove can use existing RPC; policy/UX is missing.
 7. **Durable uncertain-write recovery:** forms prevent automatic retry during their
    admitted operation; routine creation additionally retains its uncertain owner lock
    for the model lifetime. There is no cross-process receipt journal or create idempotency
@@ -126,6 +127,15 @@ These are **omissions**, not invented backend limitations:
 8. **Rendered acceptance:** the new dialogs, menus, section actions and Once form still
    need aligned Desktop/Android captures and Compose execution in the parent build lane.
    Existing avatar/roster screenshots do not certify these changes.
+
+## Inspector follow-up evidence boundary
+
+The title-only read-only routine inspector and shared strict fifteen-minute
+overdue derivation are implemented after the management baseline. They use the
+held list without a new RPC and retain owner/endpoint/selection/job fences,
+terminal/unknown safeguards, bounded redaction and preview-only instruction.
+See `bot-routines.md` for exact upstream sources, regressions and remaining
+rendered/Gradle gates. Historical test totals below do not certify this follow-up.
 
 ## Verification
 

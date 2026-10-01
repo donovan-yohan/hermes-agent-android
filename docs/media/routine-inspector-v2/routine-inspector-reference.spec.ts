@@ -1,0 +1,97 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { setupMockBackend, waitForAppReady } from './fixtures'
+import { allowErrorBanners, expect, test } from './test'
+
+test('routine inspector pinned real component captures', async () => {
+ test.setTimeout(360_000)
+ allowErrorBanners()
+ const fixture=await setupMockBackend()
+ const {page}=fixture
+ const out=process.env.PARITY_OUT!
+ fs.mkdirSync(out,{recursive:true})
+ try {
+  await waitForAppReady(fixture,120_000)
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setTimezoneOverride', { timezoneId: 'UTC' })
+  await cdp.send('Emulation.setLocaleOverride', { locale: 'en-US' })
+  await page.evaluate(() => {
+    localStorage.setItem('hermes-desktop-theme-v2', 'mono')
+    localStorage.setItem('hermes-desktop-mode-v1', 'system')
+    localStorage.setItem('hermes-desktop-profile-themes-v1', '{}')
+    localStorage.setItem('hermes-desktop-profile-modes-v1', '{}')
+    window.dispatchEvent(new StorageEvent('storage', {key:'hermes-desktop-theme-v2',newValue:'mono'}))
+  })
+  await expect(page.locator('html')).toHaveAttribute('data-hermes-theme','mono')
+  expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone)).toBe('UTC')
+  expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().locale)).toBe('en-US')
+
+  await page.emulateMedia({colorScheme:'dark',reducedMotion:'reduce'})
+  await page.clock.setFixedTime(new Date('2026-09-17T16:00:00Z'))
+  await page.getByRole('button',{name:'Bots',exact:true}).or(page.getByRole('tab',{name:'Bots',exact:true})).first().click()
+  await page.getByRole('button',{name:'New bot or group chat'}).click()
+  await page.getByRole('menuitem',{name:/^New bot$/i}).click()
+  const create=page.getByRole('dialog',{name:/^New bot$/i})
+  await create.getByPlaceholder('inbox-triage').fill('ops')
+  await create.getByPlaceholder('Inbox Triage').fill('Ops')
+  await create.getByRole('button',{name:/^Create bot$/i}).click()
+  await expect(create).toBeHidden({timeout:60_000})
+  await page.locator('[data-roster-key="local::ops"]').click()
+  await expect(page.getByRole('tab',{name:'Scheduled jobs'}).first()).toBeVisible({timeout:60_000})
+  await page.evaluate(()=>{
+   const w=window as any
+   const probe=w.__parityCron={failList:false,log:[] as any[],jobs:[
+    {job_id:'syn-1',name:'[bot:ops] Morning digest',schedule:'every 1440m',repeat:'forever',deliver:'local',enabled:true,state:'scheduled',next_run_at:'2026-09-18T09:00:00+00:00',prompt_preview:'Synthetic parity fixture, no real routine text',last_run_at:'2026-09-16T09:00:00Z',last_status:'delivery_failed',last_delivery_error:'Synthetic delivery failure',model:'example-model',workdir:'tasks'},
+    {job_id:'syn-2',name:'[bot:ops] Nightly sweep',schedule:'30m',repeat:'3 times',enabled:false,state:'paused',paused_reason:'synthetic fixture reason'},
+    {job_id:'syn-3',name:'[bot:ops] Weekday standup',schedule:'0 9 * * 1-5',repeat:'forever',enabled:true,state:'scheduled',next_run_at:'2026-09-18T11:30:00+00:00'},
+    {job_id:'syn-4',name:'[bot:ops] Audit trail',schedule:'every 2h',repeat:'forever',enabled:true,state:'scheduled',next_run_at:'2026-09-18T12:00:00+00:00',prompt_preview:'You are running the scheduled routine "Audit trail" for agent \'ops\'. '},
+    {job_id:'syn-5',name:'[bot:ops] Completed check',schedule:'30m',repeat:'1 time',enabled:false,state:'completed',last_status:'ok',last_run_at:'2026-09-16T09:00:00Z'}
+   ]}
+   const send=WebSocket.prototype.send
+   WebSocket.prototype.send=function(text) {
+    let frame:any;try{frame=JSON.parse(String(text))}catch{return send.call(this,text)}
+    if(frame.method!=='cron.manage')return send.call(this,text)
+    probe.log.push(frame.params)
+    queueMicrotask(()=>this.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(probe.failList?{jsonrpc:'2.0',id:frame.id,error:{code:-32000,message:'Synthetic routine refusal'}}:{jsonrpc:'2.0',id:frame.id,result:{success:true,jobs:probe.jobs,scoped:'ops'}})})))
+   }
+  })
+  await page.getByRole('tab',{name:'Scheduled jobs'}).first().click()
+  await expect(page.getByRole('button',{name:'Morning digest',exact:true})).toBeVisible({timeout:35_000})
+  async function capture(state:string,theme:string,dialog:boolean) {
+   await expect(page.locator('html')).toHaveAttribute('data-hermes-mode',theme)
+   
+   await expect(page.locator('html')).toHaveAttribute('data-hermes-theme','mono')
+   const normalized=await page.evaluate(()=>({skin:document.documentElement.dataset.hermesTheme,mode:document.documentElement.dataset.hermesMode,locale:Intl.DateTimeFormat().resolvedOptions().locale,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,clock:new Date().toISOString()}))
+   expect(normalized.locale).toBe('en-US');expect(normalized.timezone).toBe('UTC')
+
+   expect(normalized.clock).toBe(state.startsWith('overdue')?'2026-09-18T16:00:00.000Z':'2026-09-17T16:00:00.000Z')
+   fs.writeFileSync(path.join(out,`${state}-${theme}.normalization.json`),JSON.stringify(normalized,null,2))
+   const target=dialog?page.getByRole('dialog'):page.locator('body')
+   await expect(target).toContainText(state==='sparse'?'Weekday standup':state==='paused'?'Nightly sweep':state==='completed'?'Completed check':'Morning digest')
+   if(state==='inspector')await expect(target).toContainText('Ran, but delivery failed')
+   if(state==='completed'){await expect(target).toContainText('Paused');await expect(target).toContainText('Succeeded')} 
+   await target.screenshot({path:path.join(out,`${state}-${theme}.png`),animations:'disabled'})
+   fs.writeFileSync(path.join(out,`${state}-${theme}.txt`),await target.innerText())
+  }
+  for(const theme of ['dark','light'] as const) {
+   await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'})
+   await page.clock.setFixedTime(new Date('2026-09-17T16:00:00Z'))
+   for(const [state,label] of [['inspector','Morning digest'],['sparse','Weekday standup'],['paused','Nightly sweep'],['completed','Completed check']]) {
+    await page.getByRole('button',{name:label,exact:true}).click()
+    await expect(page.getByRole('dialog')).toContainText('What this job runs, and when it runs next.')
+    await capture(state,theme,true)
+    await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).first().click()
+   }
+   await page.clock.setFixedTime(new Date('2026-09-18T16:00:00Z'))
+   await page.getByRole('button',{name:'Morning digest',exact:true}).click()
+   await expect(page.getByRole('dialog')).toContainText('Overdue since')
+   await capture('overdue-inspector',theme,true)
+   await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).first().click()
+   await capture('overdue',theme,false)
+  }
+  // A genuine list refusal after returning to the tab; preserve held rows.
+  await page.evaluate(()=>{(window as any).__parityCron.failList=true})
+  await page.getByRole('tab',{name:'Scheduled jobs'}).first().click()
+  fs.writeFileSync(path.join(out,'cron-requests.json'),JSON.stringify(await page.evaluate(()=>(window as any).__parityCron.log),null,2))
+ } finally { await fixture.cleanup() }
+})

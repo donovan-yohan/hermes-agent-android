@@ -1,0 +1,389 @@
+diff --git a/.github/workflows/visual-parity-capture.yml b/.github/workflows/visual-parity-capture.yml
+index bc924086..a8f0a09a 100644
+--- a/.github/workflows/visual-parity-capture.yml
++++ b/.github/workflows/visual-parity-capture.yml
+@@ -11,7 +11,7 @@ on:
+         description: Catalogued parity surface
+         required: true
+         type: choice
+-        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-group-chat, profile-avatars, desktop-sidebar, bot-management, bot-steer, notification-latest]
++        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, bot-management, bot-steer, notification-latest]
+       state:
+         description: Catalogued synthetic state (one artifact per dispatch)
+         required: true
+@@ -37,6 +37,12 @@ on:
+           - archived-pinned
+           - todo-name-aliases
+           - populated
++          - inspector
++          - sparse
++          - paused
++          - completed
++          - overdue
++          - overdue-inspector
+           - read-failure
+           - pause-pending
+           - action-rollback
+diff --git a/app/src/debug/kotlin/com/hermesagent/mobile/BotsRoutinesParityActivity.kt b/app/src/debug/kotlin/com/hermesagent/mobile/BotsRoutinesParityActivity.kt
+index 0b7aad7a..927eb1a7 100644
+--- a/app/src/debug/kotlin/com/hermesagent/mobile/BotsRoutinesParityActivity.kt
++++ b/app/src/debug/kotlin/com/hermesagent/mobile/BotsRoutinesParityActivity.kt
+@@ -100,6 +100,10 @@ internal enum class BotsRoutinesFixtureState(val wireValue: String) {
+      */
+     Populated("populated"),
+     Inspector("inspector"),
++    Sparse("sparse"),
++    Paused("paused"),
++    Completed("completed"),
++    OverdueInspector("overdue-inspector"),
+     Overdue("overdue"),
+ 
+     /** The Gateway answered, and the read failed while the connection was up. */
+@@ -164,11 +168,11 @@ private class FixtureHost(
+     private companion object {
+         /**
+          * One store, as `cron.manage {action:"list", include_disabled:true}`
+-         * sends it. Two of these belong to the selected bot, one is a legacy
+-         * delegated routine, and one is another bot's — which the scope echo
+-         * makes visible here, exactly as it would be on the real Gateway.
++         * sends it. Five synthetic ops jobs match the Desktop capture payload,
++         * including a legacy delegated routine and a disabled completed job.
++         * The scoped echo is the real Gateway permission boundary.
+          */
+-        const val POPULATED = """{"success":true,"count":4,"scoped":"ops","jobs":[
++        const val POPULATED = """{"success":true,"count":5,"scoped":"ops","jobs":[
+             {"job_id":"syn-1","name":"[bot:ops] Morning digest","schedule":"every 1440m","repeat":"forever",
+              "deliver":"local","enabled":true,"state":"scheduled","next_run_at":"2026-09-18T09:00:00+00:00",
+              "prompt_preview":"Synthetic parity fixture, no real routine text",
+@@ -180,7 +184,9 @@ private class FixtureHost(
+              "enabled":true,"state":"scheduled","next_run_at":"2026-09-18T11:30:00+00:00"},
+             {"job_id":"syn-4","name":"[bot:ops] Audit trail","schedule":"every 2h","repeat":"forever",
+              "enabled":true,"state":"scheduled","next_run_at":"2026-09-18T12:00:00+00:00",
+-             "prompt_preview":"You are running the scheduled routine \"Audit trail\" for agent 'ops'. "}
++             "prompt_preview":"You are running the scheduled routine \"Audit trail\" for agent 'ops'. "},
++            {"job_id":"syn-5","name":"[bot:ops] Completed check","schedule":"30m","repeat":"1 time",
++             "enabled":false,"state":"completed","last_run_at":"2026-09-16T09:00:00Z","last_status":"ok"}
+         ]}"""
+     }
+ }
+@@ -205,9 +211,16 @@ internal fun BotsRoutinesParityFixture(
+     // The destination, selected the way the roster row's own control selects it.
+     LaunchedEffect(viewModel) {
+         viewModel.selectOwner(profile = "ops", label = "Ops")
+-        if (state == BotsRoutinesFixtureState.Inspector) {
++        val inspectorId = when (state) {
++            BotsRoutinesFixtureState.Inspector, BotsRoutinesFixtureState.OverdueInspector -> "syn-1"
++            BotsRoutinesFixtureState.Sparse -> "syn-3"
++            BotsRoutinesFixtureState.Paused -> "syn-2"
++            BotsRoutinesFixtureState.Completed -> "syn-5"
++            else -> null
++        }
++        if (inspectorId != null) {
+             val ready = viewModel.uiState.first { it.phase == BotsRoutinesPhase.Ready }
+-            viewModel.openInspector(requireNotNull(ready.target(ready.jobs.first())))
++            viewModel.openInspector(requireNotNull(ready.target(ready.jobs.single { it.id == inspectorId })))
+         }
+         val action = when (state) {
+             BotsRoutinesFixtureState.PausePending, BotsRoutinesFixtureState.ActionRollback -> RoutineAction.Pause
+@@ -226,7 +239,13 @@ internal fun BotsRoutinesParityFixture(
+     val navigation = remember { PluginNavigation() }
+ 
+     Box(modifier.fillMaxSize()) {
+-        CompositionLocalProvider(LocalPluginNavigation provides navigation) {
++        CompositionLocalProvider(
++            LocalPluginNavigation provides navigation,
++            com.hermesagent.mobile.plugins.bots.LocalRoutineTimestampFormat provides remember {
++                java.time.format.DateTimeFormatter.ofLocalizedDateTime(java.time.format.FormatStyle.SHORT)
++                    .withLocale(java.util.Locale.US).withZone(java.time.ZoneOffset.UTC)
++            },
++        ) {
+             BotsRoutinesScreen(
+                 state = uiState,
+                 onBack = {},
+@@ -238,7 +257,7 @@ internal fun BotsRoutinesParityFixture(
+                 // The fixture's own immutable clock, so the captured next-run
+                 // line reads the same on every device on every day: the pixels
+                 // must be the fixture's, not the day the capture ran.
+-                nowMillis = if (state == BotsRoutinesFixtureState.Overdue) CAPTURE_CLOCK_MILLIS + 86_400_000L else CAPTURE_CLOCK_MILLIS,
++                nowMillis = if (state in setOf(BotsRoutinesFixtureState.Overdue, BotsRoutinesFixtureState.OverdueInspector)) CAPTURE_CLOCK_MILLIS + 86_400_000L else CAPTURE_CLOCK_MILLIS,
+                 modifier = Modifier.fillMaxSize(),
+             )
+         }
+diff --git a/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspector.kt b/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspector.kt
+index b5be63fa..017bc90a 100644
+--- a/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspector.kt
++++ b/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspector.kt
+@@ -21,7 +21,11 @@ fun RoutineRow.overdueMillis(nowMillis: Long): Long? {
+ data class RoutineDetailField(val label: String, val value: String)
+ 
+ /** Held-list facts only; no request, full prompt, or editable draft belongs here. */
+-fun routineDetailRows(job: RoutineRow, nowMillis: Long): List<RoutineDetailField> = buildList {
++fun routineDetailRows(
++    job: RoutineRow,
++    nowMillis: Long,
++    timestampFormat: DateTimeFormatter = defaultRoutineTimestampFormat(),
++): List<RoutineDetailField> = buildList {
+     fun field(label: String, value: String?) {
+         value?.takeIf { it.isNotBlank() }?.let { add(RoutineDetailField(label, it)) }
+     }
+@@ -35,22 +39,25 @@ fun routineDetailRows(job: RoutineRow, nowMillis: Long): List<RoutineDetailField
+     field("Schedule (raw)", job.rawSchedule?.takeIf { it != job.scheduleLabel }?.let { routineDisplay(it) })
+     field("Repeat", job.repeat?.let { routineDisplay(it) })
+     if (job.active) field(if (job.overdueMillis(nowMillis) != null) "Overdue since" else "Next run",
+-        job.nextRunMillis?.let { routineTimestamp(it, nowMillis) })
+-    field("Last run", job.lastRunMillis?.let { routineTimestamp(it, nowMillis) })
++        job.nextRunMillis?.let { routineTimestamp(it, nowMillis, timestampFormat) })
++    field("Last run", job.lastRunMillis?.let { routineTimestamp(it, nowMillis, timestampFormat) })
+     field("Last result", job.lastResult?.let { routineDisplay(it) })
+     field("Deliver to", job.delivery?.let { routineDisplay(it) })
+     field("Model", job.model?.let { routineDisplay(it) })
+     field("Working directory", job.workdir?.let { routineDisplay(it) })
+ }
+ 
+-private fun routineTimestamp(at: Long, now: Long): String =
+-    "${routineRelativeLabel(at, now)} · ${DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(at))}"
++internal fun defaultRoutineTimestampFormat(): DateTimeFormatter =
++    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withZone(ZoneId.systemDefault())
++
++private fun routineTimestamp(at: Long, now: Long, format: DateTimeFormatter): String =
++    "${routineRelativeLabel(at, now)} · ${format.format(Instant.ofEpochMilli(at))}"
+ 
+ internal fun routineLastResult(raw: String?): String? = when (raw?.trim()) {
+     null, "" -> null
+     "ok" -> "Succeeded"
+     "error" -> "Failed"
+-    "delivery_failed" -> "Delivery failed"
++    "delivery_failed" -> "Ran, but delivery failed"
+     "blocked_config" -> "Blocked by configuration (not run)"
+     else -> routineDisplay(raw)
+ }
+diff --git a/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/RoutineInspectorSheet.kt b/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/RoutineInspectorSheet.kt
+index a3892aff..3a02b8f0 100644
+--- a/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/RoutineInspectorSheet.kt
++++ b/app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/RoutineInspectorSheet.kt
+@@ -18,6 +18,9 @@ import androidx.compose.ui.unit.dp
+ import com.hermesagent.mobile.ui.common.TextButton
+ import com.hermesagent.mobile.ui.theme.HermesTheme
+ 
++/** Fixture-local formatting; never changes device or process defaults. */
++internal val LocalRoutineTimestampFormat = androidx.compose.runtime.compositionLocalOf { defaultRoutineTimestampFormat() }
++
+ /** Phone adaptation of Desktop's read-only detail dialog; no mutation actions. */
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+@@ -42,7 +45,7 @@ internal fun RoutineInspectorSheet(job: RoutineRow, nowMillis: Long, stale: Bool
+             Text("What this job runs, and when it runs next.", style = HermesTheme.type.caption, color = tokens.textTertiary)
+             if (stale) Text(BotsRoutinesCopy.STALE_NOTICE, style = HermesTheme.type.caption, color = tokens.textTertiary)
+             job.issue?.let { Text(routineDisplay(it, 1024), style = HermesTheme.type.body, color = tokens.textPrimary) }
+-            routineDetailRows(job, nowMillis).forEach { field ->
++            routineDetailRows(job, nowMillis, LocalRoutineTimestampFormat.current).forEach { field ->
+                 Column {
+                     Text(field.label, style = HermesTheme.type.caption, color = tokens.textTertiary)
+                     Text(field.value, style = HermesTheme.type.body, color = tokens.textPrimary)
+diff --git a/app/src/test/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspectorTest.kt b/app/src/test/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspectorTest.kt
+index f80a5809..bd33b4c0 100644
+--- a/app/src/test/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspectorTest.kt
++++ b/app/src/test/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspectorTest.kt
+@@ -112,7 +112,7 @@ class BotsRoutineInspectorTest {
+             "prompt_preview":"Short instruction", "prompt":"FULL PRIVATE INSTRUCTION"""")
+         val fields = routineDetailRows(job, job.nextRunMillis!! + 900_001)
+         assertEquals(listOf("Status", "Schedule", "Schedule (raw)", "Repeat", "Overdue since", "Last run", "Last result", "Deliver to", "Model", "Working directory"), fields.map { it.label })
+-        assertEquals("Delivery failed", fields.first { it.label == "Last result" }.value)
++        assertEquals("Ran, but delivery failed", fields.first { it.label == "Last result" }.value)
+         assertEquals("Short instruction", job.instructionPreview)
+         assertNull(row(""", "prompt":"FULL PRIVATE INSTRUCTION"""").instructionPreview)
+         assertFalse(job.toString().contains("FULL PRIVATE INSTRUCTION"))
+diff --git a/app/src/testDebug/kotlin/com/hermesagent/mobile/BotsRoutinesCaptureTest.kt b/app/src/testDebug/kotlin/com/hermesagent/mobile/BotsRoutinesCaptureTest.kt
+index 4fea20e4..0d22a2c3 100644
+--- a/app/src/testDebug/kotlin/com/hermesagent/mobile/BotsRoutinesCaptureTest.kt
++++ b/app/src/testDebug/kotlin/com/hermesagent/mobile/BotsRoutinesCaptureTest.kt
+@@ -51,6 +51,49 @@ class BotsRoutinesCaptureTest {
+         compose.waitForIdle()
+     }
+ 
++    @Test fun completedInspectorIsTerminalAndDoesNotInventAnotherRun() {
++        show(BotsRoutinesFixtureState.parse("completed"))
++        compose.onNodeWithText("What this job runs, and when it runs next.").assertIsDisplayed()
++        compose.onNodeWithText("Completed").assertIsDisplayed()
++        compose.onNodeWithText("Succeeded").assertIsDisplayed()
++        compose.onAllNodesWithText("Next run").assertCountEquals(0)
++        compose.onAllNodesWithText("Overdue since").assertCountEquals(0)
++    }
++
++    @Test fun sparseInspectorOmitsAbsentFields() {
++        show(BotsRoutinesFixtureState.parse("sparse"))
++        compose.onNodeWithText("What this job runs, and when it runs next.").assertIsDisplayed()
++        for (label in listOf("Instruction", "Last run", "Last result", "Model", "Deliver to", "Working directory")) {
++            compose.onAllNodesWithText(label).assertCountEquals(0)
++        }
++    }
++
++    @Test fun pausedInspectorShowsReasonButNoNextRun() {
++        show(BotsRoutinesFixtureState.parse("paused"))
++        compose.onNodeWithText("synthetic fixture reason").assertIsDisplayed()
++        compose.onAllNodesWithText("Next run").assertCountEquals(0)
++    }
++
++    @Test fun overdueInspectorShowsStoredSlotAndExactDeliveryResult() {
++        show(BotsRoutinesFixtureState.parse("overdue-inspector"))
++        compose.onNodeWithText("Overdue since").assertIsDisplayed()
++        compose.onNodeWithText("Ran, but delivery failed").assertIsDisplayed()
++    }
++
++    @Test fun captureFormattingDoesNotDependOnDeviceDefaults() {
++        Locale.setDefault(Locale.FRANCE)
++        TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
++        show(BotsRoutinesFixtureState.Inspector)
++        compose.onNodeWithText("in 17 hr · 9/18/26, 9:00 AM").assertIsDisplayed()
++        org.junit.Assert.assertEquals(Locale.FRANCE, Locale.getDefault())
++        org.junit.Assert.assertEquals("America/New_York", TimeZone.getDefault().id)
++    }
++
++    @Test fun readFailureExercisesRealRefusal() {
++        show(BotsRoutinesFixtureState.ReadFailure)
++        compose.onNodeWithText("The list may still be there — this was a read failure, not a delete.").assertIsDisplayed()
++    }
++
+     @Test fun pendingPauseUsesRealOptimisticRow() {
+         show(BotsRoutinesFixtureState.PausePending)
+         compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON)[0].assertIsNotEnabled()
+@@ -69,7 +112,8 @@ class BotsRoutinesCaptureTest {
+         show(BotsRoutinesFixtureState.Resumed)
+         compose.onNodeWithText("Nightly sweep").assertIsDisplayed()
+         compose.onAllNodesWithContentDescription(BotsRoutinesCopy.PAUSE_CRON).assertCountEquals(3)
+-        compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertCountEquals(0)
++        compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertCountEquals(1)
++        compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON)[0].assertIsNotEnabled()
+     }
+ 
+     @Test fun deleteReconcilesWithoutInventingAConfirmationState() {
+diff --git a/docs/parity/bot-routines.md b/docs/parity/bot-routines.md
+index f4d1b64f..a5a8cc67 100644
+--- a/docs/parity/bot-routines.md
++++ b/docs/parity/bot-routines.md
+@@ -142,6 +142,34 @@ claim. Compose journey and debug `inspector`/`overdue` states are authored for t
+ coordinated parent lane. `bot-routine-inspector` has a separate current-pin capture
+ catalog entry; historical `bot-routines` provenance remains intact.
+ 
++## Inspector acceptance follow-up (new-capture boundary)
++
++The genuine scratch packet at Desktop `587e673e2a2fae0616d8b750bb189217080f621a`
++exposed Android's shortened delivery-result label. Android now preserves the
++execution outcome with **Ran, but delivery failed**. The debug fixture also
++opens sparse, paused, completed and overdue inspectors directly and includes the
++same synthetic completed job as Desktop. Completed remains **Completed**, cannot
++resume, and has no next run: the documented terminal-state safety adaptation is
++unchanged even though Desktop's disabled completed inspector says **Paused**.
++
++The v2 inspector catalog/workflow choices target **new captures only**. The old
++`bot-routines` pin and all historical image/receipt identities remain unchanged.
++Inspector fixtures now supply en-US/UTC timestamp formatting locally, without
++changing device or process defaults; mono remains the capture skin. See the
++[new capture handoff](../workflows/routine-inspector-capture.md) for exact inputs,
++Desktop normalization, dispatch commands and receipt boundaries. No fresh pixels
++or renewed visual acceptance are claimed by these source changes.
++
++Local verification for this follow-up: the copy regression failed before the
++fix; completed state failed before fixture support; non-US/non-UTC fixture
++formatting failed before local injection. Focused inspector/capture/journey
++checks passed, then an unfiltered rerun of `testDebugUnitTest check assembleDebug`
++passed: **3,241 tests, zero failures/errors, one skipped** across 280 debug JVM
++suites. `check` also ran 2,576 release JVM tests with zero failures/errors and one
++skip; no release APK assembly was requested. The workflow/receipt Python checks
++passed (16 tests). These results are
++working-tree verification, not a committed-source or installed-device receipt.
++
+ ## Copy and navigation
+ 
+ The roster row's tap opens the bot's chat, exactly as before; Routines is a
+diff --git a/docs/parity/visual-capture-surfaces.json b/docs/parity/visual-capture-surfaces.json
+index d294711c..abd4bdd7 100644
+--- a/docs/parity/visual-capture-surfaces.json
++++ b/docs/parity/visual-capture-surfaces.json
+@@ -108,21 +108,53 @@
+       }
+     },
+     "bot-routine-inspector": {
+-      "desktop_sha": "e27448b231498e79ade668d68c0b6c6206951206",
+-      "fixture_id": "bot-routine-inspector-synthetic-v1",
++      "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
++      "fixture_id": "bot-routine-inspector-synthetic-v2",
+       "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+       "desktop_selector": "[role=dialog]",
+-      "desktop_selector_note": "RoutineDetailDialog at cron.tsx:428-475. Inspector must be opened before capture. Overdue list capture requires the pane subtree instead; this selector is not an overdue-list claim.",
++      "desktop_selector_note": "New captures only at 587e673e. Dialog states open the actual RoutineDetailDialog. overdue and read-failure are pane states, not dialog crops; scope to the production Scheduled jobs pane. Historical v1 receipts and screenshots retain their original identities; never restamp them.",
++      "capture_inputs": {
++        "skin": "mono",
++        "locale": "en-US",
++        "timezone": "UTC",
++        "clock": "2026-09-17T16:00:00Z",
++        "overdue_clock": "2026-09-18T16:00:00Z"
++      },
+       "states": {
+         "inspector": {
++          "interaction": [],
++          "post_interaction_accessibility": "Ran, but delivery failed",
++          "fixture_note": "Populated syn-1 inspector with synthetic delivery failure; execution succeeded. Fixed mono/en-US/UTC inputs. New paired captures still required."
++        },
++        "sparse": {
+           "interaction": [],
+           "post_interaction_accessibility": "What this job runs, and when it runs next.",
+-          "fixture_note": "Synthetic held-list selection through the real ViewModel. Android and Desktop rendering pending; not visual evidence."
++          "fixture_note": "Open syn-3 through the real ViewModel; absent optional fields omitted."
++        },
++        "paused": {
++          "interaction": [],
++          "post_interaction_accessibility": "synthetic fixture reason",
++          "fixture_note": "Open syn-2; supplied pause reason, no next run."
++        },
++        "completed": {
++          "interaction": [],
++          "post_interaction_accessibility": "Succeeded",
++          "fixture_note": "Open synthetic syn-5, state completed, enabled false, last_status ok. Android deliberately retains Completed and forbids resume; Desktop at this pin shows Paused. Documented safety adaptation, not exact-copy parity."
++        },
++        "overdue-inspector": {
++          "interaction": [],
++          "post_interaction_accessibility": "Overdue since",
++          "fixture_note": "Open syn-1 at overdue_clock; same stored next-run slot seven hours overdue."
+         },
+         "overdue": {
+           "interaction": [],
+           "post_interaction_accessibility": "Overdue since: 7 hr ago",
+-          "fixture_note": "Production list at a fixed clock seven hours after the first stored slot. No Desktop counterpart capture or parity claim."
++          "fixture_note": "List-only context at overdue_clock, not an inspector crop."
++        },
++        "read-failure": {
++          "interaction": [],
++          "post_interaction_accessibility": "The list may still be there \u2014 this was a read failure, not a delete.",
++          "fixture_note": "Actual refused initial list request and production Retry. Pane-only capture, no inspector exists."
+         }
+       }
+     },
+diff --git a/scripts/tests/test_visual_parity_workflow.py b/scripts/tests/test_visual_parity_workflow.py
+index 81e34a62..c766edcc 100644
+--- a/scripts/tests/test_visual_parity_workflow.py
++++ b/scripts/tests/test_visual_parity_workflow.py
+@@ -17,6 +17,23 @@ class VisualParityWorkflowTest(unittest.TestCase):
+         self.text = WORKFLOW.read_text(encoding="utf-8")
+         self.capture_script = CAPTURE_SCRIPT.read_text(encoding="utf-8")
+ 
++    def test_inspector_states_are_dispatchable_and_only_new_fixture_is_repinned(self) -> None:
++        import json
++        catalog = json.loads((ROOT / "docs/parity/visual-capture-surfaces.json").read_text())
++        spec = catalog["surfaces"]["bot-routine-inspector"]
++        self.assertEqual("587e673e2a2fae0616d8b750bb189217080f621a", spec["desktop_sha"])
++        self.assertEqual("bot-routine-inspector-synthetic-v2", spec["fixture_id"])
++        self.assertEqual("d177b119e9c56c9ddc0b7379ffce52341ec06584", catalog["surfaces"]["bot-routines"]["desktop_sha"])
++        match = re.search(r"options: \[(.*?)\]", self.text)
++        assert match is not None
++        surface_options = match.group(1).split(", ")
++        self.assertIn("bot-routine-inspector", surface_options)
++        states = set(re.findall(r"^          - ([a-z-]+)$", self.text, re.MULTILINE))
++        for state in ("inspector", "sparse", "paused", "completed", "overdue", "overdue-inspector", "read-failure"):
++            self.assertIn(state, spec["states"])
++            self.assertIn(state, states)
++            self.assertTrue(spec["states"][state]["post_interaction_accessibility"])
++
+     def test_is_manual_immutable_ref_and_artifact_only(self) -> None:
+         for required in ("workflow_dispatch:", "Exact immutable 40-character", "contents: read", "Upload Android packet only", "^[0-9a-f]{40}$", "CHECKED_OUT_REF"):
+             self.assertIn(required, self.text)
