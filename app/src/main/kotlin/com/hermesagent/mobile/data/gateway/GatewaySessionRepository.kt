@@ -6750,6 +6750,18 @@ private fun parseMessages(
         val id = message.messageId() ?: fallbackId(index)
         val rowId = message.durableRowId()
         val time = message.timestamp(nowMillis)
+        message.persistedTurnFailure()?.let { failure ->
+            // No durable address: this card represents zero backend rows.
+            // Derive the rendering key from the boundary so overlapping REST
+            // pages and RPC hydration identify the same synthetic occurrence.
+            add(AssistantTurn(
+                id = "failed-turn-${rowId?.value ?: id}",
+                markdown = "",
+                atMillis = time,
+                error = safeGatewayTerminalError(failure.raw, failure.surface),
+                errorDetails = failure.details,
+            ))
+        }
         when (message.string("role")) {
             "user" -> {
                 // A typed timeline row is classified by its own stored
@@ -6782,8 +6794,10 @@ private fun parseMessages(
                     )
                 }
                 val answer = message.answerText()
-                if (answer.isNotBlank()) {
-                    add(AssistantTurn(id, answer, time, rowId = rowId))
+                val interrupted = message.persistedInterrupted()
+                if (answer.isNotBlank() || interrupted) {
+                    add(AssistantTurn(id, answer, time, rowId = rowId,
+                        termination = if (interrupted) TurnTermination.InterruptedExternally else null))
                 }
             }
 
@@ -7395,6 +7409,19 @@ private fun appendInflightProjection(
 ): List<TranscriptEntry> {
     val inflight = projection.inflight
     if (inflight == null && !projection.busy) return history
+    if (projection.retainedFailure) {
+        // Desktop reconciliation.ts:333-357 @
+        // e05b16348b1d06a3311237423b0a4fc30d9c5aa1 scopes error dedupe to
+        // the tail turn, never all occurrences of a provider's error code.
+        val lastUser = history.indexOfLast { it is UserTurn }
+        val tailUser = history.getOrNull(lastUser) as? UserTurn
+        val code = parseTurnErrorDetails(inflight?.error, inflight?.errorSurface).code
+        if (code != null && (inflight?.user.isNullOrBlank() || tailUser?.text == inflight?.user) &&
+            history.drop(lastUser + 1).filterIsInstance<AssistantTurn>().any {
+                it.error != null && it.errorDetails?.code == code
+            }
+        ) return history
+    }
     val restored = history.toMutableList()
     val atMillis = inflight?.atMillis ?: fallbackTime
     val user = inflight?.user.orEmpty()
