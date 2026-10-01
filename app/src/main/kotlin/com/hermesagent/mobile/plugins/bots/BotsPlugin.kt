@@ -104,7 +104,7 @@ class BotsPlugin(
             endpointGeneration = host.endpointGeneration,
             connectionToken = avatarRoster?.let { host.connectionToken },
         )
-        refreshRoster = viewModel::refresh
+        refreshRoster = { avatarRoster?.refreshAvatars(); viewModel.refresh() }
         val actions = BotsActions(
             onRefresh = viewModel::refresh,
             onSearchChange = viewModel::setSearchQuery,
@@ -157,7 +157,9 @@ class BotsPlugin(
                         val origin = state
                         val managementState by management.state.collectAsStateWithLifecycle()
                         val modelState by management.model.state.collectAsStateWithLifecycle()
-                        BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState))
+                        val avatarState by management.avatar.state.collectAsStateWithLifecycle()
+                        BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState),
+                            avatarState, botAvatarActions(management.avatar, avatarState))
                         BotsRosterScreen(
                             state = state,
                             onBack = nav.onBack,
@@ -196,7 +198,9 @@ class BotsPlugin(
                             val origin = state
                             val managementState by management.state.collectAsStateWithLifecycle()
                             val modelState by management.model.state.collectAsStateWithLifecycle()
-                            BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState))
+                            val avatarState by management.avatar.state.collectAsStateWithLifecycle()
+                            BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState),
+                            avatarState, botAvatarActions(management.avatar, avatarState))
                             BotsRosterScreen(
                                 state = state,
                                 onBack = onBack,
