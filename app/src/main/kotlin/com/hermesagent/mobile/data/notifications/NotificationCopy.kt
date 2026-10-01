@@ -200,6 +200,7 @@ internal const val MAX_NOTIFICATION_PREVIEW = 400
 /** Prose only: omit code blocks/inline code, link destinations and markup on the OS surface. */
 internal fun String.notificationSafePreview(): String? = redact(this)
     .replace(Regex("(?s)```.*?(?:```|$)|~~~.*?(?:~~~|$)"), " ")
+    .replace(Regex("(?m)^(?: {4}|[ \t]*\t)[^\r\n]*"), " ")
     .replace(Regex("`[^`]*(?:`|$)"), " ")
     .replace(Regex("!?\\[([^]]*)]\\([^)]*\\)"), "$1")
     .replace(Regex("</?[A-Za-z][^>]*>")) { if (it.value == "<redacted>") it.value else " " }

@@ -3413,7 +3413,7 @@ internal class ChatViewModel(
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
         if (prompt.isEmpty() || redirectInFlight) return
-        if (steer && (prompt.startsWith("/") || attachments.value.isNotEmpty())) return
+        if (steer && (prompt.startsWith("/") || attachments.value.any { it.durableSessionId == sessionId })) return
         val observedTurn = repository.observedTurnGeneration(sessionId)
         val observedEndpoint = cache.endpointGeneration.value
         val botEndpoint = botChatEndpoint?.takeIf { botChatSessionId == sessionId }

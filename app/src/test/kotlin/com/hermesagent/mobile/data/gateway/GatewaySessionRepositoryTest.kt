@@ -3079,6 +3079,39 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `ordinary Stop follows the runtime across turn advancement while waiting but endpoint Stop does not`() = runTest {
+        for (endpointBound in listOf(false, true)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc()
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+                stopDispatchWaitMillis = 2_000L) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            repository.submit("durable-a", "first")
+            rpc.promptResponse = CompletableDeferred()
+            val submit = async { repository.submit("durable-a", "queued", queued = true) }
+            runCurrent()
+            val observed = repository.observedTurnGeneration("durable-a")
+            val stop = async {
+                if (endpointBound) repository.requestInterruptAtEndpoint("durable-a", 0L, observed)
+                else repository.requestInterrupt("durable-a")
+            }
+            runCurrent()
+            assertFalse(rpc.calls.any { it.method == "session.interrupt" })
+            rpc.emit("message.start", "runtime-a", """{"id":"next","role":"assistant"}""")
+            runCurrent()
+            assertTrue(repository.observedTurnGeneration("durable-a") != observed)
+            rpc.promptResponse?.complete(json("{}"))
+            runCurrent()
+            submit.await()
+            assertEquals(if (endpointBound) GatewayInterruptOutcome.Failed else GatewayInterruptOutcome.Interrupted, stop.await())
+            assertEquals(if (endpointBound) 0 else 1, rpc.calls.count { it.method == "session.interrupt" })
+        }
+    }
+
+    @Test
     fun `stop waits briefly then interrupts a prompt with a lost acknowledgement`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -4777,6 +4810,24 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `explicit profile cannot claim a runtime with recorded launch ownership`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        val launchRow = cache.session("durable-a")
+        assertTrue(runCatching { repository.openSessionAtEndpoint("durable-a", "profile-b", 0L) }.isFailure)
+        assertEquals(launchRow, cache.session("durable-a"))
+        // A genuinely new runtime is still accepted for the named owner.
+        rpc.resumeA = RESUME_RUNNING.replace("runtime-a", "runtime-b")
+        repository.openSessionAtEndpoint("durable-a", "profile-b", 0L)
+        assertEquals("profile-b", cache.session("durable-a")?.remoteProfile)
+    }
+
+    @Test
     fun `profile scoped resume rejects a runtime already proven foreign`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
@@ -4927,6 +4978,33 @@ class GatewaySessionRepositoryTest {
         runCurrent()
         repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
         val stop = async { repository.requestInterruptAtEndpoint("durable-a", 0L) }
+        runCurrent()
+        rpc.emit("message.complete", "runtime-a", """{"text":"A stopped","status":"interrupted"}""")
+        rpc.emit("message.start", "runtime-a", """{"id":"turn-b","role":"assistant"}""")
+        runCurrent()
+        // A second client queued on B while A's stop acknowledgement is held.
+        // Hydrate the real Gateway queue projection; a local submit would wait
+        // behind the held stop's dispatch mutex and would not exercise this race.
+        rpc.activateResult = """{"running":true,"queued":{"user":"B queued"}}"""
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        val queue = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts
+        assertFalse(queue.isNullOrEmpty())
+        reply.complete(json("""{"status":"interrupted"}"""))
+        assertEquals(GatewayInterruptOutcome.Interrupted, stop.await())
+        assertEquals(queue, cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts)
+    }
+
+    @Test
+    fun `late ordinary Stop acknowledgement preserves replacement turns gateway queue`() = runTest {
+        val cache = SessionCache()
+        val reply = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING; interruptResponse = reply }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        val stop = async { repository.requestInterrupt("durable-a") }
         runCurrent()
         rpc.emit("message.complete", "runtime-a", """{"text":"A stopped","status":"interrupted"}""")
         rpc.emit("message.start", "runtime-a", """{"id":"turn-b","role":"assistant"}""")
@@ -8307,6 +8385,7 @@ class GatewaySessionRepositoryTest {
         world.emit("message.delta", """{"role":"tool","delta":"private tool prose"}""")
         world.emit("message.start", """{"role":"tool","content":"private tool start"}""")
         assertEquals("Fresh answer", world.preview())
+        assertEquals("Fresh **answer**private tool prose", world.cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single { it.id == "live" }.markdown)
         assertEquals("Fresh **answer**", world.projection.activity.value.children.single().liveMessagePreview)
     }
 
@@ -8327,6 +8406,8 @@ class GatewaySessionRepositoryTest {
         world.emit("message.complete", """{"id":"first","content":"Late final"}""")
         world.emit("message.complete", """{"role":"tool","content":"Tool final"}""")
         assertEquals("New", world.preview())
+        assertEquals(SessionStatus.Working, world.cache.session("durable-a")?.status)
+        assertEquals("New", world.cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single { it.id == "second" }.markdown)
         world.emit("message.complete", """{"id":"second","content":"Final"}""")
         assertNull(world.preview())
         world.emit("message.delta", """{"id":"second","delta":"late terminal"}""")
@@ -8334,6 +8415,39 @@ class GatewaySessionRepositoryTest {
         world.emit("message.start", """{"id":"third","content":"Partial"}""")
         world.emit("error", """{"error":"failed"}""")
         assertNull(world.preview())
+    }
+
+    @Test
+    fun `generated notification id cannot discard wire deltas or persisted final row`() = runTest {
+        val world = NotificationWorld(this)
+        world.start()
+        val outcomes = mutableListOf<GatewayTurnOutcome>()
+        backgroundScope.launch { world.repository.turnOutcomes.collect { outcomes += it } }
+        runCurrent()
+        world.emit("message.start", """{"role":"assistant","content":"Partial"}""")
+        world.emit("message.delta", """{"message_id":"wire","delta":" answer"}""")
+        assertEquals("Partial answer", world.cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single().markdown)
+        assertEquals("Partial", world.preview()) // Projection still refuses unanchored wire prose.
+        world.emit("message.complete", """{"row_id":"persisted-row","message_id":"wire","content":"Final"}""")
+        val final = world.cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single()
+        assertEquals("Final", final.markdown)
+        assertFalse(final.streaming)
+        assertEquals(SessionStatus.Idle, world.cache.session("durable-a")?.status)
+        assertTrue(world.repository.liveNotificationMessages.value.messages.isEmpty())
+        assertEquals(-1L, world.repository.observedTurnGeneration("durable-a"))
+        assertEquals("Final", outcomes.single().assistantMessagePreview)
+        assertFalse(outcomes.single().failed)
+    }
+
+    @Test
+    fun `persisted row id is not compared to explicit wire message identity`() = runTest {
+        val world = NotificationWorld(this)
+        world.start()
+        world.emit("message.start", """{"message_id":"wire","role":"assistant"}""")
+        world.emit("message.delta", """{"row_id":"row","message_id":"wire","delta":"Answer"}""")
+        world.emit("message.complete", """{"row_id":"row","message_id":"wire","content":"Final"}""")
+        assertEquals("Final", world.cache.transcript("durable-a").filterIsInstance<AssistantTurn>().single().markdown)
+        assertEquals(SessionStatus.Idle, world.cache.session("durable-a")?.status)
     }
 
     @Test
@@ -8392,6 +8506,10 @@ class GatewaySessionRepositoryTest {
         assertNull(world.preview())
         world.emit("message.start", """{"id":"b","content":"Profile B"}""", "runtime-bot-b")
         assertEquals("Profile B", world.preview())
+        world.emit("message.complete", """{"id":"a","content":"Stale A final"}""")
+        assertEquals("Profile B", world.preview())
+        assertEquals(SessionStatus.Working, world.cache.session("durable-a")?.status)
+        assertFalse(world.cache.transcript("durable-a").filterIsInstance<AssistantTurn>().any { it.markdown == "Stale A final" })
     }
 
     @Test

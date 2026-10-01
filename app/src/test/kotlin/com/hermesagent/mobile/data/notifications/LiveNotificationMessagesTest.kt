@@ -65,6 +65,14 @@ class LiveNotificationMessagesTest {
         assertNull(projection.activity.value.children.single().liveMessagePreview)
     }
 
+    @Test fun `indented code never becomes notification prose`() {
+        assertNull("    echo private-output".notificationSafePreview())
+        assertNull("\tprivate-output\n\tmore-output".notificationSafePreview())
+        assertNull("  \tprivate-output".notificationSafePreview())
+        assertEquals("Before After", "Before\n\n    private-output\n\tmore-output\n\nAfter".notificationSafePreview())
+        assertEquals("Ordinary prose", "   Ordinary prose".notificationSafePreview())
+    }
+
     @Test fun `preview is plain redacted single line bounded and omits executable blocks`() {
         assertEquals("Answer link password=<redacted>", "# **Answer** [link](https://private)\npassword=abcdefgh `command`".notificationSafePreview())
         assertNull("```shell\nprivate command\n```".notificationSafePreview())

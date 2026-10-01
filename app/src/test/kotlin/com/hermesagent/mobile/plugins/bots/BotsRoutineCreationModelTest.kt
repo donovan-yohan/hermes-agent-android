@@ -174,6 +174,28 @@ class BotsRoutineCreationModelTest {
         assertFalse(reset.containsKey("repeat"))
     }
 
+    @Test fun `switching Daily to Once omits hidden options and switching back restores exact payload`() {
+        val daily = draft.copy(
+            schedule = RoutineScheduleDraft(repeatN = "12"),
+            continuity = true,
+            delivery = RoutineDelivery.BotChat,
+        )
+        val recurring = Json.parseToJsonElement("""{"action":"add","name":"[bot:Ops-Team] Morning","schedule":"0 9 * * *","prompt":"Do work","profile":"Ops-Team","repeat":12,"continuity":true,"deliver":"bot-chat"}""")
+        assertEquals(recurring, daily.payload("Ops-Team", "ops-team"))
+        val once = daily.copy(schedule = daily.schedule.copy(frequency = RoutineFrequency.Once))
+        assertEquals(
+            Json.parseToJsonElement("""{"action":"add","name":"[bot:Ops-Team] Morning","schedule":"in 30m","prompt":"Do work","profile":"Ops-Team"}"""),
+            once.payload("Ops-Team", "ops-team"),
+        )
+        val restored = once.copy(schedule = once.schedule.copy(frequency = RoutineFrequency.Daily))
+        assertEquals(recurring, restored.payload("Ops-Team", "ops-team"))
+        val advanced = once.copy(schedule = once.schedule.copy(frequency = RoutineFrequency.Advanced, raw = "0 9 * * *"))
+        assertEquals(
+            Json.parseToJsonElement("""{"action":"add","name":"[bot:Ops-Team] Morning","schedule":"0 9 * * *","prompt":"Do work","profile":"Ops-Team","continuity":true,"deliver":"bot-chat"}"""),
+            advanced.payload("Ops-Team", "ops-team"),
+        )
+    }
+
     @Test fun `only literal success with coherent identity creates`() {
         assertEquals(RoutineCreationAck.Created("id-1"), ack("""{"success":true,"job_id":"id-1","message":"private","guidance":"private"}"""))
         assertEquals(RoutineCreationAck.Created("id-1"), ack("""{"success":true,"job_id":"id-1","job_saved":true,"scheduler_registered":true,"retry_create":false}"""))

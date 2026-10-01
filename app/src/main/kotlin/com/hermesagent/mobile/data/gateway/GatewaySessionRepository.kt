@@ -1033,6 +1033,15 @@ internal class LiveGatewaySessionRepository(
     // the currently selected profile or a durable id (different DBs can collide).
     private val runtimeProfiles = mutableMapOf<String, String?>()
     private val observedTurnGenerations = mutableMapOf<String, Long>()
+    // Wire identities are not transcript row ids (nor our generated fallback ids).
+    // Only compare like-named explicit identifiers on the actual live assistant.
+    private val assistantWireIdentities = mutableMapOf<String, Pair<String, Map<String, String>>>()
+
+    private fun conflictsWithLiveAssistant(runtimeId: String, payload: JsonObject): Boolean {
+        val (entryId, fields) = assistantWireIdentities[runtimeId] ?: return false
+        if (assistantByRuntime[runtimeId]?.id != entryId) return false
+        return fields.any { (key, value) -> payload.string(key)?.let { it != value } == true }
+    }
 
     private val mutableLiveNotificationMessages = MutableStateFlow(LiveNotificationMessages())
     val liveNotificationMessages: StateFlow<LiveNotificationMessages> = mutableLiveNotificationMessages.asStateFlow()
@@ -1056,6 +1065,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun appendLiveNotificationDelta(durableId: String, runtimeId: String, payload: JsonObject) {
+        if (payload.string("role")?.let { it != "assistant" } == true) return
         val current = mutableLiveNotificationMessages.value
         val identity = current.scopes[durableId] ?: return
         if (identity != LiveNotificationScope(connectionGeneration, runtimeId, observedTurnGenerations[runtimeId] ?: return)) return
@@ -1079,6 +1089,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun advanceObservedTurn(runtimeId: String) {
+        assistantWireIdentities.remove(runtimeId)
         clearLiveNotificationRuntime(runtimeId)
         observedTurnGenerations[runtimeId] = sequence.incrementAndGet()
     }
@@ -2277,7 +2288,7 @@ internal class LiveGatewaySessionRepository(
             canonicalId = liveSnapshot.canonicalDurableId() ?: durableId
             snapshotRevision = synchronized(stateLock) {
                 ensureCurrent(connection)
-                if (explicitProfile != null && runtimeProfiles[runtimeId] != null &&
+                if (explicitProfile != null && runtimeProfiles.containsKey(runtimeId) &&
                     runtimeProfiles[runtimeId] != explicitProfile) {
                     throw GatewayRpcException("Hermes returned a runtime belonging to another profile.")
                 }
@@ -3600,7 +3611,11 @@ internal class LiveGatewaySessionRepository(
             }
             val nextEpoch = (interruptEpochByDurableId[durableId] ?: 0L) + 1L
             interruptEpochByDurableId[durableId] = nextEpoch
-            observedBinding(durableId, runtimeId) to nextEpoch
+            // Ordinary Stop targets the live runtime after submit ordering, not the
+            // turn observed before waiting. Endpoint actions retain their turn fence.
+            observedBinding(durableId, runtimeId).let {
+                if (expectedEndpointGeneration == null) it.copy(turnGeneration = null) else it
+            } to nextEpoch
         }
         val connection = try {
             connectionSnapshot(binding)
@@ -3632,6 +3647,7 @@ internal class LiveGatewaySessionRepository(
     ): GatewayInterruptOutcome {
         var confirmed = false
         var markerOwner: Long? = null
+        var dispatchedBinding = binding
         var queueAtDispatch: List<ComposerGatewayQueuedPrompt> = emptyList()
         return try {
             // Ordinary Sessions retain their non-endpoint RPC semantics. Their
@@ -3640,6 +3656,7 @@ internal class LiveGatewaySessionRepository(
             if (expectedEndpointGeneration == null) synchronized(stateLock) {
                 ensureCurrent(connection)
                 if (!ownsActiveUnscopedTurn(binding, connection)) return GatewayInterruptOutcome.NotActive
+                dispatchedBinding = observedBinding(binding.durableId, binding.runtimeId)
                 queueAtDispatch = cache.session(binding.durableId)?.composerStatus?.gatewayQueuedPrompts.orEmpty()
                 markerOwner = installLocalInterruptMarker(binding.runtimeId)
             }
@@ -3660,7 +3677,7 @@ internal class LiveGatewaySessionRepository(
             val interrupted = result.string("status") == "interrupted"
             synchronized(stateLock) {
                 ensureCurrent(connection)
-                if (interrupted && isObservedTurn(binding)) {
+                if (interrupted && isObservedTurn(dispatchedBinding)) {
                     confirmedInterruptEpochByDurableId[binding.durableId] = maxOf(
                         interruptEpoch,
                         confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L,
@@ -4659,6 +4676,10 @@ internal class LiveGatewaySessionRepository(
                         streaming = true,
                     )
                     assistantByRuntime[runtimeId] = turn
+                    assistantWireIdentities[runtimeId] = turn.id to
+                        listOf("message_id", "id", "row_id").mapNotNull { key ->
+                            payload.string(key)?.let { key to it }
+                        }.toMap()
                     cache.putEntry(durableId, turn)
                     clearProgress(durableId, runtimeId)
                     markRuntimeLive(runtimeId)
@@ -4679,11 +4700,7 @@ internal class LiveGatewaySessionRepository(
             }
 
             "message.delta" -> {
-                if (payload.string("role")?.let { it != "assistant" } == true) return false
-                if (payload.messageId()?.let { id ->
-                        (mutableLiveNotificationMessages.value.messages[durableId]?.entry as? AssistantTurn)
-                            ?.id?.let { it != id }
-                    } == true) return false
+                if (conflictsWithLiveAssistant(runtimeId, payload)) return false
                 appendLiveNotificationDelta(durableId, runtimeId, payload)
                 val current = assistantByRuntime[runtimeId] ?: AssistantTurn(
                     id = payload.messageId() ?: "gateway-assistant-${sequence.incrementAndGet()}",
@@ -4702,10 +4719,7 @@ internal class LiveGatewaySessionRepository(
 
             "message.complete" -> {
                 if (payload.string("role")?.let { it != "assistant" } == true) return false
-                if (payload.messageId()?.let { id ->
-                        (mutableLiveNotificationMessages.value.messages[durableId]?.entry as? AssistantTurn)
-                            ?.id?.let { it != id }
-                    } == true) return false
+                if (conflictsWithLiveAssistant(runtimeId, payload)) return false
                 clearPendingInputsForRuntime(runtimeId)
                 // The authoritative end-of-turn figure. The Gateway stops and
                 // joins its usage ticker *before* emitting this precisely so no
@@ -6055,6 +6069,7 @@ internal class LiveGatewaySessionRepository(
         }
         identities.clear()
         assistantByRuntime.clear()
+        assistantWireIdentities.clear()
         reasoningByRuntime.clear()
         toolsByRuntime.clear()
         todoToolIdsByRuntime.clear()

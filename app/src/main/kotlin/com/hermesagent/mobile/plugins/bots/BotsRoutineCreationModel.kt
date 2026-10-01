@@ -116,8 +116,10 @@ data class RoutineCreationDraft(
             put("prompt", creationPrompt(rawOwnerProfile, name, task, activeProfile))
             put("profile", rawOwnerProfile)
             if (schedule.frequency.showsRepeat && schedule.repeatN.isNotBlank()) put("repeat", positiveAmount(schedule.repeatN))
-            if (continuity) put("continuity", true)
-            if (delivery == RoutineDelivery.BotChat) put("deliver", "bot-chat")
+            if (schedule.frequency != RoutineFrequency.Once) {
+                if (continuity) put("continuity", true)
+                if (delivery == RoutineDelivery.BotChat) put("deliver", "bot-chat")
+            }
         }
     }
 }

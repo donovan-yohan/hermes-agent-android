@@ -557,7 +557,7 @@ private fun BotContextMenu(
             Hairline()
             BotMenuItem("Move to section", enabled) { expanded = false; onManage(BotRowAction.Move) }
             Hairline()
-            BotMenuItem("Delete — lifecycle support unavailable", false) { }
+            ComingSoonAction("Delete", Modifier.padding(horizontal = 12.dp))
         }
     }
 }

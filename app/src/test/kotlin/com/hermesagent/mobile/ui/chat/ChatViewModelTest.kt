@@ -1621,6 +1621,36 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `Steer ignores another sessions attachment but refuses the active sessions attachment`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "private draft".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/grant", "notes.txt", "text/plain")
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
+        viewModel.setDraft("blocked correction")
+        viewModel.steerDraftFromUi()
+        runCurrent()
+        assertTrue(repository.steers.isEmpty())
+        assertEquals("blocked correction", viewModel.uiState.value.draft)
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-b")).copy(status = SessionStatus.Working))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+        viewModel.setDraft("active correction")
+        viewModel.steerDraftFromUi()
+        runCurrent()
+        assertEquals(listOf("session-b" to "active correction"), repository.steers)
+        assertEquals("", viewModel.uiState.value.draft)
+        viewModel.selectSession("session-a")
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
+    }
+
+    @Test
     fun `explicit bot steer calls steer not redirect and retains rejected draft`() = runTest(dispatcher) {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()

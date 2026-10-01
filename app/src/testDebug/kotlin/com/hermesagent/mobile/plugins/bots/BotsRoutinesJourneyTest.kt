@@ -173,7 +173,9 @@ class BotsRoutinesJourneyTest {
         clients.value = rpc(listed())
         launchRoutes(); awaitText("Ops")
         compose.onNodeWithContentDescription("Actions for Ops").performClick()
-        compose.onNodeWithText("Delete — lifecycle support unavailable").assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Delete. $WIP_SPOKEN")
+            .assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Delete", useUnmergedTree = true).assertIsDisplayed()
     }
 
     @Test fun `registered roster callback refuses old endpoint before collectors run`() = staleEntry(false)

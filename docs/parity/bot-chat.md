@@ -104,9 +104,10 @@ The RPCs name a runtime, not a server-issued expected-turn token. The local fenc
 can reject a transition mobile has observed, but cannot detect a server turn
 change whose events have not reached mobile, or retract an already-sent frame
 before the server handles it. Server-side turn-id compare-and-dispatch would be
-needed to close that gap. A real two-client Gateway contract run has not been
-performed by this worker; the deterministic fake uses separate event delivery,
-pre-wire latches and held replies and is not presented as live two-client proof.
+needed to close that gap. The executed two-client loopback run above used a shared
+Python process and bypassed deployment authentication; it does not establish
+deployed two-client acceptance. Deterministic fake tests separately cover event
+delivery, pre-wire latches and held replies.
 
 ## Copy and navigation
 

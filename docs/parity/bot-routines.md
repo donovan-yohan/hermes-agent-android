@@ -7,8 +7,7 @@
 | Hermes Desktop and Gateway | `d177b119e9c56c9ddc0b7379ffce52341ec06584` | read-only `git -C <snapshot> show <sha>:<path>` |
 
 Every source location below is against that exact revision. The Desktop
-snapshot used for this slice is the read-only export at
-`/tmp/hermes-mobile-upstream-20260918`, whose `HEAD` is that SHA.
+snapshot used for this slice is a read-only disposable export of that SHA.
 
 ## Scope of this page
 
@@ -160,9 +159,9 @@ The Android half of a real capture is available and catalogued —
 `BotsRoutinesParityActivity` from the production view model and screen on
 synthetic data and an immutable clock. The pinned Desktop E2E fixture is
 `apps/desktop/e2e/bot-routines-pane-narrow.spec.ts:69-101,127-148,181-257`,
-which seeds a real cron job and selects the Routines subtree. Parent capture
-packets `/tmp/hm-desktop-routines-d177-proof` (light) and
-`/tmp/hm-desktop-routines-d177-dark-proof` (dark) provide Desktop evidence;
+which seeds a real cron job and selects the Routines subtree. The checked-in
+[Desktop rendering packet](visual/desktop-bot-render-evidence/README.md#routines)
+provides dark-mode Desktop evidence;
 this lane does not claim they are a side-by-side or exact-head Android match.
 The parent owns catalog validation, exact-head CI capture dispatch and
 inspection; this author lane does not run an emulator. The clock constant is

@@ -3,8 +3,8 @@
 ## Pin
 
 New wire and UI authority: `NousResearch/hermes-agent` at
-`d177b119e9c56c9ddc0b7379ffce52341ec06584`, read from the disposable
-`/tmp/hermes-mobile-upstream-20260918` snapshot. Historical ADR and global pins
+`d177b119e9c56c9ddc0b7379ffce52341ec06584`, read from a disposable
+upstream snapshot. Historical ADR and global pins
 remain unchanged. This is not a full Desktop parity claim.
 
 ## Sources and action evidence
