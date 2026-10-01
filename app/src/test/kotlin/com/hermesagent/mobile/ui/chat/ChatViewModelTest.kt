@@ -1425,6 +1425,78 @@ class ChatViewModelTest {
         assertTrue(viewModel.uiState.value.canCreateSession)
     }
 
+    /**
+     * A second `+`-shaped door must not mean a second create path.
+     *
+     * The sidebar header control and the chat header control both hand off to
+     * `createSession`, so the draft typed before the press is written back under
+     * the session it was typed in before the foreground moves — the rule
+     * `flushDraft` + `rehome` already enforce for a session switch, inherited
+     * here rather than reimplemented at a second door. That the create itself
+     * lands on the backend-returned durable id is
+     * `create selects backend-returned durable session`'s claim.
+     */
+    @Test
+    fun `a create from a second affordance still flushes the outgoing draft`() = runTest(dispatcher) {
+        val draftStore = TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, sidebarStore, draftStore, clock = { CLOCK }, bucketLabel = stubLabel)
+        backgroundScope.launch { subject.uiState.collect { } }
+        repeat(4) { runCurrent() }
+
+        subject.setDraft("typed before the plus")
+        // Create before the debounce can persist anything: this proves the
+        // create path flushes, not merely that the timer already saved it.
+        subject.createSession()
+        runCurrent()
+
+        assertEquals(
+            "the press reached the one create action",
+            1,
+            repository.created,
+        )
+        assertEquals(
+            "the draft belongs to the session it was typed in, not the new one",
+            "typed before the plus",
+            draftStore.drafts.first()["session-a"],
+        )
+        assertEquals(
+            "and the new session does not inherit it",
+            null,
+            draftStore.drafts.first()["created-1"],
+        )
+    }
+
+    /**
+     * The other half of "a session the Gateway has just created is empty":
+     * creating a session while another one is producing must neither cancel
+     * that turn nor paint into it. The new session is foreground and the
+     * producer keeps its own row.
+     */
+    @Test
+    fun `creating a session leaves a running turn on its own session`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        cache.upsertSession(cache.session("session-b")!!.copy(status = SessionStatus.Working))
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.runningCount)
+
+        viewModel.createSession()
+        runCurrent()
+
+        assertEquals("created-1", viewModel.uiState.value.activeSession?.id)
+        assertEquals("the background producer is untouched", 1, viewModel.uiState.value.runningCount)
+        assertEquals(
+            "its row still reads as running",
+            SessionStatus.Working,
+            cache.session("session-b")?.status,
+        )
+        assertEquals(
+            "and the new foreground session does not inherit it",
+            SessionStatus.Idle,
+            cache.session("created-1")?.status,
+        )
+    }
+
     @Test
     fun `failed Bot Chat resume restores the previous regular chat and New Chat is allowed`() = runTest(dispatcher) {
         collectState()
@@ -4788,7 +4860,7 @@ class ChatViewModelTest {
 
         // One character is a legitimate search; the wait, not a length floor,
         // is what keeps this from being a request per keystroke.
-        assertEquals(listOf("t" to null), repository.searches)
+        assertEquals(listOf("t" to "default"), repository.searches)
     }
 
     /** A retyped query cancels the pending one: one request, for the last word. */
@@ -4811,7 +4883,7 @@ class ChatViewModelTest {
             advanceTimeBy(50)
             runCurrent()
 
-            assertEquals(listOf("tunnel" to null), repository.searches)
+            assertEquals(listOf("tunnel" to "default"), repository.searches)
         }
 
     /** The trimmed query is what travels, and whitespace alone is not a query. */
@@ -4830,7 +4902,7 @@ class ChatViewModelTest {
         runCurrent()
         advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
         runCurrent()
-        assertEquals(listOf("tunnel" to null), repository.searches)
+        assertEquals(listOf("tunnel" to "default"), repository.searches)
     }
 
     /**
@@ -4884,7 +4956,7 @@ class ChatViewModelTest {
 
         assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
         assertTrue(viewModel.uiState.value.sessionRows.contains(SessionListRow.SearchSkeletons))
-        assertEquals(listOf("earlier" to null), repository.searches)
+        assertEquals(listOf("earlier" to "default"), repository.searches)
     }
 
     /**
@@ -4958,7 +5030,7 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(listOf("session-a", "session-b"), viewModel.uiState.value.sessionRows.rowIds())
-        assertEquals(listOf("tunnel" to null), repository.searches)
+        assertEquals(listOf("tunnel" to "default"), repository.searches)
     }
 
     /**
@@ -5006,13 +5078,13 @@ class ChatViewModelTest {
             // Immediately: gone. And nothing new has been asked for yet, so
             // this is the clear rather than a fresh answer arriving.
             assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
-            assertEquals(listOf("tunnel" to null), repository.searches)
+            assertEquals(listOf("tunnel" to "default"), repository.searches)
 
             advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
             runCurrent()
 
             // Re-asked for the new scope, and only for the new scope.
-            assertEquals(listOf("tunnel" to null, "tunnel" to "research"), repository.searches)
+            assertEquals(listOf("tunnel" to "default", "tunnel" to "research"), repository.searches)
             assertEquals(listOf("session-y"), viewModel.uiState.value.sessionRows.rowIds())
         }
 
@@ -5040,12 +5112,12 @@ class ChatViewModelTest {
         runCurrent()
 
         assertEquals(emptyList<String>(), viewModel.uiState.value.sessionRows.rowIds())
-        assertEquals(listOf("tunnel" to null), repository.searches)
+        assertEquals(listOf("tunnel" to "default"), repository.searches)
 
         advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
         runCurrent()
 
-        assertEquals(listOf("tunnel" to null, "tunnel" to null), repository.searches)
+        assertEquals(listOf("tunnel" to "default", "tunnel" to "default"), repository.searches)
         assertEquals(listOf("session-y"), viewModel.uiState.value.sessionRows.rowIds())
     }
 
@@ -5103,7 +5175,7 @@ class ChatViewModelTest {
         advanceTimeBy(ChatViewModel.SESSION_SEARCH_DEBOUNCE_MILLIS)
         runCurrent()
 
-        assertEquals(listOf("tunnel" to null), repository.searches)
+        assertEquals(listOf("tunnel" to "default"), repository.searches)
     }
 
     /**

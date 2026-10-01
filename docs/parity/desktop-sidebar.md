@@ -30,6 +30,16 @@ route in this slice. The tab strip and profile/Gateway footer remain visible whi
 
 ## Regression coverage
 
+Session-create controls also follow the source at
+`95f20517c25ee418da5337f4ead347008baaa2b3`, as cited in `ChatScreen.kt`
+and `SessionList.kt`. The flat sessions header offers its own `New session`
+control; the project overview retains `New project`. Compact and wide chat
+headers expose the pane's create action without a tab strip. All use existing
+callbacks and connection gates. `SessionCreateAffordancesTest` covers those
+controls; `ChatViewModelTest` covers draft retention and background-turn isolation.
+These newly integrated journeys await the parent build; they are not a rendered
+parity claim. Exact-head comparison remains pending #71.
+
 The existing mounted Compose bounds journey covers contribution placement and
 cramped scrolling. The sidebar mode implementation is stateful at the mounted
 `SessionList` surface, preserves the shell/list layout on return, and consumes
@@ -59,5 +69,6 @@ parity remains pending; later changes need new exact-head evidence.
 |---|---|---|---|
 | Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; visual comparison pending #71. |
 | Compact navigation rows | mobile-adaptation | 48dp touch floor | `SessionSidebarNavigationBoundsTest` checks cramped layout and action reachability. |
+| Pane-strip new-session action | mobile-adaptation | Chat-header plus labelled `New session`, since Android has no session tabs; flat sidebar header has its own plus | `SessionCreateAffordancesTest` covers callback, disabled state, compact/wide and project-mode exclusivity; rendered comparison pending #71. |
 | Bots mode | mobile-adaptation | Existing Android roster in the sidebar pane | `SessionSidebarNavigationBoundsTest` verifies mode selection and return; rendered roster comparison pending #71. |
 | Active plugin navigation | drift | Sidebar-origin routes retain the wide rail and compact drawer door; rows use semantic active-row fill/accent and suppress the retained chat selection. The compact drawer action shares the route's own header rather than adding a second row. | `SessionSidebarNavigationBoundsTest` covers row selection; `PluginShellRouteJourneyTest` covers header alignment, reopening the drawer and selecting the same active route. Updated device pixels, wide-route geometry and rendered comparison pending #71. |

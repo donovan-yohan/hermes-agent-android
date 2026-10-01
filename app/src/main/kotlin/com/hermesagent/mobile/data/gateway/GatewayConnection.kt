@@ -1129,16 +1129,17 @@ internal class GatewayConnectionManager(
             // connect finishes. The header contract matches the readiness
             // verifier exactly (ASCII token).
             val gatewayToken = backend.token.toString(Charsets.US_ASCII)
+            val gatewayEndpoint = "http://127.0.0.1:${forward.localPort}"
             _gatewayHttp.value = OkHttpGatewayHttp(
                 http = http,
-                resolveEndpoint = { "http://127.0.0.1:${'$'}{forward.localPort}" },
+                resolveEndpoint = { gatewayEndpoint },
                 resolveAuthorization = {
                     if (gatewayToken.isBlank()) null else "X-Hermes-Session-Token" to gatewayToken
                 },
             )
             _imageLoader.value = OkHttpGatewayImageLoader(
                 http = http,
-                resolveEndpoint = { "http://127.0.0.1:${'$'}{forward.localPort}" },
+                resolveEndpoint = { gatewayEndpoint },
                 resolveAuthorization = {
                     if (gatewayToken.isBlank()) null else "X-Hermes-Session-Token" to gatewayToken
                 },

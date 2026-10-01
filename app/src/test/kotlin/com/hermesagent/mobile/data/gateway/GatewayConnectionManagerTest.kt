@@ -403,6 +403,40 @@ class GatewayConnectionManagerTest {
         manager.disconnect()
     }
 
+    @Test
+    fun `SSH theme and image requests use the authenticated forwarded port after connect`() = runTest {
+        val transport = LifecycleTransport()
+        val requests = java.util.concurrent.CopyOnWriteArrayList<Request>()
+        val http = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += request
+            val body = if (request.url.encodedPath == "/api/dashboard/themes") {
+                """{"themes":[],"active":"default"}"""
+            } else {
+                "image fixture"
+            }
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
+                .code(200).message("OK").body(body.toResponseBody()).build()
+        }.build()
+        val manager = manager(transport, RecordingVerifier(), ReadinessRpc(), http = http)
+        assertTrue(manager.connect(profile(), SshCredential.none()) is GatewayConnectResult.Connected)
+        try {
+            val themes = GatewayRestClient(http = { manager.gatewayHttp.value }).dashboardThemes()
+            assertTrue("Connected SSH must also reach its theme route", themes is GatewayRestResult.Success)
+            val image = requireNotNull(manager.imageLoader.value).load("/fixture/image.png")
+            assertTrue("Connected SSH must also reach its image route", image.isSuccess)
+            image.getOrNull()?.fill(0)
+            assertEquals(listOf("/api/dashboard/themes", "/api/fs/download"), requests.map { it.url.encodedPath })
+            requests.forEach { request ->
+                assertEquals("127.0.0.1", request.url.host)
+                assertEquals(transport.forward.localPort, request.url.port)
+                assertTrue(request.header("X-Hermes-Session-Token")?.isNotBlank() == true)
+            }
+        } finally {
+            manager.disconnect()
+        }
+    }
+
     private fun kotlinx.coroutines.test.TestScope.manager(
         transport: LifecycleTransport,
         verifier: RecordingVerifier,
@@ -410,8 +444,10 @@ class GatewayConnectionManagerTest {
         managerScope: CoroutineScope = backgroundScope,
         servedTokenResolver: GatewayServedTokenResolver = GatewayServedTokenResolver { null },
         observeRpcToken: (ByteArray) -> Unit = {},
+        http: OkHttpClient = OkHttpClient(),
     ) = GatewayConnectionManager(
         scope = managerScope,
+        http = http,
         installStore = GatewayInstallStore { "0123456789abcdef0123456789abcdef" },
         sshOpen = { _, _ -> SshOpenResult.Connected(transport, "SSH-2.0-test") },
         lifecycleFactory = { runner ->

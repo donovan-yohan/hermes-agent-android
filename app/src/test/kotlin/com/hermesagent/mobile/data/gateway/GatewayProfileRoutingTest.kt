@@ -231,6 +231,17 @@ class GatewayProfileRoutingTest {
     }
 
     @Test
+    fun `resume preserves explicit default ownership`() = runTest {
+        val cache = SessionCache()
+        cache.upsertSession(SessionSummary("default-row", "Default", "", 0, remoteProfile = "default"))
+        val rpc = FakeProfileRpc()
+        val repository = repository(cache, rpc, backgroundScope)
+        runCurrent()
+        repository.openSession("default-row")
+        assertEquals("default", rpc.calls.last { it.first == "session.resume" }.second.text("profile"))
+    }
+
+    @Test
     fun `resume of a default-profile row sends no profile at all`() = runTest {
         val cache = SessionCache()
         cache.upsertSession(

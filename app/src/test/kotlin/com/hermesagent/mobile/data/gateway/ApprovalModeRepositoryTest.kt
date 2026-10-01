@@ -2,6 +2,7 @@ package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.session.SessionCache
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -19,8 +20,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.concurrent.thread
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
@@ -169,7 +168,7 @@ class ApprovalModeRepositoryTest {
     }
 
     @Test
-    fun `a streamed session_info reconciles the mode and the effective bypass`() = runTest {
+    fun `a streamed session_info rechecks launch config instead of trusting broadcast values`() = runTest {
         val rpc = FakeRpc()
         val repository = repository(rpc)
         runCurrent()
@@ -186,12 +185,13 @@ class ApprovalModeRepositoryTest {
         )
         runCurrent()
 
-        assertEquals(ApprovalMode.Off, repository.approvalMode.value.mode)
-        assertTrue(repository.approvalMode.value.bypassActive)
+        assertEquals(ApprovalMode.Manual, repository.approvalMode.value.mode)
+        assertEquals(false, repository.approvalMode.value.bypassActive)
+        assertNotNull(rpc.lastCall("config.get"))
     }
 
     @Test
-    fun `a named scope ignores a session_info that reports the launch profile`() = runTest {
+    fun `a named scope rechecks its own config after a broadcast`() = runTest {
         val rpc = FakeRpc()
         val repository = repository(rpc)
         runCurrent()
@@ -201,6 +201,7 @@ class ApprovalModeRepositoryTest {
         repository.openSession("session-1")
         runCurrent()
 
+        rpc.approvalMode = "smart"
         // `_session_info` resolves `approvals.mode` under whichever HERMES_HOME
         // is bound when it is emitted (`server.py:5953-5971`), and a turn's own
         // emits carry no profile binding at all. Accepting one here would paint
@@ -212,7 +213,82 @@ class ApprovalModeRepositoryTest {
         )
         runCurrent()
 
-        assertEquals(ApprovalMode.Off, repository.approvalMode.value.mode)
+        assertEquals(ApprovalMode.Smart, repository.approvalMode.value.mode)
+        assertEquals("research", rpc.lastCall("config.get")!!.params.string("profile"))
+    }
+
+    @Test
+    fun `a failed broadcast recheck cannot confirm another profiles permissive mode`() = runTest {
+        val rpc = FakeRpc()
+        val repository = repository(rpc)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "default"))
+        repository.refreshApprovalMode()
+        rpc.configGetError = GatewayRpcException("unavailable")
+        repository.applyStreamedApprovalMode(Json.parseToJsonElement("""{"approval_mode":"off","yolo":true}""").jsonObject)
+        runCurrent()
+        assertEquals("default", rpc.lastCall("config.get")!!.params.string("profile"))
+        assertEquals(ApprovalMode.Manual, repository.approvalMode.value.mode)
+        assertEquals(false, repository.approvalMode.value.bypassActive)
+    }
+
+    @Test
+    fun `a delayed broadcast recheck is discarded after a profile switch`() = runTest {
+        val rpc = FakeRpc()
+        val repository = repository(rpc)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha"))
+        rpc.approvalMode = "off"
+        val gate = CompletableDeferred<Unit>()
+        rpc.configGetGate = gate
+        repository.applyStreamedApprovalMode(Json.parseToJsonElement("""{"approval_mode":"off"}""").jsonObject)
+        runCurrent()
+        assertEquals("alpha", rpc.lastCall("config.get")!!.params.string("profile"))
+        repository.setProfileRouting(ProfileRouting(activeProfile = "beta"))
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(repository.approvalMode.value.mode)
+    }
+
+    @Test
+    fun `a broadcast burst coalesces while one scoped read is pending`() = runTest {
+        val rpc = FakeRpc()
+        val repository = repository(rpc)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "work"))
+        val before = rpc.calls.count { it.method == "config.get" }
+        val gate = CompletableDeferred<Unit>()
+        rpc.configGetGate = gate
+        val info = Json.parseToJsonElement("""{"approval_mode":"off"}""").jsonObject
+        repository.applyStreamedApprovalMode(info)
+        runCurrent()
+        repeat(100) { repository.applyStreamedApprovalMode(info) }
+        runCurrent()
+        assertEquals(before + 1, rpc.calls.count { it.method == "config.get" })
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(before + 2, rpc.calls.count { it.method == "config.get" })
+        assertEquals("work", rpc.lastCall("config.get")!!.params.string("profile"))
+    }
+
+    @Test
+    fun `a failed broadcast read cannot strand a rejected optimistic write`() = runTest {
+        val rpc = FakeRpc()
+        val repository = repository(rpc)
+        runCurrent()
+        repository.refreshApprovalMode()
+        val gate = CompletableDeferred<Unit>()
+        rpc.configSetGate = gate
+        rpc.configSetError = GatewayRpcException("write refused")
+        val write = async { repository.setApprovalMode(ApprovalMode.Off) }
+        runCurrent()
+        rpc.configGetError = GatewayRpcException("read unavailable")
+        repository.applyStreamedApprovalMode(Json.parseToJsonElement("""{"approval_mode":"off"}""").jsonObject)
+        runCurrent()
+        gate.complete(Unit)
+        write.await()
+        runCurrent()
+        assertEquals(ApprovalMode.Manual, repository.approvalMode.value.mode)
     }
 
     @Test
@@ -266,52 +342,36 @@ class ApprovalModeRepositoryTest {
     }
 
     @Test
-    fun `a session_info racing a profile switch cannot repaint the profile just left`() = runTest {
+    fun `a launch profile broadcast read cannot repaint a switched profile after its read fails`() = runTest {
         val rpc = FakeRpc()
         val repository = repository(rpc)
         runCurrent()
-
-        // A launch-profile `session.info` is applied on the event pump while the
-        // rail's switch lands on another thread. The scope test and the publish
-        // have to be one critical section: read under its own acquisition, the
-        // gate can see the launch profile, the switch can land, and the publish
-        // then paints the new profile's chip with the old one's posture — the
-        // answer `setProfileRouting` had just dropped, and one a failed scoped
-        // `config.get` would leave standing. Raw threads because a single test
-        // dispatcher cannot interleave two of them inside one function.
-        val info = Json.parseToJsonElement(
+        repository.refreshApprovalMode()
+        assertEquals(ApprovalMode.Manual, repository.approvalMode.value.mode)
+        val before = rpc.calls.count { it.method == "config.get" }
+        val gate = CompletableDeferred<Unit>()
+        rpc.configGetGate = gate
+        rpc.approvalMode = "off"
+        repository.applyStreamedApprovalMode(Json.parseToJsonElement(
             """{"stored_session_id":"session-1","running":false,"approval_mode":"off"}""",
-        ).jsonObject
-        val launchScope = ProfileRouting()
-        val namedScope = ProfileRouting(activeProfile = "beta")
-        val stop = AtomicBoolean(false)
-        val pump = thread(name = "session-info-pump") {
-            while (!stop.get()) repository.applyStreamedApprovalMode(info)
-        }
+        ).jsonObject)
+        runCurrent()
+        assertEquals(before + 1, rpc.calls.count { it.method == "config.get" })
+        assertNull(rpc.lastCall("config.get")!!.params.string("profile"))
+        assertEquals(ApprovalMode.Manual, repository.approvalMode.value.mode)
 
-        var repaintedOnRound: Int? = null
-        try {
-            repeat(RACE_ROUNDS) { round ->
-                repository.setProfileRouting(launchScope)
-                Thread.yield()
-                repository.setProfileRouting(namedScope)
-                // Beta is on the rail before this line: nothing the pump is
-                // holding may reach the chip any more.
-                repeat(SETTLE_READS) {
-                    if (repaintedOnRound == null && repository.approvalMode.value.mode != null) {
-                        repaintedOnRound = round
-                    }
-                }
-            }
-        } finally {
-            stop.set(true)
-            pump.join()
-        }
+        repository.setProfileRouting(ProfileRouting(activeProfile = "beta"))
+        assertNull(repository.approvalMode.value.mode)
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(repository.approvalMode.value.mode)
 
-        assertNull(
-            "a launch-profile session.info repainted the switched-to profile on round $repaintedOnRound",
-            repaintedOnRound,
-        )
+        rpc.configGetGate = null
+        rpc.configGetError = GatewayRpcException("unavailable")
+        repository.refreshApprovalMode()
+        runCurrent()
+        assertEquals("beta", rpc.lastCall("config.get")!!.params.string("profile"))
+        assertNull(repository.approvalMode.value.mode)
     }
 
     @Test
@@ -355,15 +415,6 @@ class ApprovalModeRepositoryTest {
         assertEquals(false, repository.approvalMode.value.bypassActive)
     }
 
-    /**
-     * Enough switches to land one inside the window a second lock acquisition
-     * would open; the assertion itself holds on every round of a correct build.
-     */
-    private companion object {
-        const val RACE_ROUNDS = 2_000
-        const val SETTLE_READS = 64
-    }
-
     private fun kotlinx.coroutines.test.TestScope.repository(rpc: FakeRpc) = LiveGatewaySessionRepository(
         SessionCache(),
         MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
@@ -378,11 +429,12 @@ class ApprovalModeRepositoryTest {
 
         var approvalMode: String = "manual"
         var configGetError: Throwable? = null
+        var configGetGate: CompletableDeferred<Unit>? = null
         var configSetError: Throwable? = null
         var configSetGate: CompletableDeferred<Unit>? = null
         var configSetEchoesValue: Boolean = true
 
-        private val calls = mutableListOf<RpcCall>()
+        val calls = mutableListOf<RpcCall>()
 
         data class RpcCall(val method: String, val params: JsonObject)
 
@@ -398,6 +450,7 @@ class ApprovalModeRepositoryTest {
             calls += RpcCall(method, params)
             return when (method) {
                 "config.get" -> {
+                    configGetGate?.await()
                     configGetError?.let { throw it }
                     Json.parseToJsonElement("""{"value":"$approvalMode"}""")
                 }
