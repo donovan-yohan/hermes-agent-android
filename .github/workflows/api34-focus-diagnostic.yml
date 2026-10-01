@@ -1,0 +1,91 @@
+name: Disposable API34 focus recurrence
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: ['.github/workflows/api34-focus-diagnostic.yml', '.github/diagnostics/**']
+permissions:
+  contents: read
+concurrency:
+  group: disposable-api34-focus-651d659
+  cancel-in-progress: false
+jobs:
+  focus:
+    if: github.event_name == 'pull_request' && github.head_ref == 'diagnostic/api34-focus-651d659' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      ANDROID_SERIAL: emulator-5554
+      FOCUS_SYNTHETIC_OPT_IN: 651d659-full-first
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify diagnostic parsers
+        run: python3 -m unittest discover -s .github/diagnostics -p 'test_*.py' -v
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Match main's cached synthetic AVD; restore only, never alter its cache.
+      - name: Restore main emulator image and AVD
+        id: avd-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-google_apis-x86_64-pixel_6-v2
+          restore-keys: |
+            avd-api34-google_apis-x86_64-pixel_6-
+      - name: Create the AVD snapshot if main cache is absent
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'AVD created; no test preconditioning.'
+      - name: Full suite FIRST and ONCE with main build-prep-stop-connected timing
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
+          disable-animations: true
+          script: |
+            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+            ./scripts/prepare-ci-emulator.sh
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            python3 .github/diagnostics/api34_connected.py
+      - name: Retain only synthetic allowlisted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-api34-recurrence-${{ github.event.pull_request.head.sha }}
+          retention-days: 2
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/api34-focus/full/identity.json
+            ${{ runner.temp }}/api34-focus/full/result.json
+            ${{ runner.temp }}/api34-focus/full/focus.jsonl
+            ${{ runner.temp }}/api34-focus/full/test-events.jsonl
+            ${{ runner.temp }}/api34-focus/full/connected.txt
+            app/build/outputs/androidTest-results/connected/**/TEST-*.xml
