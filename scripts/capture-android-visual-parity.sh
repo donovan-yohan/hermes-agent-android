@@ -40,13 +40,13 @@ fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixt
 # running the capture without it would publish pixels of a state that never
 # happened.
 ordered_args=()
-if [[ "$CAPTURE_SURFACE" == "bot-model-config" ]]; then
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
   ordered_args=(--ordered-actions "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["state_spec"]["interaction"]))' "$request_json")")
 fi
 interaction_kinds="$(python3 -c '
 import json,sys
 request = json.load(open(sys.argv[1]))
-values = [] if request["surface"] == "bot-model-config" else request["state_spec"].get("interaction", [])
+values = [] if request["surface"] in ("bot-model-config", "bot-avatar-editor") else request["state_spec"].get("interaction", [])
 unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
 if unsupported:
     sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
@@ -67,7 +67,7 @@ fi
 # Ordered model captures launch inside Python, after installed APK identity is
 # collected. This keeps signing/pull work outside the production loading budget.
 launch_args=()
-if [[ "$CAPTURE_SURFACE" == "bot-model-config" ]]; then
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
   launch_args=(--launch-fixture)
 else
   adb shell am start -W -S -n "$activity" \

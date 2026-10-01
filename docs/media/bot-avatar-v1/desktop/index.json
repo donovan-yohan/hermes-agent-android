@@ -1,0 +1,114 @@
+[
+  {
+    "state": "loaded",
+    "theme": "light",
+    "receipt": "desktop/loaded-light/contract.json",
+    "image": "desktop/loaded-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "loaded",
+    "theme": "dark",
+    "receipt": "desktop/loaded-dark/contract.json",
+    "image": "desktop/loaded-dark/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "loading",
+    "theme": "light",
+    "receipt": "desktop/loading-light/contract.json",
+    "image": "desktop/loading-light/screenshot.png",
+    "new_capture": false
+  },
+  {
+    "state": "loading",
+    "theme": "dark",
+    "receipt": "desktop/loading-dark/contract.json",
+    "image": "desktop/loading-dark/screenshot.png",
+    "new_capture": false
+  },
+  {
+    "state": "picking",
+    "theme": "light",
+    "receipt": "desktop/picking-light/contract.json",
+    "image": "desktop/picking-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "picking",
+    "theme": "dark",
+    "receipt": "desktop/picking-dark/contract.json",
+    "image": "desktop/picking-dark/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "cancel",
+    "theme": "light",
+    "receipt": "desktop/cancel-light/contract.json",
+    "image": "desktop/cancel-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "cancel",
+    "theme": "dark",
+    "receipt": "desktop/cancel-dark/contract.json",
+    "image": "desktop/cancel-dark/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "error",
+    "theme": "light",
+    "receipt": "desktop/error-light/contract.json",
+    "image": "desktop/error-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "error",
+    "theme": "dark",
+    "receipt": "desktop/error-dark/contract.json",
+    "image": "desktop/error-dark/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "changed",
+    "theme": "light",
+    "receipt": "desktop/changed-light/contract.json",
+    "image": "desktop/changed-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "changed",
+    "theme": "dark",
+    "receipt": "desktop/changed-dark/contract.json",
+    "image": "desktop/changed-dark/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "saved",
+    "theme": "light",
+    "receipt": "desktop/saved-light/contract.json",
+    "image": "desktop/saved-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "saved",
+    "theme": "dark",
+    "receipt": "desktop/saved-dark/contract.json",
+    "image": "desktop/saved-dark/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "cleared",
+    "theme": "light",
+    "receipt": "desktop/cleared-light/contract.json",
+    "image": "desktop/cleared-light/screenshot.png",
+    "new_capture": true
+  },
+  {
+    "state": "cleared",
+    "theme": "dark",
+    "receipt": "desktop/cleared-dark/contract.json",
+    "image": "desktop/cleared-dark/screenshot.png",
+    "new_capture": true
+  }
+]

@@ -494,14 +494,14 @@ def model_v2_proof(spec, before, after, steps, nodes, screenshot_hash):
     return proof
 
 
-def bracketed_screenshot(serial, package, activity, expected, launch_started=None, runtime_reader=None):
+def bracketed_screenshot(serial, package, activity, expected, launch_started=None, runtime_reader=None, deadline_seconds=20):
     """Fail closed if the state/focus changes or the conservative launch budget expires."""
     verify_app_identity(serial, package, activity)
     before = accessibility_snapshot(serial, expected, attempts=1, package=package)
     runtime_before = runtime_reader() if runtime_reader else None
     started = time.monotonic()
-    if launch_started is not None and not 0 <= started - launch_started < 20:
-        raise SystemExit("loading capture exceeded the production 20-second deadline before screenshot")
+    if launch_started is not None and not 0 <= started - launch_started < deadline_seconds:
+        raise SystemExit(f"loading capture exceeded the production {deadline_seconds}-second deadline before screenshot")
     screenshot = adb(serial, "exec-out", "screencap", "-p", binary=True)
     ended = time.monotonic()
     runtime_after = runtime_reader() if runtime_reader else None
@@ -510,9 +510,9 @@ def bracketed_screenshot(serial, package, activity, expected, launch_started=Non
     checked = time.monotonic()
     timing = {}
     if launch_started is not None:
-        if not 0 <= started - launch_started <= ended - launch_started <= checked - launch_started < 20:
-            raise SystemExit("loading capture crossed the production 20-second deadline")
-        timing = {"basis": "monotonic-before-fixture-launch", "deadline_seconds": 20,
+        if not 0 <= started - launch_started <= ended - launch_started <= checked - launch_started < deadline_seconds:
+            raise SystemExit(f"loading capture crossed the production {deadline_seconds}-second deadline")
+        timing = {"basis": "monotonic-before-fixture-launch", "deadline_seconds": deadline_seconds,
                   "screenshot_start_seconds": started - launch_started,
                   "screenshot_end_seconds": ended - launch_started,
                   "postcheck_seconds": checked - launch_started}
@@ -561,7 +561,7 @@ def main() -> None:
             or interactions != spec["state_spec"].get("interaction", [])
             or (args.expected_accessibility or None) != spec["state_spec"].get("post_interaction_accessibility")):
         raise SystemExit("capture arguments do not match the catalogued fixture/actions/state")
-    loading = args.state == "bot-model-inventory-loading"
+    loading = args.state in ("bot-model-inventory-loading", "bot-avatar-loading")
     if loading and not args.launch_fixture:
         raise SystemExit("loading capture requires a measured fresh fixture launch")
     provenance = installed_apk_provenance(args.serial, args.package, args.apk)
@@ -584,7 +584,8 @@ def main() -> None:
     identity = verify_app_identity(args.serial, args.package, args.activity)
     screenshot, bracket = bracketed_screenshot(args.serial, args.package, args.activity,
                                                args.expected_accessibility, launch_started if loading else None,
-                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None)
+                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None,
+                                               deadline_seconds=60 if args.state == "bot-avatar-loading" else 20)
     accessibility = bracket["after"]
     output = Path(args.out or f"build/visual-parity/{args.name}/android").resolve()
     output.mkdir(parents=True, exist_ok=True)

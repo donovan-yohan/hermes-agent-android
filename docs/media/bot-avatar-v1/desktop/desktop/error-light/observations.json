@@ -1,0 +1,11 @@
+{
+  "presentation": "read-error-fallback",
+  "boundary": "Synthetic initial named-read refusal delivered through actual Gateway client WebSocket response; silent shape fallback, no inline retry/error.",
+  "images": [],
+  "reads": 1,
+  "pending_reads": 0,
+  "refused_reads": 1,
+  "write_count": 0,
+  "native_events": [],
+  "visible_text": "Edit profile\n\nAppearance and role for Synthetic Avatar (synthetic-avatar).\n\nBot\nGenerate\nUpload\nPet\nAuto\nRandomize\nLock face\nFace follows the name.\nClassic shapes\nTitle\nDescription\nAdvanced \u2014 model, skills, toolsets, SOUL.md\nCancel\nSave\nClose"
+}

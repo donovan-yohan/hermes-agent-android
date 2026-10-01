@@ -66,32 +66,34 @@ fixture-staged, not recorded user gestures. This capture lane retained 16 Androi
 API 37 emulator images and 16 real pinned Desktop editor images (eight states in
 light/dark on each platform). No physical phone was captured. The production
 60-second read deadline remains unchanged; loading postchecks completed at
-4.614 seconds (light) and 4.646 seconds (dark).
+12.593 seconds (light) and 12.598 seconds (dark) in the corrected recapture.
 
-**Rendered acceptance is blocked, not green.** The Android debug fixture lacks a
-painted themed surface and safe status-bar inset: light-mode text renders against
-black and is mostly unreadable; the dark header overlaps the status region.
-`BotAvatarParityContent` mounts the production editor directly in an unpainted
-full-size `Column`; these captures do not prove the production Edit profile sheet
-has the same defect. A source-fixture correction and explicitly authorized rebuild
-are needed before replacement captures. Existing failure images are retained.
+**Bounded paired evidence is complete; strict equivalence is not claimed.** The
+original standalone fixture had an unpainted background and overlapping header.
+It now paints the themed surface and applies system-bar insets outside scrolling.
+Both light/dark painted-surface/header regressions passed after the correction;
+16 replacement captures retain their exact dirty-source and APK provenance.
+Original failures are preserved separately, never relabeled or retouched.
 
-The real Desktop Playwright run passed three tests, exercised the file-input
-normalizer and actual Gateway-backed synthetic profile upload/clear, and verified
-uploaded bytes on the sandbox disk. Desktop saved/cleared are **reopened** outcomes.
-A clear can be followed by upstream `pushLocalAvatars` rasterizing the shape and
-writing a new asset; this was observed and is not Android's confirmed absence.
-Desktop read pending/error render shape fallback without Android's inline labels;
-file chooser pending and empty selection leave the Desktop app visually unchanged.
-See [the explicit platform map and blockers](bot-avatar-visual-acceptance.md).
+The fresh real Desktop journey/refusal run passed two focused tests without
+retries; its 14 images join two previously successful pending-diagnostic images.
+It exercised native picker Cancel (trusted event), production file normalization
+and actual Gateway-backed synthetic profile upload/clear, with uploaded bytes
+verified against disk. Desktop saved/cleared are **reopened** outcomes.
+Clear is followed by upstream `pushLocalAvatars` rasterizing and writing the shape;
+this observed drift is not Android's confirmed absence. Desktop read pending/error
+render shape fallback without Android's inline labels; native picker pending and
+Cancel leave its preview unchanged. See [the full map and history](bot-avatar-visual-acceptance.md).
 
-The parent build lane reports approved code review and green full-suite gates:
-3,301 debug tests and 2,618 release tests. Earlier scratch-only Kotlin/JUnit and
+The build lane reports approved code review and a successful full dirty-snapshot
+build: 3,303 debug tests and 2,618 release tests, zero failures/errors, one skipped
+in each. The retained exact patch includes six readiness files from main; it is
+not a clean publication-head build. Earlier scratch-only Kotlin/JUnit and
 Robolectric checks covered repository, ViewModel, native decode/crop, Compose
-controls, ActivityResult cancellation and fixture paths; those earlier checks
-alone did not establish clean-build acceptance. No additional Gradle execution
-was performed for this publication. Installed-APK captures and real Desktop
-captures now exist, but visual acceptance remains blocked as described above.
+controls, ActivityResult cancellation and fixture paths. No additional Gradle
+execution was performed for this publication. Installed-APK captures and real Desktop
+captures now support bounded acceptance in the paired report below; strict UI
+equivalence and the Desktop clear/backfill drift remain unresolved under #194.
 The Android runtime uses synthetic in-memory RPC; it is not live-Gateway acceptance.
 
 ## Divergences
@@ -104,9 +106,14 @@ The Android runtime uses synthetic in-memory RPC; it is not live-Gateway accepta
 | Bot shape/color authoring, Generate, Pet | omission | Visible disabled WIP; no pet asset kind, gallery URL fetch or image generation call invented | coming soon — #194; reachable sprite sheets and inline generated images remain unproved |
 | New/duplicate avatar authoring | omission | Avatar remains WIP outside existing-Bot Edit | coming soon — #194; no asset write before a profile exists |
 | Shared dialog preview and close/reopen saved result | mobile-adaptation | Scrollable inline phone editor; standalone production-editor debug capture | Small viewport; catalog names staged app states rather than claiming Desktop-equivalent outcomes |
-| Paired rendered acceptance | omission | Actual Android/Desktop captures retained; acceptance blocked | deferred: #194 — Android fixture background/insets fail visual review; platform outcomes differ |
+| Clear then shape-raster reupload | drift | Clear confirms intentional asset absence in the fixture | deferred: #194 — Desktop recreates an asset; [actual disk outcome](../media/bot-avatar-v1/desktop/clear-outcome.json), not absence parity |
+| Strict rendered equivalence | omission | Bounded paired evidence complete; staged Android and real Desktop actions explicitly separated | deferred: #194 — different inline vs reopened states and unsupported appearance modes remain; no fake equivalence |
 
 ## Visual report
 
+- report: ../media/bot-avatar-v1/REPORT.md
+- commit: 0cc6ea3564fc268b8572e4f27c59e02c3f23546b
+
 - [Actual capture outcome and platform map](bot-avatar-visual-acceptance.md).
-- Verdict: Blocked until the Android fixture presentation is corrected and recaptured; no canonical receipt or platform equivalence claimed.
+- The commit above is the **dirty capture base**, not a clean build: the report retains the exact source patch and installed APK identity. Later publication does not restamp that provenance.
+- Verdict: 16 Android and 16 Desktop canonical v1 receipts, with 32 original PNGs, support a limited behavioral report. Android picker/results are fixture-staged; Desktop native Cancel, production normalization, save disk bytes and clear→shape-raster reupload are real observations. No strict platform equivalence or broader #194 completion claimed.

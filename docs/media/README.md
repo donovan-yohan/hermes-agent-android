@@ -27,6 +27,14 @@ can show the GIF while a reader can still open the sharper MP4.
 original capture provenance and explicit platform adaptations; bounded model
 editor acceptance only. See [capture index](CAPTURE.md#model-editor-v2-supplement).
 
+## Avatar editor supplement
+
+[Avatar editor v1](bot-avatar-v1/REPORT.md): 16 Android and 16 real Electron
+state/theme captures, canonical receipts and reconstructible source provenance.
+Android fixture-staged outcomes are not Desktop native-gesture equivalence;
+Desktop clear/shape-backfill remains drift under #194. See the
+[capture index](CAPTURE.md#bot-avatar-v1-supplement).
+
 ## Contents
 
 `screenshots/` holds PNGs of the session list, the transcript, the composer,

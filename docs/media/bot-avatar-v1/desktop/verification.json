@@ -1,0 +1,21 @@
+{
+  "canonical_receipts": 16,
+  "new_pngs": 14,
+  "preserved_pending_pngs": 2,
+  "receipt_schema_checks_passed": 16,
+  "preview_pixels_and_native_cancel_assertions": true,
+  "additive_patch_reconstructed": true,
+  "pending_capture_identity_unchanged": true,
+  "native_cancel_event": [
+    {
+      "type": "cancel",
+      "isTrusted": true,
+      "files": 0
+    }
+  ],
+  "saved_upload_disk_bytes": {
+    "exactUploadBytesOnDisk": true,
+    "bytes": 2375
+  },
+  "clear_asset_exists_after_raster_backfill": true
+}

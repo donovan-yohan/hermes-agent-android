@@ -2,6 +2,7 @@ package com.hermesagent.mobile
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -73,7 +74,7 @@ internal suspend fun stageBotAvatar(state: String, vm: BotsAvatarViewModel) {
     if (state == "bot-avatar-saved") vm.save(vm.state.value)
 }
 @Composable
-internal fun BotAvatarParityContent(state: String) {
+internal fun BotAvatarParityContent(state: String, systemInsets: WindowInsets = WindowInsets.systemBars) {
     val scope = rememberCoroutineScope()
     val rpc = remember(state) { BotAvatarFixtureRpc(state) }
     val host = remember(rpc) { GatewayPluginHost(scope, MutableStateFlow<GatewayRpcClient?>(rpc), MutableStateFlow(0L), EndpointDispatchFence()) }
@@ -85,7 +86,8 @@ internal fun BotAvatarParityContent(state: String) {
     }
     DisposableEffect(vm) { onDispose { vm.close() } }
     val value by vm.state.collectAsState()
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp)) {
+    Column(Modifier.fillMaxSize().background(com.hermesagent.mobile.ui.theme.HermesTheme.tokens.chatSurface)
+        .windowInsetsPadding(systemInsets).verticalScroll(rememberScrollState()).padding(24.dp)) {
         BotAvatarEditor(value, botAvatarActions(vm, value))
     }
 }

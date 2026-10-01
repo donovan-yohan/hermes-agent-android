@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "surface": "bot-avatar-editor",
+  "state": "bot-avatar-cleared",
+  "fixture_id": "bot-avatar-editor-synthetic-v1",
+  "theme": "dark",
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "viewport": {
+    "window_width": 1440,
+    "window_height": 1100,
+    "screenshot_width": 384,
+    "screenshot_height": 716,
+    "crop": "Edit profile dialog"
+  },
+  "captured_at": "2026-10-01T19:58:28.035Z",
+  "screenshot_sha256": "a161a44ae21dc32a009f8b6d4f05b39b2c05f7f65944053a80bfef512aed5219",
+  "fixture_implementation_sha256": "d93baa975e075ddfa2e4c2e38d70ac7e48eaa9acded10c5158f51b90d188b353",
+  "observed_platform_boundary": {
+    "presentation": "cleared-reopened-shape",
+    "interaction_semantics": "Actual Remove image and Save; clear RPC followed by fallback shape raster upload. Reopened shape is not confirmed asset absence; documented drift.",
+    "observed_asset_reads": 2,
+    "observed_asset_writes": 3,
+    "native_events": [
+      {
+        "type": "cancel",
+        "isTrusted": true,
+        "files": 0
+      },
+      {
+        "type": "change",
+        "isTrusted": true,
+        "files": 1
+      }
+    ]
+  },
+  "run_boundary": "Fresh focused journey and refusal run: 2 passed, no retries; not a cross-platform equivalence assertion."
+}

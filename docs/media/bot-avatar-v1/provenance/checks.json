@@ -1,0 +1,35 @@
+{
+  "gradle": {
+    "command": "check assembleDebug --rerun-tasks --no-parallel --max-workers=1 with Xmx6g and in-process Kotlin",
+    "exit": 0,
+    "debug": {
+      "tests": 3303,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "release": {
+      "tests": 2618,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    }
+  },
+  "original_packet_unchanged": true,
+  "desktop_source_files_verified_unchanged": 2735,
+  "desktop": {
+    "original_fixture_rerun_exit": 1,
+    "original_fixture_rerun_tests_failed": 3,
+    "pending_diagnostic_exit": 0,
+    "pending_diagnostic_tests_passed": 1,
+    "focused_journey_backfill_wait_exit": 1,
+    "focused_journey_outcome": "240-second test timeout; no success or clear absence inferred"
+  },
+  "android": {
+    "captures": 16,
+    "api": 37,
+    "route": "ADB UIAutomator, not Espresso",
+    "runtime_rpc_exporter": false
+  },
+  "receipt_scope": "Existing v1 schema plus explicit descriptive platform boundaries; no v2 contract or historical restamping; schema pass is not parity acceptance."
+}

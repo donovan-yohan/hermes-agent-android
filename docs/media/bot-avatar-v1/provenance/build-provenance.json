@@ -1,0 +1,17 @@
+{
+  "source": {
+    "kind": "working-tree-build",
+    "base_git_sha": "0cc6ea3564fc268b8572e4f27c59e02c3f23546b",
+    "integrated_readiness_commit": "fbdda921252df85b1f73f8a1342f21ce59a61128",
+    "diff_sha256": "6f04708ee81908ec45128790cf8b12854f7ed10e0e77ac9ca7793f0ec10b29a0",
+    "source_manifest_sha256": "0bf958203e14f7dd3332c68afffd92a782d2148d987d610acfb410cc2b7f8b56",
+    "note": "Base SHA plus retained working-tree patch, not an immutable commit build. Production sheet unchanged."
+  },
+  "installed": {
+    "apk_sha256": "d3f30a1aef2cb15ab2c58b97d90d0606a32a850dc233f06fa2a4553528c62a27",
+    "installed_apk_sha256": "d3f30a1aef2cb15ab2c58b97d90d0606a32a850dc233f06fa2a4553528c62a27",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  }
+}
