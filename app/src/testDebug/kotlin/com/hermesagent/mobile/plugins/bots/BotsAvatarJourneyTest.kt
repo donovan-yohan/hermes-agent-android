@@ -91,6 +91,8 @@ class BotsAvatarJourneyTest {
         compose.onNodeWithText("Save avatar").performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Avatar removed.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Avatar fallback: worker").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Avatar preview").assertDoesNotExist()
         assertEquals(1, host.calls.count { it.first == "profiles.set_asset" })
         assertEquals("profiles.get_asset", host.calls.last().first)
     }

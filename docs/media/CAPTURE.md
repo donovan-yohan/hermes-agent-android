@@ -4,6 +4,18 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Avatar fallback follow-up
+
+[Report](bot-avatar-fallback-v2/REPORT.md) and [per-image verification](bot-avatar-fallback-v2/verification.json):
+eight original API 37 emulator PNGs, loaded/loading/error/cleared in light/dark,
+with adjacent app-only XML and validated receipts. Working-tree build at
+`60cc7deb8035e8ca3061021ebe11118af9dc1be1`; retained exact patch/app manifest and
+installed APK hash. Existing v1 fixture/schema, not newly claimed Desktop equivalence.
+The registered sheet/upload/save/roster/reopen/clear/reopen journey is separately
+proved by native Robolectric Compose. All 127 previous avatar packet files remain
+unchanged; no new Desktop captures. Shape backfill is intentional notice-only behavior;
+Android clear is a scoped shared-glyph adaptation. Shape/pet/generate remain deferred.
+
 ## Model editor v2 supplement
 
 The [paired model-editor report](bot-model-v2/REPORT.md) publishes 30 original

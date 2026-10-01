@@ -68,6 +68,22 @@ DISPLAY=<owned-display> PARITY_OUT=<synthetic-output> npx playwright test e2e/av
 
 The patch was actually reapplied into an independent initialized scratch repository and its resulting fixture hash matched. Dependency/bootstrap instructions remain those of the pinned real E2E harness. The original Android failure images must stay preserved when replacement captures become available.
 
+## Current fallback follow-up
+
+The [fresh Android fallback packet](../media/bot-avatar-fallback-v2/REPORT.md)
+adds eight light/dark loaded/loading/error/cleared captures and preserves the
+previous packet unchanged. The production editor now renders shared Android
+`ProfileGlyph` when no photo is decoded, including confirmed clear. A separate
+registered-route Compose journey proves sheet → upload/save → roster photo →
+reopen → clear/save → roster fallback → reopen without stale photo.
+
+Source review at `587e673e` corrects the historical “drift” classification below:
+`profile-ops.ts:94-118,194-201` intentionally backfills a 160px shape PNG for
+inter-agent notices and keeps that raster out of the live roster face. Android's
+confirmed absence plus shared glyph is a scoped adaptation, not an upstream bug
+or a claim to reproduce Desktop's raster. Shape/pet/generate remain deferred #194.
+Historical pixels and receipts below are unchanged, not restamped by this follow-up.
+
 ## Executed fixture correction and recapture
 
 - Debug fixture only: paint `HermesTheme.tokens.chatSurface` before applying system-bar insets, outside scrolling, matching neighboring debug fixtures. Production `BotManagementSheet` and `BotAvatarEditor` were not changed.

@@ -28,6 +28,24 @@ This delta does not restamp the historical read-only captures in [bot identity](
   configuration is a separate describe/configure capability. Image bytes never
   go into `profiles.configure`, SOUL.md, plugin storage or attachment staging.
 
+## Scoped clear adaptation
+
+Desktop `profile-ops.ts:94-118,194-201` at the pin intentionally rasterizes a
+160px vector face for **inter-agent notices**, and suppresses that backfilled
+raster on the roster so its live shape remains live. It is not an accidental
+failure of clear. Android does not implement that shape authoring/runtime and
+must not fabricate or upload an equivalent Desktop raster. Android clear is
+scoped to confirmed asset absence and its existing shared `ProfileGlyph`.
+
+The editor now renders that shared glyph at 96dp whenever no decoded preview is
+available, including clear, absence, loading and refused reads. Identity comes
+from the immutable ticket's canonical target (not the editable display label);
+the active `HermesTheme` supplies fallback ink. A cleared draft deliberately has
+no roster avatar reference, preventing a still-cached photo from covering it.
+Android usages remain the rail, picker, profile roster, session tags and Bots row;
+this adds the editor, not Desktop BotFace equivalence. Shape/color authoring,
+Pet and Generate remain disabled WIP and deferred under #194.
+
 ## Android implementation
 
 Existing Bot → Edit profile now includes the avatar editor. Upload invokes
@@ -80,8 +98,8 @@ retries; its 14 images join two previously successful pending-diagnostic images.
 It exercised native picker Cancel (trusted event), production file normalization
 and actual Gateway-backed synthetic profile upload/clear, with uploaded bytes
 verified against disk. Desktop saved/cleared are **reopened** outcomes.
-Clear is followed by upstream `pushLocalAvatars` rasterizing and writing the shape;
-this observed drift is not Android's confirmed absence. Desktop read pending/error
+Clear is followed by upstream `pushLocalAvatars` intentionally rasterizing and
+writing the shape for inter-agent notices; this scoped adaptation is not Android's confirmed absence. Desktop read pending/error
 render shape fallback without Android's inline labels; native picker pending and
 Cancel leave its preview unchanged. See [the full map and history](bot-avatar-visual-acceptance.md).
 
@@ -93,7 +111,7 @@ Robolectric checks covered repository, ViewModel, native decode/crop, Compose
 controls, ActivityResult cancellation and fixture paths. No additional Gradle
 execution was performed for this publication. Installed-APK captures and real Desktop
 captures now support bounded acceptance in the paired report below; strict UI
-equivalence and the Desktop clear/backfill drift remain unresolved under #194.
+equivalence and shape/pet/generate authoring remain deferred under #194.
 The Android runtime uses synthetic in-memory RPC; it is not live-Gateway acceptance.
 
 ## Divergences
@@ -106,8 +124,19 @@ The Android runtime uses synthetic in-memory RPC; it is not live-Gateway accepta
 | Bot shape/color authoring, Generate, Pet | omission | Visible disabled WIP; no pet asset kind, gallery URL fetch or image generation call invented | coming soon — #194; reachable sprite sheets and inline generated images remain unproved |
 | New/duplicate avatar authoring | omission | Avatar remains WIP outside existing-Bot Edit | coming soon — #194; no asset write before a profile exists |
 | Shared dialog preview and close/reopen saved result | mobile-adaptation | Scrollable inline phone editor; standalone production-editor debug capture | Small viewport; catalog names staged app states rather than claiming Desktop-equivalent outcomes |
-| Clear then shape-raster reupload | drift | Clear confirms intentional asset absence in the fixture | deferred: #194 — Desktop recreates an asset; [actual disk outcome](../media/bot-avatar-v1/desktop/clear-outcome.json), not absence parity |
+| Clear then intentional notice-only shape-raster backfill | mobile-adaptation | Clear confirms asset absence and shows shared Android profile glyph; no synthetic shape upload | `profile-ops.ts:94-118,194-201`; [actual disk outcome](../media/bot-avatar-v1/desktop/clear-outcome.json). Shape authoring/runtime remains deferred #194, not a clear bug |
 | Strict rendered equivalence | omission | Bounded paired evidence complete; staged Android and real Desktop actions explicitly separated | deferred: #194 — different inline vs reopened states and unsupported appearance modes remain; no fake equivalence |
+
+## Verified fallback follow-up
+
+[Fresh fallback report](../media/bot-avatar-fallback-v2/REPORT.md): production
+registered-sheet upload → save → roster photo → reopen → clear/save → roster
+fallback → reopen without stale photo passes, using the real host dispatch fence,
+roster coordinator and decoder over synthetic RPC. Full rerun: 3,304 debug and
+2,618 release tests, zero failures/errors, one skipped each; `check assembleDebug`
+passed with Xmx6g and one worker. Eight fresh Android images cover loaded photo,
+loading/refused fallback and cleared fallback in both themes. Prior snapshots are
+preserved; standalone fixture screenshots are not registered-navigation pixels.
 
 ## Visual report
 

@@ -32,8 +32,13 @@ editor acceptance only. See [capture index](CAPTURE.md#model-editor-v2-supplemen
 [Avatar editor v1](bot-avatar-v1/REPORT.md): 16 Android and 16 real Electron
 state/theme captures, canonical receipts and reconstructible source provenance.
 Android fixture-staged outcomes are not Desktop native-gesture equivalence;
-Desktop clear/shape-backfill remains drift under #194. See the
+Desktop clear/shape-backfill is intentional notice-only behavior, not Android asset-absence parity. See the
 [capture index](CAPTURE.md#bot-avatar-v1-supplement).
+
+[Avatar fallback follow-up](bot-avatar-fallback-v2/REPORT.md): eight fresh Android
+loaded/loading/refused/cleared images in light/dark, shared profile-glyph fallback
+and a production registered-route Compose journey. Previous snapshots stay unchanged;
+shape/pet/generate remain deferred #194.
 
 ## Contents
 

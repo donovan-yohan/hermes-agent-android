@@ -58,7 +58,19 @@ fun BotAvatarEditor(state: BotAvatarState, actions: BotAvatarActions, chooseImag
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Avatar", style = HermesTheme.type.sectionLabel)
-        preview?.let { Image(it.asImageBitmap(), "Avatar preview", Modifier.size(96.dp).clip(BOT_AVATAR_SHAPE)) }
+        // A cleared draft must not reuse the roster's still-admitted avatarRef.
+        // Derive the shared fallback from the immutable canonical target, not an
+        // editable display-name field, and let ProfileGlyph use the active theme.
+        val bitmap = preview.takeIf { state.bytes != null }
+        if (bitmap != null) Image(bitmap.asImageBitmap(), "Avatar preview", Modifier.size(96.dp).clip(BOT_AVATAR_SHAPE))
+        else state.ticket?.target?.name?.let { name ->
+            com.hermesagent.mobile.ui.common.ProfileGlyph(
+                profile = com.hermesagent.mobile.data.profiles.HermesProfile(name = name, isDefault = name == "default"),
+                size = 96.dp,
+                shape = BOT_AVATAR_SHAPE,
+                contentDescription = "Avatar fallback: $name",
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ComingSoonAction("Bot", Modifier.semantics { role = Role.Button })
             ComingSoonAction("Generate", Modifier.semantics { role = Role.Button })
