@@ -14,8 +14,9 @@ say() { printf '  %s\n' "$1"; }
 
 # 1. Input focus. A window that does not have it is never served by the input
 #    method: `View.onFocusChanged` only calls `InputMethodManager.focusIn` when
-#    `mAttachInfo.mHasWindowFocus` is set, and nothing retries afterwards. A
-#    keyguard over a freshly booted emulator is the ordinary way to lose it.
+#    `mAttachInfo.mHasWindowFocus` is set, and nothing retries afterwards.
+#    Wake explicitly; dismissing keyguard does not itself wake the display.
+adb shell input keyevent KEYCODE_WAKEUP
 adb shell wm dismiss-keyguard >/dev/null 2>&1 || say "keyguard dismissal was refused; continuing"
 adb shell svc power stayon true >/dev/null 2>&1 || say "stay-awake was refused; continuing"
 
@@ -35,8 +36,3 @@ if [ -n "$selected" ]; then
 else
   say "this system image lists no input method; ComposerImeTest will say so"
 fi
-
-# 4. Evidence. When the lane goes red on the input connection, the first
-#    question is which method was bound and to what, and the answer has to be in
-#    the log that already exists rather than in a rerun.
-adb shell dumpsys input_method 2>/dev/null | sed -n '1,12p' || true
