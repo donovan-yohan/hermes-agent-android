@@ -51,6 +51,16 @@ internal class BotManagementFixtureHost : PluginHost {
             "profiles.describe" -> PluginHostResult.Success(buildJsonObject {
                 put("name", "synthetic-planner"); put("description", "Reviews release plans")
                 put("soul", "Review synthetic release plans.")
+                put("model", buildJsonObject {
+                    put("provider", "synthetic-provider"); put("default", "synthetic-planner-v1")
+                })
+            })
+            "model.options" -> PluginHostResult.Success(buildJsonObject {
+                put("providers", buildJsonArray { add(buildJsonObject {
+                    put("slug", "synthetic-provider"); put("name", "Synthetic Provider")
+                    put("aliases", buildJsonArray {})
+                    put("models", buildJsonArray { add("synthetic-planner-v1"); add("synthetic-planner-v2") })
+                }) })
             })
             "profiles.list" -> PluginHostResult.Success(buildJsonObject {
                 put("profiles", buildJsonArray { add(buildJsonObject {
@@ -68,6 +78,7 @@ internal fun BotManagementParityContent(state: String) {
     val scope = rememberCoroutineScope()
     val fixture = remember { BotManagementParityFixture(scope) }
     val management by fixture.model.state.collectAsState()
+    val modelState by fixture.model.model.state.collectAsState()
     LaunchedEffect(state) { fixture.open(state) }
     BotsRosterScreen(fixture.roster, onBack = {}, modifier = Modifier.fillMaxSize(), actions = BotsActions(
         onNewBot = fixture.model::openNew,
@@ -79,5 +90,10 @@ internal fun BotManagementParityContent(state: String) {
         onSectionName = fixture.model::updateSectionName, onSection = fixture.model::selectSection,
         onSubmit = fixture.model::submit, onDeleteSection = fixture.model::deleteSection,
         onMoveSection = fixture.model::moveSection,
+    ), modelState = modelState, modelActions = BotModelActions(
+        onUpdate = { fixture.model.model.update(modelState, it) },
+        onSave = { fixture.model.model.save(modelState) },
+        onConfirm = { fixture.model.model.confirm(modelState) },
+        onCancelWarning = { fixture.model.model.cancelWarning(modelState) },
     ))
 }

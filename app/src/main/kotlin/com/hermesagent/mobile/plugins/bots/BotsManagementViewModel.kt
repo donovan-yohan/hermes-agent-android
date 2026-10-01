@@ -43,7 +43,14 @@ class BotsManagementViewModel(
     private val newSectionId: () -> String = { "sec-${UUID.randomUUID()}" },
     private val storageEndpoint: StateFlow<BotStorageEndpoint?> = MutableStateFlow(null),
 ) {
+    val model = BotsModelViewModel(host, scope, onChanged)
     private val repository = BotsManagementRepository(host)
+
+    /** Render-bound callbacks cannot act on a replacement dialog, even for the same bot. */
+    fun fromSnapshot(snapshot: BotManagementState, action: () -> Unit) {
+        if (snapshot !== state.value || snapshot.target?.endpoint != host.endpointGeneration.value) return
+        action()
+    }
     private val mutableState = MutableStateFlow(BotManagementState())
     val state = mutableState.asStateFlow()
     private val mutableSections = MutableStateFlow(initialSections)
@@ -94,6 +101,7 @@ class BotsManagementViewModel(
     }
 
     private fun reset() {
+        model.close()
         revision++
         sectionMembers = emptyList()
         mutableState.value = BotManagementState()
@@ -138,6 +146,7 @@ class BotsManagementViewModel(
         when (action) {
             BotRowAction.Edit -> {
                 mutableState.value = BotManagementState(BotManagementDialog.Edit, target, draft, busy = true)
+                model.open(target)
                 val admitted = revision
                 scope.launch {
                     val loaded = repository.describe(target)

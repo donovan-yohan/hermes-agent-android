@@ -71,11 +71,20 @@ class BotsPlugin(
             host, ctx.storage, pluginScope, onChanged = { refreshRoster() }, initialSections = sections,
             storageEndpoint = storageEndpoint,
         )
-        val managementActions = BotManagementActions(
-            onClose = management::close, onUpdate = management::updateDraft,
-            onSectionName = management::updateSectionName, onSection = management::selectSection,
-            onSubmit = management::submit, onDeleteSection = management::deleteSection,
-            onMoveSection = management::moveSection,
+        fun managementActions(snapshot: BotManagementState) = BotManagementActions(
+            onClose = { management.fromSnapshot(snapshot, management::close) },
+            onUpdate = { value -> management.fromSnapshot(snapshot) { management.updateDraft(value) } },
+            onSectionName = { value -> management.fromSnapshot(snapshot) { management.updateSectionName(value) } },
+            onSection = { value -> management.fromSnapshot(snapshot) { management.selectSection(value) } },
+            onSubmit = { management.fromSnapshot(snapshot, management::submit) },
+            onDeleteSection = { management.fromSnapshot(snapshot, management::deleteSection) },
+            onMoveSection = { value -> management.fromSnapshot(snapshot) { management.moveSection(value) } },
+        )
+        fun modelActions(snapshot: BotModelState) = BotModelActions(
+            onUpdate = { management.model.update(snapshot, it) },
+            onSave = { management.model.save(snapshot) },
+            onConfirm = { management.model.confirm(snapshot) },
+            onCancelWarning = { management.model.cancelWarning(snapshot) },
         )
         val viewModel = BotsViewModel(
             repository = BotsPluginRepository(host, avatarProducer),
@@ -145,7 +154,8 @@ class BotsPlugin(
                         val state by viewModel.uiState.collectAsStateWithLifecycle()
                         val origin = state
                         val managementState by management.state.collectAsStateWithLifecycle()
-                        BotManagementSheet(managementState, managementActions)
+                        val modelState by management.model.state.collectAsStateWithLifecycle()
+                        BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState))
                         BotsRosterScreen(
                             state = state,
                             onBack = nav.onBack,
@@ -183,7 +193,8 @@ class BotsPlugin(
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
                             val origin = state
                             val managementState by management.state.collectAsStateWithLifecycle()
-                            BotManagementSheet(managementState, managementActions)
+                            val modelState by management.model.state.collectAsStateWithLifecycle()
+                            BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState))
                             BotsRosterScreen(
                                 state = state,
                                 onBack = onBack,
