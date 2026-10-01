@@ -123,3 +123,9 @@ separately rather than treating an identity-gate pass as full theme parity.
 Before committing, use `verify-pin-citations.py --check-range HEAD..WORKTREE`
 against the disposable checkout; `HEAD..HEAD` would omit the pending repin.
 See the [2026-10-01 audit](../spikes/upstream-main-sync-2026-10-01.md).
+
+Also inspect backend skin registration and retired-name/slash-alias handling on
+registry-only repins: [the 587e673e follow-up](../spikes/upstream-bot-refresh-587e673e-2026-10-01.md)
+found unchanged built-ins but changed Classic Hermes `default` selection. Keep
+that backend-derived palette separate from the built-in inventory; record native
+selection drift instead of adding a guessed built-in or claiming full parity.
