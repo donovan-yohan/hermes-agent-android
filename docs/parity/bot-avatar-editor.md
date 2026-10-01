@@ -62,18 +62,37 @@ changed/saved/cleared in the catalog, workflow choices and debug Activity.
 through `GatewayPluginHost` and its dispatch fence. Its saved and cleared states
 run production actions and named readback; changed uses the actual normalizer.
 Picking is **app waiting state**, not system-picker pixels. Mutation states are
-fixture-staged, not recorded user gestures. No Desktop renderer or physical phone
-has been captured for this delta. The production 60-second read deadline remains
-unchanged; a late loading capture must fail rather than be relabelled.
+fixture-staged, not recorded user gestures. This capture lane retained 16 Android
+API 37 emulator images and 16 real pinned Desktop editor images (eight states in
+light/dark on each platform). No physical phone was captured. The production
+60-second read deadline remains unchanged; loading postchecks completed at
+4.614 seconds (light) and 4.646 seconds (dark).
+
+**Rendered acceptance is blocked, not green.** The Android debug fixture lacks a
+painted themed surface and safe status-bar inset: light-mode text renders against
+black and is mostly unreadable; the dark header overlaps the status region.
+`BotAvatarParityContent` mounts the production editor directly in an unpainted
+full-size `Column`; these captures do not prove the production Edit profile sheet
+has the same defect. A source-fixture correction and explicitly authorized rebuild
+are needed before replacement captures. Existing failure images are retained.
+
+The real Desktop Playwright run passed three tests, exercised the file-input
+normalizer and actual Gateway-backed synthetic profile upload/clear, and verified
+uploaded bytes on the sandbox disk. Desktop saved/cleared are **reopened** outcomes.
+A clear can be followed by upstream `pushLocalAvatars` rasterizing the shape and
+writing a new asset; this was observed and is not Android's confirmed absence.
+Desktop read pending/error render shape fallback without Android's inline labels;
+file chooser pending and empty selection leave the Desktop app visually unchanged.
+See [the explicit platform map and blockers](bot-avatar-visual-acceptance.md).
 
 The parent build lane reports approved code review and green full-suite gates:
 3,301 debug tests and 2,618 release tests. Earlier scratch-only Kotlin/JUnit and
 Robolectric checks covered repository, ViewModel, native decode/crop, Compose
 controls, ActivityResult cancellation and fixture paths; those earlier checks
 alone did not establish clean-build acceptance. No additional Gradle execution
-was performed for this publication. Installed-APK visual acceptance, paired real
-Desktop captures and live-Gateway acceptance remain separate, unfulfilled gates
-until their actual evidence is retained.
+was performed for this publication. Installed-APK captures and real Desktop
+captures now exist, but visual acceptance remains blocked as described above.
+The Android runtime uses synthetic in-memory RPC; it is not live-Gateway acceptance.
 
 ## Divergences
 
@@ -85,9 +104,9 @@ until their actual evidence is retained.
 | Bot shape/color authoring, Generate, Pet | omission | Visible disabled WIP; no pet asset kind, gallery URL fetch or image generation call invented | coming soon — #194; reachable sprite sheets and inline generated images remain unproved |
 | New/duplicate avatar authoring | omission | Avatar remains WIP outside existing-Bot Edit | coming soon — #194; no asset write before a profile exists |
 | Shared dialog preview and close/reopen saved result | mobile-adaptation | Scrollable inline phone editor; standalone production-editor debug capture | Small viewport; catalog names staged app states rather than claiming Desktop-equivalent outcomes |
-| Paired rendered acceptance | omission | No new pixels claimed | deferred: #194 — parent build/capture lane and real Desktop editor comparison remain pending |
+| Paired rendered acceptance | omission | Actual Android/Desktop captures retained; acceptance blocked | deferred: #194 — Android fixture background/insets fail visual review; platform outcomes differ |
 
 ## Visual report
 
-- pending: #194
-- Verdict: Concern until exact-source Android/Desktop renders and clean build gates pass.
+- [Actual capture outcome and platform map](bot-avatar-visual-acceptance.md).
+- Verdict: Blocked until the Android fixture presentation is corrected and recaptured; no canonical receipt or platform equivalence claimed.
