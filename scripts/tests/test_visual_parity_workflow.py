@@ -17,6 +17,23 @@ class VisualParityWorkflowTest(unittest.TestCase):
         self.text = WORKFLOW.read_text(encoding="utf-8")
         self.capture_script = CAPTURE_SCRIPT.read_text(encoding="utf-8")
 
+    def test_inspector_states_are_dispatchable_and_only_new_fixture_is_repinned(self) -> None:
+        import json
+        catalog = json.loads((ROOT / "docs/parity/visual-capture-surfaces.json").read_text())
+        spec = catalog["surfaces"]["bot-routine-inspector"]
+        self.assertEqual("587e673e2a2fae0616d8b750bb189217080f621a", spec["desktop_sha"])
+        self.assertEqual("bot-routine-inspector-synthetic-v2", spec["fixture_id"])
+        self.assertEqual("d177b119e9c56c9ddc0b7379ffce52341ec06584", catalog["surfaces"]["bot-routines"]["desktop_sha"])
+        match = re.search(r"options: \[(.*?)\]", self.text)
+        assert match is not None
+        surface_options = match.group(1).split(", ")
+        self.assertIn("bot-routine-inspector", surface_options)
+        states = set(re.findall(r"^          - ([a-z-]+)$", self.text, re.MULTILINE))
+        for state in ("inspector", "sparse", "paused", "completed", "overdue", "overdue-inspector", "read-failure"):
+            self.assertIn(state, spec["states"])
+            self.assertIn(state, states)
+            self.assertTrue(spec["states"][state]["post_interaction_accessibility"])
+
     def test_is_manual_immutable_ref_and_artifact_only(self) -> None:
         for required in ("workflow_dispatch:", "Exact immutable 40-character", "contents: read", "Upload Android packet only", "^[0-9a-f]{40}$", "CHECKED_OUT_REF"):
             self.assertIn(required, self.text)

@@ -127,6 +127,8 @@ class BotsPlugin(
             endpointGeneration = host.endpointGeneration,
         )
         val routinesActions = BotsRoutinesActions(
+            onOpenInspector = routines::openInspector,
+            onCloseInspector = routines::closeInspector,
             onRetry = routines::refresh,
             onOpenCreation = routines::openCreation,
             onCloseCreation = routines::closeCreation,

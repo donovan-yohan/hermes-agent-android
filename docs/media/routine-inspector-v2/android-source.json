@@ -1,0 +1,9 @@
+{
+  "base_commit": "b4cd28b0e51d05148ddcbf12a669f99492ae0aac",
+  "dirty": true,
+  "diff_sha256": "a2479e4e7a9266bbf59df98b0157b229438c7135a720e403da629ba4a5f8e2a8",
+  "untracked_recipe_sha256": "c31a997fa2f653fdba0fa4891c61c279277847a79da81c8b9da0cf23d493ead3",
+  "apk_sha256": "da9335071c9c3bac003bbe1d6579c18ed044cd5c32705a74d2a709ca64b9355d",
+  "status": " M .github/workflows/visual-parity-capture.yml\n M app/src/debug/kotlin/com/hermesagent/mobile/BotsRoutinesParityActivity.kt\n M app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspector.kt\n M app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/RoutineInspectorSheet.kt\n M app/src/test/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspectorTest.kt\n M app/src/testDebug/kotlin/com/hermesagent/mobile/BotsRoutinesCaptureTest.kt\n M docs/parity/bot-routines.md\n M docs/parity/visual-capture-surfaces.json\n M scripts/tests/test_visual_parity_workflow.py\n?? docs/workflows/routine-inspector-capture.md\n",
+  "note": "Supplied dirty working-tree APK. Base commit is not a claim of build-to-commit equivalence. No Gradle run in capture task."
+}

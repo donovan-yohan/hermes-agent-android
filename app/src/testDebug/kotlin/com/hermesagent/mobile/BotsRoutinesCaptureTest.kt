@@ -51,6 +51,49 @@ class BotsRoutinesCaptureTest {
         compose.waitForIdle()
     }
 
+    @Test fun completedInspectorIsTerminalAndDoesNotInventAnotherRun() {
+        show(BotsRoutinesFixtureState.parse("completed"))
+        compose.onNodeWithText("What this job runs, and when it runs next.").assertIsDisplayed()
+        compose.onNodeWithText("Completed").assertIsDisplayed()
+        compose.onNodeWithText("Succeeded").assertIsDisplayed()
+        compose.onAllNodesWithText("Next run").assertCountEquals(0)
+        compose.onAllNodesWithText("Overdue since").assertCountEquals(0)
+    }
+
+    @Test fun sparseInspectorOmitsAbsentFields() {
+        show(BotsRoutinesFixtureState.parse("sparse"))
+        compose.onNodeWithText("What this job runs, and when it runs next.").assertIsDisplayed()
+        for (label in listOf("Instruction", "Last run", "Last result", "Model", "Deliver to", "Working directory")) {
+            compose.onAllNodesWithText(label).assertCountEquals(0)
+        }
+    }
+
+    @Test fun pausedInspectorShowsReasonButNoNextRun() {
+        show(BotsRoutinesFixtureState.parse("paused"))
+        compose.onNodeWithText("synthetic fixture reason").assertIsDisplayed()
+        compose.onAllNodesWithText("Next run").assertCountEquals(0)
+    }
+
+    @Test fun overdueInspectorShowsStoredSlotAndExactDeliveryResult() {
+        show(BotsRoutinesFixtureState.parse("overdue-inspector"))
+        compose.onNodeWithText("Overdue since").assertIsDisplayed()
+        compose.onNodeWithText("Ran, but delivery failed").assertIsDisplayed()
+    }
+
+    @Test fun captureFormattingDoesNotDependOnDeviceDefaults() {
+        Locale.setDefault(Locale.FRANCE)
+        TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
+        show(BotsRoutinesFixtureState.Inspector)
+        compose.onNodeWithText("in 17 hr · 9/18/26, 9:00 AM").assertIsDisplayed()
+        org.junit.Assert.assertEquals(Locale.FRANCE, Locale.getDefault())
+        org.junit.Assert.assertEquals("America/New_York", TimeZone.getDefault().id)
+    }
+
+    @Test fun readFailureExercisesRealRefusal() {
+        show(BotsRoutinesFixtureState.ReadFailure)
+        compose.onNodeWithText("The list may still be there — this was a read failure, not a delete.").assertIsDisplayed()
+    }
+
     @Test fun pendingPauseUsesRealOptimisticRow() {
         show(BotsRoutinesFixtureState.PausePending)
         compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON)[0].assertIsNotEnabled()
@@ -69,7 +112,8 @@ class BotsRoutinesCaptureTest {
         show(BotsRoutinesFixtureState.Resumed)
         compose.onNodeWithText("Nightly sweep").assertIsDisplayed()
         compose.onAllNodesWithContentDescription(BotsRoutinesCopy.PAUSE_CRON).assertCountEquals(3)
-        compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertCountEquals(0)
+        compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON).assertCountEquals(1)
+        compose.onAllNodesWithContentDescription(BotsRoutinesCopy.RESUME_CRON)[0].assertIsNotEnabled()
     }
 
     @Test fun deleteReconcilesWithoutInventingAConfirmationState() {

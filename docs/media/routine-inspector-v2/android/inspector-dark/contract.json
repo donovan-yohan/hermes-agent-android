@@ -1,0 +1,274 @@
+{
+  "schema_version": 1,
+  "surface": "bot-routine-inspector",
+  "state": "inspector",
+  "fixture_id": "bot-routine-inspector-synthetic-v2",
+  "theme": "dark",
+  "android_git_sha": "b4cd28b0e51d05148ddcbf12a669f99492ae0aac",
+  "android_source_dirty": true,
+  "android_source_diff_sha256": "a2479e4e7a9266bbf59df98b0157b229438c7135a720e403da629ba4a5f8e2a8",
+  "source_note": "Dirty working-tree build, base commit only; not a commit artifact.",
+  "apk_sha256": "da9335071c9c3bac003bbe1d6579c18ed044cd5c32705a74d2a709ca64b9355d",
+  "installed_apk_sha256": "da9335071c9c3bac003bbe1d6579c18ed044cd5c32705a74d2a709ca64b9355d",
+  "apk_kind": "debug",
+  "interactions": [],
+  "viewport": {
+    "width": 1280,
+    "height": 2856,
+    "density": "Physical density: 480"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+    "focused_window": "mCurrentFocus=Window{4c40c4f u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity}\nmFocusedApp=ActivityRecord{196106570 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity t602}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  },
+  "accessibility": {
+    "expected_description": "Ran, but delivery failed",
+    "nodes": [
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Close sheet",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Drag handle",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Morning digest",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "What this job runs, and when it runs next.",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic delivery failure",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Status",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Active",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Schedule",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Daily",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Schedule (raw)",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "every 1440m",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Repeat",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "forever",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Next run",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "in 17 hr \u00b7 9/18/26, 9:00\u202fAM",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Last run",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "1 day ago \u00b7 9/16/26, 9:00\u202fAM",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Last result",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Ran, but delivery failed",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Deliver to",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "local",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Model",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "example-model",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Working directory",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "tasks",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Instruction",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Synthetic parity fixture, no real routine text",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Close",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      }
+    ]
+  },
+  "normalized_inputs": {
+    "skin": "mono",
+    "mode": "dark",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clock": "2026-09-17T16:00:00Z",
+    "assertions": [
+      "contains:Ran, but delivery failed",
+      "contains:9/18/26, 9:00\u202fAM",
+      "contains:9/16/26, 9:00\u202fAM",
+      "contains:in 17 hr",
+      "mono-neutral-mode-pixel:(21, 21, 22)"
+    ],
+    "assertion_boundary": "Fixture source fixes composition-local formatter and theme; observed timestamp/relative text where present and neutral light/dark pixels asserted. No in-process locale getter is exposed."
+  },
+  "screenshot_sha256": "8e2a068c2e645735c1e05be82857bd9d34b763603a8fcd136d7b31cc5bb4cdf5"
+}

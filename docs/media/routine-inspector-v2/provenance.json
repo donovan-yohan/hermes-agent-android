@@ -1,0 +1,204 @@
+{
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "android_source": {
+    "base_commit": "b4cd28b0e51d05148ddcbf12a669f99492ae0aac",
+    "dirty": true,
+    "diff_sha256": "a2479e4e7a9266bbf59df98b0157b229438c7135a720e403da629ba4a5f8e2a8",
+    "untracked_recipe_sha256": "c31a997fa2f653fdba0fa4891c61c279277847a79da81c8b9da0cf23d493ead3",
+    "apk_sha256": "da9335071c9c3bac003bbe1d6579c18ed044cd5c32705a74d2a709ca64b9355d",
+    "status": " M .github/workflows/visual-parity-capture.yml\n M app/src/debug/kotlin/com/hermesagent/mobile/BotsRoutinesParityActivity.kt\n M app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspector.kt\n M app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/RoutineInspectorSheet.kt\n M app/src/test/kotlin/com/hermesagent/mobile/plugins/bots/BotsRoutineInspectorTest.kt\n M app/src/testDebug/kotlin/com/hermesagent/mobile/BotsRoutinesCaptureTest.kt\n M docs/parity/bot-routines.md\n M docs/parity/visual-capture-surfaces.json\n M scripts/tests/test_visual_parity_workflow.py\n?? docs/workflows/routine-inspector-capture.md\n",
+    "note": "Supplied dirty working-tree APK. Base commit is not a claim of build-to-commit equivalence. No Gradle run in capture task."
+  },
+  "fixtures": [
+    {
+      "file": "routine-inspector-failure.spec.ts",
+      "sha256": "496a951e6014166c14980d9ff20f140efb93a70906adb0553c94cace56dc0b44"
+    },
+    {
+      "file": "routine-inspector-reference.spec.ts",
+      "sha256": "42b413d7735dd90e93da90cf4376b27337428abd67f711cfbfd17ccd5d7acc0c"
+    }
+  ],
+  "capture_patch_sha256": "889279f0369b5e19e4bae5908e31a66eb9ab6fc6ad8db66c91a778b01bb8a344",
+  "patch_reconstruction_verified": true,
+  "immutable_desktop_files_compared": 17003,
+  "changed_upstream_files": [],
+  "historical_packet_unchanged": true,
+  "images": [
+    {
+      "file": "android/completed-dark/reference.png",
+      "sha256": "6ea725b73b9b5ea37edda411587f47d4ce39b9fba47e1f1d32174d373840c972",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/completed-light/reference.png",
+      "sha256": "a8b8fbf460baf6d3679e2b0d5ace561e93f7df9d3911de0d5a6b495e1162a106",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/inspector-dark/reference.png",
+      "sha256": "8e2a068c2e645735c1e05be82857bd9d34b763603a8fcd136d7b31cc5bb4cdf5",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/inspector-light/reference.png",
+      "sha256": "fbea9f641109e73c00aa0a470aac1ef4b61756623b1871e5d1586fef36fe43e6",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/overdue-dark/reference.png",
+      "sha256": "8dbd079f665d5193ed329208072fd5a8e68d8053253365809149a042dcd87ec7",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/overdue-inspector-dark/reference.png",
+      "sha256": "6f21258cf40cf860cb3c1f589698b90519ac2fba14ed8726cdd62beeb02d2b4a",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/overdue-inspector-light/reference.png",
+      "sha256": "827cbf527c2ab5a28ed420fde5aeb82ac17db310cdf5e8722e473f335f25169c",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/overdue-light/reference.png",
+      "sha256": "3d0b640091fb40e6ef4f0d90812222fdb7dfb7510817fe52b8a5b8ff123129c9",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/paused-dark/reference.png",
+      "sha256": "120e2cdc744db3278719a4b0eefef6733ecb1c5ebebecabe16ff8f8ebd09c9f4",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/paused-light/reference.png",
+      "sha256": "8d21d03a0321ff1f147be67d97c3da7960b2b4d0cdb93755e66a7436c0f05606",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/read-failure-dark/reference.png",
+      "sha256": "422ddc5bf4308751c417239d5102999c68418737d3c72e1f79bbe2f9fb9d4c13",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/read-failure-light/reference.png",
+      "sha256": "7da7e0959bae1a2193f19207a9b850125c88b20dca533e5eff74a0576a348158",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/sparse-dark/reference.png",
+      "sha256": "682e7e1b4ea2eae39216581c70286dff0c2eca78a58f920ebd35f8bccd21be3b",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "android/sparse-light/reference.png",
+      "sha256": "7cf85b9f39e3840f1a77dc63a45b189d0adca7a3e9b20aac0eab5783db6080a5",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "file": "desktop/completed-dark.png",
+      "sha256": "b0a3dc91889448b636ed1d8369c703092b6bcc28fa340128e888bc7a9da87e8a",
+      "width": 448,
+      "height": 256
+    },
+    {
+      "file": "desktop/completed-light.png",
+      "sha256": "4f7305e2daf663af62dfcd3a0addea983401644e270bca583fa35a0985220183",
+      "width": 448,
+      "height": 256
+    },
+    {
+      "file": "desktop/inspector-dark.png",
+      "sha256": "c0d0d6cae46fe7f55a9de638f7ceb0d9c0affd3e1b2df1523ae38fd3c30992f7",
+      "width": 448,
+      "height": 470
+    },
+    {
+      "file": "desktop/inspector-light.png",
+      "sha256": "b4b60e0b17e592d6317bf6681dad9947b14a3bf82ad16c49dbe98b9853a1b788",
+      "width": 448,
+      "height": 470
+    },
+    {
+      "file": "desktop/overdue-dark.png",
+      "sha256": "c624e3d4d92c19d95afb6ad521d0ee61131e5918061a4b4d9ce77ce268b07530",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "file": "desktop/overdue-inspector-dark.png",
+      "sha256": "092511462f02ac8e3c22f76d2bd0e0647c7cd8ae847fd2ef0dfeaf19a0e31c9c",
+      "width": 448,
+      "height": 470
+    },
+    {
+      "file": "desktop/overdue-inspector-light.png",
+      "sha256": "0d96aae844ba5745ee5fff546051d6bb3407228048356476029e0c9f62efa196",
+      "width": 448,
+      "height": 470
+    },
+    {
+      "file": "desktop/overdue-light.png",
+      "sha256": "73bbfc2773c12d2fb082bfc60b0477a1409f8836792f6ae14031fe869a75aa7c",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "file": "desktop/paused-dark.png",
+      "sha256": "aa4b36bb67331feea6ce8ab09656bc0b952efa545115d33e6bdffbbe7dfcb97d",
+      "width": 448,
+      "height": 264
+    },
+    {
+      "file": "desktop/paused-light.png",
+      "sha256": "a9665b4ff933d5410b5c048e40a226ab808178c64bd18ecc2f6dee5e3d6ff9a4",
+      "width": 448,
+      "height": 264
+    },
+    {
+      "file": "desktop/read-failure-dark.png",
+      "sha256": "af4dd97c193138e1be04ff27db6a051f229e43476a80c2fb5c0e13adf03b3dae",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "file": "desktop/read-failure-light.png",
+      "sha256": "9c2179ce11266dd3ea89ef720b85b635abb807562087a411d965897c8b75ea66",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "file": "desktop/sparse-dark.png",
+      "sha256": "92d19787d55275109c2c1d21ccae24056f1c1cd258e195cecd48ea923691ac2b",
+      "width": 448,
+      "height": 212
+    },
+    {
+      "file": "desktop/sparse-light.png",
+      "sha256": "a929f6a548e06743115dd1a1c6103edaae198f2f0124d15421984063c3de17bd",
+      "width": 448,
+      "height": 212
+    }
+  ],
+  "android_capture_count": 14,
+  "desktop_capture_count": 14,
+  "validated_receipts": 28,
+  "desktop_execution": "2 actual Electron Playwright tests passed (35.6s); new immutable source export, reused matching previous dist/build and dependency directories. No production source modifications.",
+  "android_fixture_sha256": "4fe81676f081a61a3172dd911de8fcda49ff923b5956fa1d7794dba961deed71",
+  "android_environment_boundary": "Requested remote ARM64 emulator, not pinned CI x86/KVM lane.",
+  "normalization_boundary": "Android composition-local US/UTC formatter, mono skin and explicit Activity theme, fixed fixture clock. Timestamp/relative UI text and neutral light/dark pixels asserted; no in-process resolved-input getter exposed. Desktop renderer CDP locale/timezone, production theme provider and resolved attributes asserted before every capture."
+}

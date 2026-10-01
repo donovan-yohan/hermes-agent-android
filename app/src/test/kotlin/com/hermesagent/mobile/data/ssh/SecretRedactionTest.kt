@@ -11,6 +11,25 @@ import org.junit.Test
  * guarantee is a test, not a convention.
  */
 class SecretRedactionTest {
+    @Test fun `unterminated private keys redact through input end`() {
+        for (label in listOf("", "RSA ", "EC ", "OPENSSH ", "ENCRYPTED ")) {
+            val begin = "-----BEGIN " + label + "PRIVATE KEY-----"
+            assertEquals("prefix -----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY-----", redact("prefix $begin\nsynthetic-material\ntruncated"))
+        }
+    }
+
+    @Test fun `complete private keys preserve following text and redact later truncated key`() {
+        val begin = "-----BEGIN " + "PRIVATE KEY-----"
+        val end = "-----END " + "PRIVATE KEY-----"
+        assertEquals("-----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY----- useful -----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY-----",
+            redact("$begin synthetic-one $end useful $begin synthetic-two"))
+    }
+
+    @Test(timeout = 2_000) fun `many unmatched private key starts have bounded scan cost`() {
+        val begin = "-----BEGIN " + "OPENSSH PRIVATE KEY-----"
+        assertEquals("-----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY-----", redact((begin + "\nsynthetic-material\n").repeat(16_384)))
+    }
+
 
     @Test(timeout = 2_000)
     fun `long unbroken tool output does not stall redaction`() {

@@ -8,6 +8,35 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class TurnErrorDetailsTest {
+    @Test fun `private keys precede credential parsing without changing quote or address ordering`() {
+        val begin = "-----BEGIN " + "OPENSSH PRIVATE KEY-----"
+        val end = "-----END " + "OPENSSH PRIVATE KEY-----"
+        val context = "password=\"synthetic-first synthetic-last\"\n" +
+            "https://[fe80::192.0.2.1%qa0.test]:443/private\n" +
+            "[fe80::192.0.2.1%qa0.test]:443\n"
+        for (prefix in listOf("secret=", "password=", "token=", "Authorization: Basic ", "secret=\"")) {
+            for (complete in listOf(true, false)) {
+                val raw = context + prefix + begin + "\nSYNTHETIC_PRIVATE_MATERIAL" +
+                    if (complete) "\n$end" + (if (prefix.endsWith('"')) "\"" else "") + "\nUseful diagnostic" else ""
+                val descriptor = kotlinx.serialization.json.buildJsonObject {
+                    put("layer", kotlinx.serialization.json.JsonPrimitive("provider"))
+                    for (key in listOf("code", "provider", "model")) {
+                        put(key, kotlinx.serialization.json.JsonPrimitive(raw))
+                    }
+                }
+                val parsed = parseTurnErrorDetails(raw, descriptor)
+                for (safe in listOf(safeTurnErrorDetails(raw), parsed.details, parsed.copyText(raw),
+                    parsed.code!!, parsed.provider!!, parsed.model!!)) {
+                    for (secret in listOf("SYNTHETIC_PRIVATE_MATERIAL", "synthetic-", "qa0", "192.0.2.1", "/private", begin, end)) {
+                        assertFalse(safe, safe.contains(secret))
+                    }
+                }
+                assertTrue(parsed.details.startsWith("password=<redacted>\n<redacted endpoint>\n<redacted address>\n"))
+                if (complete) assertTrue(parsed.details.contains("Useful diagnostic"))
+            }
+        }
+    }
+
     @Test fun `IPv6 addresses and scopes are removed from retained details and clipboard`() {
         val addresses = listOf("[2001:db8::1]:443", "2001:db8:0:1:2:3:4:5", "::1",
             "fe80::abcd%qa0", "[fe80::abcd%qa0]:443", "::ffff:192.0.2.1",

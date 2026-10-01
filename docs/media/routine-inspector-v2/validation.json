@@ -1,0 +1,170 @@
+[
+  {
+    "file": "android/inspector-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/inspector-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/sparse-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/sparse-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/paused-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/paused-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/completed-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/completed-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/overdue-inspector-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/overdue-inspector-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/overdue-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/overdue-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/read-failure-dark/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/read-failure-dark.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/inspector-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/inspector-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/sparse-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/sparse-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/paused-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/paused-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/completed-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/completed-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/overdue-inspector-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/overdue-inspector-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/overdue-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/overdue-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "android/read-failure-light/contract.json",
+    "platform": "android",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "file": "desktop/read-failure-light.contract.json",
+    "platform": "desktop",
+    "exit_code": 0,
+    "output": "ok    desktop capture receipt is safe, complete, and catalogued\n"
+  }
+]

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "surface": "bot-routine-inspector",
+  "state": "inspector",
+  "fixture_id": "bot-routine-inspector-synthetic-v2",
+  "theme": "dark",
+  "viewport": {
+    "width": 1220,
+    "height": 800,
+    "capture_width": 448,
+    "capture_height": 470
+  },
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "normalized_inputs": {
+    "skin": "mono",
+    "mode": "dark",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clock": "2026-09-17T16:00:00.000Z"
+  },
+  "screenshot_sha256": "c0d0d6cae46fe7f55a9de638f7ceb0d9c0affd3e1b2df1523ae38fd3c30992f7",
+  "capture_patch_sha256": "889279f0369b5e19e4bae5908e31a66eb9ab6fc6ad8db66c91a778b01bb8a344",
+  "capture_kind": "dialog-locator"
+}

@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.plugins.bots
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.toggleable
@@ -14,12 +15,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -57,12 +65,13 @@ import java.util.Locale
  * load (`cron.tsx:131-166`) is not implemented: those rows are labelled legacy,
  * never claimed paused by an operation this app did not perform.
  *
- * **No backend prose is rendered.** The row's status line is a closed enum
- * mapped to local copy, the schedule is Desktop's own label (or the Gateway's
- * schedule string, which is a schedule and not prose), and the failure, reason
- * and prompt members are not on [RoutineRow] at all.
+ * The row's status line is a closed enum. Its title opens a read-only inspector
+ * over the held list, whose backend display fields are redacted and bounded.
+ * Full prompts are never retained or rendered.
  */
 class BotsRoutinesActions(
+    val onOpenInspector: (RoutineTarget) -> Unit = {},
+    val onCloseInspector: (RoutineTarget) -> Unit = {},
     val onRetry: () -> Unit = {},
     val onOpenCreation: () -> Unit = {},
     val onCloseCreation: () -> Unit = {},
@@ -84,6 +93,15 @@ fun BotsRoutinesScreen(
     actions: BotsRoutinesActions = BotsRoutinesActions(),
     nowMillis: Long? = null,
 ) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val liveNow by produceState(System.currentTimeMillis(), lifecycle, nowMillis) {
+        if (nowMillis == null) lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                value = System.currentTimeMillis()
+                delay(30_000)
+            }
+        }
+    }
     LifecycleResumeEffect(Unit) {
         actions.onResume()
         onPauseOrDispose {}
@@ -109,7 +127,11 @@ fun BotsRoutinesScreen(
                 Spacer(Modifier.height(8.dp))
             }
 
-            val now = nowMillis ?: System.currentTimeMillis()
+            val now = nowMillis ?: liveNow
+            state.inspectedJob?.let { job ->
+                val target = state.inspectorTarget!!
+                RoutineInspectorSheet(job, now, state.stale) { actions.onCloseInspector(target) }
+            }
             if (state.actionFailed) {
                 StaleNotice(BotsRoutinesCopy.FAILED_UPDATE)
                 Spacer(Modifier.height(8.dp))
@@ -180,7 +202,7 @@ private fun RoutinesOwnerHeader(state: BotsRoutinesUiState, actions: BotsRoutine
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(
-                text = state.ownerLabel ?: state.owner ?: BotsRoutinesCopy.TITLE,
+                text = routineDisplay(state.ownerLabel ?: state.owner ?: BotsRoutinesCopy.TITLE),
                 style = HermesTheme.type.bodyStrong,
                 color = tokens.textPrimary,
                 maxLines = 1,
@@ -257,12 +279,14 @@ private fun RoutineRowItem(job: RoutineRow, nowMillis: Long, state: BotsRoutines
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = job.title,
+                text = routineDisplay(job.title),
                 style = HermesTheme.type.body,
                 color = if (job.active) tokens.textPrimary else tokens.textTertiary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).heightIn(min = HermesTheme.spacing.touchTarget)
+                    .clickable(role = Role.Button) { state.target(job)?.let(actions.onOpenInspector) }
+                    .wrapContentHeight(Alignment.CenterVertically),
             )
             val target = state.target(job)
             val enabled = state.canMutate && job.id !in state.pendingJobs && target != null
@@ -308,7 +332,7 @@ private fun RoutineRowItem(job: RoutineRow, nowMillis: Long, state: BotsRoutines
                 HermesIconGlyph(icon = HermesIcon.Calendar, color = tokens.textTertiary, size = 11.sp)
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    text = job.scheduleLabel,
+                    text = routineDisplay(job.scheduleLabel),
                     style = HermesTheme.type.scaffoldMeta,
                     color = tokens.textTertiary,
                     maxLines = 1,
@@ -321,7 +345,7 @@ private fun RoutineRowItem(job: RoutineRow, nowMillis: Long, state: BotsRoutines
         job.repeat?.let { repeat ->
             Spacer(Modifier.height(4.dp))
             Text(
-                text = BotsRoutinesCopy.repeatTimes(repeat),
+                text = BotsRoutinesCopy.repeatTimes(routineDisplay(repeat)),
                 style = HermesTheme.type.scaffoldMeta,
                 color = tokens.textQuaternary,
             )
@@ -349,6 +373,7 @@ private fun RoutineStatusLine(job: RoutineRow, nowMillis: Long) {
     val nextRun = job.nextRunMillis
     val text = when {
         job.state == RoutineRunState.Unknown -> return
+        job.overdueMillis(nowMillis) != null -> "Overdue since: ${routineRelativeLabel(nextRun!!, nowMillis)}"
         job.active && nextRun != null -> "${BotsRoutinesCopy.NEXT_PREFIX} ${routineRelativeLabel(nextRun, nowMillis)}"
         job.state == RoutineRunState.Paused -> BotsRoutinesCopy.STATE_PAUSED
         job.state == RoutineRunState.Completed -> BotsRoutinesCopy.STATE_COMPLETED

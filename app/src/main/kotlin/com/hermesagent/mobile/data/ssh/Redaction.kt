@@ -17,12 +17,28 @@ private val REDACTIONS: List<Pair<Regex, String>> = listOf(
     Regex("(X-Hermes-Session-Token[\"']?\\s*[:=]\\s*[\"']?)([^\\s\"'&]+)", RegexOption.IGNORE_CASE) to "$1<redacted>",
     Regex("(Authorization[\"']?\\s*:\\s*Bearer\\s+)(\\S+)", RegexOption.IGNORE_CASE) to "$1<redacted>",
     Regex("([?&](?:token|ticket)=)([^\\s&\"']+)", RegexOption.IGNORE_CASE) to "$1<redacted>",
-    // Android-only additions: the two shapes an OpenSSH private key takes when
-    // a paste or an import goes somewhere it should not.
-    Regex("-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----") to
-        "-----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY-----",
     Regex("(password[\"']?\\s*[:=]\\s*[\"']?)([^\\s\"',]+)", RegexOption.IGNORE_CASE) to "$1<redacted>",
 )
+
+// Monotonic scans: a missing END consumes the remainder once, rather than
+// retrying a whole-body regex for every BEGIN in truncated backend previews.
+private val PRIVATE_KEY_BEGIN = Regex("-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+private val PRIVATE_KEY_END = Regex("-----END [A-Z0-9 ]*PRIVATE KEY-----")
+
+// Run this dedicated pass before any credential parser can consume the BEGIN opener.
+// Do not move all SSH redaction earlier: it can split quoted credential values.
+internal fun redactPrivateKeys(text: String): String = buildString {
+    var copiedThrough = 0
+    var begin = PRIVATE_KEY_BEGIN.find(text)
+    while (begin != null) {
+        append(text, copiedThrough, begin.range.first)
+        val end = PRIVATE_KEY_END.find(text, begin.range.last + 1)
+        append("-----BEGIN PRIVATE KEY----- <redacted> -----END PRIVATE KEY-----")
+        copiedThrough = end?.range?.last?.plus(1) ?: text.length
+        begin = PRIVATE_KEY_BEGIN.find(text, copiedThrough)
+    }
+    append(text, copiedThrough, text.length)
+}
 
 private val NON_WHITESPACE = Regex("\\S+")
 private val NUMERIC_PORT_PREFIX = Regex("\\d+\\b")
@@ -34,7 +50,7 @@ private val URL_USERINFO = Regex(
 )
 
 fun redact(text: String?): String {
-    var out = text ?: ""
+    var out = redactPrivateKeys(text.orEmpty())
     for ((pattern, replacement) in REDACTIONS) {
         out = pattern.replace(out, replacement)
     }

@@ -1,0 +1,376 @@
+{
+  "schema_version": 1,
+  "surface": "bot-routine-inspector",
+  "state": "overdue",
+  "fixture_id": "bot-routine-inspector-synthetic-v2",
+  "theme": "light",
+  "android_git_sha": "b4cd28b0e51d05148ddcbf12a669f99492ae0aac",
+  "android_source_dirty": true,
+  "android_source_diff_sha256": "a2479e4e7a9266bbf59df98b0157b229438c7135a720e403da629ba4a5f8e2a8",
+  "source_note": "Dirty working-tree build, base commit only; not a commit artifact.",
+  "apk_sha256": "da9335071c9c3bac003bbe1d6579c18ed044cd5c32705a74d2a709ca64b9355d",
+  "installed_apk_sha256": "da9335071c9c3bac003bbe1d6579c18ed044cd5c32705a74d2a709ca64b9355d",
+  "apk_kind": "debug",
+  "interactions": [],
+  "viewport": {
+    "width": 1280,
+    "height": 2856,
+    "density": "Physical density: 480"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+    "focused_window": "mCurrentFocus=Window{e65fff9 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity}\nmFocusedApp=ActivityRecord{120289525 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity t614}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  },
+  "accessibility": {
+    "expected_description": "Overdue since: 7 hr ago",
+    "nodes": [
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Back",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Scheduled jobs",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Ops",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "SCHEDULED JOBS",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "New cron",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Runs on a schedule",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.Button",
+        "text": "Morning digest",
+        "content_description": "",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Pause cron",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Delete",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Daily",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Overdue since: 7 hr ago",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Repeats forever",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Not scheduled to run",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.Button",
+        "text": "Nightly sweep",
+        "content_description": "",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Resume cron",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Delete",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Once (30m)",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "paused",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Repeats 3 times",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Runs on a schedule",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.Button",
+        "text": "Weekday standup",
+        "content_description": "",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Pause cron",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Delete",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "0 9 * * 1-5",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Overdue since: 5 hr ago",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Repeats forever",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Runs on a schedule",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.Button",
+        "text": "Audit trail",
+        "content_description": "",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Pause cron. Work in progress.",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Delete. Work in progress.",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "every 2h",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Overdue since: 4 hr ago",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Repeats forever",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Legacy delegated routine \u2014 this app cannot run, edit, pause or delete it yet.",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Not scheduled to run",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.Button",
+        "text": "Completed check",
+        "content_description": "",
+        "clickable": true,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Resume cron",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.view.View",
+        "text": "",
+        "content_description": "Delete",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Once (30m)",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "completed",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      },
+      {
+        "class": "android.widget.TextView",
+        "text": "Repeats 1 time",
+        "content_description": "",
+        "clickable": false,
+        "enabled": true,
+        "selected": false
+      }
+    ]
+  },
+  "normalized_inputs": {
+    "skin": "mono",
+    "mode": "light",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clock": "2026-09-18T16:00:00Z",
+    "assertions": [
+      "contains:7 hr ago",
+      "contains:Completed check",
+      "mono-neutral-mode-pixel:(254, 254, 254)"
+    ],
+    "assertion_boundary": "Fixture source fixes composition-local formatter and theme; observed timestamp/relative text where present and neutral light/dark pixels asserted. No in-process locale getter is exposed."
+  },
+  "screenshot_sha256": "3d0b640091fb40e6ef4f0d90812222fdb7dfb7510817fe52b8a5b8ff123129c9"
+}
