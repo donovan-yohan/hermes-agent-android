@@ -75,7 +75,9 @@ class GatewayAvatarAssetSourceTest {
         assertEquals(60_000L, gatewayRpcTimeoutMillis("profiles.list"))
         assertEquals(1_800_000L, gatewayRpcTimeoutMillis("prompt.submit"))
         assertEquals(123L, gatewayRpcTimeoutMillis("session.list", 123))
-        assertEquals(123L, gatewayRpcTimeoutMillis("profiles.set_asset", 123))
+        // Avatar editing intentionally promotes this sibling to the same slow lane.
+        assertEquals(60_000L, gatewayRpcTimeoutMillis("profiles.set_asset", 123))
+        assertEquals(123L, gatewayRpcTimeoutMillis("profiles.configure", 123))
         rpc.close()
     }
 

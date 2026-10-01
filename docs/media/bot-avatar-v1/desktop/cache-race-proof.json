@@ -1,0 +1,9 @@
+{
+  "read_count": 0,
+  "named_read_frames": 0,
+  "actual_roster_responses": 9,
+  "all_has_avatar_true": true,
+  "cached_image_equals_disk_equals_blue_seed": true,
+  "image_sha256": "35f6310fdd6044e83d71311482ebf8068cfdb5f02ea3295498c6b9f29ccd57c0",
+  "error": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBeGreaterThan\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m)\u001b[22m\n\nExpected: > \u001b[32m0\u001b[39m\nReceived:   \u001b[31m0\u001b[39m\n\nCall Log:\n- Timeout 30000ms exceeded while waiting on the predicate"
+}

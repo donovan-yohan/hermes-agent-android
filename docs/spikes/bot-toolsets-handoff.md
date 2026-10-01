@@ -1,111 +1,140 @@
-# Existing Bot Toolsets — implementation handoff
+# Existing Bot Toolsets — integrated handoff
 
-## Base and integration ownership
+## Integration and failure root cause
 
-Isolated branch `feat/bot-toolsets` starts at fetched `origin/main`
-`fbdda921252df85b1f73f8a1342f21ce59a61128`. It is **not** stacked on the avatar branch.
-The source worktree `hermes-mobile-bot-avatar` was inspected read-only.
+Toolsets implementation is preserved in `27a807c`; main avatar editor commit
+`4797bf539d9b754f93965b4ec57a2f00846339b8` is merged additively. Both route renderers
+collect and pass model, Toolsets and avatar state/actions. Management opens/closes
+all three independent editors. Shared guarded `PluginHost` is byte-identical to main.
+No model/avatar feature was replaced to resolve conflicts.
 
-The only shared prerequisite is `PluginHost.requestAtEndpointGuarded`. Its implementation
-was reviewed against avatar `93443528`: unsupported hosts refuse; the caller predicate is
-joined to endpoint/live-RPC ownership inside the existing immediate dispatch callback,
-and checked again after the reply. This worktree's `PluginHost.kt` is identical to that
-reviewed file (verified with `git diff 93443528 -- …/PluginHost.kt`). No avatar importer,
-UI, transport asset support, dependency or capture changes were imported.
+The original full-check failure was fixture drift: Edit gained an authoritative
+Toolsets `profiles.describe`, but `BotManagementParityFixtureTest` expected the old
+four-call sequence. The isolated test reproduced the exact mismatch before fixing
+the expectation. After avatar integration the sequence is model describe/options,
+Toolsets describe, avatar get_asset, identity describe/list. No-write assertions,
+exact avatar parameters and refused-mutation/authority assertions remain enforced.
 
-Planned merge: land the reviewed avatar seam first, then merge/rebase this branch and
-retain one identical shared seam. Resolve BotManagementSheet/BotsManagementViewModel/
-BotsPlugin additions additively (avatar + toolsets), never replace either editor with
-the other branch's entire file. If toolsets lands first, the seam is independently
-covered by its real-GatewayPluginHost dispatch tests; avatar should reuse it unchanged.
+## Contract and current Desktop boundary
 
-## Inspected contract
+Inspected upstream `587e673e2a2fae0616d8b750bb189217080f621a`:
 
-Read-only upstream `587e673e2a2fae0616d8b750bb189217080f621a`:
+- `tui_gateway/methods_profiles.py:345-405`: describe name/boolean pin and independent receipts.
+- `:567-588`: server order, labels, descriptions, counts, default-off row disappearance.
+- `:637-727`: Toolsets-only write; empty removes CLI pin; nonempty pins explicit selection.
+- `hermes_cli/tools_config.py:111,722-751`: default-off allowlist, platform filtering,
+  preserved nonconfigurable entries, known-toolset recording and reconciliation.
+- Historical `apps/desktop/src/plugins/hermes-bots/profile-config.tsx:395-427,583-586`:
+  ordered checkboxes, grouped save and all-selected/none-to-empty behavior.
 
-- `tui_gateway/methods_profiles.py:345-405`: describe name and boolean pin; independent section receipts.
-- `tui_gateway/methods_profiles.py:567-588`: server order, labels, descriptions, counts,
-  and default-off rows disappearing when disabled.
-- `tui_gateway/methods_profiles.py:637-727`: no model keys on a toolset write; empty
-  toolsets removes the CLI pin; nonempty writes an explicit CLI selection.
-- `hermes_cli/tools_config.py:111`: pinned default-off disappearance allowlist;
-  `:722-751`: platform filtering, preserved nonconfigurable entries, known-toolset
-  recording, and disabled-toolset reconciliation. This is not a global runtime-tools editor.
-- `apps/desktop/src/plugins/hermes-bots/profile-config.tsx:395-427,583-586`: Desktop
-  ordered checkboxes, grouped save, and its all-selected/none-to-empty behavior.
+This is a **bounded selection adaptation**, not full current-Desktop parity. The
+historical profile-config inspection is not the current Desktop UX contract.
+Parent-reported actual current capture:
+`scratch/routine-inspector-587e/toolsets-current-packet/REPORT.md` — 14 genuine
+reference PNGs and four passing capture tests, not canonical parity receipts.
+Current `CapabilitiesView` orders Skills → Tools → Connectors → Plugins and autosaves
+switches; it has no reset-confirmation/default-restored controls or pin badge.
+Do not invent matching Desktop states, force a fallback surface or claim full parity.
 
-Android deliberately does **not** copy Desktop's all-selected-to-empty shortcut:
-all-selected remains an explicit pin, and no selection cannot Save. Only a separate
-Restore defaults confirmation sends `enabled_toolsets: []`. No invented confirm RPC
-or confirm field exists. The only mutation keys are `name` and `enabled_toolsets`.
-Skills, MCP, model, identity and creation/duplication writes are excluded.
+Android intentionally retains explicit Save, preflight/readback and independent
+restore confirmation for mutation safety. All-selected remains an explicit pin;
+no selection cannot Save. Only confirmed Restore defaults sends `enabled_toolsets: []`.
+No invented confirm RPC/field exists. Mutation keys are only `name` and
+`enabled_toolsets`; Skills, MCP, model, avatar, identity and creation/duplication
+writes are excluded from this section save.
 
 ## Authority and failure behavior
 
-Description requires exact name, required literal boolean `toolsets_pinned`, an array
-of unique nonblank/unpadded names, and literal boolean `enabled` for every row.
-Unrecognized optional presentation fields do not create write authority.
+Describe requires exact name, required literal boolean `toolsets_pinned`, unique
+nonblank/unpadded row names and literal boolean `enabled` per row. Optional presentation
+fields never create write authority. Unknown server-provided names roundtrip unchanged.
 
-Save and restore reread their baseline first. A changed baseline refuses the write.
-This is a known-staleness check, **not CAS**: another client can still race after
-preflight. A literal `ok:true` and `applied.toolsets:true` is followed by another named
-read. Save requires pin true, exact desired enabled names, and existing unchecked rows
-disabled. Only pinned-upstream default-off names plus yuanbao may disappear when
-unchecked; unknown missing rows and unexplained added enabled rows are unconfirmed.
-Restore requires pin false and publishes the actual returned default rows.
+Save/restore reread the baseline first; changed baselines refuse. This is a known-stale
+check, **not CAS**: another client can still race after preflight. Literal `ok:true`
+and `applied.toolsets:true` precede named readback. Save requires pin true, exact desired
+enabled names and existing unchecked rows disabled. Only upstream default-off names
+plus yuanbao may disappear unchecked. Unknown missing rows or unexplained enabled rows
+are unconfirmed. Restore requires pin false and publishes actual returned defaults.
 
-Endpoint/profile/dialog-revision tickets reject stale callbacks. Accepted pending
-operations remain keyed to endpoint/profile across close/reopen ABA. Reopening while
-pending disables writes and performs a fresh read after completion; a separate read
-sequence prevents the earlier reopening read winning. Uncertain writes are consumed,
-never automatically replayed. The originating dialog predicate reaches the immediate
-wire seam, not merely a pre-suspension check.
+Endpoint/profile/dialog tickets reject stale callbacks. Pending operations remain
+keyed to endpoint/profile across close/reopen and distinct-profile ABA. Reopening
+while pending disables writes and rereads after completion; a separate read sequence
+prevents delayed old reopening reads from winning. Uncertain writes are consumed,
+never replayed. The originating dialog predicate reaches the immediate wire seam.
 
-## UI and capture boundary
+## UI and evidence boundary
 
-Existing Edit only, server-order checkboxes with 48dp minimum row targets, checkable
-role/state, counts, descriptions, independent Save and default confirmation. Skills
-and MCP servers remain visible WIP. New/Duplicate Toolsets remains WIP.
+Existing Edit only: server-order checkboxes, 48dp minimum row targets, checkable state,
+counts/descriptions, independent Save/default confirmation. Skills and MCP remain WIP;
+New/Duplicate Toolsets remains WIP. Native per-toolset configuration is not implemented.
 
-The `bot-toolsets` capture catalog was registered before the UI. The debug-only
-`BotToolsetsParityActivity` uses the production repository, view-model and editor over
-an allowlisted synthetic host; saved/restored/unconfirmed states execute actual
-production actions. Loading holds the real request and preserves its real timeout.
-The fixture owns no real Gateway or profile. Captures are a focused editor section,
-not proof of the full sheet layout or recorded Save gestures.
+Debug-only `BotToolsetsParityActivity` uses production repository/view-model/editor
+over an allowlisted synthetic host with no real Gateway/profile. Saved/restored/
+unconfirmed execute production actions; loading holds the real request and timeout.
+These are focused section fixtures, not full-sheet layout or recorded gesture proof.
 
-Catalog states: loading, defaults, pinned, changed, all-selected, empty-selection,
-reset-confirmation, saved, restored, error, empty, unconfirmed. Capture dark/light
-Android pixels and platform accessibility XML; verify Checkbox checkable/checked/enabled
-and 48dp hit regions, not only text presence. Browser Desktop capture is not Android
-platform semantics evidence. Desktop screenshot/report and Android emulator captures
-are **not produced yet**. No visual parity approval is claimed.
-
-Deliberate mobile adaptations: independent section save/reset confirmation instead of
-grouped advanced save; explicit pin for all-selected; descriptions/counts and native
-checkbox touch rows. Unsupported skills/MCP configuration remains an omission with
-visible WIP controls. Native per-toolset configuration is not implemented.
+States: loading, defaults, pinned, changed, all-selected, empty-selection,
+reset-confirmation, saved, restored, error, empty, unconfirmed. Android Toolsets pixel
+captures remain outstanding in this worktree. Desktop references were reported complete
+by the parent; they cannot certify Android explicit Save/restore states. No visual
+parity approval is claimed. Validate native Checkbox checkable/checked/enabled semantics
+and 48dp hit regions, not merely text or browser screenshots.
 
 ## Verification actually performed
 
-No Gradle invocation, commit, push, APK install or emulator capture was authorized or run.
-Standalone cached Kotlin/JUnit verification compiled the changed repository, view-model
-and **current worktree PluginHost**, then ran repository/VM/real-host dispatch tests:
-**16 tests passed**. Separate cached Kotlin Compose compilation included management
-wiring, editor, fixture and tests; **5 tests passed** (three Compose journeys including
-the registered production route, two deterministic fixture tests).
+Authorized sequential Gradle execution used one worker, no parallel tasks, in-process
+Kotlin and `-Xmx6g`. Isolated original fixture test failed before correction; pre-merge
+focused tests passed. Integrated focused run: **72 tests, zero failures/errors/skips**,
+covering Toolsets, model, avatar and management fixture.
 
-Reproduction scripts (scratch-only outputs):
+Full `check assembleDebug`: **BUILD SUCCESSFUL** (6m 42s). XML totals:
 
-- `$TMPDIR/toolsets-check.py`
-- `$TMPDIR/toolsets-compose-check.py --run`
+- Debug: 3328 tests, 0 failures, 0 errors, 1 skipped.
+- Release: 2637 tests, 0 failures, 0 errors, 1 skipped.
 
-These checks read avatar's cached compiled collaborators/debug resources without
-modifying that worktree. They are not a clean app build. JVM compiler 2.3.20; Compose
-compiler 2.3.21. Robolectric ran API 34, with a harmless Java-17/API-36 availability
-warning. Product-copy gate, existing parity structure gate and `git diff --check` passed.
-The structure gate does not certify this new surface's missing pixels.
+Direct regressions cover delayed reopening read arriving after reconciliation,
+distinct-profile A→B→A pending authority, unknown server-name save/readback, and dirty
+model/identity UI drafts surviving Toolsets save in the registered production route.
+Avatar/model suites remain green. Toolsets diff against integrated main passes
+`git diff --check`. The merge-wide staged check reported pre-existing trailing spaces
+inside main's archived avatar provenance `.patch` files; those evidence files were
+preserved unchanged rather than rewritten to hide their historical contents.
 
-Parent-owned next gates: grant sequential Gradle; run focused and full unfiltered
-checks/builds; capture actual paired images/accessibility evidence with exact APK/source
-hashes; review remaining Desktop copy/layout divergence; then commit/push only on grant.
+APK: `app/build/outputs/apk/debug/app-debug.apk`; SHA-256:
+`52b931f852cf6f88f6e9d38ebea1983d634fa48c433e8e5a3aecbd6141111f96`.
+Logs: `$TMPDIR/toolsets-red.log`, `toolsets-focused-before-merge.log`,
+`toolsets-integrated-focused.log`, `toolsets-integrated-full.log`.
+Compiler/deprecation warnings and malformed-image decoder diagnostics remain; no failed
+gate was suppressed. No push, install or Android Toolsets capture was run.
+
+Reproduce serially from this worktree; do not share the Gradle lane:
+
+```sh
+./gradlew :app:testDebugUnitTest \
+  --tests '*BotManagementParityFixtureTest' --tests '*BotsToolsets*' \
+  --tests '*BotToolsets*' --tests '*BotsModel*' --tests '*BotsAvatar*' \
+  --max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process \
+  '-Dorg.gradle.jvmargs=-Xmx6g'
+./gradlew check assembleDebug --max-workers=1 --no-parallel \
+  -Pkotlin.compiler.execution.strategy=in-process '-Dorg.gradle.jvmargs=-Xmx6g'
+```
+
+## Synthetic Android capture commands (not yet executed)
+
+Use a dedicated emulator and verified APK. These raw PNG/XML commands are not canonical
+parity receipts. Select each catalog state and dark/light theme; verify intended UI
+readiness before capture, not merely `am start` return. Loading stays a held request.
+
+```sh
+adb -s "$SERIAL" install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s "$SERIAL" shell am start -W \
+  -n com.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity \
+  --es visual_parity_state defaults --es visual_parity_theme dark
+# After verifying intended UI readiness:
+adb -s "$SERIAL" exec-out screencap -p > "$OUT/defaults-dark.png"
+adb -s "$SERIAL" shell uiautomator dump /sdcard/toolsets-window.xml
+adb -s "$SERIAL" pull /sdcard/toolsets-window.xml "$OUT/defaults-dark.xml"
+```
+
+Record source/APK hashes and capture provenance, validate native semantics, and review
+full-sheet layout separately. Paired visual acceptance remains parent-owned.

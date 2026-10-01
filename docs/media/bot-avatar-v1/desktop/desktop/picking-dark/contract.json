@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "surface": "bot-avatar-editor",
+  "state": "bot-avatar-picking",
+  "fixture_id": "bot-avatar-editor-synthetic-v1",
+  "theme": "dark",
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "viewport": {
+    "window_width": 1440,
+    "window_height": 1100,
+    "screenshot_width": 384,
+    "screenshot_height": 536,
+    "crop": "Edit profile dialog"
+  },
+  "captured_at": "2026-10-01T19:58:18.370Z",
+  "screenshot_sha256": "2c0807b5d92bd450dd668bd16e49daf4eb365936436a16f172e10c254ddf14bd",
+  "fixture_implementation_sha256": "d93baa975e075ddfa2e4c2e38d70ac7e48eaa9acded10c5158f51b90d188b353",
+  "observed_platform_boundary": {
+    "presentation": "picking-native-app-unchanged",
+    "interaction_semantics": "Actual native Open File window open; screenshot is real app editor beneath it, not OS picker pixels. Native picker separately retained; OS chrome is not light/dark emulated.",
+    "observed_asset_reads": 1,
+    "observed_asset_writes": 0,
+    "native_events": []
+  },
+  "run_boundary": "Fresh focused journey and refusal run: 2 passed, no retries; not a cross-platform equivalence assertion."
+}

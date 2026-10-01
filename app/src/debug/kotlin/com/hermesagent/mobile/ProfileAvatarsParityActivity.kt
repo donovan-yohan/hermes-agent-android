@@ -64,6 +64,13 @@ class ProfileAvatarsParityActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val requestedState = intent.getStringExtra(EXTRA_STATE)
+        if (requestedState in BOT_AVATAR_CAPTURE_STATES) {
+            java.util.Locale.setDefault(java.util.Locale.US)
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+            val mode = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
+            setContent { HermesTheme(AppearanceSelection("mono", mode)) { BotAvatarParityContent(requireNotNull(requestedState)) } }
+            return
+        }
         if (requestedState in BOT_MODEL_CAPTURE_STATES || requestedState in setOf("bot-roster", "bot-new", "bot-edit", "bot-duplicate", "bot-move", "bot-section")) {
             java.util.Locale.setDefault(java.util.Locale.US)
             java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))

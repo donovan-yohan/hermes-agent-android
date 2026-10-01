@@ -47,6 +47,24 @@ class BotsToolsetsRepositoryTest {
         assertEquals(Json.parseToJsonElement("""{"name":"worker","enabled_toolsets":["web","terminal"]}"""), host.calls[1].second)
         assertTrue((result as BotToolsetsSave.Saved).actual.pinned)
     }
+    @Test fun `server supplied unknown name roundtrips without client allowlist loss`() = runTest {
+        val unknown = "future-plugin-toolset"
+        var wrote = false
+        val host = ToolsetsTestHost().apply { answer = { method, _ ->
+            if (method == "profiles.configure") {
+                wrote = true; toolsetsReply("""{"ok":true,"applied":{"toolsets":true}}""")
+            } else toolsetsReply(toolsetsJson(pinned = wrote, b = wrote).replace("terminal", unknown))
+        } }
+        val repo = BotsToolsetsRepository(host)
+        val baseline = repo.describe(target)!!
+        assertEquals(listOf("web", unknown), baseline.rows.map { it.name })
+        val saved = repo.save(target, baseline, setOf("web", unknown)) { true } as BotToolsetsSave.Saved
+        assertEquals(setOf("web", unknown), saved.actual.enabled)
+        assertTrue(saved.actual.pinned)
+        assertEquals(Json.parseToJsonElement("""{"name":"worker","enabled_toolsets":["web","future-plugin-toolset"]}"""),
+            host.calls.single { it.first == "profiles.configure" }.second)
+        assertEquals(saved.actual, repo.describe(target))
+    }
     @Test fun `invalid selection never dispatches and stale baseline never configures`() = runTest {
         val host = ToolsetsTestHost().apply { answer = { _, _ -> toolsetsReply(toolsetsJson()) } }
         val repo = BotsToolsetsRepository(host); val baseline = repo.describe(target)!!

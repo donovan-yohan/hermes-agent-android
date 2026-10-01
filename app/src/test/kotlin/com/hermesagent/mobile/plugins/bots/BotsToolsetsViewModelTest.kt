@@ -85,6 +85,66 @@ class BotsToolsetsViewModelTest {
         assertFalse(vm.state.value.consumed); assertEquals(setOf("web", "terminal"), vm.state.value.draft)
         assertEquals(1, host.calls.count { it.first == "profiles.configure" })
     }
+    @Test fun `delayed reopen read cannot overwrite completed reconciliation`() = runTest {
+        val write = CompletableDeferred<Unit>()
+        val oldRead = CompletableDeferred<Unit>()
+        var wrote = false
+        var reads = 0
+        val host = ToolsetsTestHost().apply { answer = { method, _ ->
+            if (method == "profiles.configure") {
+                write.await(); wrote = true
+                toolsetsReply("""{"ok":true,"applied":{"toolsets":true}}""")
+            } else {
+                val captured = toolsetsJson(pinned = wrote, b = wrote)
+                if (++reads == 3) oldRead.await()
+                toolsetsReply(captured)
+            }
+        } }
+        val vm = BotsToolsetsViewModel(host, backgroundScope, {})
+        vm.open(target); runCurrent(); vm.toggle(vm.state.value, "terminal")
+        vm.save(vm.state.value); runCurrent()
+        vm.close(); vm.open(target); runCurrent()
+        assertTrue(vm.state.value.loading); assertTrue(vm.state.value.consumed)
+        write.complete(Unit); runCurrent()
+        val reconciled = vm.state.value
+        assertFalse(reconciled.loading); assertFalse(reconciled.consumed)
+        assertTrue(reconciled.original!!.pinned)
+        assertEquals(setOf("web", "terminal"), reconciled.draft)
+        oldRead.complete(Unit); runCurrent()
+        assertSame(reconciled, vm.state.value)
+        assertEquals(1, host.calls.count { it.first == "profiles.configure" })
+    }
+    @Test fun `distinct profile ABA keeps pending authority scoped to original profile`() = runTest {
+        val write = CompletableDeferred<Unit>(); var workerWrote = false
+        val other = BotManagementTarget("other", 7L)
+        val host = ToolsetsTestHost().apply { answer = { method, params ->
+            val name = params.getValue("name").toString().trim('"')
+            if (method == "profiles.configure") {
+                assertEquals("worker", name)
+                write.await(); workerWrote = true
+                toolsetsReply("""{"ok":true,"applied":{"toolsets":true}}""")
+            } else toolsetsReply(toolsetsJson(pinned = name == "worker" && workerWrote,
+                b = name == "worker" && workerWrote).replace("worker", name))
+        } }
+        val vm = BotsToolsetsViewModel(host, backgroundScope, {})
+        vm.open(target); runCurrent(); vm.toggle(vm.state.value, "terminal")
+        val oldWorker = vm.state.value
+        vm.save(oldWorker); runCurrent()
+        vm.open(other); runCurrent()
+        val otherSnapshot = vm.state.value
+        assertTrue(otherSnapshot.editable)
+        vm.open(target); runCurrent()
+        assertTrue(vm.state.value.consumed)
+        vm.toggle(otherSnapshot, "terminal"); vm.save(otherSnapshot); vm.save(oldWorker)
+        write.complete(Unit); runCurrent()
+        assertEquals(target, vm.state.value.ticket!!.target)
+        assertEquals(setOf("web", "terminal"), vm.state.value.draft)
+        assertFalse(vm.state.value.consumed)
+        assertEquals(1, host.calls.count { it.first == "profiles.configure" })
+        vm.open(other); runCurrent()
+        assertEquals(setOf("web"), vm.state.value.draft)
+        assertFalse(vm.state.value.original!!.pinned)
+    }
     @Test fun `close before wire revokes old dialog even after same profile reopens`() = runTest {
         val release = CompletableDeferred<Unit>()
         val host = ToolsetsTestHost().apply {

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "surface": "bot-avatar-editor",
+  "state": "bot-avatar-loading",
+  "fixture_id": "bot-avatar-editor-synthetic-v1",
+  "theme": "light",
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "viewport": {
+    "window_width": 1440,
+    "window_height": 1100,
+    "screenshot_width": 384,
+    "screenshot_height": 716,
+    "crop": "Edit profile dialog"
+  },
+  "captured_at": "2026-10-01T19:25:17.424789+00:00",
+  "screenshot_sha256": "8833a9349ada5783d8bf310ae36dbd45cc83dcfe4639c9fb845528f26f3bf678",
+  "fixture_implementation_sha256": "39b1fce5ade7f48d82275ccf13a6929c27e7712b7bec6989cf726288e66d9aa0",
+  "observed_platform_boundary": {
+    "presentation": "read-pending-fallback",
+    "action_origin": "Real editor over synthetic Gateway with named asset read held pending",
+    "interaction_semantics": "Shape fallback; no Android-style loading label; no platform visual equivalence asserted",
+    "observed_asset_reads": 1,
+    "observed_pending_reads": 1,
+    "observed_asset_writes": 0
+  },
+  "run_boundary": "Fresh pending-only diagnostic run passed; journey and error recapture are blocked. Original captures not restamped."
+}

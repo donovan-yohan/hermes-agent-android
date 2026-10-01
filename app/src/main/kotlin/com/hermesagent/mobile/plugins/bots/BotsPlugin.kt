@@ -111,7 +111,7 @@ class BotsPlugin(
             endpointGeneration = host.endpointGeneration,
             connectionToken = avatarRoster?.let { host.connectionToken },
         )
-        refreshRoster = viewModel::refresh
+        refreshRoster = { avatarRoster?.refreshAvatars(); viewModel.refresh() }
         val actions = BotsActions(
             onRefresh = viewModel::refresh,
             onSearchChange = viewModel::setSearchQuery,
@@ -165,8 +165,10 @@ class BotsPlugin(
                         val managementState by management.state.collectAsStateWithLifecycle()
                         val modelState by management.model.state.collectAsStateWithLifecycle()
                         val toolsetsState by management.toolsets.state.collectAsStateWithLifecycle()
+                        val avatarState by management.avatar.state.collectAsStateWithLifecycle()
                         BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState),
-                            toolsetsState, toolsetsActions(toolsetsState))
+                            toolsetsState = toolsetsState, toolsetsActions = toolsetsActions(toolsetsState),
+                            avatarState = avatarState, avatarActions = botAvatarActions(management.avatar, avatarState))
                         BotsRosterScreen(
                             state = state,
                             onBack = nav.onBack,
@@ -206,8 +208,10 @@ class BotsPlugin(
                             val managementState by management.state.collectAsStateWithLifecycle()
                             val modelState by management.model.state.collectAsStateWithLifecycle()
                             val toolsetsState by management.toolsets.state.collectAsStateWithLifecycle()
+                            val avatarState by management.avatar.state.collectAsStateWithLifecycle()
                             BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState),
-                                toolsetsState, toolsetsActions(toolsetsState))
+                                toolsetsState = toolsetsState, toolsetsActions = toolsetsActions(toolsetsState),
+                                avatarState = avatarState, avatarActions = botAvatarActions(management.avatar, avatarState))
                             BotsRosterScreen(
                                 state = state,
                                 onBack = onBack,

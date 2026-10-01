@@ -45,6 +45,7 @@ class BotsManagementViewModel(
 ) {
     val model = BotsModelViewModel(host, scope, onChanged)
     val toolsets = BotsToolsetsViewModel(host, scope, onChanged)
+    val avatar = BotsAvatarViewModel(host, scope, onChanged)
     private val repository = BotsManagementRepository(host)
 
     /** Render-bound callbacks cannot act on a replacement dialog, even for the same bot. */
@@ -104,6 +105,7 @@ class BotsManagementViewModel(
     private fun reset() {
         model.close()
         toolsets.close()
+        avatar.close()
         revision++
         sectionMembers = emptyList()
         mutableState.value = BotManagementState()
@@ -150,6 +152,7 @@ class BotsManagementViewModel(
                 mutableState.value = BotManagementState(BotManagementDialog.Edit, target, draft, busy = true)
                 model.open(target)
                 toolsets.open(target)
+                avatar.open(target)
                 val admitted = revision
                 scope.launch {
                     val loaded = repository.describe(target)

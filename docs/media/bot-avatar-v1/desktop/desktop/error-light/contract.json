@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "surface": "bot-avatar-editor",
+  "state": "bot-avatar-error",
+  "fixture_id": "bot-avatar-editor-synthetic-v1",
+  "theme": "light",
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "viewport": {
+    "window_width": 1440,
+    "window_height": 1100,
+    "screenshot_width": 384,
+    "screenshot_height": 716,
+    "crop": "Edit profile dialog"
+  },
+  "captured_at": "2026-10-01T19:58:37.708Z",
+  "screenshot_sha256": "7afd179577128589a432323f73aefb0dc7cb3c94ff9c8c3fd89fad4f245f48a0",
+  "fixture_implementation_sha256": "ae36a5e45b94e4c6943ae0f478bc28871573e73c86f05086ed7fb98301131bfe",
+  "observed_platform_boundary": {
+    "presentation": "read-error-fallback",
+    "interaction_semantics": "Synthetic initial named-read refusal delivered through actual Gateway client WebSocket response; silent shape fallback, no inline retry/error.",
+    "observed_asset_reads": 1,
+    "observed_asset_writes": 0,
+    "native_events": []
+  },
+  "run_boundary": "Fresh focused journey and refusal run: 2 passed, no retries; not a cross-platform equivalence assertion."
+}
