@@ -56,10 +56,19 @@ visible WIP controls. This is not full Desktop profile-editor parity.
   saves the model-only pair and displays readback success; a captured warning
   callback refuses an endpoint switch before recomposition.
 
-Local verification used a standalone cached Kotlin compiler/JUnit and Robolectric
-with cached app collaborators/resources, writing output only into scratch. It is
-not a clean Gradle build, a live Gateway exercise or physical-device acceptance.
-Parent-owned Gradle checks remain required before merge.
+After integrating main `161267d65ed023478a64cf7b935172b38daacdc8` (routine
+inspector and PEM redaction fix), full local `check assembleDebug` passed using
+`--max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process`
+and `-Dorg.gradle.jvmargs="-Xmx6g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8"`.
+JUnit XML reports 3,262 debug and 2,594 release tests, zero failures/errors and
+one skipped test in each variant. This was an incremental Gradle build, not a
+clean build, live Gateway exercise or physical-device acceptance.
+
+The debug management capture fixture now supplies a synthetic provider/model
+inventory and binds the real model editor state/actions. Its three tests pass,
+including mutation refusal without authoritative-selection changes or replay.
+It deliberately refuses writes; it is not a live backend or a captured visual
+acceptance report. New aligned model-editor pixel evidence remains outstanding.
 
 ## Divergences
 
