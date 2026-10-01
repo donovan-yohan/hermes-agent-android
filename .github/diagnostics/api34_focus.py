@@ -35,8 +35,11 @@ manifest = {'sha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=Tr
 (out / 'identity.json').write_text(json.dumps(manifest, indent=2))
 for apk in apks:
     call('install', '-r', apk)
-runner = 'com.hermesagent.mobile.test/androidx.test.runner.AndroidJUnitRunner'
-assert runner in call('shell', 'pm', 'list', 'instrumentation')
+installed = call('shell', 'pm', 'list', 'instrumentation')
+runners = re.findall(r'^instrumentation:(\S+) \(target=com\.hermesagent\.mobile\.debug\)$', installed, re.M)
+assert len(runners) == 1, 'Expected one instrumentation targeting disposable debug package'
+runner = runners[0]
+assert runner == 'com.hermesagent.mobile.debug.test/androidx.test.runner.AndroidJUnitRunner'
 # Same preparation as the existing lane; ANDROID_SERIAL explicitly selects our AVD.
 subprocess.run(['bash', 'scripts/prepare-ci-emulator.sh'], check=True, timeout=45)
 composer = 'com.hermesagent.mobile.device.ComposerImeTest#theComposerFieldTakesARealInputConnection'
