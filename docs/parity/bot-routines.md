@@ -79,7 +79,7 @@ The three unmerged commits `2ce11b61e49ef7ac206aa501aee2efc1fda32dbf`,
 `5ea72c947b892a398c5f84acae463afe92cf2f83`, and
 `9773503b3d7e9043faa19f3b4153ff2fbed6fff3` were ported as a reviewed delta, without
 cherry-picking or replacing current-main files. Current-target confirmation uses
-`cron.tsx:960-1100` and plugin `i18n.ts:887-918` at
+`cron.tsx:960-1100` and plugin `apps/desktop/src/plugins/hermes-bots/i18n.ts:887-918` at
 `e27448b231498e79ade668d68c0b6c6206951206`.
 
 Reconciliation fixes in addition to that delivery:
