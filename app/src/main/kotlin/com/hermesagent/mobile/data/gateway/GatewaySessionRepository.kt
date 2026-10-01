@@ -1367,7 +1367,7 @@ internal class LiveGatewaySessionRepository(
                     launchLegAnswered = true
                     parsed.mapTo(launchRowIds, SessionSummary::id)
                     // REST ownership is authoritative even for an omitted scope:
-                    // sessions.py:212-216 @ 333898b353c27e57dbd9446f631f7fb0a5aa5918.
+                    // hermes_cli/web_routers/sessions.py:212-216 @ 333898b353c27e57dbd9446f631f7fb0a5aa5918.
                     // Only genuinely unstamped legacy RPC rows remain unspecified.
                     parsed
                 } else if (launchLegRequested && !launchLegAnswered) {
@@ -1383,8 +1383,10 @@ internal class LiveGatewaySessionRepository(
                         // the REST route that is always the canonicalised name
                         // this leg asked for — `profile_name` is resolved from
                         // the query value and an unknown one is a `404`, never
-                        // a fallback (`sessions.py:95-97,146` via
-                        // `web_server.py:12487-12493`) — so the stamp and the
+                        // a fallback (`hermes_cli/web_routers/sessions.py:182,212-216`
+                        // @ `333898b353c27e57dbd9446f631f7fb0a5aa5918`, via
+                        // `hermes_cli/web_server_cron.py:112-123`
+                        // @ `333898b353c27e57dbd9446f631f7fb0a5aa5918`) — so the stamp and the
                         // parameter agree and this is a no-op there. It is the
                         // RPC lane that answers out of the launch handle when a
                         // profile will not resolve, and its compact rows carry
@@ -1479,7 +1481,8 @@ internal class LiveGatewaySessionRepository(
                     // Advance by the window the route used, never by the rows it
                     // returned. A page can carry *more* rows than its limit: the
                     // route back-fills pinned conversations that the LIMIT/OFFSET
-                    // window left out (`include_pinned=True`, `sessions.py:139`,
+                    // window left out (`include_pinned=True`, `hermes_cli/web_routers/sessions.py:166`
+                    // @ `3ca096de5f`,
                     // implemented at `hermes_state.py:9092-9099`). Counting those
                     // extras into the next offset would step past rows that were
                     // never read, and they would simply never appear.
@@ -1492,7 +1495,8 @@ internal class LiveGatewaySessionRepository(
                             nextOffset = consumed,
                             total = page.total,
                             // The route always counts the scope it just paged
-                            // (`session_count`, `sessions.py:141`), so the total
+                            // (`session_count`, `hermes_cli/web_routers/sessions.py:168`
+                            // @ `3ca096de5f`), so the total
                             // is the authority on where the list ends. A short
                             // page is only the fallback answer for a backend
                             // that somehow did not say.

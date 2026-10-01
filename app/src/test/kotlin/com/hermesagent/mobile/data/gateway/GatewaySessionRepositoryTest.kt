@@ -7232,6 +7232,8 @@ class GatewaySessionRepositoryTest {
 
     /**
      * An unscoped REST listing still supplies authoritative row ownership.
+     * The route stamps that owner even when no profile was requested
+     * (`hermes_cli/web_routers/sessions.py:212-216` @ `72a3277cd7`).
      * A transcript read uses that owner, so corroborating RPC history can
      * distinguish an absent route from a row requested from the wrong store.
      */

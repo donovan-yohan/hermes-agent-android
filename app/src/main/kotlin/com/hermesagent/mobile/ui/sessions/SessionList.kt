@@ -501,7 +501,8 @@ fun SessionList(
                 // (`apps/desktop/src/app/chat/sidebar/section-states.tsx:26-42`
                 // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), which it
                 // renders on exactly this condition: nothing filtered, nothing
-                // loading, no sessions and no projects (`sidebar/index.tsx:1400,1911`).
+                // loading, no sessions and no projects (`apps/desktop/src/app/chat/sidebar/index.tsx:1400-1401,1911`
+                // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
                 rows.isEmpty() -> SidebarBlankState(
                     canCreateProject = canCreate && projectsAvailable == true,
                     onNewProject = { projectCreateVisible = true },
@@ -994,7 +995,8 @@ internal const val AUTO_PROJECT_GLYPH = "Auto-discovered project glyph"
 private fun SessionListRow.key(): String = when (this) {
     // Desktop keys a divider by its own bucket key — `m-<year>-<month>` for a
     // month — which is what keeps two month dividers distinct rows
-    // (`session-date-groups.ts:146` @ the pin). `bucket.name` would collide the
+    // (`apps/desktop/src/lib/session-date-groups.ts:139` and `apps/desktop/src/lib/time.ts:162-164`
+    // @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`). `bucket.name` would collide the
     // moment the tail stops being one bucket.
     is SessionListRow.Divider -> "divider-${bucket.key}"
     is SessionListRow.PinnedLabel -> "divider-pinned"
