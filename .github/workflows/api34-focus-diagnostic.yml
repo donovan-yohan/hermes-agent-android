@@ -1,0 +1,80 @@
+name: Disposable API34 focus diagnosis
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: disposable-api34-focus
+  cancel-in-progress: false
+jobs:
+  focus:
+    if: github.ref == 'refs/heads/diagnostic/api34-focus'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ANDROID_SERIAL: emulator-5580
+      ANDROID_AVD_HOME: ${{ runner.temp }}/focus-avds
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0
+      - name: Enable KVM and isolate disposable AVD storage
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm && test -w /dev/kvm
+          mkdir -p "$ANDROID_AVD_HOME"
+      - name: Build matching APK pair once from exact head
+        timeout-minutes: 20
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+      - name: Standalone Composer, fresh API34
+        timeout-minutes: 7
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: focus-standalone
+          emulator-port: 5580
+          force-avd-creation: true
+          emulator-boot-timeout: 180
+          emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 .github/diagnostics/api34_focus.py standalone
+      - name: Same-invocation ActivityRecreate then Composer, fresh API34
+        timeout-minutes: 7
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: focus-predecessor
+          emulator-port: 5580
+          force-avd-creation: true
+          emulator-boot-timeout: 180
+          emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 .github/diagnostics/api34_focus.py predecessor
+      - name: Retain only synthetic focus and raw instrumentation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-api34-focus-${{ github.sha }}
+          retention-days: 2
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/api34-focus/*/identity.json
+            ${{ runner.temp }}/api34-focus/*/result.json
+            ${{ runner.temp }}/api34-focus/*/focus.jsonl
+            ${{ runner.temp }}/api34-focus/*/instrumentation.txt
