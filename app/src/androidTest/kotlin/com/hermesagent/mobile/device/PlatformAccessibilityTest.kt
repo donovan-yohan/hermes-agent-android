@@ -37,8 +37,11 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class PlatformAccessibilityTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
     val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @get:Rule(order = 1)
+    val windowReadiness: org.junit.rules.TestRule = WindowReadinessRule { compose.activity }
 
     /**
      * The narrowed claim: the chat chrome reaches the platform tree.
