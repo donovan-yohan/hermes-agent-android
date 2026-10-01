@@ -4802,11 +4802,16 @@ class GatewaySessionRepositoryTest {
             MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
         runCurrent()
         repository.openSession("durable-a")
+        // The launch runtime has recorded null-profile ownership; a named
+        // profile must resume to its own runtime rather than claim that one.
+        rpc.resumeA = RESUME_RUNNING.replace("runtime-a", "runtime-researcher")
         repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
         assertEquals(2, rpc.calls.count { it.method == "session.resume" })
         assertEquals("researcher", rpc.call("session.resume").params.string("profile"))
         assertFalse(rpc.calls.any { it.method == "session.activate" })
+        assertEquals("researcher", cache.session("durable-a")?.remoteProfile)
         assertEquals(GatewaySteerOutcome.QueuedByGateway, repository.steerAtEndpoint("durable-a", "bound", 0L))
+        assertEquals("runtime-researcher", rpc.call("session.steer").params.string("session_id"))
     }
 
     @Test
