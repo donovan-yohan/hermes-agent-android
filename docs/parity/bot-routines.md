@@ -107,9 +107,13 @@ new-head pass: this lane runs no Gradle; the parent must execute the reconciled 
 
 ## Held-list inspector follow-up
 
-This follow-up reads `cron.tsx:328-475`, `cron-detail.test.tsx`, plugin
-`i18n.ts:865-880`, `app/cron/job-state.ts:34-67`, and
-`tools/cronjob_job_args.py:425-475` at **e27448b231498e79ade668d68c0b6c6206951206**.
+This follow-up reads the following sources at
+`e27448b231498e79ade668d68c0b6c6206951206`:
+- `apps/desktop/src/plugins/hermes-bots/cron.tsx:328-475` and its `cron-detail.test.tsx` test;
+- `apps/desktop/src/plugins/hermes-bots/i18n.ts:865-880`;
+- `apps/desktop/src/app/cron/job-state.ts:34-57`;
+- `tools/cronjob_job_args.py:425-475`.
+
 Read-only Git comparison against `587e673e2a2fae0616d8b750bb189217080f621a`
 found no changes to the inspector component/test or overdue helper.
 Earlier citations and capture provenance on this page are not repinned.
