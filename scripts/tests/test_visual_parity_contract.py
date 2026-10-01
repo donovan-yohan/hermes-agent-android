@@ -78,7 +78,7 @@ class VisualParityContractTest(unittest.TestCase):
             "surface": "composer-status-stack", "state": "background-open",
             "fixture_id": "composer-status-stack-synthetic-v1",
             "interactions": ["tap:Background"],
-            "accessibility": {"expected_description": "Background, 1, collapse", "nodes": []},
+            "accessibility": {"expected_description": "Background, 1, collapse", "nodes": [{"text": "Background, 1, collapse"}]},
         })
         android["application"]["component"] = "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerStatusParityActivity"
         contract.validate_receipt(android, "android")
@@ -92,7 +92,7 @@ class VisualParityContractTest(unittest.TestCase):
             "surface": "composer-status-stack", "state": "queue-parked-collapsed",
             "fixture_id": "composer-status-stack-synthetic-v1",
             "interactions": [],
-            "accessibility": {"expected_description": "Queue, 2 messages, parked, expand", "nodes": []},
+            "accessibility": {"expected_description": "Queue, 2 messages, parked, expand", "nodes": [{"text": "Queue, 2 messages, parked, expand"}]},
         })
         android["application"]["component"] = "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerStatusParityActivity"
         contract.validate_receipt(android, "android")
@@ -130,7 +130,7 @@ class VisualParityContractTest(unittest.TestCase):
                     "surface": "session-list-sections", "state": state,
                     "fixture_id": "session-list-sections-synthetic-v1",
                     "interactions": ["swipe:list-up"],
-                    "accessibility": {"expected_description": spec["state_spec"]["post_interaction_accessibility"], "nodes": []},
+                    "accessibility": {"expected_description": spec["state_spec"]["post_interaction_accessibility"], "nodes": [{"text": spec["state_spec"]["post_interaction_accessibility"]}]},
                 })
                 receipt["application"]["component"] = "com.hermesagent.mobile.debug/com.hermesagent.mobile.SessionListSectionsParityActivity"
                 contract.validate_receipt(receipt, "android")

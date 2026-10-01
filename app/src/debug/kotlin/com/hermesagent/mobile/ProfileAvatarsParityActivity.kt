@@ -64,7 +64,7 @@ class ProfileAvatarsParityActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val requestedState = intent.getStringExtra(EXTRA_STATE)
-        if (requestedState in setOf("bot-roster", "bot-new", "bot-edit", "bot-duplicate", "bot-move", "bot-section")) {
+        if (requestedState in BOT_MODEL_CAPTURE_STATES || requestedState in setOf("bot-roster", "bot-new", "bot-edit", "bot-duplicate", "bot-move", "bot-section")) {
             val mode = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
             setContent {
                 HermesTheme(AppearanceSelection("mono", mode)) { BotManagementParityContent(requireNotNull(requestedState)) }

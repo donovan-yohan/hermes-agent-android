@@ -64,11 +64,24 @@ JUnit XML reports 3,262 debug and 2,594 release tests, zero failures/errors and
 one skipped test in each variant. This was an incremental Gradle build, not a
 clean build, live Gateway exercise or physical-device acceptance.
 
-The debug management capture fixture now supplies a synthetic provider/model
-inventory and binds the real model editor state/actions. Its three tests pass,
-including mutation refusal without authoritative-selection changes or replay.
-It deliberately refuses writes; it is not a live backend or a captured visual
-acceptance report. New aligned model-editor pixel evidence remains outstanding.
+The historical debug management fixture still refuses every write. Dedicated
+`bot-model-config-synthetic-v1` states now bind real model reads/actions for loaded,
+inventory-loading/error, manual, confirmation, saved and save-refused captures.
+Confirmation/saved/refusal are explicitly **fixture-staged**, not recorded Save
+or consent gestures. Manual requires the real Compose control. Synthetic writes
+are allowlisted to one model-only pair and require warning then exact consent;
+success remains pending until named describe readback completes. Regression tests
+hold that readback and inspect method-plus-params traces. The ordered accessibility
+driver and executable instructions are in `docs/workflows/visual-parity-capture.md`.
+New aligned model-editor pixel evidence remains outstanding; this is neither a
+live backend nor a physical/emulator visual acceptance report.
+
+Fixture follow-up verification (uncommitted working tree based on `65c2bb7`):
+9 focused debug tests passed. Full unfiltered `check assembleDebug --rerun-tasks`
+passed in the exclusive sequential lane with the same Xmx6g/in-process options
+above: 3,268 debug and 2,594 release tests, zero failures/errors, one skipped in
+each variant; repository Python gate: 133 tests passed. No emulator capture was
+run, and these counts do not promote the pending visual report to acceptance.
 
 ## Divergences
 
