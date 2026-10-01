@@ -99,6 +99,8 @@ internal enum class BotsRoutinesFixtureState(val wireValue: String) {
      * and the legacy notice together.
      */
     Populated("populated"),
+    Inspector("inspector"),
+    Overdue("overdue"),
 
     /** The Gateway answered, and the read failed while the connection was up. */
     ReadFailure("read-failure"),
@@ -169,7 +171,9 @@ private class FixtureHost(
         const val POPULATED = """{"success":true,"count":4,"scoped":"ops","jobs":[
             {"job_id":"syn-1","name":"[bot:ops] Morning digest","schedule":"every 1440m","repeat":"forever",
              "deliver":"local","enabled":true,"state":"scheduled","next_run_at":"2026-09-18T09:00:00+00:00",
-             "prompt_preview":"Synthetic parity fixture, no real routine text"},
+             "prompt_preview":"Synthetic parity fixture, no real routine text",
+             "last_run_at":"2026-09-16T09:00:00Z","last_status":"delivery_failed",
+             "last_delivery_error":"Synthetic delivery failure","model":"example-model","workdir":"tasks"},
             {"job_id":"syn-2","name":"[bot:ops] Nightly sweep","schedule":"30m","repeat":"3 times",
              "enabled":false,"state":"paused","paused_reason":"synthetic fixture reason"},
             {"job_id":"syn-3","name":"[bot:ops] Weekday standup","schedule":"0 9 * * 1-5","repeat":"forever",
@@ -201,6 +205,10 @@ internal fun BotsRoutinesParityFixture(
     // The destination, selected the way the roster row's own control selects it.
     LaunchedEffect(viewModel) {
         viewModel.selectOwner(profile = "ops", label = "Ops")
+        if (state == BotsRoutinesFixtureState.Inspector) {
+            val ready = viewModel.uiState.first { it.phase == BotsRoutinesPhase.Ready }
+            viewModel.openInspector(requireNotNull(ready.target(ready.jobs.first())))
+        }
         val action = when (state) {
             BotsRoutinesFixtureState.PausePending, BotsRoutinesFixtureState.ActionRollback -> RoutineAction.Pause
             BotsRoutinesFixtureState.Resumed -> RoutineAction.Resume
@@ -222,11 +230,15 @@ internal fun BotsRoutinesParityFixture(
             BotsRoutinesScreen(
                 state = uiState,
                 onBack = {},
-                actions = BotsRoutinesActions(onAction = viewModel::act),
+                actions = BotsRoutinesActions(
+                    onAction = viewModel::act,
+                    onOpenInspector = viewModel::openInspector,
+                    onCloseInspector = viewModel::closeInspector,
+                ),
                 // The fixture's own immutable clock, so the captured next-run
                 // line reads the same on every device on every day: the pixels
                 // must be the fixture's, not the day the capture ran.
-                nowMillis = CAPTURE_CLOCK_MILLIS,
+                nowMillis = if (state == BotsRoutinesFixtureState.Overdue) CAPTURE_CLOCK_MILLIS + 86_400_000L else CAPTURE_CLOCK_MILLIS,
                 modifier = Modifier.fillMaxSize(),
             )
         }

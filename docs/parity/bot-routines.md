@@ -12,7 +12,7 @@ snapshot used for this slice is a read-only disposable export of that SHA.
 ## Scope of this page
 
 This covers the read-only #310/#313 foundation, #316's existing-row actions,
-and the bounded #191 creation slice. The list still includes disabled jobs.
+and the bounded #191 creation and held-list inspector slices. The list still includes disabled jobs.
 Existing-row writes send only `cron.manage {action:"pause"|"resume"|"remove", name:<job id>, profile:<raw bot>}`; creation sends one `cron.manage {action:"add"}` from the selected bot's production form.
 The form preserves Desktop's eight frequency choices in order, starts on Daily,
 and supports all eight through the pure wire model. The current-target correction
@@ -38,7 +38,7 @@ Run-now and legacy auto-pause remain out of scope and visibly deferred.
 | Relative next run | `cron.tsx:328-332` with `apps/desktop/src/lib/time.ts:38-56` (`Intl.RelativeTimeFormat`, style `short`) | `routineRelativeLabel`; `BotsRoutinesParseTest` pins `in 5 min` / `in 2 hr` / `in 1 day` and the half-up rounding boundary |
 | The pane's states | `cron.tsx:1277-1318`: stale banner over a held list, loading, failure + Retry, empty, populated | `BotsRoutinesPhase` and `BotsRoutinesScreen`; `BotsRoutinesViewModelTest` and `BotsRoutinesJourneyTest` cover each |
 | The pane's header | `cron.tsx:1252-1275`: the bot's face, its display name and `@handle`, the uppercase pane noun, the New-cron control | `RoutinesOwnerHeader`; the display name travels with the selection (`BotsPlugin`'s `onOpenRoutines` passes `displayName(row.name, row.displayName)`), and the New-cron control opens the creation sheet |
-| The row's controls | `cron.tsx:539-576`: a title button, a pause/resume Switch and a delete control, as siblings | `RoutineRowItem` renders a token switch followed by Codicon Trash, independently actionable; the inspector remains deferred |
+| The row's controls | `cron.tsx:539-576`: a title button, a pause/resume Switch and a delete control, as siblings | `RoutineRowItem` renders a token switch followed by Codicon Trash, independently actionable; the title opens the held-list inspector |
 | Mutation and confirmation | `cron.tsx:496-523,559-574`, `cron-owner.test.tsx:53-69`; `tui_gateway/methods_tools.py:1097-1098` | Row delete is immediate, with **no confirmation dialog**, matching Desktop. `BotsRoutineActionsTest` checks exact payloads and literal acknowledgements; `BotsRoutinesJourneyTest` exercises the production route, pending state, rollback, both toggles and direct delete |
 | Reads remain inert | `cron.tsx:131-166` is deliberately not ported | `BotsRoutinesRepositoryTest` still asserts that a read sends only `list`; no legacy auto-pause sweep |
 | Ordering and identity | `cron-owner.test.tsx:53-69` captures the rendered owner | Immutable owner + endpoint + selection + job identity; actual `requestAtEndpoint` endpoint/client wire fence. A mutation revision invalidates pre-operation and overlapping reads; pending writes block only their row; targeted rollback never restores another row. A completion still belonging to the current selection requests an authoritative list, never a blind mutation retry. Tests gate real coroutine interleavings and the production host dispatch |
@@ -102,8 +102,41 @@ Reconciliation fixes in addition to that delivery:
 Unknown creation receipts and saved-but-unregistered receipts still prevent a second
 add for that owner/endpoint for this model's lifetime. Durable cross-process receipt
 reconciliation is not implemented. Once is now enabled through the explicit
-one-shot contract; inspector/legacy management and rendered parity remain open. Imported test provenance is not a
+one-shot contract; legacy management and rendered parity remain open. Imported test provenance is not a
 new-head pass: this lane runs no Gradle; the parent must execute the reconciled suite.
+
+## Held-list inspector follow-up
+
+This follow-up reads `cron.tsx:328-475`, `cron-detail.test.tsx`, plugin
+`i18n.ts:865-880`, `app/cron/job-state.ts:34-67`, and
+`tools/cronjob_job_args.py:425-475` at **e27448b231498e79ade668d68c0b6c6206951206**.
+Read-only Git comparison against `587e673e2a2fae0616d8b750bb189217080f621a`
+found no changes to the inspector component/test or overdue helper.
+Earlier citations and capture provenance on this page are not repinned.
+
+The title opens a selected job from the held list, with **zero additional RPCs**.
+Selection captures raw owner, endpoint generation, owner-selection epoch and job
+id. Old open/close callbacks cannot act across owner ABA or endpoint switches;
+missing/mismatched rows close the sheet. Failed refresh retains inspectable facts
+with the stale notice; a successful refresh supplies current facts, not a copied
+second record. Pause/delete remain sibling controls, not sheet actions.
+
+Order: status, schedule, raw schedule only when different, repeat, next/overdue,
+last run, last result, delivery, model, workdir; instruction preview follows.
+Missing or malformed optional values are omitted. Failure precedence is fire
+error, delivery error, paused reason. Overdue means **strictly more than 15 minutes**;
+exact boundary, future/invalid timestamps, paused/completed/unknown and disabled
+records cannot claim overdue. The list and inspector use the same derivation.
+
+Evidence is bounded: an isolated cached Kotlin compiler/JUnit probe recompiles
+changed non-Compose production sources and tests against existing app collaborators;
+**83 JVM tests passed** (inspector/parser/VM plus existing mutation and pending-identity
+regressions). Log: active-profile scratch `routine-inspector-jvm.log`; the existing
+VM tests emit coroutine opt-in warnings. This is not a clean build.
+No Gradle, APK, device, screenshot or new visual parity
+claim. Compose journey and debug `inspector`/`overdue` states are authored for the
+coordinated parent lane. `bot-routine-inspector` has a separate current-pin capture
+catalog entry; historical `bot-routines` provenance remains intact.
 
 ## Copy and navigation
 
@@ -124,11 +157,11 @@ control. Mutation failure uses core `apps/desktop/src/i18n/en.ts:2646` verbatim:
 Two sentences are this app's own because Desktop has no counterpart:
 the Gateway-predates sentence and the mismatched-scope pair.
 
-No backend prose is rendered anywhere. The failure, delivery-failure,
-pause-reason and prompt members are read for exactly one purpose — recognising
-Desktop's legacy delegation wrapper — and are not kept on the parsed row at all,
-so no surface downstream can render them by accident; a run's status is a closed
-enum mapped to local copy, and an unrecognised state word renders nothing.
+Inspector display text is redacted before bounding (512 characters per ordinary
+field, 1024 for issue and instruction preview), using the shared credential,
+endpoint, address and fingerprint sanitizer. Full prompt text is never retained;
+only `prompt_preview` can reach Instruction. Raw identity/tag values stay outside
+rendered text. Run state remains a closed enum; unknown state has no invented label.
 
 ## Divergences
 
@@ -144,8 +177,10 @@ enum mapped to local copy, and an unrecognised state word renders nothing.
 | Desktop creation error and partial-save outcomes remain on the creation surface | mobile-adaptation | Safe local outcomes retain exact job identity for saved-registration failure and never show backend error prose or automatically retry | A phone needs a concise next action; unresolved results stay protected and must be reconciled from the list rather than guessed by title |
 | Desktop row controls are enabled without a scope receipt and without terminal-state checks (`cron.tsx:489,559-569`) | drift | Unknown/stale owner scope cannot authorize a write; completed and disabled failed rows cannot toggle but can be deleted. Unknown records remain WIP even when disabled, with no invented paused label; completed records render completed. Legacy remains WIP | #316 / PR #317 F1. A tag fallback licenses display, not a write to a profile's store. Disabled is not evidence of resumability; production-shaped disabled completed/unknown rows are covered through repository, VM and UI |
 | Delete is hover-revealed (`cron.tsx:567`) | mobile-adaptation | Trash remains visible with the Android touch-target floor; switch comes first, no menu or separators, no confirmation | #316. A touch screen has no persistent hover; `BotsRoutinesJourneyTest` checks direct delete |
-| The pane polls every 20s and refetches on its socket opening (`cron.tsx:183-189`) | mobile-adaptation | The destination re-reads when it is entered and when the connection comes back; there is no timer | A phone does not leave this destination mounted while the person works elsewhere, so entering it is the trigger, and a background poll would spend the device's battery on a surface nobody is looking at |
-| Desktop's inspector dialog opens from the row's title for one job's full detail (`cron.tsx:418-470`, `routineDetailRows`) | omission | The row shows the title, schedule, repeat and next run inline; there is no per-job inspector | deferred: #191 — the read-only slice renders what the list already carries, and the inspector is part of the parent's remaining scope |
+| The pane polls every 20s and refetches on its socket opening (`cron.tsx:183-189`) | mobile-adaptation | The destination re-reads when it is entered and when the connection comes back; there is no RPC polling timer (a resumed-only 30s display clock updates overdue labels) | A phone does not leave this destination mounted while the person works elsewhere, so entering it is the trigger, and a background poll would spend the device's battery on a surface nobody is looking at |
+| Desktop's title opens a held-list detail dialog (`cron.tsx:370-475` @ e27448b) | mobile-adaptation | Scrollable read-only bottom sheet, same field order, title-only opener and sibling mutation controls | #191; phone viewport/touch adaptation. Model/VM and Compose regressions added; rendered comparison still pending |
+| Desktop inspector treats any enabled non-paused state as Active | drift | Completed stays Completed; unknown omits status and next run; disabled failed jobs do not promise another run | #191; existing terminal/unknown safeguards retained in inspector regression tests |
+| Desktop renders backend detail text directly | mobile-adaptation | Shared redaction and finite display bounds apply to every backend display field; full prompt never shown | #191; bounded phone display and secret-safe rendering; model tests cover all parsed display fields |
 
 ## Visual report
 

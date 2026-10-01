@@ -1,5 +1,7 @@
 package com.hermesagent.mobile.plugins.bots
 
+import androidx.compose.ui.test.hasText
+
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -266,13 +268,13 @@ class BotsRoutinesJourneyTest {
         compose.onNodeWithText("Daily").assertIsDisplayed()
         compose.onNodeWithText("Once (30m)").assertIsDisplayed()
         compose.onNodeWithText(BotsRoutinesCopy.STATE_PAUSED).assertIsDisplayed()
-        // The next-run line is present. Its *arithmetic* is pinned against a
-        // fixed clock in `BotsRoutinesParseTest`, deliberately not here: this
-        // journey renders the production route, which reads the device clock,
-        // so only the clock-independent half of the line is asserted.
-        compose.onAllNodesWithText(BotsRoutinesCopy.NEXT_PREFIX, substring = true)
-            .fetchSemanticsNodes()
-            .let { assertTrue("no next-run line rendered", it.isNotEmpty()) }
+        // The production route reads the device clock: the schedule remains
+        // visible whether it is still upcoming or has crossed the overdue grace.
+        compose.onAllNodes(
+            hasText(BotsRoutinesCopy.NEXT_PREFIX, substring = true) or
+                hasText("Overdue since", substring = true),
+        ).fetchSemanticsNodes()
+            .let { assertTrue("no next-run or overdue line rendered", it.isNotEmpty()) }
     }
 
     @Test

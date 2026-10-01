@@ -93,15 +93,13 @@ enum class RoutineRunState {
 /**
  * One routine as the surface reads it.
  *
- * [title], [scheduleLabel], [repeat] and the relative next-run label are the
- * only things this app ever *renders*; [nextRunMillis] is the parsed instant
- * behind that label, kept so a test can pin the arithmetic without a
- * formatter.
+ * [title], [scheduleLabel], [repeat] and the relative next-run label form the
+ * list row. Optional inspector facts follow below. [nextRunMillis] is a parsed
+ * instant, so overdue arithmetic is testable independently of formatting.
  *
- * Nothing in here can hold backend prose. The failure, pause-reason and prompt
- * members the row carries are read for exactly one purpose — recognising
- * Desktop's legacy delegation wrapper ([legacyDelegated]) — and never kept,
- * so no surface downstream can render them by accident.
+ * Inspector fields are redacted and bounded on parse. Only prompt_preview is
+ * retained; a full prompt may identify a legacy wrapper but is never stored.
+ * Identity and owner tags are kept verbatim for scope checks, never displayed.
  */
 data class RoutineRow(
     /** `job_id` — the row's durable identity. */
@@ -134,6 +132,14 @@ data class RoutineRow(
     val taggedBot: String?,
     /** True when the prompt carries Desktop's other-profile delegation wrapper. */
     val legacyDelegated: Boolean,
+    val rawSchedule: String? = null,
+    val lastRunMillis: Long? = null,
+    val lastResult: String? = null,
+    val delivery: String? = null,
+    val model: String? = null,
+    val workdir: String? = null,
+    val instructionPreview: String? = null,
+    val issue: String? = null,
 )
 
 /**
@@ -204,9 +210,19 @@ private fun parseRoutineJob(row: JsonObject): RoutineRow? {
 
     return RoutineRow(
         id = id,
-        title = routineTitle(name),
-        scheduleLabel = routineScheduleLabel(row.routineJsonString("schedule")),
-        repeat = row.routineJsonString("repeat")?.trim()?.takeIf(String::isNotEmpty),
+        title = routineDisplay(routineTitle(name)),
+        scheduleLabel = routineDisplay(routineScheduleLabel(row.routineJsonString("schedule"))),
+        repeat = row.routineJsonString("repeat")?.let { routineDisplay(it) }?.takeIf(String::isNotEmpty),
+        rawSchedule = row.routineJsonString("schedule")?.let { routineDisplay(it) }?.takeIf(String::isNotEmpty),
+        lastRunMillis = row.routineJsonString("last_run_at")?.let(::routineInstant),
+        lastResult = routineLastResult(row.routineJsonString("last_status")),
+        delivery = row.routineJsonString("deliver")?.let { routineDisplay(it) }?.takeIf(String::isNotEmpty),
+        model = row.routineJsonString("model")?.let { routineDisplay(it) }?.takeIf(String::isNotEmpty),
+        workdir = row.routineJsonString("workdir")?.let { routineDisplay(it) }?.takeIf(String::isNotEmpty),
+        instructionPreview = row.routineJsonString("prompt_preview")?.let { routineDisplay(it, 1024) }?.takeIf(String::isNotEmpty),
+        issue = listOf("last_fire_error", "last_delivery_error", "paused_reason")
+            .firstNotNullOfOrNull { key -> row.routineJsonString(key)?.takeIf { it.isNotBlank() } }
+            ?.let { routineDisplay(it, 1024) },
         // Both paused signals are evidence, and either one is enough: Desktop's
         // `serverActive` is `enabled !== false && state !== 'paused'`
         // (`cron.tsx:489`, pinned by `cron-detail.test.tsx:74-78`). A completed

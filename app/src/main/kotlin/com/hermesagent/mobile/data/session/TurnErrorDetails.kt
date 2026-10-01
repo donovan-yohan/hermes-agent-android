@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.session
 
 import com.hermesagent.mobile.data.ssh.redact
+import com.hermesagent.mobile.data.ssh.redactPrivateKeys
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -88,9 +89,11 @@ private fun redactCredentialFields(raw: String): String = buildString {
     append(raw, copiedThrough, raw.length)
 }
 
-/** Redact BEFORE bounding, and before SSH redaction can break quoted values. */
+/** Redact BEFORE bounding: PEM first, quoted credentials next, then SSH and whole addresses. */
 fun safeTurnErrorDetails(raw: String?): String {
-    var safe = redact(redactCredentialFields(raw.orEmpty()))
+    // Credential fields can consume a PEM BEGIN token and leave its body exposed.
+    // Only the private-key pass moves earlier; quoted fields must still precede SSH.
+    var safe = redact(redactCredentialFields(redactPrivateKeys(raw.orEmpty())))
     for ((pattern, replacement) in DETAIL_SECRET_REDACTIONS) safe = pattern.replace(safe, replacement)
     // Remove whole endpoints first, then whole IPv6 tokens before dotted host/IPv4
     // rules can split a mixed address from its scope identifier.

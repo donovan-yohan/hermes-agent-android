@@ -107,6 +107,25 @@
         "bots-fallback": { "interaction": [], "post_interaction_accessibility": "Bots" }
       }
     },
+    "bot-routine-inspector": {
+      "desktop_sha": "e27448b231498e79ade668d68c0b6c6206951206",
+      "fixture_id": "bot-routine-inspector-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotsRoutinesParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "RoutineDetailDialog at cron.tsx:428-475. Inspector must be opened before capture. Overdue list capture requires the pane subtree instead; this selector is not an overdue-list claim.",
+      "states": {
+        "inspector": {
+          "interaction": [],
+          "post_interaction_accessibility": "What this job runs, and when it runs next.",
+          "fixture_note": "Synthetic held-list selection through the real ViewModel. Android and Desktop rendering pending; not visual evidence."
+        },
+        "overdue": {
+          "interaction": [],
+          "post_interaction_accessibility": "Overdue since: 7 hr ago",
+          "fixture_note": "Production list at a fixed clock seven hours after the first stored slot. No Desktop counterpart capture or parity claim."
+        }
+      }
+    },
     "bot-routines": {
       "desktop_sha": "d177b119e9c56c9ddc0b7379ffce52341ec06584",
       "fixture_id": "bot-routines-synthetic-v1",

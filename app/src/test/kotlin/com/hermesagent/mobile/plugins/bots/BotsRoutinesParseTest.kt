@@ -55,13 +55,13 @@ class BotsRoutinesParseTest {
             """,
         )
 
-        // The parsed row carries no member that could render backend text: the
-        // error, reason, prompt, model and workdir members are not read at all.
+        // Title stays independent of detail prose. The inspector now retains
+        // bounded, redacted detail fields from the same list response.
         assertEquals("Digest", row.title)
         assertEquals("Daily", row.scheduleLabel)
         assertEquals("3 times", row.repeat)
         for (prose in listOf("Traceback", "backend prose", "a-model", "/somewhere")) {
-            assertFalse(prose, row.toString().contains(prose))
+            assertFalse(prose, row.title.contains(prose))
         }
     }
 
