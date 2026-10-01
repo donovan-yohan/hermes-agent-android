@@ -34,8 +34,11 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class ComposerImeTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
     val compose = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule(order = 1)
+    val windowReadiness: org.junit.rules.TestRule = WindowReadinessRule { compose.activity }
 
     @Test
     fun theComposerFieldTakesARealInputConnection() {
