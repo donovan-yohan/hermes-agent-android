@@ -46,11 +46,17 @@ contract audit, **not** a claim of all-feature or visual parity.
   not the generation; generation fences admission, queued work, reads and publication.
   Set is read back before success. Endpoint switches clear the held section list.
   The old unowned `bot-sections-v1` key is deliberately not imported into any endpoint.
-  **Integration remainder:** the bundled application currently supplies no stable
-  identity to `BotsPlugin(storageEndpoint=...)`; local section CRUD is therefore
-  visibly unavailable, not silently global. The application owner must wire an
-  atomic saved-endpoint identity/address-revision plus generation snapshot. No URL,
-  credential, ephemeral generation or transport reconnect token is a substitute.
+  **Production integration:** `HermesApplication` injects
+  `connectionSwitch.botStorageEndpoint` into `BotsPlugin(storageEndpoint=...)`.
+  `ConnectionSwitchController` publishes an atomic saved-endpoint identity/address-revision
+  plus generation snapshot; `BotStorageIdentity.kt` derives the stable storage identity.
+  Unknown identity still disables local section CRUD rather than falling back to global storage.
+  Stored section receipts are validated in full before enabling writes: non-array JSON,
+  malformed entries, blank ids/names and duplicate ids (including trimmed collisions)
+  fail closed. No partial list is adopted and the raw record is left untouched. The
+  disabled section dialog asks for a valid restored record and reconnect; reopening or
+  reconnecting with the same invalid record cannot unlock writes. Missing storage and
+  an explicit empty array remain valid, distinct from malformed data.
   Members carry sectionId and sectionName server-side;
   section records are reconstructed from those fields on another device. Section
   rename/delete walks the admitted roster members, reports partial failure without
@@ -122,6 +128,14 @@ These are **omissions**, not invented backend limitations:
    Existing avatar/roster screenshots do not certify these changes.
 
 ## Verification
+
+Malformed-storage follow-up: isolated compilation of the changed management model
+and its actual JVM tests reproduced the `{}` admission bug, then passed **11 tests**
+after the fix. Cases cover malformed/mixed entries, duplicate ids, raw-record
+preservation, create/rename/reorder/delete refusal, invalid reconnects, and valid
+reload recovery. Logs: `bot-storage-validation-red.log` and
+`bot-storage-validation-green.log` in the active profile scratch directory.
+No Gradle invocation was made for this follow-up; parent acceptance remains separate.
 
 No Gradle invocation or commit was made in this lane. The isolated compiler rebuilds
 changed production sources (no fabricated PluginHost/Compose stubs), then uses the

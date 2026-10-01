@@ -117,7 +117,7 @@ class BotsManagementViewModel(
             mutableState.value = BotManagementState(BotManagementDialog.Section, BotManagementTarget("", endpoint),
                 consumed = true, message = if (liveStorageEndpoint() == null)
                     "Section storage is unavailable until this endpoint has a stable identity."
-                else "Section storage could not be read. Reconnect before trying again.")
+                else "Section storage could not be read or is invalid. No changes were saved. Restore a valid section record, then reconnect before trying again.")
             return
         }
         reset()
@@ -255,7 +255,7 @@ class BotsManagementViewModel(
         endpoint.stableId.toByteArray(Charsets.UTF_8).joinToString("") { "%02x".format(it) }
 
     private suspend fun persistSections(endpoint: BotStorageEndpoint?, next: List<BotSection>): BotManagementResult {
-        if (endpoint == null || endpoint != liveStorageEndpoint()) return BotManagementResult.Unsupported
+        if (!sectionsLoaded || endpoint == null || endpoint != liveStorageEndpoint()) return BotManagementResult.Unsupported
         val raw = JsonArray(next.map { buildJsonObject { put("id", it.id); put("name", it.name) } }).toString()
         val key = sectionsKey(endpoint)
         storage.set(key, raw)
@@ -295,13 +295,23 @@ class BotsManagementViewModel(
     }
 
     private fun decodeSections(raw: String): List<BotSection> {
-        val array = Json.parseToJsonElement(raw) as? JsonArray ?: return emptyList()
-        return normalizeBotSections(array.mapNotNull { element ->
-            val row = element as? JsonObject ?: return@mapNotNull null
-            val id = (row["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@mapNotNull null
-            val name = (row["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content ?: return@mapNotNull null
+        // Persisted storage is authoritative: never turn a damaged record into a
+        // writable empty/partial list. Roster normalization is intentionally lossy
+        // and must not be used to validate this write-authorizing receipt.
+        val array = Json.parseToJsonElement(raw) as? JsonArray
+            ?: error("Invalid section record")
+        val seen = mutableSetOf<String>()
+        return array.map { element ->
+            val row = element as? JsonObject ?: error("Invalid section entry")
+            val id = (row["id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                ?: error("Invalid section id")
+            val name = (row["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                ?: error("Invalid section name")
+            require(id.isNotBlank() && name.isNotBlank() && seen.add(id.trim())) {
+                "Blank or duplicate section entry"
+            }
             BotSection(id, name)
-        })
+        }
     }
 
 }

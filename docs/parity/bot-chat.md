@@ -21,6 +21,25 @@ Every source location below is against that exact revision.
 | First-turn consequence | `docs/spikes/bot-mode-gateway-contracts-2026-09-12.md` (`_ensure_active_session_slot`, `tui_gateway/session_lifecycle.py:48-59` @ the pin: the lease is claimed on a turn, never on create or resume) | `ChatViewModel` enables exactly the typed `prompt.submit` for a verified canonical Bot Chat, through `GatewaySessionRepository.submitAtEndpoint`, which refuses to submit on a Gateway the app has left (including a switch that lands while the send waits to dispatch); `ChatViewModelTest` and `GatewaySessionRepositoryTest` prove the typed send is the chat's one accepted submission, that an open sends nothing, drains no stored queue, and adds no unread-flag write |
 | Mutation boundary | Issue #190's Phase B scope; #268 | `ChatViewModel.refuseBotChatMutation` is the one gate: it retires the capability on an endpoint change and refuses unsupported doors except the prompt send and endpoint-fenced live correction — read-aloud's speak and stop taps included, so voice is a refused door and not a second writable one. `ChatViewModelTest` sweeps the refusal set against a live speaker |
 
+## Two-client Gateway execution evidence
+
+A synthetic loopback WebSocket run at
+`e27448b231498e79ade668d68c0b6c6206951206` exercised production WebSocket
+dispatch, session handlers, `AIAgent`, SQLite, and fan-out transports against
+upstream's mock HTTP inference provider. Client A submitted one running turn;
+client B resumed its stored session and profile, obtaining the same runtime and
+agent. B's steer reached the original agent's next provider request, both clients
+received the same completion, and the total `prompt.submit` count remained one.
+The correction was also present in SQLite. An identical stored ID in a different
+profile resolved to a separate runtime rather than attaching to A.
+
+This is executed Gateway contract evidence, not Android UI or deployed-authentication
+acceptance: the server and clients shared a Python process and the test route
+bypassed deployment authentication. Completion's `persisted_turn.complete` flag
+was false despite the verified stored correction; that flag is not certified by
+this run. Android correctness is separately covered by repository and composer
+tests, including endpoint/profile/turn fences.
+
 ## Current-target correction delta
 
 Rechecked against `e27448b231498e79ade668d68c0b6c6206951206`:

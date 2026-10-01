@@ -89,6 +89,62 @@ class BotsManagementViewModelTest {
         assertTrue(vm.sections.value.isEmpty())
     }
 
+    @Test fun `invalid section records stay untouched and locked until a valid reload`() = runTest {
+        val invalidRecords = listOf(
+            "{}", "null", "[", "[null]", "[{}]",
+            """[{"id":1,"name":"A"}]""",
+            """[{"id":"a","name":false}]""",
+            """[{"id":" ","name":"A"}]""",
+            """[{"id":"a","name":" "}]""",
+            """[ {"id":"a","name":"A"}, {"id":"broken"} ]""",
+            """[{"id":"a","name":"A"},{"id":"a","name":"Other"}]""",
+            """[{"id":"a","name":"A"},{"id":" a ","name":"Other"}]""",
+        )
+        for (raw in invalidRecords) {
+            val host = Host(); val storage = Storage()
+            val key = "bot-sections-v2-41"
+            storage.values[key] = raw
+            var writes = 0
+            storage.beforeSet = { writes++ }
+            val endpoint = MutableStateFlow<BotStorageEndpoint?>(BotStorageEndpoint("A", 7L))
+            val vm = BotsManagementViewModel(host, storage, backgroundScope, {}, storageEndpoint = endpoint)
+            runCurrent()
+            assertTrue(raw, vm.sections.value.isEmpty())
+            repeat(2) {
+                vm.openSection(7L, BotSection("a", "A"), choices = listOf(BotSection("a", "A"), BotSection("b", "B")))
+                assertTrue(raw, vm.state.value.consumed)
+                assertNotNull(vm.state.value.message)
+                vm.updateSectionName("Overwrite"); vm.submit(); vm.moveSection(1); vm.deleteSection()
+                runCurrent(); vm.close()
+            }
+            assertEquals(raw, storage.values[key])
+            assertEquals(0, writes)
+            assertTrue(host.calls.isEmpty())
+            // Reconnecting alone must not make the same corrupt record writable.
+            host.endpointGeneration.value = 8L; endpoint.value = BotStorageEndpoint("A", 8L); runCurrent()
+            vm.openSection(8L); assertTrue(raw, vm.state.value.consumed)
+            assertEquals(raw, storage.values[key])
+            // An externally repaired record does not unlock writes before reload.
+            storage.values[key] = """[{"id":"a","name":"Recovered"}]"""
+            vm.close(); vm.openSection(8L); assertTrue(vm.state.value.consumed)
+            host.endpointGeneration.value = 9L; endpoint.value = BotStorageEndpoint("A", 9L); runCurrent()
+            assertEquals(listOf(BotSection("a", "Recovered")), vm.sections.value)
+            vm.openSection(9L, vm.sections.value.single()); assertFalse(vm.state.value.consumed)
+            vm.updateSectionName("Renamed"); vm.submit(); runCurrent()
+            assertEquals(1, writes)
+            assertEquals(listOf(BotSection("a", "Renamed")), vm.sections.value)
+        }
+    }
+
+    @Test fun `explicit empty section array is a valid writable record`() = runTest {
+        val storage = Storage(); storage.values["bot-sections-v2-41"] = "[]"
+        val vm = BotsManagementViewModel(Host(), storage, backgroundScope, {},
+            storageEndpoint = MutableStateFlow(BotStorageEndpoint("A", 7L)))
+        runCurrent(); vm.openSection(7L); assertFalse(vm.state.value.consumed)
+        vm.updateSectionName("Created"); vm.submit(); runCurrent()
+        assertEquals("Created", vm.sections.value.single().name)
+    }
+
     @Test fun `section creation persists and is restored without contacting gateway`() = runTest {
         val host = Host(); val storage = Storage()
         val model = BotsManagementViewModel(host, storage, backgroundScope, onChanged = {}, storageEndpoint = MutableStateFlow(BotStorageEndpoint("A", 7L)))

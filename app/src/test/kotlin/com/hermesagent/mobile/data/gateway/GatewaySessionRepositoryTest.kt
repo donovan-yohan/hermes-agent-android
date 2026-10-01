@@ -4944,6 +4944,29 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `interrupted completion keeps partial transcript but never publishes success preview`() = runTest {
+        for (terminal in listOf("\"status\":\"interrupted\"", "\"interrupted\":true")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc()
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            val outcomes = mutableListOf<GatewayTurnOutcome>()
+            backgroundScope.launch { repository.turnOutcomes.collect { outcomes += it } }
+            runCurrent()
+            repository.openSession("durable-a")
+            rpc.emit("message.start", "runtime-a", """{"id":"partial","role":"assistant"}""")
+            rpc.emit("message.delta", "runtime-a", """{"delta":"unfinished prose"}""")
+            rpc.emit("message.complete", "runtime-a", "{$terminal}")
+            runCurrent()
+            assertNull(outcomes.single().assistantMessagePreview)
+            val partial = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
+            assertEquals("unfinished prose", partial.markdown)
+            assertNotNull(partial.termination)
+        }
+    }
+
+    @Test
     fun `completed outcome retains exact assistant prose after next turn replaces cache`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -7205,6 +7228,197 @@ class GatewaySessionRepositoryTest {
     // `hermes_state.py:12869-13016`), plus the `pagination` the route stamps
     // (`sessions.py:709-714`).
     // -----------------------------------------------------------------------
+
+    @Test
+    fun `cold explicit open and colliding profile switch keep REST tail refresh and backfill scoped`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val http = FakeGatewayRest { request ->
+            if (!request.path.endsWith("/messages")) return@FakeGatewayRest restPage("""{"sessions":[]}""")
+            val profile = request.query["profile"] ?: "launch"
+            val offset = request.query["offset"]?.toInt() ?: 0
+            val ids = if (offset == 0) (121..240).toList() else (1..120).toList()
+            restTranscriptOf("durable-a", ids.map { it to "$profile row $it" }, 120, offset)
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        for (profile in listOf("profile-a", "profile-b")) {
+            rpc.resumeA = RESUME_A.replace("runtime-a", "runtime-$profile")
+            repository.openSessionAtEndpoint("durable-a", profile, 0L)
+            assertEquals(profile, http.requests.last { it.path.endsWith("/messages") }.query["profile"])
+            repository.loadEarlierMessages("durable-a")
+            assertEquals("120", http.requests.last().query["offset"])
+            assertEquals(profile, http.requests.last().query["profile"])
+            // Ordinary activation refresh must retain the runtime's provenance.
+            repository.openSession("durable-a")
+            assertEquals(profile, http.requests.last { it.path.endsWith("/messages") }.query["profile"])
+            val rows = cache.transcript("durable-a").filterIsInstance<UserTurn>()
+            assertEquals(240, rows.size)
+            assertTrue(rows.all { it.text.startsWith("$profile row ") })
+        }
+        assertTrue(rpc.calls.none { it.method == "session.history" })
+        assertTrue(http.requests.filter { it.path.endsWith("/messages") }.all { it.query["profile"] != null })
+    }
+
+    @Test
+    fun `REST reconnect hydration retains named owner and ordinary launch scope`() = runTest {
+        for (profile in listOf(null, "researcher")) {
+            val cache = SessionCache()
+            val first = FakeRpc()
+            val clients = MutableStateFlow<GatewayRpcClient?>(first)
+            val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+            val http = FakeGatewayRest { request ->
+                if (!request.path.endsWith("/messages")) return@FakeGatewayRest restPage("""{"sessions":[]}""")
+                restTranscriptOf("durable-a", listOf(1 to "${request.query["profile"] ?: "launch"} history"), 120, 0)
+            }
+            val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope,
+                http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            if (profile == null) repository.openSession("durable-a")
+            else repository.openSessionAtEndpoint("durable-a", profile, 0L)
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
+            repository.submit("durable-a", "keep going")
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
+            clients.value = null
+            connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+            runCurrent()
+            val second = FakeRpc()
+            clients.value = second
+            connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+            runCurrent()
+            assertEquals(profile, second.call("session.resume").params.string("profile"))
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
+            assertEquals(2, http.requests.count { it.path.endsWith("/messages") })
+            assertTrue(http.requests.filter { it.path.endsWith("/messages") }.all { it.query["profile"] == profile })
+            assertEquals("${profile ?: "launch"} history", cache.transcript("durable-a").filterIsInstance<UserTurn>().single().text)
+        }
+    }
+
+    @Test
+    fun `reconnect keeps runtime owner despite project ownership updates before and after disconnect`() = runTest {
+        for (profile in listOf(null, "researcher")) {
+            val cache = SessionCache()
+            val first = FakeRpc()
+            val clients = MutableStateFlow<GatewayRpcClient?>(first)
+            val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+            val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+            runCurrent()
+            if (profile == null) repository.openSession("durable-a")
+            else repository.openSessionAtEndpoint("durable-a", profile, 0L)
+            repository.submit("durable-a", "keep going")
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
+
+            // Project rows can legitimately replace sidebar ownership. They
+            // must not replace the provenance of the runtime being recovered.
+            val otherProfile = if (profile == null) "other" else null
+            repository.setProfileRouting(ProfileRouting(activeProfile = otherProfile))
+            repository.refreshProjects()
+            assertEquals(otherProfile, cache.session("durable-a")?.remoteProfile)
+            clients.value = null
+            connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+            runCurrent()
+            assertEquals(otherProfile, cache.session("durable-a")?.remoteProfile)
+
+            val second = FakeRpc()
+            clients.value = second
+            connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+            runCurrent()
+            assertEquals(otherProfile, second.call("projects.tree").params.string("profile"))
+            assertEquals(profile, second.call("session.resume").params.string("profile"))
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
+        }
+    }
+
+    @Test
+    fun `endpoint switch drops retained reconnect ids and profiles even when disconnect collection lags`() = runTest {
+        for (collectDisconnect in listOf(false, true)) {
+            for (profile in listOf(null, "researcher")) {
+                val cache = SessionCache()
+                val first = FakeRpc()
+                val clients = MutableStateFlow<GatewayRpcClient?>(first)
+                val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+                val repository = LiveGatewaySessionRepository(cache, connection, clients, backgroundScope) { CLOCK }
+                runCurrent()
+                if (profile == null) repository.openSession("durable-a")
+                else repository.openSessionAtEndpoint("durable-a", profile, 0L)
+                repository.submit("durable-a", "keep going")
+
+                // Production switch order: invalidate dispatch, disconnect, reset
+                // cache, then publish B. StateFlow may conflate the null client.
+                clients.value = null
+                if (collectDisconnect) runCurrent()
+                cache.resetForEndpointSwitch()
+                val second = FakeRpc()
+                clients.value = second
+                runCurrent()
+                assertTrue("A retry reached B: collected=$collectDisconnect profile=$profile",
+                    second.calls.none { it.method == "session.resume" })
+
+                // B can mint the same durable ID; a deliberate B open must use
+                // B's provenance, not A's retained null/named runtime owner.
+                cache.upsertSession(SessionSummary("durable-a", "B chat", "", CLOCK, remoteProfile = "endpoint-b"))
+                repository.openSession("durable-a")
+                assertEquals("endpoint-b", second.call("session.resume").params.string("profile"))
+            }
+        }
+    }
+
+    @Test
+    fun `retained reconnect profile cannot override B before its client collector runs`() = runTest {
+        val cache = SessionCache()
+        val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "endpoint-a", 0L)
+        repository.submit("durable-a", "keep going")
+        clients.value = null
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        val second = FakeRpc()
+        clients.value = second
+        cache.upsertSession(SessionSummary("durable-a", "B chat", "", CLOCK, remoteProfile = "endpoint-b"))
+        // No scheduler drain: neither endpoint nor client collector has run.
+        repository.openSession("durable-a")
+        assertEquals("endpoint-b", second.call("session.resume").params.string("profile"))
+    }
+
+    @Test
+    fun `automatic reconnect resume is fenced at the wire before switch collectors run`() = runTest {
+        val cache = SessionCache()
+        val fence = EndpointDispatchFence()
+        val clients = MutableStateFlow<GatewayRpcClient?>(FakeRpc())
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope,
+            endpointDispatchFence = fence) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "endpoint-a", 0L)
+        repository.submit("durable-a", "keep going")
+        clients.value = null
+        runCurrent()
+        val second = FakeRpc()
+        var reachedWire = false
+        val retry = FakeRpc().apply {
+            beforeEndpointWire = { method ->
+                if (method == "session.resume") {
+                    reachedWire = true
+                    // Switch exactly after lease capture, before immediate send.
+                    fence.invalidate()
+                    clients.value = null
+                    cache.resetForEndpointSwitch()
+                    clients.value = second
+                }
+            }
+        }
+        clients.value = retry
+        runCurrent()
+        assertTrue("Automatic retry must use endpoint dispatch", reachedWire)
+        assertTrue(retry.calls.none { it.method == "session.resume" })
+        assertTrue(second.calls.none { it.method == "session.resume" })
+    }
 
     @Test
     fun `a session hydrates with its newest page over the paged transcript route`() = runTest {

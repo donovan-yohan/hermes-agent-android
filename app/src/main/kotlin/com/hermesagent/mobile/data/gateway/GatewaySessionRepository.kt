@@ -1097,7 +1097,12 @@ internal class LiveGatewaySessionRepository(
             (binding.turnGeneration == null ||
                 binding.turnGeneration == (observedTurnGenerations[binding.runtimeId] ?: 0L))
     private val activeRuntimeIds = linkedSetOf<String>()
-    private val reconnectDurableIds = mutableSetOf<String>()
+    // Runtime provenance must outlive disconnect and bootstrap list/project writes.
+    // A present null is the launch store, not missing ownership metadata.
+    private val reconnectProfiles = mutableMapOf<String, String?>()
+    // Owns both retained retries and the runtimes awaiting disconnect collection.
+    // Read synchronously: the endpoint and client collectors can run in either order.
+    private var reconnectEndpointGeneration = cache.endpointGeneration.value
     private val ephemeralSessions = mutableSetOf<String>()
     /** The active drill-in worth rehydrating after a catalog refresh or reconnect. */
     private var lastHydratedProjectId: String? = null
@@ -1181,14 +1186,22 @@ internal class LiveGatewaySessionRepository(
                 bootstrapRefreshJob?.cancel()
                 val reset = synchronized(stateLock) {
                     val previous = observedClient
+                    val endpointGeneration = cache.endpointGeneration.value
+                    val sameEndpoint = reconnectEndpointGeneration == endpointGeneration
+                    if (!sameEndpoint) reconnectProfiles.clear()
+                    reconnectEndpointGeneration = endpointGeneration
                     observedClient = next
                     connectionGeneration++
                     mutableLiveNotificationMessages.value = LiveNotificationMessages(connectionGeneration)
-                    if (previous != null && previous !== next) {
+                    if (sameEndpoint && previous != null && previous !== next) {
                         connectionScopedRuntimeIds().forEach { runtimeId ->
                             identities.durableFor(runtimeId)?.let { durableId ->
                                 settleConnectionLoss(durableId, runtimeId)
-                                reconnectDurableIds += durableId
+                                reconnectProfiles[durableId] = if (runtimeProfiles.containsKey(runtimeId)) {
+                                    runtimeProfiles[runtimeId]
+                                } else {
+                                    owningProfileParam(durableId)
+                                }
                             }
                         }
                     }
@@ -1255,8 +1268,9 @@ internal class LiveGatewaySessionRepository(
                     if (next != null) ephemeralSessions.clear()
                     ConnectionReset(
                         generation = connectionGeneration,
+                        endpointGeneration = endpointGeneration,
                         ephemeralDurableIds = ghosts,
-                        reconnectDurableIds = reconnectDurableIds.toList(),
+                        reconnectDurableIds = reconnectProfiles.keys.toList(),
                         clearProjects = previous !== next,
                     )
                 }
@@ -1322,11 +1336,12 @@ internal class LiveGatewaySessionRepository(
                         runCatching { refreshSessions() }
                         runCatching { refreshProjects() }
                         reset.reconnectDurableIds.forEach { durableId ->
-                            runCatching { openSession(durableId) }
+                            runCatching { openSessionInternal(durableId, null, reset.endpointGeneration) }
                                 .onFailure { failure ->
                                     if (failure is CancellationException) throw failure
                                     synchronized(stateLock) {
-                                        if (reset.generation == connectionGeneration && clientFlow.value === next) {
+                                        if (reset.generation == connectionGeneration && clientFlow.value === next &&
+                                            reset.endpointGeneration == cache.endpointGeneration.value) {
                                             settleReconciliationFailure(durableId)
                                         }
                                     }
@@ -1685,10 +1700,10 @@ internal class LiveGatewaySessionRepository(
         durableId: String,
         canonicalId: String,
         runtimeId: String,
+        owningProfile: String?,
     ): TranscriptHydration {
         val plan = synchronized(stateLock) {
             ensureCurrent(connection)
-            val owningProfile = owningProfileParam(canonicalId) ?: owningProfileParam(durableId)
             TranscriptHydrationPlan(
                 profile = owningProfile,
                 // The question is which STORE this read opens, not whether the
@@ -1793,12 +1808,12 @@ internal class LiveGatewaySessionRepository(
                 // A 404 here is TWO different answers wearing one status. The
                 // route raises it for a session id it could not resolve
                 // (`sessions.py:537-539,551-552` @ `72a3277cd7`) as readily as a
-                // backend with no such route does, and the read is scoped by
-                // `owningProfileParam`, which answers null for a row whose
-                // owning profile is not known yet — sending the read to a
-                // different profile's `state.db`, where the session genuinely is
-                // not found. Demoting on that would turn one unowned row into a
-                // whole connection reverting to whole-history hydration. So the
+                // backend with no such route does. The scope is the provenance
+                // captured by the open operation, not a row that may have been
+                // removed or rehomed since resume. An unscoped, unlisted read can
+                // still land in a different profile's store. Demoting on that
+                // would turn one unowned row into a whole connection reverting
+                // to whole-history hydration. So the
                 // status alone demotes nothing; it falls back for this read like
                 // any other refusal, and the fallback itself is the evidence.
                 is GatewayRestResult.Failed -> routeAnswered404 = result.statusCode == HTTP_NOT_FOUND
@@ -2288,6 +2303,18 @@ internal class LiveGatewaySessionRepository(
                     (runtimeProfiles.containsKey(runtime) && runtimeProfiles[runtime] == explicitProfile)
             }
         }
+        // Resolve once, before resume or cache rehoming. A bound runtime's null
+        // profile is also provenance (the launch store), not a cache miss.
+        val owningProfile = synchronized(stateLock) {
+            explicitProfile ?: if (knownRuntime != null && runtimeProfiles.containsKey(knownRuntime)) {
+                runtimeProfiles[knownRuntime]
+            } else if (reconnectEndpointGeneration == cache.endpointGeneration.value &&
+                reconnectProfiles.containsKey(durableId)) {
+                reconnectProfiles[durableId]
+            } else {
+                owningProfileParam(durableId)
+            }
+        }
         val liveSnapshot: JsonObject
         val snapshotRevision: RuntimeEventRevision
         val runtimeId: String
@@ -2313,7 +2340,6 @@ internal class LiveGatewaySessionRepository(
             // sidebar happens to be in — the unified view lists other
             // profiles' sessions and opening one must reach its state.db
             // (`methods_session.py:327-330`).
-            val owningProfile = explicitProfile ?: synchronized(stateLock) { owningProfileParam(durableId) }
             requireEndpoint(expectedEndpointGeneration)
             liveSnapshot = requestAtEndpointDispatch(
                 connection = connection,
@@ -2350,7 +2376,22 @@ internal class LiveGatewaySessionRepository(
             }
         }
 
-        val hydration = hydrateTranscript(connection, durableId, canonicalId, runtimeId)
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            for (id in setOf(durableId, canonicalId)) {
+                val window = transcriptWindows[id]
+                val cached = cache.session(id)
+                if ((window != null && window.profile != owningProfile) ||
+                    (cached != null && cached.remoteProfile != owningProfile)) {
+                    // Includes cold opens over a listed/cached colliding id and
+                    // invalidates an old profile's in-flight older-page fetch.
+                    cache.removeSession(id)
+                    transcriptWindows.remove(id)
+                }
+            }
+            publishEarlierMessagesLocked()
+        }
+        val hydration = hydrateTranscript(connection, durableId, canonicalId, runtimeId, owningProfile)
         val history = hydration.entries
         val hydratedTodos = hydration.todos
         // Collected under the lock below, answered after it: the send suspends
@@ -2385,22 +2426,22 @@ internal class LiveGatewaySessionRepository(
                 preserveProgress = !progressSnapshotIsCurrent,
             )
             // Queue drains arrive as live events, so only a connection loss can
-            // have hidden one. This id stays in reconnectDurableIds until the
+            // have hidden one. This id stays in reconnectProfiles until the
             // post-reconnect reconciliation below clears it, and that window is
             // the only thing that licenses reading a local batch as drained.
             val mayHaveMissedDrain =
-                durableId in reconnectDurableIds || canonicalId in reconnectDurableIds
+                durableId in reconnectProfiles || canonicalId in reconnectProfiles
             val row = if (liveSnapshotIsCurrent) {
                 canonicalRow.withGatewayQueueProjection(projection, runtimeId, mayHaveMissedDrain)
             } else {
                 canonicalRow
-            }.let { if (explicitProfile != null) it.copy(remoteProfile = explicitProfile) else it }
+            }.copy(remoteProfile = owningProfile)
             cache.rehomeSession(durableId, row, reconciled)
             hydratedTodos?.takeUnless(::todoListActive)?.let { todos ->
                 setComposerTodos(canonicalId, runtimeId, todos)
             }
-            reconnectDurableIds.remove(durableId)
-            reconnectDurableIds.remove(canonicalId)
+            reconnectProfiles.remove(durableId)
+            reconnectProfiles.remove(canonicalId)
             if (canonicalId != durableId) {
                 rehomeEvents.tryEmit(SessionRehome(durableId, canonicalId))
             }
@@ -5483,7 +5524,9 @@ internal class LiveGatewaySessionRepository(
         releaseRuntimeGuard(runtimeId)
         turnOutcomeEvents.tryEmit(GatewayTurnOutcome(
             durableId, failed = errorText != null,
-            assistantMessagePreview = completed.markdown.takeIf(String::isNotBlank),
+            assistantMessagePreview = completed.markdown.takeIf {
+                completed.error == null && completed.termination == null && it.isNotBlank()
+            },
         ))
     }
 
@@ -6291,6 +6334,7 @@ internal class LiveGatewaySessionRepository(
     private data class RuntimeEventRevision(val live: Long = 0, val progress: Long = 0)
     private data class ConnectionReset(
         val generation: Long,
+        val endpointGeneration: Long,
         val ephemeralDurableIds: List<String>,
         val reconnectDurableIds: List<String>,
         val clearProjects: Boolean,

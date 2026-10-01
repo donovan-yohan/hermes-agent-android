@@ -191,6 +191,78 @@
           "fixture_note": "Both wire spellings of the task tool over one identical synthetic payload (an explicit count of 2), with the composer task panel beneath them derived from a stored `todo_list` history through the production parser `latestComposerTodosFromHistory` (#284). The evidence is that the legacy row and the pinned row are one row: same title, same glyph, same count, same spoken description — `Tool Updated todos, done` is published twice. The panel is a real `ComposerStatusStack` over real `ComposerTodoStatus` rows, not a stand-in. The rows are mounted deliberately because a real turn hoists a task tool out of the transcript entirely, so no live session can show this seam. `desktop_selector` names Desktop's tool-block container. Desktop's half of this capture is source-only: no E2E fixture was identified at `d177b119e9c56c9ddc0b7379ffce52341ec06584` that mounts Desktop's tool block or task panel over synthetic state, so the packet names the pinned `Updated todos` title (`apps/desktop/src/i18n/en.ts:4368`) and the `todo` icon entry (`apps/desktop/src/components/assistant-ui/tool/fallback-model/index.ts:212`) with no companion rendered Desktop pixels rather than inventing a same-pin comparison. The Android row title therefore moves from the old `Todo` fallback to Desktop's `Updated todos` — a deliberate copy change ledgered in `docs/parity/tool-output-fidelity.md`."
         }
       }
+    },
+    "bot-management": {
+      "desktop_sha": "e27448b231498e79ade668d68c0b6c6206951206",
+      "fixture_id": "bot-management-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity",
+      "desktop_selector": "[data-sessions-mode]",
+      "desktop_selector_note": "Desktop boundary remains source-only; verify scope against the pinned real bot fixture before use.",
+      "states": {
+        "bot-roster": {
+          "interaction": [],
+          "post_interaction_accessibility": "Synthetic Planner",
+          "fixture_note": "Production roster and management sheet/model. In-memory describe/list transport; server mutations explicitly refuse, local section edits are memory-only. No backend success or Desktop pixels claimed."
+        },
+        "bot-new": {
+          "interaction": [],
+          "post_interaction_accessibility": "New bot",
+          "fixture_note": "Production roster and management sheet/model. In-memory describe/list transport; server mutations explicitly refuse, local section edits are memory-only. No backend success or Desktop pixels claimed."
+        },
+        "bot-edit": {
+          "interaction": [],
+          "post_interaction_accessibility": "Edit profile",
+          "fixture_note": "Production roster and management sheet/model. In-memory describe/list transport; server mutations explicitly refuse, local section edits are memory-only. No backend success or Desktop pixels claimed."
+        },
+        "bot-duplicate": {
+          "interaction": [],
+          "post_interaction_accessibility": "Duplicate",
+          "fixture_note": "Production roster and management sheet/model. In-memory describe/list transport; server mutations explicitly refuse, local section edits are memory-only. No backend success or Desktop pixels claimed."
+        },
+        "bot-move": {
+          "interaction": [],
+          "post_interaction_accessibility": "Move to section",
+          "fixture_note": "Production roster and management sheet/model. In-memory describe/list transport; server mutations explicitly refuse, local section edits are memory-only. No backend success or Desktop pixels claimed."
+        },
+        "bot-section": {
+          "interaction": [],
+          "post_interaction_accessibility": "Rename section",
+          "fixture_note": "Production roster and management sheet/model. In-memory describe/list transport; server mutations explicitly refuse, local section edits are memory-only. No backend success or Desktop pixels claimed."
+        }
+      }
+    },
+    "bot-steer": {
+      "desktop_sha": "e27448b231498e79ade668d68c0b6c6206951206",
+      "fixture_id": "bot-steer-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerReferenceParityActivity",
+      "desktop_selector": "[data-slot=\"composer\"]",
+      "desktop_selector_note": "Source boundary only; no paired Desktop pixels claimed.",
+      "states": {
+        "steer-controls": {
+          "interaction": [],
+          "post_interaction_accessibility": "Steer at next tool boundary",
+          "fixture_note": "Production Composer with a streaming synthetic draft. Visual controls only; callbacks intentionally inert, no turn dispatch or acknowledged steer claimed."
+        }
+      }
+    },
+    "notification-latest": {
+      "desktop_sha": "e27448b231498e79ade668d68c0b6c6206951206",
+      "fixture_id": "notification-latest-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.NotificationParityActivity",
+      "desktop_selector": "android-system-notification-shade",
+      "desktop_selector_note": "Android-only OS adaptation; this label is not a DOM locator. No Desktop pixels.",
+      "states": {
+        "latest-preview": {
+          "interaction": [],
+          "post_interaction_accessibility": "Synthetic notifications: wait five seconds, then open the notification shade.",
+          "fixture_note": "Production SessionNotifier and AndroidNotificationSurface; synthetic live scope and terminal outcome. Primary receipt covers fixture Activity only. Supplemental system-shade PNG/XML are OS pixels, not a focused-Activity parity receipt. Runtime grant required. Public versions asserted in Robolectric; secure lock-screen device proof remains manual."
+        },
+        "latest-preview-off": {
+          "interaction": [],
+          "post_interaction_accessibility": "Synthetic notifications: wait five seconds, then open the notification shade.",
+          "fixture_note": "Production SessionNotifier and AndroidNotificationSurface; synthetic live scope and terminal outcome. Primary receipt covers fixture Activity only. Supplemental system-shade PNG/XML are OS pixels, not a focused-Activity parity receipt. Runtime grant required. Public versions asserted in Robolectric; secure lock-screen device proof remains manual."
+        }
+      }
     }
   }
 }
