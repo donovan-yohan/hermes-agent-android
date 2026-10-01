@@ -164,8 +164,12 @@ jobs:
     name: instrumented emulator lane
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      ANDROID_SERIAL: emulator-5554
     steps:
       - uses: actions/checkout@v4
+      - name: Verify disposable launcher preparation contract
+        run: python3 -m unittest discover -s scripts/tests -p test_ci_launcher_focus.py -v
       - name: State what this lane proves
         shell: bash
         run: |
@@ -235,10 +239,15 @@ jobs:
           profile: pixel_6
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
           disable-animations: true
+          # CI-only mitigation for the API34 launcher ANR stealing input focus.
+          # Stop only this synthetic AVD's known launcher after normal preparation;
+          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
           script: |
             ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
             ./scripts/prepare-ci-emulator.sh
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
             ./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache
       - name: Upload instrumented lane evidence
         if: always()
