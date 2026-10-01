@@ -1,0 +1,38 @@
+INSTRUMENTATION_STATUS: class=com.hermesagent.mobile.device.ActivityRecreateTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=
+com.hermesagent.mobile.device.ActivityRecreateTest:
+INSTRUMENTATION_STATUS: test=theOpenDestinationSurvivesARealActivityRecreate
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.hermesagent.mobile.device.ActivityRecreateTest
+INSTRUMENTATION_STATUS: current=1
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=theOpenDestinationSurvivesARealActivityRecreate
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_STATUS: class=com.hermesagent.mobile.device.ComposerImeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=
+com.hermesagent.mobile.device.ComposerImeTest:
+INSTRUMENTATION_STATUS: test=theComposerFieldTakesARealInputConnection
+INSTRUMENTATION_STATUS_CODE: 1
+INSTRUMENTATION_STATUS: class=com.hermesagent.mobile.device.ComposerImeTest
+INSTRUMENTATION_STATUS: current=2
+INSTRUMENTATION_STATUS: id=AndroidJUnitRunner
+INSTRUMENTATION_STATUS: numtests=2
+INSTRUMENTATION_STATUS: stream=.
+INSTRUMENTATION_STATUS: test=theComposerFieldTakesARealInputConnection
+INSTRUMENTATION_STATUS_CODE: 0
+INSTRUMENTATION_RESULT: stream=
+
+Time: 16.468
+
+OK (2 tests)
+
+
+INSTRUMENTATION_CODE: -1

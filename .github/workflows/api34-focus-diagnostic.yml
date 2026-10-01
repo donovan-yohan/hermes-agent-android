@@ -22,6 +22,8 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Verify diagnostic result parser against retained streams
+        run: python3 -m unittest discover -s .github/diagnostics -p 'test_*.py' -v
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

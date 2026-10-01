@@ -11,6 +11,8 @@ import sys
 import threading
 import time
 
+from api34_result import validate
+
 assert os.environ.get('GITHUB_ACTIONS') == 'true'
 assert os.environ['ANDROID_SERIAL'] == 'emulator-5580'
 mode = sys.argv[1]
@@ -136,13 +138,10 @@ timer.cancel()
 stop.set()
 thread.join(timeout=5)
 text = ''.join(lines)
-passed = (rc == 0 and not timed_out.is_set() and order == expected
-          and codes == [n for _ in expected for n in (1, 0)]
-          and 'INSTRUMENTATION_CODE: -1' in text
-          and re.search(r'OK \(' + str(len(expected)) + r' tests?\)', text) is not None)
-result = {'raw_exit': rc, 'timed_out': timed_out.is_set(), 'status_codes': codes,
-          'expected_order': expected, 'actual_order': order, 'order_verified': order == expected,
-          'passed': passed}
+# Only the predecessor experiment promises order. Full-suite runner order is incidental.
+result = validate(text, expected, require_order=(mode == 'predecessor'),
+                  raw_exit=rc, timed_out=timed_out.is_set())
+passed = result['passed']
 (out / 'result.json').write_text(json.dumps(result, indent=2))
 print(json.dumps(result, indent=2))
 sys.exit(rc if rc > 0 else (0 if passed else 1))
