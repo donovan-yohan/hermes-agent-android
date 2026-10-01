@@ -97,6 +97,15 @@ interface PluginHost {
         }
     }
 
+    /** Caller ownership is evaluated inside the immediate endpoint dispatch fence.
+     * Unsupported hosts fail closed rather than turn this into a preflight check. */
+    suspend fun requestAtEndpointGuarded(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+        dispatchAllowed: () -> Boolean,
+    ): PluginHostResult = PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+
     /** Ready-leg identity; a transport reconnect changes it without changing endpointGeneration. */
     val connectionToken: StateFlow<PluginConnectionToken?> get() = NO_READY_LEG
 
@@ -400,6 +409,13 @@ internal class GatewayPluginHost(
         expectedGeneration: Long,
         method: String,
         params: JsonObject,
+    ): PluginHostResult = requestAtEndpointGuarded(expectedGeneration, method, params) { true }
+
+    override suspend fun requestAtEndpointGuarded(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+        dispatchAllowed: () -> Boolean,
     ): PluginHostResult {
         val normalized = normalizePluginHostMethod(CALLER, method)
         val rpc = endpointBoundClient(expectedGeneration) ?: return refusedWithoutRoute()
@@ -409,7 +425,7 @@ internal class GatewayPluginHost(
         // that fence before disconnecting, so a switch after this snapshot but
         // before the wire hand-off cannot mutate either endpoint.
         val dispatchingRpc = rpc as? EndpointDispatchingGatewayRpcClient ?: return refusedWithoutRoute()
-        val stillOwns = { endpointBoundClient(expectedGeneration) === rpc }
+        val stillOwns = { endpointBoundClient(expectedGeneration) === rpc && dispatchAllowed() }
         val lease = endpointDispatchFence.leaseAt(expectedGeneration, stillOwns) ?: return refusedWithoutRoute()
         return requestAtEndpoint(
             rpc = dispatchingRpc,

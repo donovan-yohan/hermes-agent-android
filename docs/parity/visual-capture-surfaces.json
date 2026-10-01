@@ -2,6 +2,27 @@
   "schema_version": 1,
   "purpose": "Dispatch catalog for real, synthetic visual-parity captures. A state is one explicit artifact, never a production session.",
   "surfaces": {
+    "bot-toolsets": {
+      "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+      "fixture_id": "bot-toolsets-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "Existing profile Toolsets editor only. Android uses independent Save toolsets and confirmed Restore defaults. Browser Desktop capture does not certify native Android Checkbox accessibility; capture platform node checkable/checked/enabled plus production Compose semantics. Pin is platform_toolsets.cli, not all runtime/platform tools.",
+      "states": {
+        "loading": { "interaction": [], "post_interaction_accessibility": "Reading toolsets…" },
+        "defaults": { "interaction": [], "post_interaction_accessibility": "Using defaults" },
+        "pinned": { "interaction": [], "post_interaction_accessibility": "Custom selection" },
+        "changed": { "interaction": [], "post_interaction_accessibility": "Save toolsets" },
+        "all-selected": { "interaction": [], "post_interaction_accessibility": "2 of 2 enabled" },
+        "empty-selection": { "interaction": [], "post_interaction_accessibility": "Select at least one toolset. Restore defaults does not disable all tools." },
+        "reset-confirmation": { "interaction": [], "post_interaction_accessibility": "Confirm restore defaults" },
+        "saved": { "interaction": [], "post_interaction_accessibility": "Toolsets saved." },
+        "restored": { "interaction": [], "post_interaction_accessibility": "Defaults restored." },
+        "error": { "interaction": [], "post_interaction_accessibility": "Toolsets could not be read. Close and try again." },
+        "empty": { "interaction": [], "post_interaction_accessibility": "No toolsets available." },
+        "unconfirmed": { "interaction": [], "post_interaction_accessibility": "The toolset change could not be confirmed. Close and read it again before retrying." }
+      }
+    },
     "desktop-sidebar": {
       "desktop_sha": "e2f8a0731bf26e95b31e35d73e71e183a1045b81",
       "fixture_id": "desktop-sidebar-synthetic-v1",
