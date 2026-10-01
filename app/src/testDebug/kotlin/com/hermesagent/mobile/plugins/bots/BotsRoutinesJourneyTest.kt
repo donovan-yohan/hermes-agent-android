@@ -15,6 +15,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.printToString
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -168,6 +169,35 @@ class BotsRoutinesJourneyTest {
         return jobs("""{"success":true,"count":${rows.size},"jobs":[${rows.joinToString(",")}]}""")
     }
 
+    @Test fun `delete remains visible but disabled without lifecycle capability`() {
+        clients.value = rpc(listed())
+        launchRoutes(); awaitText("Ops")
+        compose.onNodeWithContentDescription("Actions for Ops").performClick()
+        compose.onNodeWithContentDescription("Delete. $WIP_SPOKEN")
+            .assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText("Delete", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test fun `registered roster callback refuses old endpoint before collectors run`() = staleEntry(false)
+    @Test fun `registered sidebar callback refuses old endpoint before collectors run`() = staleEntry(true)
+
+    private fun staleEntry(embedded: Boolean) {
+        val endpoint = MutableStateFlow(0L)
+        val navigations = mutableListOf<String>()
+        var reads = 0
+        clients.value = rpc(routines = { reads++; listed("[bot:ops] Morning") })
+        launchRoutes(endpoint = endpoint, onNavigate = { navigations += it }, embedded = embedded)
+        awaitText("Ops")
+        val stale = compose.onNodeWithContentDescription(routinesEntryLabel("Ops"))
+            .fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsActions.OnClick].action!!
+        compose.runOnIdle {
+            endpoint.value = 1L
+            stale.invoke() // captured actual registered UI callback, no recomposition first
+            assertTrue(navigations.isEmpty())
+            assertEquals(0, reads)
+        }
+    }
+
     // ── the entry ─────────────────────────────────────────────────────────────
 
     @Test
@@ -296,27 +326,18 @@ class BotsRoutinesJourneyTest {
     }
 
     @Test
-    fun `the empty store is the empty state with the disabled create marker`() {
+    fun `the empty store offers the production creation form`() {
         clients.value = rpc(jobs("""{"success":true,"count":0,"scoped":"ops","jobs":[]}"""))
         launchRoutes()
         openRoutinesFor("Ops")
 
         awaitText(BotsRoutinesCopy.EMPTY_TITLE)
         compose.onNodeWithText(BotsRoutinesCopy.EMPTY_DESC).assertIsDisplayed()
-        // Desktop's empty card action is a create — a mutation this slice does
-        // not ship, so it renders as the marked, disabled control instead. The
-        // header carries the same control, so both are asserted as marked and
-        // disabled rather than counted as one.
-        compose.onAllNodesWithContentDescription("${BotsRoutinesCopy.NEW_CRON}. $WIP_SPOKEN")
-            .assertCountEquals(2)
-        compose.onAllNodesWithContentDescription("${BotsRoutinesCopy.NEW_CRON}. $WIP_SPOKEN")
-            .fetchSemanticsNodes()
-            .forEach { node ->
-                assertTrue(
-                    "a deferred control is live",
-                    node.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled),
-                )
-            }
+        // Creation is live from the empty state, including explicit one-shot Once.
+        compose.onAllNodesWithText(BotsRoutinesCopy.NEW_CRON).assertCountEquals(2)
+        compose.onNodeWithTag("Routine create header").assertIsDisplayed().assertIsEnabled().performClick()
+        awaitText("Every day")
+        awaitText("Once, in…")
     }
 
     @Test
@@ -437,17 +458,24 @@ class BotsRoutinesJourneyTest {
     // ── what this slice does not do ───────────────────────────────────────────
 
     @Test
-    fun `creation stays WIP and an unscoped list cannot authorize existing actions`() {
+    fun `unscoped list cannot authorize new or existing actions`() {
         clients.value = rpc(listed("[bot:ops] Morning"))
         launchRoutes()
         openRoutinesFor("Ops")
 
         awaitText("Morning")
-        compose.onNodeWithContentDescription("${BotsRoutinesCopy.NEW_CRON}. $WIP_SPOKEN")
-            .assertIsDisplayed().assertIsNotEnabled()
+        compose.onNodeWithText(BotsRoutinesCopy.NEW_CRON).assertIsDisplayed().assertIsNotEnabled()
         listOf(BotsRoutinesCopy.PAUSE_CRON, BotsRoutinesCopy.DELETE).forEach { label ->
             compose.onNodeWithContentDescription(label).assertIsDisplayed().assertIsNotEnabled()
         }
+    }
+
+    @Test fun `confirmed scoped empty enables Once creation`() {
+        clients.value = rpc(jobs("""{"success":true,"scoped":"ops","jobs":[]}"""))
+        launchRoutes(); openRoutinesFor("Ops")
+        compose.onNodeWithTag("Routine create header").assertIsEnabled().performClick()
+        compose.onNodeWithText("Once, in…").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("In").assertExists()
     }
 
     @Test
@@ -602,6 +630,9 @@ class BotsRoutinesJourneyTest {
     private fun launchRoutes(
         onOpenBotChat: (BotRosterRow) -> Unit = {},
         lifecycleOwner: LifecycleOwner? = null,
+        endpoint: MutableStateFlow<Long> = MutableStateFlow(0L),
+        onNavigate: (String) -> Unit = {},
+        embedded: Boolean = false,
     ) {
         val registry = ContributionRegistry()
         val scope = requireNotNull(pluginScope)
@@ -614,7 +645,7 @@ class BotsRoutinesJourneyTest {
                 socket = NoSocket,
                 storage = NoStorage,
                 os = NoOs,
-                host = GatewayPluginHost(scope, clients, MutableStateFlow(0L)) as PluginHost,
+                host = GatewayPluginHost(scope, clients, endpoint) as PluginHost,
             ),
         )
         val routes = registry.getArea(PluginAreas.ROUTES_AREA)
@@ -629,7 +660,7 @@ class BotsRoutinesJourneyTest {
             var route by remember { mutableStateOf(rosterRoute) }
             val navigation = remember {
                 PluginNavigation(
-                    onNavigate = { target -> route = target },
+                    onNavigate = { target -> onNavigate(target); route = target },
                     onOpenBotChat = { profile, _, onFinished ->
                         onOpenBotChat(BotRosterRow(name = profile))
                         onFinished(true)
@@ -641,7 +672,11 @@ class BotsRoutinesJourneyTest {
                     androidx.compose.runtime.CompositionLocalProvider(
                         LocalPluginNavigation provides navigation,
                     ) {
-                        routes.firstOrNull { it.id == route }?.render?.invoke()
+                        if (embedded && route == rosterRoute) {
+                            val mode = registry.getArea(PluginAreas.SIDEBAR_NAV_AREA)
+                                .mapNotNull { it.data as? com.hermesagent.mobile.ui.sessions.SidebarModeDestination }.single()
+                            mode.content.invoke({})
+                        } else routes.firstOrNull { it.id == route }?.render?.invoke()
                     }
                 }
             }

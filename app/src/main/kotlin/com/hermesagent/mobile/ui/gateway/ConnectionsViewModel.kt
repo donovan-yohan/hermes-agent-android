@@ -529,13 +529,15 @@ internal class ConnectionsViewModel(
         }
         _uiState.update { it.copy(removeTarget = null) }
         viewModelScope.launch {
-            if (state.activeId == target.id) switch.abandonCurrentEndpoint()
-            when (target.kind) {
-                ConnectionKind.Remote -> gateway.forgetRemoteAuthentication(target.remoteProfile)
-                ConnectionKind.Local -> gateway.forgetLocalAuthentication(target.localProfile)
-                ConnectionKind.Ssh -> Unit
+            val remove: suspend () -> Unit = {
+                when (target.kind) {
+                    ConnectionKind.Remote -> gateway.forgetRemoteAuthentication(target.remoteProfile)
+                    ConnectionKind.Local -> gateway.forgetLocalAuthentication(target.localProfile)
+                    ConnectionKind.Ssh -> Unit
+                }
+                store.removeConnection(target.id)
             }
-            store.removeConnection(target.id)
+            if (state.activeId == target.id) switch.abandonCurrentEndpoint(remove) else remove()
         }
     }
 

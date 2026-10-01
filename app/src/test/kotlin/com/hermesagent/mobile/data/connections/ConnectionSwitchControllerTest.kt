@@ -44,6 +44,31 @@ import org.junit.Test
 class ConnectionSwitchControllerTest {
 
     @Test
+    fun `storage owner is withdrawn before teardown and published only after marker and generation`() = runTest {
+        val gateway = RecordingGateway()
+        val cache = SessionCache()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, cache)
+        controller.initializeStorageEndpoint()
+        val first = checkNotNull(controller.botStorageEndpoint.value)
+        assertEquals(0L, first.generation)
+        gateway.onDisconnect = { assertNull(controller.botStorageEndpoint.value) }
+        store.onSetActive = {
+            assertNull(controller.botStorageEndpoint.value)
+            assertEquals(1L, cache.endpointGeneration.value)
+        }
+        gateway.settleOnConnect()
+        controller.select("two")
+        val second = checkNotNull(controller.botStorageEndpoint.value)
+        assertEquals(1L, second.generation)
+        assertFalse(first.stableId == second.stableId)
+        store.onSetActive = {}
+        controller.select("one")
+        assertEquals(first.stableId, controller.botStorageEndpoint.value?.stableId)
+        assertEquals(2L, controller.botStorageEndpoint.value?.generation)
+    }
+
+    @Test
     fun `a switch disconnects, clears the old endpoint's sessions, then moves the marker`() = runTest {
         val gateway = RecordingGateway()
         val cache = SessionCache().withFixtureSession()
@@ -474,6 +499,195 @@ class ConnectionSwitchControllerTest {
 
         assertEquals(emptyList<String>(), gateway.calls)
         assertEquals("one", store.connectionRegistry.first().activeId)
+    }
+
+    @Test
+    fun `active removal binds surviving row only after the removal transaction`() = runTest {
+        val gateway = RecordingGateway()
+        val cache = SessionCache()
+        val store = MemoryRegistryStore(TWO_ROWS, activeId = "one")
+        val controller = ConnectionSwitchController(store, gateway, cache)
+        controller.initializeStorageEndpoint()
+        controller.abandonCurrentEndpoint {
+            assertNull(controller.botStorageEndpoint.value)
+            store.removeConnection("one")
+            assertNull(controller.botStorageEndpoint.value)
+        }
+        assertEquals(TWO_ROWS[1].botStorageIdentity(), controller.botStorageEndpoint.value?.stableId)
+        assertEquals(cache.endpointGeneration.value, controller.botStorageEndpoint.value?.generation)
+    }
+
+    @Test
+    fun `real switch projection keeps section stores across reconnect return and process restart`() = runTest {
+        val gateway = RecordingGateway().apply { settleOnConnect() }
+        val cache = SessionCache()
+        val store = MemoryRegistryStore(TWO_ROWS, "one")
+        val controller = ConnectionSwitchController(store, gateway, cache)
+        val host = SectionHost(cache)
+        val storage = SectionStorage()
+        controller.initializeStorageEndpoint()
+        val model = com.hermesagent.mobile.plugins.bots.BotsManagementViewModel(
+            host, storage, backgroundScope, {}, storageEndpoint = controller.botStorageEndpoint,
+        )
+        runCurrent()
+        model.openSection(0); model.updateSectionName("A only"); model.submit(); runCurrent()
+        val a = controller.botStorageEndpoint.value
+        host.connected.value = false; runCurrent()
+        host.connected.value = true; runCurrent()
+        assertEquals(a, controller.botStorageEndpoint.value)
+        assertEquals(listOf("A only"), model.sections.value.map { it.name })
+        controller.select("two"); runCurrent()
+        assertTrue(model.sections.value.isEmpty())
+        model.openSection(1); model.updateSectionName("B only"); model.submit(); runCurrent()
+        controller.select("one"); runCurrent()
+        assertEquals(listOf("A only"), model.sections.value.map { it.name })
+        assertEquals(2, storage.values.size)
+        val restarted = ConnectionSwitchController(store, gateway, SessionCache())
+        restarted.initializeStorageEndpoint()
+        assertEquals(a, restarted.botStorageEndpoint.value)
+        val restored = com.hermesagent.mobile.plugins.bots.BotsManagementViewModel(
+            SectionHost(SessionCache()), storage, backgroundScope, {}, storageEndpoint = restarted.botStorageEndpoint,
+        )
+        runCurrent()
+        assertEquals(model.sections.value, restored.sections.value)
+    }
+
+    @Test
+    fun `URL edit on same saved row cannot pair new address with old generation`() = runTest {
+        val gateway = RecordingGateway().apply { settleOnConnect() }
+        val cache = SessionCache()
+        val store = MemoryRegistryStore(TWO_ROWS, "one")
+        val controller = ConnectionSwitchController(store, gateway, cache)
+        controller.initializeStorageEndpoint()
+        val original = checkNotNull(controller.botStorageEndpoint.value)
+        val storage = SectionStorage()
+        val model = com.hermesagent.mobile.plugins.bots.BotsManagementViewModel(
+            SectionHost(cache), storage, backgroundScope, {}, storageEndpoint = controller.botStorageEndpoint,
+        )
+        runCurrent()
+        model.openSection(0); model.updateSectionName("Original address"); model.submit(); runCurrent()
+        val edited = TWO_ROWS.first().copy(remote = RemoteGatewayProfile("https://edited.test"))
+        controller.readdressActive {
+            assertNull(controller.botStorageEndpoint.value)
+            assertEquals(1L, cache.endpointGeneration.value)
+            store.saveConnection(edited)
+            runCurrent()
+            assertNull(controller.botStorageEndpoint.value)
+        }
+        val next = checkNotNull(controller.botStorageEndpoint.value)
+        assertFalse(original.stableId == next.stableId)
+        assertEquals(1L, next.generation)
+        runCurrent()
+        assertTrue(model.sections.value.isEmpty())
+        model.openSection(1); model.updateSectionName("Edited address"); model.submit(); runCurrent()
+        // Legacy form saves before teardown: no asynchronous combine can stamp that
+        // newly saved address with the prior generation while leave is queued.
+        store.saveConnection(TWO_ROWS.first())
+        runCurrent()
+        assertEquals(next, controller.botStorageEndpoint.value)
+        controller.leaveCurrentEndpoint()
+        assertEquals(original.stableId, controller.botStorageEndpoint.value?.stableId)
+        assertEquals(2L, controller.botStorageEndpoint.value?.generation)
+        runCurrent()
+        assertEquals(listOf("Original address"), model.sections.value.map { it.name })
+        assertEquals(2, storage.values.size)
+    }
+
+    @Test
+    fun `queued and suspended section callbacks cannot cross the graph switch boundary`() = runTest {
+        for (suspendWrite in listOf(false, true)) {
+            val gateway = RecordingGateway().apply { settleOnConnect() }
+            val cache = SessionCache()
+            val store = MemoryRegistryStore(TWO_ROWS, "one")
+            val controller = ConnectionSwitchController(store, gateway, cache)
+            controller.initializeStorageEndpoint()
+            val storage = SectionStorage()
+            val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+            var changed = 0
+            val model = com.hermesagent.mobile.plugins.bots.BotsManagementViewModel(
+                SectionHost(cache), storage, backgroundScope, { changed++ },
+                storageEndpoint = controller.botStorageEndpoint,
+            )
+            runCurrent()
+            if (suspendWrite) storage.beforeSet = { gate.await() }
+            model.openSection(0); model.updateSectionName("Stale A"); model.submit()
+            if (suspendWrite) runCurrent()
+            controller.select("two"); runCurrent()
+            gate.complete(Unit); runCurrent()
+            assertTrue(model.sections.value.isEmpty())
+            assertNull(model.state.value.dialog)
+            assertEquals(0, changed)
+            assertEquals(if (suspendWrite) 1 else 0, storage.values.size)
+            controller.select("one"); runCurrent()
+            assertEquals(if (suspendWrite) listOf("Stale A") else emptyList<String>(), model.sections.value.map { it.name })
+        }
+    }
+
+    @Test
+    fun `identity is saved row and address revision not labels themes credentials or other route fields`() {
+        val a = TWO_ROWS.first()
+        assertEquals(a.botStorageIdentity(), a.copy(label = "Renamed", themeName = "other",
+            remote = a.remote.copy(provider = "other"), local = LocalGatewayProfile("http://localhost:9000")).botStorageIdentity())
+        assertFalse(a.botStorageIdentity() == a.copy(id = "different-row").botStorageIdentity())
+        assertNull(a.copy(remote = RemoteGatewayProfile()).botStorageIdentity())
+        val local = a.copy(kind = ConnectionKind.Local, local = LocalGatewayProfile("http://localhost:9000"))
+        assertFalse(local.botStorageIdentity() == local.copy(local = LocalGatewayProfile("http://localhost:9001")).botStorageIdentity())
+        val ssh = a.copy(kind = ConnectionKind.Ssh, host = HostProfile(host = "fixture.test", username = "fixture"))
+        assertFalse(ssh.botStorageIdentity() == ssh.copy(host = ssh.host.copy(remoteHermesProfile = "other")).botStorageIdentity())
+        assertEquals(ssh.botStorageIdentity(), ssh.copy(remote = RemoteGatewayProfile("https://ignored.test")).botStorageIdentity())
+    }
+
+    @Test
+    fun `initialization queued behind suspended save cannot rebind the old generation`() = runTest {
+        val gateway = RecordingGateway().apply { settleOnConnect() }
+        val cache = SessionCache()
+        val store = MemoryRegistryStore(TWO_ROWS, "one")
+        val controller = ConnectionSwitchController(store, gateway, cache)
+        controller.initializeStorageEndpoint()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val edit = launch {
+            controller.readdressActive {
+                store.saveConnection(TWO_ROWS.first().copy(remote = RemoteGatewayProfile("https://edited.test")))
+                gate.await()
+            }
+        }
+        runCurrent()
+        assertNull(controller.botStorageEndpoint.value)
+        val initialize = launch { controller.initializeStorageEndpoint() }
+        runCurrent()
+        assertFalse(initialize.isCompleted)
+        gate.complete(Unit); edit.join(); initialize.join()
+        assertEquals(1L, controller.botStorageEndpoint.value?.generation)
+        assertEquals(store.connectionRegistry.value.active?.botStorageIdentity(), controller.botStorageEndpoint.value?.stableId)
+    }
+
+    @Test
+    fun `failed address save stays unbound even if startup initialization follows`() = runTest {
+        val gateway = RecordingGateway().apply { settleOnConnect() }
+        val controller = ConnectionSwitchController(MemoryRegistryStore(TWO_ROWS, "one"), gateway, SessionCache())
+        controller.initializeStorageEndpoint()
+        try {
+            controller.readdressActive { error("save failed") }
+        } catch (_: IllegalStateException) { }
+        assertNull(controller.botStorageEndpoint.value)
+        controller.initializeStorageEndpoint()
+        assertNull(controller.botStorageEndpoint.value)
+    }
+
+    private class SectionHost(cache: SessionCache) : com.hermesagent.mobile.plugins.PluginHost {
+        override val endpointGeneration = cache.endpointGeneration
+        override val connected = MutableStateFlow(true)
+        override suspend fun request(method: String, params: kotlinx.serialization.json.JsonObject): com.hermesagent.mobile.plugins.PluginHostResult =
+            error("local section persistence must not call a Gateway")
+        override fun onEvent(type: String, listener: (com.hermesagent.mobile.plugins.PluginHostEvent) -> Unit): () -> Unit = {}
+    }
+
+    private class SectionStorage : com.hermesagent.mobile.plugins.PluginStorage {
+        val values = mutableMapOf<String, String>()
+        var beforeSet: suspend () -> Unit = {}
+        override suspend fun get(key: String, fallback: String?): String? = values[key] ?: fallback
+        override suspend fun set(key: String, value: String) { beforeSet(); values[key] = value }
+        override suspend fun remove(key: String) { values.remove(key) }
     }
 
     private class RecordingGateway : GatewayConnectionController {

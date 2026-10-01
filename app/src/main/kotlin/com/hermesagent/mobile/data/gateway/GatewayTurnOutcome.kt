@@ -18,4 +18,11 @@ data class GatewayTurnOutcome(
     val durableSessionId: String,
     /** True for a terminal `error` frame or a `message.complete` carrying one. */
     val failed: Boolean,
+    /**
+     * Immutable prose from the exact AssistantTurn finalized by completeMessage.
+     * Null for no prose / standalone error frames. Consumers may sanitize and
+     * truncate this value, but must never reconstruct it from the session cache:
+     * another turn may already have replaced that cache by delivery time.
+     */
+    val assistantMessagePreview: String? = null,
 )

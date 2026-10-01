@@ -63,7 +63,15 @@ class ProfileAvatarsParityActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val state = ProfileAvatarsFixtureState.parse(intent.getStringExtra(EXTRA_STATE))
+        val requestedState = intent.getStringExtra(EXTRA_STATE)
+        if (requestedState in setOf("bot-roster", "bot-new", "bot-edit", "bot-duplicate", "bot-move", "bot-section")) {
+            val mode = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
+            setContent {
+                HermesTheme(AppearanceSelection("mono", mode)) { BotManagementParityContent(requireNotNull(requestedState)) }
+            }
+            return
+        }
+        val state = ProfileAvatarsFixtureState.parse(requestedState)
         val mode = if (intent.getStringExtra(EXTRA_THEME) == "light") HermesThemeMode.Light else HermesThemeMode.Dark
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         lifecycle.addObserver(object : androidx.lifecycle.DefaultLifecycleObserver {

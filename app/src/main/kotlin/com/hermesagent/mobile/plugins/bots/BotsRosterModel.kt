@@ -7,12 +7,14 @@ package com.hermesagent.mobile.plugins.bots
  * The roster's only data source is `profiles.list`
  * (`tui_gateway/methods_profiles.py:205-249` @
  * `3ca096de5f8183cb2e0ec23673f294d5978656a3`, the revision this app's profile
- * model was ported from). Everything in [BotMeta] is deliberately *not* server
- * state — Desktop keeps pin/hide/section on the machine that made them
- * (`apps/desktop/src/plugins/hermes-bots/hidden-bots.ts:23-31`,
- * `user-sections.ts` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), and this
- * port keeps that split so a hidden bot still works, stays mentionable, and
- * keeps its history.
+ * model was ported from). Current-target metadata comes from profile ui_meta:
+ * pin/hide/section membership are server-persisted preferences. Empty section
+ * records and display order remain local. Hiding remains presentation-only:
+ * the bot keeps working, stays mentionable, and retains its history.
+ *
+ * Desktop presentation citations below retain their historical source pin:
+ * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`. The metadata migration does not
+ * restamp those derivation, copy, or layout sources to the Gateway model pin.
  */
 
 /**
@@ -46,6 +48,10 @@ data class BotRosterRow(
     val connectionLabel: String? = null,
     val description: String = "",
     val displayName: String = "",
+    /** Server-owned ui_meta.hermes-bots preferences; null on a legacy roster. */
+    val storedMeta: BotMeta? = null,
+    val sectionName: String? = null,
+    val isDefault: Boolean = name == "default",
     val canonicalSession: BotSessionPreview? = null,
     val lastSession: BotSessionPreview? = null,
     /**
@@ -57,6 +63,8 @@ data class BotRosterRow(
      * `include_sessions`, `tui_gateway/methods_profiles.py:216` @ the pin).
      */
     val workerSession: BotSessionPreview? = null,
+    /** Profile ui_meta.hermes-bots.created is milliseconds, unlike session activity. */
+    val createdAtMillis: Long = 0L,
     val hasAvatar: Boolean = false,
     /** In-memory permission from this accepted roster, not a reusable saved-row credential. */
     val avatarRef: com.hermesagent.mobile.data.profiles.ProfileAvatarRef? = null,
@@ -71,13 +79,16 @@ data class BotRosterRow(
     val lastActiveMillis: Long?
         get() = activity?.lastActiveSeconds?.takeIf { it > 0L }?.times(1000L)
 
+    /** Desktop sorts and filters by max(created, last message), not worker heartbeat. */
+    val rosterActivityMillis: Long get() = maxOf(createdAtMillis, lastActiveMillis ?: 0L)
+
     val handle: String get() = botHandle(name)
 }
 
 /**
- * Per-bot presentation metadata. Local by design: Desktop's `$botMeta` is the
- * machine's own preference, and no field here is ever written back to the
- * Gateway.
+ * Per-bot presentation metadata, synchronized through ui_meta.hermes-bots.
+ * Constructor-injected values remain a test/legacy read fallback; production
+ * writes use the server namespace CAS and never mutate global pins.
  */
 data class BotMeta(
     val pinned: Boolean = false,
@@ -110,9 +121,9 @@ enum class RosterKindFilter { All, Bots, Groups }
  * The windows and thresholds the derivation reads.
  *
  * Every one of these is Desktop's own value:
- * - `ACTIVE_WINDOW_S = 90` (`row-helpers.ts:66` @ the pin)
- * - `RECENT_ACTIVITY_WINDOW_S = 7 days` (`row-helpers.ts:67` @ the pin)
- * - `BOT_ROSTER_SEARCH_THRESHOLD = 8` (`row-helpers.ts:68` @ the pin)
+ * - `ACTIVE_WINDOW_S = 90` (`row-helpers.ts:57` @ the pin)
+ * - `RECENT_ACTIVITY_WINDOW_S = 7 days` (`row-helpers.ts:58` @ the pin)
+ * - `BOT_ROSTER_SEARCH_THRESHOLD = 8` (`row-helpers.ts:59` @ the pin)
  */
 object BotsRosterLimits {
     const val ACTIVE_WINDOW_SECONDS: Long = 90L
@@ -126,7 +137,7 @@ object BotsRosterLimits {
      */
     const val WORKER_ACTIVE_WINDOW_SECONDS: Long = 150L
 
-    /** Desktop's Unassigned bucket key (`user-sections.ts:26` @ the pin). */
+    /** Desktop's Unassigned bucket key (`user-sections.ts:31` @ the pin). */
     const val UNASSIGNED_SECTION_KEY: String = "section:unassigned"
 
     /** Desktop truncates the stored attention message to 200 chars (`data.ts:139`). */

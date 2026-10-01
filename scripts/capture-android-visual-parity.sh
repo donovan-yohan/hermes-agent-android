@@ -54,6 +54,9 @@ tap_text="$(sed -n 1p <<<"$interaction_kinds")"
 swipe_list_up="$(sed -n 2p <<<"$interaction_kinds")"
 expected_accessibility="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state_spec"].get("post_interaction_accessibility", ""))' "$request_json")"
 
+if [[ "$CAPTURE_SURFACE" == "notification-latest" ]]; then
+  adb shell pm grant com.hermesagent.mobile.debug android.permission.POST_NOTIFICATIONS
+fi
 adb shell am start -W -n "$activity" \
   --es visual_parity_state "$CAPTURE_STATE" \
   --es visual_parity_theme "$CAPTURE_THEME"
@@ -140,3 +143,14 @@ python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-refere
 python3 scripts/visual_parity_contract.py check-receipt \
   --platform android \
   --receipt "$out/contract.json"
+
+# The focused-Activity contract cannot certify SystemUI. These are supplemental
+# OS evidence, not pixels covered by the fixture Activity receipt above.
+if [[ "$CAPTURE_SURFACE" == "notification-latest" ]]; then
+  sleep 5
+  adb shell cmd statusbar expand-notifications
+  sleep 1
+  adb shell uiautomator dump /sdcard/notification-parity.xml
+  adb pull /sdcard/notification-parity.xml "$out/system-shade.xml"
+  adb exec-out screencap -p > "$out/system-shade.png"
+fi

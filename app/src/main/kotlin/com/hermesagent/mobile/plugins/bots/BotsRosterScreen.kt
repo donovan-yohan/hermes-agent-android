@@ -60,6 +60,7 @@ import com.hermesagent.mobile.ui.OverlayScaffold
 import com.hermesagent.mobile.ui.common.EmptyState
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.ComingSoonIconAction
+import com.hermesagent.mobile.ui.common.ComingSoonAction
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import com.hermesagent.mobile.ui.common.HermesIconGlyph
@@ -69,6 +70,9 @@ import com.hermesagent.mobile.data.profiles.HermesProfile
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
+
+/** avatar.tsx:1008 @ e27448b231498e79ade668d68c0b6c6206951206: 22%, not 22dp. */
+internal val BOT_AVATAR_SHAPE = RoundedCornerShape(percent = 22)
 
 /**
  * The Bots roster — the full-screen destination the plugin's `routes`
@@ -92,6 +96,9 @@ class BotsActions(
      * rather than left mounted, so entering it is what re-reads the roster.
      */
     val onResume: () -> Unit = {},
+    val onNewBot: (Long) -> Unit = {},
+    val onSection: (BotSection?, BotsRosterUiState) -> Unit = { _, _ -> },
+    val onRowAction: (BotRosterRow, BotRowAction, BotsRosterUiState) -> Unit = { _, _, _ -> },
 )
 
 @Composable
@@ -132,6 +139,7 @@ fun BotsRosterScreen(
                     icon = HermesIcon.BellSlash,
                     label = ACTIVITY_TOASTS_OFF,
                 )
+                RosterNewMenu(state, actions)
             }
             if (state.presentation.showRosterSearch) {
                 Spacer(Modifier.height(12.dp))
@@ -240,7 +248,11 @@ private fun RosterList(
     LazyColumn(Modifier.fillMaxSize()) {
         for (section in state.sections) {
             if (labelled) {
-                item(key = section.key) { SectionHeader(section.name) }
+                item(key = section.key) {
+                    SectionHeader(section.name, section.id?.let { id ->
+                        { actions.onSection(BotSection(id, section.name), state) }
+                    })
+                }
             }
             items(section.rows, key = { "${section.key}:${it.rosterKey}" }) { row ->
                 BotRowItem(
@@ -253,6 +265,8 @@ private fun RosterList(
                     opening = state.openingBotKey == row.rosterKey,
                     onOpen = { onOpenBotChat(row) },
                     onOpenRoutines = { onOpenRoutines(row) },
+                    managementEnabled = state.connectionUp,
+                    onManage = { action -> actions.onRowAction(row, action, state) },
                 )
             }
         }
@@ -281,7 +295,9 @@ private fun RosterList(
                     for (section in state.hiddenSections) {
                         if (labelled) {
                             item(key = "hidden:${section.key}") {
-                                SectionHeader(section.name)
+                                SectionHeader(section.name, section.id?.let { id ->
+                                    { actions.onSection(BotSection(id, section.name), state) }
+                                })
                             }
                         }
                         items(
@@ -298,6 +314,8 @@ private fun RosterList(
                                 opening = state.openingBotKey == row.rosterKey,
                                 onOpen = { onOpenBotChat(row) },
                                 onOpenRoutines = { onOpenRoutines(row) },
+                                managementEnabled = state.connectionUp,
+                                onManage = { action -> actions.onRowAction(row, action, state) },
                             )
                         }
                     }
@@ -329,15 +347,18 @@ private fun StaleNotice(text: String) {
 internal const val STALE_TAG = "Bots stale"
 
 @Composable
-private fun SectionHeader(name: String) {
+private fun SectionHeader(name: String, onManage: (() -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
     Text(
         text = name,
         style = HermesTheme.type.sectionLabel,
         color = HermesTheme.tokens.textTertiary,
         modifier = Modifier
-            .fillMaxWidth()
+            .weight(1f)
             .padding(top = 12.dp, bottom = 4.dp),
     )
+    if (onManage != null) HermesIconButton(HermesIcon.Ellipsis, "$name section options", onManage)
+    }
 }
 
 /**
@@ -360,6 +381,8 @@ private fun BotRowItem(
     onOpen: () -> Unit,
     /** Open this bot's Routines — its own visible control, never the row's tap. */
     onOpenRoutines: () -> Unit,
+    managementEnabled: Boolean,
+    onManage: (BotRowAction) -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     val preview = displayPreview(row.activity?.preview)
@@ -401,7 +424,7 @@ private fun BotRowItem(
                     avatarRef = row.avatarRef,
                 ),
                 size = 36.dp,
-                shape = RoundedCornerShape(22.dp),
+                shape = BOT_AVATAR_SHAPE,
                 modifier = Modifier.padding(end = 10.dp),
             )
             Text(
@@ -423,6 +446,7 @@ private fun BotRowItem(
                     )
                 }
             }
+            BotContextMenu(name, pinned, hidden, onOpen, managementEnabled, row.isDefault, onManage)
             // The one distinct Routines entry for this row: always visible, its
             // own accessible name, and its own 48dp target. Desktop reaches
             // Routines by focusing the bot, because its Bots pane and the
@@ -497,6 +521,88 @@ private fun RosterSearchField(value: String, onValueChange: (String) -> Unit) {
                 .clearAndSetSemantics { contentDescription = BotsRosterCopy.SEARCH },
         )
     }
+}
+
+/** Order checked against the real Electron bot-context-menu capture @ e27448b. */
+@Composable
+private fun BotContextMenu(
+    name: String, pinned: Boolean, hidden: Boolean, onOpen: () -> Unit,
+    enabled: Boolean, isDefault: Boolean, onManage: (BotRowAction) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        HermesIconButton(HermesIcon.Ellipsis, "Actions for $name", onClick = { expanded = true })
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = HermesTheme.tokens.cardSurface,
+            tonalElevation = 0.dp,
+        ) {
+            androidx.compose.material3.DropdownMenuItem(
+                text = { Text("Open Bot Chat") },
+                onClick = { expanded = false; onOpen() },
+            )
+            ComingSoonAction("Open Screen", Modifier.padding(horizontal = 12.dp))
+            ComingSoonAction("Open Screen when the bot uses it", Modifier.padding(horizontal = 12.dp))
+            Hairline()
+            BotMenuItem(if (pinned) "Unpin" else "Pin to top", enabled) { expanded = false; onManage(BotRowAction.Pin) }
+            BotMenuItem(if (hidden) "Unhide" else "Hide", enabled) { expanded = false; onManage(BotRowAction.Hide) }
+            Hairline()
+            BotMenuItem("Edit…", enabled) { expanded = false; onManage(BotRowAction.Edit) }
+            ComingSoonAction("Manage groups...", Modifier.padding(horizontal = 12.dp))
+            BotMenuItem("Duplicate", enabled) { expanded = false; onManage(BotRowAction.Duplicate) }
+            Hairline()
+            ComingSoonAction("New chat with this bot", Modifier.padding(horizontal = 12.dp))
+            ComingSoonAction("Open recent session", Modifier.padding(horizontal = 12.dp))
+            Hairline()
+            BotMenuItem("Move to section", enabled) { expanded = false; onManage(BotRowAction.Move) }
+            Hairline()
+            ComingSoonAction("Delete", Modifier.padding(horizontal = 12.dp))
+        }
+    }
+}
+
+/** Desktop roster-pane-toolbar.tsx:89-122 @ e27448b: keep unsupported actions discoverable. */
+@Composable
+private fun RosterNewMenu(state: BotsRosterUiState, actions: BotsActions) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        HermesIconButton(
+            icon = HermesIcon.Add,
+            contentDescription = "New bot or group chat",
+            onClick = { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = RoundedCornerShape(6.dp),
+            containerColor = HermesTheme.tokens.cardSurface,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            modifier = Modifier.border(1.dp, HermesTheme.tokens.strokePrimary, RoundedCornerShape(6.dp)),
+        ) {
+            BotMenuItem("New bot", state.connectionUp) { expanded = false; actions.onNewBot(state.endpoint) }
+            ComingSoonAction("New group chat", Modifier.padding(horizontal = 12.dp))
+            Hairline()
+            BotMenuItem("New section", state.connectionUp) { expanded = false; actions.onSection(null, state) }
+            if (state.userSections.isNotEmpty()) {
+                Hairline()
+                MenuSectionLabel("Sections")
+                state.userSections.forEach { section ->
+                    BotMenuItem(section.name, state.connectionUp) {
+                        expanded = false; actions.onSection(section, state)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BotMenuItem(label: String, enabled: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.DropdownMenuItem(
+        text = { Text(label, style = HermesTheme.type.scaffold) }, enabled = enabled, onClick = onClick,
+    )
 }
 
 @Composable

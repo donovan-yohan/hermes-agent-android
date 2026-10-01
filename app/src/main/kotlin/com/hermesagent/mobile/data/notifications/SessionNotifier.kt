@@ -347,7 +347,7 @@ class SessionNotifier(
         // said `Hermes finished` would be the one notification you cannot act
         // on, because it claims there is something to read.
         val kind = if (outcome.failed) NotificationKind.TurnError else NotificationKind.TurnDone
-        dispatch(kind, outcome.durableSessionId, approval = null)
+        dispatch(kind, outcome.durableSessionId, approval = null, assistantMessagePreview = outcome.assistantMessagePreview)
     }
 
     /**
@@ -389,10 +389,8 @@ class SessionNotifier(
                     projectLabel = child.projectLabel
                         ?.notificationSafeTitle(MAX_NOTIFICATION_PROJECT)
                         ?.takeIf(String::isNotBlank),
-                    preview = child.preview
-                        .takeIf { settings.preview }
-                        ?.notificationSafeTitle(MAX_NOTIFICATION_PREVIEW)
-                        ?.takeIf(String::isNotBlank),
+                    // Only directly observed, scope-validated prose; never registry preview.
+                    preview = if (settings.preview) child.liveMessagePreview?.notificationSafePreview() else null,
                 )
             }
         }
@@ -490,6 +488,7 @@ class SessionNotifier(
         approval: ApprovalTarget?,
         question: QuestionTarget? = null,
         bypassThrottle: Boolean = false,
+        assistantMessagePreview: String? = null,
     ): Boolean {
         if (!settings.allows(kind)) return false
         if (clock() < quietUntil) return false
@@ -506,7 +505,7 @@ class SessionNotifier(
                 body = title.ifBlank { NotificationCopy.fallbackBody(kind) },
                 approval = approval,
                 question = question,
-                preview = previewFor(kind, question, row?.preview),
+                preview = previewFor(kind, question, assistantMessagePreview),
             ),
         )
         return true
@@ -529,26 +528,25 @@ class SessionNotifier(
      *  * **connectionLost, stillWaiting** — neither is about a message, so
      *    there is no line to show that is not invented.
      *
-     * That leaves a clarify's own question, and the line a turn ended on, which
-     * is the sidebar's own preview text and already display-safe. Both are
-     * redacted and bounded again here, because this is a different surface with
-     * a different width and no scroll.
+     * That leaves a clarify's own question and the immutable assistant prose on
+     * a successful terminal outcome. Never recover that reply from mutable history.
+     * Eligible prose is made plain, redacted and bounded at this final boundary.
      */
     private fun previewFor(
         kind: NotificationKind,
         question: QuestionTarget?,
-        sessionPreview: String?,
+        assistantMessagePreview: String?,
     ): String? {
         if (!settings.preview) return null
         val text = when (kind) {
+            NotificationKind.TurnDone -> assistantMessagePreview
             NotificationKind.Input -> latestPending[question?.key]
                 ?.let { it as? ClarifyPending }
                 ?.let(::shadeQuestion)
                 ?.question
-            NotificationKind.TurnDone, NotificationKind.TurnError -> sessionPreview
             else -> null
         }
-        return text?.notificationSafeTitle(MAX_NOTIFICATION_PREVIEW)?.takeIf(String::isNotBlank)
+        return text?.notificationSafePreview()
     }
 
     /**

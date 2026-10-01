@@ -7,6 +7,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class BotsRoutineCreationModelTest {
+    @org.junit.Test fun `null numeric boolean and structural ids never confirm creation`() {
+        for (id in listOf("null", "7", "true", "[]", "{}", "\"\"", "\" job \"", "\"bad\\njob\"")) {
+            val ack = classifyRoutineCreationAck(kotlinx.serialization.json.Json.parseToJsonElement(
+                """{"success":true,"job_id":$id}"""))
+            org.junit.Assert.assertTrue("id=$id yielded $ack", ack is RoutineCreationAck.Unconfirmed)
+            org.junit.Assert.assertNull((ack as RoutineCreationAck.Unconfirmed).jobId)
+        }
+    }
+
     private val draft = RoutineCreationDraft(title = " Morning ", instruction = " Do work \n")
     private fun ack(body: String) = classifyRoutineCreationAck(Json.parseToJsonElement(body))
     private fun payload(schedule: RoutineScheduleDraft) = draft.copy(schedule = schedule).payload("Ops-Team", "ops-team")!!
@@ -24,7 +33,7 @@ class BotsRoutineCreationModelTest {
     }
 
     @Test fun `every frequency composes exact wire text`() {
-        val expected = listOf("30m", "every 1h", "30 14 * * *", "30 14 * * 1-5", "30 14 * * 0", "30 14 31 * *", "every 2h", "  custom\n ")
+        val expected = listOf("in 30m", "every 1h", "30 14 * * *", "30 14 * * 1-5", "30 14 * * 0", "30 14 31 * *", "every 2h", "  custom\n ")
         assertEquals(expected, RoutineFrequency.entries.map {
             RoutineScheduleDraft(frequency = it, time = "14:30", weekday = "0", monthday = "31", raw = "  custom\n ").compose()
         })
@@ -79,10 +88,10 @@ class BotsRoutineCreationModelTest {
 
     @Test fun `blank zero and leading zero numbers use Desktop fallback`() {
         listOf("", "0", "0000").forEach { input ->
-            assertEquals("1h", RoutineScheduleDraft(frequency = RoutineFrequency.Once, onceN = input, onceUnit = "").compose())
+            assertEquals("in 1h", RoutineScheduleDraft(frequency = RoutineFrequency.Once, onceN = input, onceUnit = "").compose())
             assertEquals("every 1h", RoutineScheduleDraft(frequency = RoutineFrequency.Interval, intervalN = input, intervalUnit = "").compose())
         }
-        assertEquals("12d", RoutineScheduleDraft(frequency = RoutineFrequency.Once, onceN = "0012", onceUnit = "d").compose())
+        assertEquals("in 12d", RoutineScheduleDraft(frequency = RoutineFrequency.Once, onceN = "0012", onceUnit = "d").compose())
         assertEquals("every 9999m", RoutineScheduleDraft(frequency = RoutineFrequency.Interval, intervalN = "9999", intervalUnit = "m").compose())
     }
 
@@ -105,12 +114,12 @@ class BotsRoutineCreationModelTest {
         assertEquals(JsonPrimitive(7), payload(original)["repeat"])
     }
 
-    @Test fun `Once default intentionally preserves Gateway recurring interval mismatch`() {
+    @Test fun `Once uses explicit Gateway one shot duration contract`() {
         // d177b119e9c56c9ddc0b7379ffce52341ec06584:
         // apps/desktop/src/plugins/hermes-bots/cron.tsx:667-670,1002-1005;
         // cron/jobs.py:770-834,1794-1802. Bare 30m + omitted repeat is NOT one-shot.
         val params = payload(RoutineScheduleDraft(frequency = RoutineFrequency.Once))
-        assertEquals(JsonPrimitive("30m"), params["schedule"])
+        assertEquals(JsonPrimitive("in 30m"), params["schedule"])
         assertFalse(params.containsKey("repeat"))
         assertEquals(JsonPrimitive("every 1h"), payload(RoutineScheduleDraft(frequency = RoutineFrequency.Hourly))["schedule"])
     }
@@ -163,6 +172,28 @@ class BotsRoutineCreationModelTest {
         assertFalse(reset.containsKey("continuity"))
         assertFalse(reset.containsKey("deliver"))
         assertFalse(reset.containsKey("repeat"))
+    }
+
+    @Test fun `switching Daily to Once omits hidden options and switching back restores exact payload`() {
+        val daily = draft.copy(
+            schedule = RoutineScheduleDraft(repeatN = "12"),
+            continuity = true,
+            delivery = RoutineDelivery.BotChat,
+        )
+        val recurring = Json.parseToJsonElement("""{"action":"add","name":"[bot:Ops-Team] Morning","schedule":"0 9 * * *","prompt":"Do work","profile":"Ops-Team","repeat":12,"continuity":true,"deliver":"bot-chat"}""")
+        assertEquals(recurring, daily.payload("Ops-Team", "ops-team"))
+        val once = daily.copy(schedule = daily.schedule.copy(frequency = RoutineFrequency.Once))
+        assertEquals(
+            Json.parseToJsonElement("""{"action":"add","name":"[bot:Ops-Team] Morning","schedule":"in 30m","prompt":"Do work","profile":"Ops-Team"}"""),
+            once.payload("Ops-Team", "ops-team"),
+        )
+        val restored = once.copy(schedule = once.schedule.copy(frequency = RoutineFrequency.Daily))
+        assertEquals(recurring, restored.payload("Ops-Team", "ops-team"))
+        val advanced = once.copy(schedule = once.schedule.copy(frequency = RoutineFrequency.Advanced, raw = "0 9 * * *"))
+        assertEquals(
+            Json.parseToJsonElement("""{"action":"add","name":"[bot:Ops-Team] Morning","schedule":"0 9 * * *","prompt":"Do work","profile":"Ops-Team","continuity":true,"deliver":"bot-chat"}"""),
+            advanced.payload("Ops-Team", "ops-team"),
+        )
     }
 
     @Test fun `only literal success with coherent identity creates`() {

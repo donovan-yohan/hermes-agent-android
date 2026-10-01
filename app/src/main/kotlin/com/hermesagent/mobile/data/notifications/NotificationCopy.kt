@@ -196,3 +196,16 @@ internal const val MAX_NOTIFICATION_PROJECT = 60
  * Gateway.
  */
 internal const val MAX_NOTIFICATION_PREVIEW = 400
+
+/** Prose only: omit code blocks/inline code, link destinations and markup on the OS surface. */
+internal fun String.notificationSafePreview(): String? = redact(this)
+    .replace(Regex("(?s)```.*?(?:```|$)|~~~.*?(?:~~~|$)"), " ")
+    .replace(Regex("(?m)^(?: {4}|[ \t]*\t)[^\r\n]*"), " ")
+    .replace(Regex("`[^`]*(?:`|$)"), " ")
+    .replace(Regex("!?\\[([^]]*)]\\([^)]*\\)"), "$1")
+    .replace(Regex("</?[A-Za-z][^>]*>")) { if (it.value == "<redacted>") it.value else " " }
+    .replace(Regex("(?m)^\\s{0,3}(?:#{1,6}\\s+|>\\s*|[-+*]\\s+)"), "")
+    .replace("**", "").replace("__", "").replace("~~", "")
+    .filterNot { it.isISOControl() && !it.isWhitespace() || it in '\u202A'..'\u202E' || it in '\u2066'..'\u2069' }
+    .replace(NOTIFICATION_WHITESPACE, " ").trim().take(MAX_NOTIFICATION_PREVIEW)
+    .takeIf(String::isNotBlank)

@@ -463,6 +463,7 @@ class MainActivity : ComponentActivity() {
                     onSend = chatViewModel::submit,
                     onStop = chatViewModel::stop,
                     onRedirect = chatViewModel::redirectDraftFromUi,
+                    onSteer = chatViewModel::steerDraftFromUi,
                     onQueue = chatViewModel::queueDraft,
                     onSendNext = chatViewModel::sendNext,
                     onResumeQueue = chatViewModel::resumeQueue,

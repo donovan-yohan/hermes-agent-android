@@ -39,6 +39,19 @@ class BotsPluginRepositoryTest {
         override fun onEvent(type: String, listener: (PluginHostEvent) -> Unit): () -> Unit = {}
     }
 
+    @Test
+    fun `roster reads creation milliseconds only from bot metadata and refuses malformed numbers`() {
+        val rows = requireNotNull(parseBotsRoster(json("""{"profiles":[
+          {"name":"fresh","ui_meta":{"hermes-bots":{"created":1800000000123}}},
+          {"name":"fraction","ui_meta":{"hermes-bots":{"created":1800000000123.9}}},
+          {"name":"wrong-key","created":1800000000123},
+          {"name":"negative","ui_meta":{"hermes-bots":{"created":-1}}},
+          {"name":"overflow","ui_meta":{"hermes-bots":{"created":1e100}}},
+          {"name":"string","ui_meta":{"hermes-bots":{"created":"1800000000123"}}}
+        ]}""")))
+        assertEquals(listOf(1800000000123L, 1800000000123L, 0L, 0L, 0L, 0L), rows.map { it.createdAtMillis })
+    }
+
     private fun json(body: String) = Json.parseToJsonElement(body)
 
     private val twoBots = """

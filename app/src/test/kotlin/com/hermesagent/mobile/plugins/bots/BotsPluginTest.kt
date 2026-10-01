@@ -15,6 +15,8 @@ import com.hermesagent.mobile.plugins.PluginSocket
 import com.hermesagent.mobile.plugins.PluginStorage
 import com.hermesagent.mobile.plugins.createPluginContext
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertEquals
@@ -26,9 +28,11 @@ import org.junit.Test
  * The plugin's wiring: the areas it contributes to, the ids it registers
  * under, and its membership in the bundled roster.
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class BotsPluginTest {
 
     private class StubHost : PluginHost {
+        override val endpointGeneration = MutableStateFlow(0L)
         override suspend fun request(method: String, params: JsonObject): PluginHostResult =
             PluginHostResult.Success(Json.parseToJsonElement("""{"profiles": []}"""))
 
@@ -53,7 +57,10 @@ class BotsPluginTest {
     @Test
     fun `register contributes a route and a sidebar entry`() = runTest {
         val registry = ContributionRegistry()
-        val plugin = BotsPlugin(scope = backgroundScope)
+        val endpoint = MutableStateFlow<BotStorageEndpoint?>(BotStorageEndpoint("fixture-A", 0L))
+        val plugin = BotsPlugin(scope = backgroundScope, storageEndpoint = endpoint)
+        val host = StubHost()
+        val storageReads = mutableListOf<String>()
         val disposers = mutableListOf<() -> Unit>()
         val ctx = createPluginContext(
             pluginId = plugin.id,
@@ -69,7 +76,10 @@ class BotsPluginTest {
                 override fun connect(pluginId: String, path: String, onMessage: (String) -> Unit): () -> Unit = {}
             },
             storage = object : PluginStorage {
-                override suspend fun get(key: String, fallback: String?): String? = fallback
+                override suspend fun get(key: String, fallback: String?): String? {
+                    storageReads += key
+                    return fallback
+                }
                 override suspend fun set(key: String, value: String) {}
                 override suspend fun remove(key: String) {}
             },
@@ -79,11 +89,25 @@ class BotsPluginTest {
                 override suspend fun writeClipboard(text: String): Boolean = true
                 override suspend fun share(text: String, title: String?): Boolean = true
             },
-            host = StubHost(),
+            host = host,
             onDispose = { disposers.add(it) },
         )
 
         plugin.register(ctx)
+        runCurrent()
+        assertEquals(1, storageReads.size)
+        val aKey = storageReads.single()
+        endpoint.value = BotStorageEndpoint("fixture-B", 1L)
+        runCurrent()
+        assertEquals("a mismatched generation never reads storage", 1, storageReads.size)
+        host.endpointGeneration.value = 1L
+        runCurrent()
+        assertEquals(2, storageReads.size)
+        assertTrue(aKey != storageReads.last())
+        endpoint.value = BotStorageEndpoint("fixture-A", 2L)
+        host.endpointGeneration.value = 2L
+        runCurrent()
+        assertEquals(aKey, storageReads.last())
 
         val routes = registry.getArea(PluginAreas.ROUTES_AREA)
         assertEquals(2, routes.size)

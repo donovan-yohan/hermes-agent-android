@@ -27,6 +27,48 @@ a same-pin comparison.
 No workflow job has a write permission, bot token, auto-commit step, or mutation
 of the existing `android-exact-head.yml` lane. Artifacts expire after 30 days.
 
+## Bot controls and notification fixture captures
+
+Use a clean debug install on the dedicated synthetic emulator, with no saved
+connections. Fixtures never take arbitrary message text, endpoint addresses or
+provider inputs. Do not tap notification deep links: those deliberately retain
+the production MainActivity target, not a fake route.
+
+```bash
+# Set STATE to bot-roster, bot-new, bot-edit, bot-duplicate, bot-move or bot-section.
+adb shell am start -W -S -n com.hermesagent.mobile.debug/com.hermesagent.mobile.ProfileAvatarsParityActivity --es visual_parity_state "$STATE" --es visual_parity_theme dark
+# The real roster's plus and row ellipsis expose their actual menus.
+adb shell am start -W -S -n com.hermesagent.mobile.debug/com.hermesagent.mobile.ComposerReferenceParityActivity --es visual_parity_state steer-controls --es visual_parity_theme dark
+
+adb shell pm grant com.hermesagent.mobile.debug android.permission.POST_NOTIFICATIONS
+# Set STATE to latest-preview or latest-preview-off.
+adb shell am start -W -S -n com.hermesagent.mobile.debug/com.hermesagent.mobile.NotificationParityActivity --es visual_parity_state "$STATE" --es visual_parity_theme dark
+sleep 5
+adb shell cmd statusbar expand-notifications
+adb exec-out screencap -p > system-shade.png
+adb shell uiautomator dump /sdcard/notification-parity.xml
+adb pull /sdcard/notification-parity.xml system-shade.xml
+```
+
+Both theme values are accepted; SystemUI uses the device's theme, not the
+Activity's Compose theme. Configure the OS theme separately for shade comparisons.
+The notification fixture waits through the notifier's real startup quiet window,
+then posts an ongoing child with “The synthetic release checklist now has three
+reviewed items.” and a completed-turn child with “The synthetic release checklist
+is ready for review.” These represent separate synthetic presentation cases,
+not a live lifecycle transition: the ongoing row intentionally remains visible.
+Preview-off uses the production status/conversation fallback. Both children have
+generic public versions, verified by `NotificationParityFixtureTest`; testing a
+secure lock screen's actual redaction policy still needs a configured device.
+
+The workflow registers `bot-management`, `bot-steer`, and `notification-latest`.
+Its standard receipt proves only the focused fixture Activity; notification
+`system-shade.png` and `system-shade.xml` are supplemental OS evidence, not
+covered by that focused-Activity receipt. Inspect them before making a visual
+claim. No Desktop pixels are implied. Production management reads use a tiny
+in-memory transport; writes refuse safely (section storage is memory-only).
+Steer callbacks are inert: this fixture proves control layout, not dispatch.
+
 ## Desktop boundary at the declared pins
 
 The Desktop capture script still captures real Chrome/Electron pixels and now

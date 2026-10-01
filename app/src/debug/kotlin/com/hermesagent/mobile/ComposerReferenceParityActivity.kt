@@ -27,7 +27,8 @@ class ComposerReferenceParityActivity : ComponentActivity() {
                 Column(Modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).systemBarsPadding()) {
                     Spacer(Modifier.weight(1f))
                     Composer(
-                        draft = state.wireText, onDraftChange = {}, onSend = {}, onStop = {}, isStreaming = false,
+                        draft = state.wireText, onDraftChange = {}, onSend = {}, onStop = {}, isStreaming = state == ComposerReferenceFixtureState.Steer,
+                        canRedirect = state == ComposerReferenceFixtureState.Steer,
                         canSend = true, connected = true, statusLine = "Synthetic capture connection",
                     )
                 }
@@ -43,6 +44,7 @@ class ComposerReferenceParityActivity : ComponentActivity() {
 
 /** Every composer-reference state in the catalog; status-stack values are rejected. */
 private enum class ComposerReferenceFixtureState(val wireValue: String, val wireText: String) {
+    Steer("steer-controls", "Focus on the synthetic release checklist."),
     UrlChip("url-chip", "@url:`https://example.invalid/reference` "),
     FileChip("file-chip", "@file:`fixtures/example.txt` "),
     FolderChip("folder-chip", "@folder:`fixtures` "),

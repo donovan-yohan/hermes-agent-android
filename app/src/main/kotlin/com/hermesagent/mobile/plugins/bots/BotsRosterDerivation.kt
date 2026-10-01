@@ -151,7 +151,7 @@ fun rosterActivityMatches(
     if (filter == RosterActivityFilter.Active) {
         return workerActiveAt(row, nowMillis) || isActiveNow(row, nowMillis)
     }
-    val activity = row.lastActiveMillis ?: 0L
+    val activity = row.rosterActivityMillis
     val recent = activity > 0L &&
         nowMillis - activity <= BotsRosterLimits.RECENT_ACTIVITY_WINDOW_SECONDS * 1000L
     return if (filter == RosterActivityFilter.Recent) recent else !recent
@@ -163,7 +163,7 @@ fun sortBotsForRoster(
     metaByKey: Map<String, BotMeta>,
 ): List<BotRosterRow> = rows.sortedWith(
     compareByDescending<BotRosterRow> { if (isBotPinned(it, metaByKey)) 1 else 0 }
-        .thenByDescending { it.lastActiveMillis ?: 0L },
+        .thenByDescending { it.rosterActivityMillis },
 )
 
 /** The rows one derivation pass produced. */

@@ -36,6 +36,42 @@ import org.junit.Test
 class SessionNotifierTest {
 
     @Test
+    fun `completion carries immutable final reply despite queued next prompt and duplicate`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+        val outcome = GatewayTurnOutcome("s1", false, assistantMessagePreview = "**Final reply** password=abcdefgh")
+        world.sessions.value = SessionCacheState(transcripts = mapOf("s1" to listOf(
+            com.hermesagent.mobile.data.session.UserTurn("next", "Queued next prompt", 999),
+        )))
+        world.turns.emit(outcome)
+        runCurrent()
+        world.turns.emit(outcome)
+        runCurrent()
+        assertEquals("Final reply password=<redacted>", world.surface.posts.single().preview)
+    }
+
+    @Test
+    fun `completion preference and error gate suppress carried prose`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.start()
+        world.leaveQuietWindow()
+        world.settings.value = NotificationSettings(preview = false)
+        runCurrent()
+        world.turns.emit(GatewayTurnOutcome("s1", false, assistantMessagePreview = "Private reply"))
+        runCurrent()
+        assertNull(world.surface.posts.last().preview)
+        world.settings.value = NotificationSettings()
+        runCurrent()
+        world.turns.emit(GatewayTurnOutcome("s1", true, assistantMessagePreview = "Private diagnostic"))
+        runCurrent()
+        assertNull(world.surface.posts.last().preview)
+    }
+
+
+    @Test
     fun `an approval for an off-screen session fires while the app is foregrounded`() = runTest {
         val world = World(this)
         world.presence.applicationForegroundChanged(true)
@@ -177,7 +213,7 @@ class SessionNotifierTest {
     }
 
     @Test
-    fun `a finished turn previews the line it ended on`() = runTest {
+    fun `a finished turn never previews an untyped sidebar snippet`() = runTest {
         val world = World(this)
         world.presence.applicationForegroundChanged(false)
         world.sessions.value = SessionCacheState(
@@ -189,7 +225,71 @@ class SessionNotifierTest {
         world.turns.emit(GatewayTurnOutcome("s1", failed = false))
         runCurrent()
 
-        assertEquals("Done — 3 files changed.", world.surface.posts.single().preview)
+        assertNull(world.surface.posts.single().preview)
+    }
+
+    @Test
+    fun `completion cannot attribute uncorrelated cached prose to its outcome`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.sessions.value = SessionCacheState(
+            sessions = mapOf("s1" to summary("s1", "Chat").copy(preview = "Old summary")),
+            transcripts = mapOf("s1" to listOf(
+                com.hermesagent.mobile.data.session.AssistantTurn("a", "Latest password=abcdefgh", 1),
+                com.hermesagent.mobile.data.session.ToolActivity(
+                    "t", "terminal", "private command", com.hermesagent.mobile.data.session.ToolState.Done,
+                ),
+            )),
+        )
+        world.start()
+        world.leaveQuietWindow()
+        world.turns.emit(GatewayTurnOutcome("s1", failed = false))
+        runCurrent()
+        assertNull(world.surface.posts.single().preview)
+
+        world.settings.value = NotificationSettings(preview = false)
+        runCurrent()
+        world.turns.emit(GatewayTurnOutcome("s1", failed = true))
+        runCurrent()
+        assertNull(world.surface.posts.last().preview)
+    }
+
+    @Test
+    fun `completion does not echo user prompt or previous answer and targets outcome session`() = runTest {
+        val world = World(this)
+        world.presence.applicationForegroundChanged(false)
+        world.sessions.value = SessionCacheState(transcripts = mapOf(
+            "s1" to listOf(
+                com.hermesagent.mobile.data.session.AssistantTurn("old", "Previous answer", 999),
+                com.hermesagent.mobile.data.session.UserTurn("new", "Private user prompt", 1),
+                com.hermesagent.mobile.data.session.AssistantTurn("empty", "", 0, error = "Private error"),
+            ),
+            "other" to listOf(com.hermesagent.mobile.data.session.AssistantTurn("a", "Other reply", 1000)),
+        ))
+        world.start()
+        world.leaveQuietWindow()
+        world.turns.emit(GatewayTurnOutcome("s1", failed = false))
+        runCurrent()
+        world.turns.emit(GatewayTurnOutcome("s1", failed = false))
+        runCurrent()
+        val post = world.surface.posts.single()
+        assertEquals("s1", post.durableSessionId)
+        assertEquals(NotificationKind.TurnDone, post.kind)
+        assertNull(post.preview)
+    }
+
+    @Test
+    fun `validated question prose is redacted bounded and attached to exact target`() = runTest {
+        val world = World(this)
+        world.start()
+        world.leaveQuietWindow()
+        world.pendingInputs.value = clarify("s1", question = "password=abcdefgh\n" + "q".repeat(500))
+        runCurrent()
+        val post = world.surface.posts.single()
+        assertEquals("s1", post.durableSessionId)
+        assertEquals("s1", post.question!!.durableSessionId)
+        assertEquals(MAX_NOTIFICATION_PREVIEW, post.preview!!.length)
+        assertTrue(post.preview.startsWith("password=<redacted> "))
     }
 
     @Test

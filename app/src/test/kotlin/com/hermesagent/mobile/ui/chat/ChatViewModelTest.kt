@@ -1516,7 +1516,277 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `a Bot Chat sends the first prompt and still refuses every other mutation while New Chat and selection escape`() = runTest(dispatcher) {
+    fun `queued UI corrections retain the generation observed at tap`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        for (action in listOf(viewModel::redirectDraftFromUi, viewModel::steerDraftFromUi, viewModel::stop)) {
+            repository.observedTurn = 41L
+            viewModel.setDraft("A correction")
+            action()
+            repository.observedTurn = 42L
+            runCurrent()
+        }
+        assertEquals(listOf(41L, 41L, 41L), repository.botCorrectionTurns)
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.steers.isEmpty())
+        assertTrue(repository.interrupted.isEmpty())
+        assertEquals("A correction", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `held steer acknowledgement preserves replacement draft`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        val reply = CompletableDeferred<Unit>()
+        repository.botRedirectGate = reply
+        viewModel.setDraft("old steer")
+        viewModel.steerDraftFromUi()
+        runCurrent()
+        viewModel.setDraft("new editor text")
+        reply.complete(Unit)
+        runCurrent()
+        assertEquals(listOf("bot-chat" to "old steer"), repository.steers)
+        assertEquals("new editor text", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `colliding profile open cannot control previous runtime while resume is pending`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("profile-a", "bot-chat") { }
+        runCurrent()
+        val resume = CompletableDeferred<Unit>()
+        repository.botOpenGate = resume
+        viewModel.openBotChat("profile-b", "bot-chat") { }
+        runCurrent()
+        viewModel.setDraft("B only")
+        viewModel.redirectDraftFromUi()
+        viewModel.steerDraftFromUi()
+        viewModel.stop()
+        viewModel.submit()
+        runCurrent()
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.steers.isEmpty())
+        assertTrue(repository.interrupted.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertEquals("B only", viewModel.uiState.value.draft)
+        resume.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `failed bot aliases preserve original editor command not compact`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        repository.submitFailure = GatewayRpcException("not sent")
+        for (command in listOf("/new", "/reset")) {
+            viewModel.setDraft(command)
+            viewModel.submit()
+            runCurrent()
+            assertEquals(command, viewModel.uiState.value.draft)
+        }
+        assertTrue(repository.submitted.isEmpty())
+    }
+
+    @Test
+    fun `bot aliases do not rewrite arguments or ordinary sessions`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        for (command in listOf("/new", "/reset")) {
+            cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Idle))
+            viewModel.setDraft(command)
+            viewModel.submit()
+            runCurrent()
+        }
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        for (command in listOf("/new topic", "/reset now", "/newish")) {
+            cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Idle))
+            viewModel.setDraft(command)
+            viewModel.submit()
+            runCurrent()
+        }
+        assertEquals(listOf("/new", "/reset", "/new topic", "/reset now", "/newish"), repository.submitted.map { it.second })
+    }
+
+    @Test
+    fun `Steer ignores another sessions attachment but refuses the active sessions attachment`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "private draft".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/grant", "notes.txt", "text/plain")
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
+        viewModel.setDraft("blocked correction")
+        viewModel.steerDraftFromUi()
+        runCurrent()
+        assertTrue(repository.steers.isEmpty())
+        assertEquals("blocked correction", viewModel.uiState.value.draft)
+
+        viewModel.selectSession("session-b")
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-b")).copy(status = SessionStatus.Working))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.isEmpty())
+        viewModel.setDraft("active correction")
+        viewModel.steerDraftFromUi()
+        runCurrent()
+        assertEquals(listOf("session-b" to "active correction"), repository.steers)
+        assertEquals("", viewModel.uiState.value.draft)
+        viewModel.selectSession("session-a")
+        runCurrent()
+        assertEquals(1, viewModel.uiState.value.composer.runtime.attachments.size)
+    }
+
+    @Test
+    fun `explicit bot steer calls steer not redirect and retains rejected draft`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Working))
+        for (outcome in listOf(
+            com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected,
+            com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Ambiguous,
+            com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.QueuedByGateway,
+        )) {
+            repository.steerOutcome = outcome
+            viewModel.setDraft("next tool correction")
+            viewModel.steerDraftFromUi()
+            runCurrent()
+            assertEquals(if (outcome == com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.QueuedByGateway) "" else "next tool correction", viewModel.uiState.value.draft)
+        }
+        assertEquals(3, repository.steers.size)
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+    }
+
+    @Test
+    fun `canonical bot new and reset compact the same conversation instead of forking`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        for (command in listOf("/new", "/reset")) {
+            cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Idle))
+            viewModel.setDraft(command)
+            viewModel.submit()
+            runCurrent()
+        }
+        assertEquals(listOf("bot-chat" to "/compact", "bot-chat" to "/compact"), repository.submitted)
+        assertEquals(0, repository.created)
+    }
+
+    @Test
+    fun `a Bot Chat started outside mobile accepts an explicit live correction`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Working))
+        repository.redirectOutcome = GatewayRedirectOutcome.Redirected
+        viewModel.setDraft("change direction")
+        runCurrent()
+        viewModel.redirectDraftFromUi()
+        runCurrent()
+        assertEquals(listOf("bot-chat" to "change direction"), repository.redirects)
+        assertTrue(repository.submitted.isEmpty())
+        assertEquals("", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `externally running Bot Chat can be stopped without submitting another turn`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Working))
+        viewModel.stop()
+        runCurrent()
+        assertEquals(listOf("bot-chat"), repository.interrupted)
+        assertTrue(repository.submitted.isEmpty())
+    }
+
+    @Test
+    fun `rejected and ambiguous bot corrections retain draft without queue or retry`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Working))
+        for (outcome in listOf(GatewayRedirectOutcome.Rejected, GatewayRedirectOutcome.Ambiguous)) {
+            repository.redirectOutcome = outcome
+            viewModel.setDraft("retain this correction")
+            viewModel.redirectDraftFromUi()
+            runCurrent()
+            assertEquals("retain this correction", viewModel.uiState.value.draft)
+            assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+            assertTrue(repository.submitted.isEmpty())
+        }
+        assertEquals(2, repository.redirects.size)
+        assertEquals(listOf(0L, 0L), repository.botRedirectEndpoints)
+    }
+
+    @Test
+    fun `late bot correction acknowledgement does not clear newly edited draft`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        repository.redirectOutcome = GatewayRedirectOutcome.Redirected
+        val gate = CompletableDeferred<Unit>()
+        repository.botRedirectGate = gate
+        viewModel.setDraft("original correction")
+        viewModel.redirectDraftFromUi()
+        runCurrent()
+        viewModel.setDraft("new correction")
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals("new correction", viewModel.uiState.value.draft)
+        assertEquals(listOf("bot-chat" to "original correction"), repository.redirects)
+    }
+
+    @Test
+    fun `bot correction queued before endpoint switch never follows reused session id`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.botRedirectGate = gate
+        viewModel.setDraft("old endpoint correction")
+        viewModel.redirectDraftFromUi()
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        gate.complete(Unit)
+        runCurrent()
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+    }
+
+    @Test
+    fun `a Bot Chat sends the first prompt and refuses unsupported mutations while New Chat and selection escape`() = runTest(dispatcher) {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()
         runCurrent()
@@ -1536,11 +1806,9 @@ class ChatViewModelTest {
 
         viewModel.setDraft("blocked")
         viewModel.queueDraft()
-        viewModel.redirectDraftFromUi()
         viewModel.sendNext("queued-entry")
         viewModel.regenerateReply("reply-entry")
         viewModel.branchFromReply("reply-entry")
-        viewModel.stop()
         viewModel.resumeQueue()
         viewModel.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
         viewModel.selectModel(ComposerModelSelection("model/blocked", "provider"))
@@ -3268,6 +3536,11 @@ class ChatViewModelTest {
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
         var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
         val redirects = mutableListOf<Pair<String, String>>()
+        var botRedirectGate: CompletableDeferred<Unit>? = null
+        val botRedirectEndpoints = mutableListOf<Long>()
+        val botCorrectionTurns = mutableListOf<Long?>()
+        var observedTurn = 1L
+        override fun observedTurnGeneration(durableId: String): Long = observedTurn
         var controls = ModelControlsSnapshot(
             selection = ComposerModelSelection("model/default", "provider"),
             reasoning = ReasoningEffort.Medium,
@@ -3516,9 +3789,47 @@ class ChatViewModelTest {
             return submitOutcome
         }
 
+        override suspend fun redirectAtEndpoint(
+            durableId: String, text: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long?,
+        ): GatewayRedirectOutcome {
+            botRedirectEndpoints += expectedEndpointGeneration
+            botCorrectionTurns += expectedTurnGeneration
+            botRedirectGate?.await()
+            if (expectedTurnGeneration != null && expectedTurnGeneration != observedTurn) return GatewayRedirectOutcome.Rejected
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) return GatewayRedirectOutcome.Failed
+            return redirect(durableId, text)
+        }
+
+        val steers = mutableListOf<Pair<String, String>>()
+        var steerOutcome: com.hermesagent.mobile.data.gateway.GatewaySteerOutcome =
+            com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.QueuedByGateway
+
+        override suspend fun steerAtEndpoint(
+            durableId: String, text: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long?,
+        ): com.hermesagent.mobile.data.gateway.GatewaySteerOutcome {
+            botCorrectionTurns += expectedTurnGeneration
+            botRedirectGate?.await()
+            if (expectedTurnGeneration != null && expectedTurnGeneration != observedTurn) return com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) return com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Failed
+            steers += durableId to text
+            return steerOutcome
+        }
+
         override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome {
             redirects += durableId to text
             return redirectOutcome
+        }
+
+        override suspend fun requestInterruptAtEndpoint(
+            durableId: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long?,
+        ): com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome {
+            botCorrectionTurns += expectedTurnGeneration
+            if (expectedTurnGeneration != null && expectedTurnGeneration != observedTurn) return GatewayInterruptOutcome.NotActive
+            if (cache.endpointGeneration.value != expectedEndpointGeneration) {
+                return com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.NotActive
+            }
+            interrupt(durableId)
+            return com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted
         }
 
         override suspend fun interrupt(durableId: String) {

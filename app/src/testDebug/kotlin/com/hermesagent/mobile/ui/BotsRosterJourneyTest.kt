@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.click
@@ -131,11 +132,20 @@ class BotsRosterJourneyTest {
     /** One connection leg's client. No test here reaches a socket. */
     private class FakeRpc(
         private val answer: (String, JsonObject) -> JsonElement,
-    ) : GatewayRpcClient {
+    ) : com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient {
         override val events: Flow<GatewayEvent> = emptyFlow()
 
         override suspend fun request(method: String, params: JsonObject): JsonElement =
             answer(method, params)
+
+        override suspend fun requestAtEndpointDispatch(
+            method: String,
+            params: JsonObject,
+            dispatch: (() -> Boolean) -> Boolean,
+        ): JsonElement {
+            check(dispatch { true })
+            return answer(method, params)
+        }
 
         override fun close() {}
     }
@@ -206,6 +216,68 @@ class BotsRosterJourneyTest {
             BotsRosterCopy.rosterUnavailable("Hermes refused that Gateway request."),
         ).assertIsDisplayed()
         compose.onNodeWithText(BotsRosterCopy.RETRY_NOW).assertIsDisplayed()
+    }
+
+    @Test
+    fun `bot menu exposes Desktop action groups without enabling unsupported writes`() {
+        clients.value = rosterRpc()
+        launch()
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Researcher").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Actions for Researcher").performClick()
+        compose.onNodeWithText("Open Bot Chat").assertIsDisplayed()
+        for (label in listOf("Open Screen", "Open Screen when the bot uses it", "Manage groups...")) {
+            compose.onNodeWithContentDescription("$label. $WIP_SPOKEN").assertIsNotEnabled()
+        }
+    }
+
+    @Test
+    fun `pin hide and unhide write named profile and repaint confirmed roster`() {
+        var meta = JsonObject(emptyMap())
+        var revision = 0
+        val writes = mutableListOf<JsonObject>()
+        clients.value = FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> Json.parseToJsonElement("""{"profiles":[{"name":"researcher","display_name":"Researcher","ui_meta_revisions":{"hermes-bots":$revision},"ui_meta":{"hermes-bots":$meta}}]}""")
+                "profiles.configure" -> {
+                    writes += params
+                    assertEquals(Json.parseToJsonElement("\"researcher\""), params["name"])
+                    meta = ((params["ui_meta"] as JsonObject)["hermes-bots"] as JsonObject)
+                    revision++
+                    Json.parseToJsonElement("""{"ok":true,"applied":{"ui_meta":true}}""")
+                }
+                else -> error("Unexpected method: $method")
+            }
+        }
+        launch()
+        compose.onNodeWithContentDescription("Actions for Researcher").performClick()
+        compose.onNodeWithText("Pin to top").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Actions for Researcher").performClick()
+        compose.onNodeWithText("Unpin").assertIsEnabled()
+        compose.onNodeWithText("Hide").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(BotsRosterCopy.ALL_HIDDEN).assertIsDisplayed()
+        compose.onNodeWithText(BotsRosterCopy.SHOW_HIDDEN).performClick()
+        compose.onNodeWithContentDescription("Actions for Researcher").performClick()
+        compose.onNodeWithText("Unhide").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(BotsRosterCopy.ALL_HIDDEN).assertDoesNotExist()
+        assertEquals(3, writes.size)
+        assertEquals(Json.parseToJsonElement("""{"pinned":true,"hidden":false}"""), meta)
+    }
+
+    @Test
+    fun `new bot group and section stay discoverable in the ordered New menu`() {
+        clients.value = rosterRpc()
+        launch()
+        compose.onNodeWithContentDescription("New bot or group chat").performClick()
+        compose.onNodeWithText("New bot").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("New section").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("New group chat. $WIP_SPOKEN").assertIsNotEnabled()
+        compose.onNodeWithText("New bot").performClick()
+        compose.onNodeWithContentDescription("Bot name").assertIsDisplayed()
     }
 
     @Test
@@ -540,9 +612,15 @@ class BotsRosterJourneyTest {
             """{"name": "$name", "display_name": "${name.replaceFirstChar { it.uppercase() }}",
                 "last_session": {"last_active": ${secondsAgo(30)}, "preview": "hello"}}"""
         }
-        return FakeRpc { method, _ ->
-            assertEquals("profiles.list", method)
-            Json.parseToJsonElement("""{"profiles": [$rows]}""")
+        return FakeRpc { method, params ->
+            when (method) {
+                "profiles.list" -> Json.parseToJsonElement("""{"profiles": [$rows]}""")
+                "cron.manage" -> {
+                    assertEquals(Json.parseToJsonElement("\"list\""), params["action"])
+                    Json.parseToJsonElement("""{"success":true,"scoped":${params["profile"]},"jobs":[]}""")
+                }
+                else -> error("Unexpected method: $method")
+            }
         }
     }
 

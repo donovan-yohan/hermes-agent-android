@@ -544,6 +544,8 @@ internal class ChatViewModel(
     private val query = MutableStateFlow("")
     /** UI routing state, never backend/session-cache authority. */
     private var botChatSessionId: String? = null
+    // A provisional same-id open may still be bound to another profile's runtime.
+    private var botChatReady = false
     /** Endpoint generations that minted the transient Bot Chat capability. */
     private var botChatEndpoint: BotChatEndpoint? = null
 
@@ -2106,6 +2108,7 @@ internal class ChatViewModel(
         val previousActiveId = activeSessionId.value
         flushDraft()
         botChatSessionId = durableId
+        botChatReady = false
         val endpointBinding = BotChatEndpoint(cache.endpointGeneration.value, endpoint)
         botChatEndpoint = endpointBinding
         rehome(durableId, applyOpenSideEffects = false)
@@ -2145,6 +2148,7 @@ internal class ChatViewModel(
                     return@launch
                 }
                 adoptCanonicalSession(durableId, canonicalId, applyOpenSideEffects = false)
+                botChatReady = true
                 finish(true)
             } catch (cancelled: CancellationException) {
                 if (stillOwnsRequest()) {
@@ -2691,6 +2695,7 @@ internal class ChatViewModel(
     private fun refuseBotChatMutation(
         targetId: String? = activeSessionId.value,
         allowPromptSend: Boolean = false,
+        allowLiveTurnControl: Boolean = false,
     ): BotChatMutationException? {
         val botId = botChatSessionId ?: return null
         val activeId = activeSessionId.value
@@ -2705,7 +2710,7 @@ internal class ChatViewModel(
             if (!staleBotIsActive || targetId != botId) return null
         } else if (targetId != botId) {
             return null
-        } else if (allowPromptSend) {
+        } else if (botChatReady && (allowPromptSend || allowLiveTurnControl)) {
             return null
         }
         val refusal = BotChatMutationException()
@@ -2717,6 +2722,7 @@ internal class ChatViewModel(
     private fun clearBotChatCapability(rehomeActive: Boolean = false) {
         val botId = botChatSessionId
         botChatSessionId = null
+        botChatReady = false
         botChatEndpoint = null
         if (rehomeActive && activeSessionId.value == botId) rehome(null)
     }
@@ -2777,7 +2783,11 @@ internal class ChatViewModel(
                 },
             )
         }
-        val submittedPrompt = prompt
+        // Desktop Bot plugin middleware @ e27448b: canonical chats never reset.
+        // Exact bare commands only; scratch sessions and commands with args stay unchanged.
+        val originalSubmittedDraft = draft.value
+        val compactBotChat = botChatSessionId == sessionId && prompt in setOf("/new", "/reset")
+        val submittedPrompt = if (compactBotChat) "/compact" else prompt
         val claimedIds = outgoing.mapTo(mutableSetOf()) { it.draft.occurrenceId }
         // Claim before launching the first RPC. This single-owner fence turns
         // a second Queue tap into a status notice instead of a duplicate
@@ -2798,7 +2808,9 @@ internal class ChatViewModel(
             ?.takeIf { botChatSessionId == sessionId }
             ?.cacheGeneration
         clearDraftAfterDelivery(sessionId)
-        noticeLine = refusalWarning
+        noticeLine = if (compactBotChat) {
+            "Bot chats are one continuous conversation — compacting instead. For a throwaway session with this bot, use Sessions mode."
+        } else refusalWarning
         viewModelScope.launch {
             try {
                 val result = if (botPromptEndpoint != null) {
@@ -2874,7 +2886,7 @@ internal class ChatViewModel(
                         ChatNotice(safe ?: "This message may have been sent. Check this session before trying again.")
                     else -> ChatNotice(safe ?: "The message was not sent. Reconnect to the Gateway and try again.")
                 }
-                if (!ambiguous) restoreSubmittedDraft(sessionId, submittedPrompt)
+                if (!ambiguous) restoreSubmittedDraft(sessionId, originalSubmittedDraft)
             }
         }
     }
@@ -3391,15 +3403,60 @@ internal class ChatViewModel(
         }
     }
 
-    fun redirectDraftFromUi() {
-        if (refuseBotChatMutation() != null) return
+    fun redirectDraftFromUi() = correctDraftFromUi(steer = false)
+
+    /** Inject at the next tool boundary, without redirecting/restarting the turn. */
+    fun steerDraftFromUi() = correctDraftFromUi(steer = true)
+
+    private fun correctDraftFromUi(steer: Boolean) {
+        if (refuseBotChatMutation(allowLiveTurnControl = true) != null) return
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
         if (prompt.isEmpty() || redirectInFlight) return
+        if (steer && (prompt.startsWith("/") || attachments.value.any { it.durableSessionId == sessionId })) return
+        val observedTurn = repository.observedTurnGeneration(sessionId)
+        val observedEndpoint = cache.endpointGeneration.value
+        val botEndpoint = botChatEndpoint?.takeIf { botChatSessionId == sessionId }
+        val navigation = navigationGeneration
+        val originalDraft = draft.value
+        fun stillOwnsBotEditor(): Boolean = if (botEndpoint == null) {
+            !steer || (activeSessionId.value == sessionId && navigationGeneration == navigation &&
+                draft.value == originalDraft && cache.endpointGeneration.value == observedEndpoint)
+        } else (
+            botEndpoint == botChatEndpoint && botChatSessionId == sessionId &&
+                botEndpoint.cacheGeneration == cache.endpointGeneration.value &&
+                botEndpoint.connectionGeneration == connectionGeneration() &&
+                navigationGeneration == navigation && activeSessionId.value == sessionId &&
+                draft.value == originalDraft
+            )
+        fun retainBotCorrection(ambiguous: Boolean) {
+            if (!stillOwnsBotEditor()) return
+            noticeLine = if (ambiguous) {
+                "This correction may have reached Hermes. Check the conversation before sending it again."
+            } else {
+                "Hermes did not accept that correction. It remains in the editor."
+            }
+        }
         redirectInFlight = true
         viewModelScope.launch {
             try {
-                when (repository.redirect(sessionId, prompt)) {
+                if (!stillOwnsBotEditor()) return@launch
+                val outcome = if (steer) {
+                    val result = if (botEndpoint != null) {
+                        repository.steerAtEndpoint(sessionId, prompt, botEndpoint.cacheGeneration, observedTurn)
+                    } else repository.steerAtEndpoint(sessionId, prompt, observedEndpoint, observedTurn)
+                    when (result) {
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.QueuedByGateway -> GatewayRedirectOutcome.QueuedByGateway
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected -> GatewayRedirectOutcome.Rejected
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Unsupported -> GatewayRedirectOutcome.Unsupported
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Ambiguous -> GatewayRedirectOutcome.Ambiguous
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Failed -> GatewayRedirectOutcome.Failed
+                    }
+                } else if (botEndpoint != null) {
+                    repository.redirectAtEndpoint(sessionId, prompt, botEndpoint.cacheGeneration, observedTurn)
+                } else repository.redirect(sessionId, prompt)
+                if (!stillOwnsBotEditor()) return@launch
+                when (outcome) {
                     GatewayRedirectOutcome.Redirected,
                     GatewayRedirectOutcome.QueuedByGateway,
                     -> {
@@ -3407,16 +3464,21 @@ internal class ChatViewModel(
                         composerHistoryController.reset(sessionId)
                         invalidateHistory()
                     }
-                    GatewayRedirectOutcome.Ambiguous -> queueRedirectFallback(sessionId, prompt, ambiguous = true)
+                    GatewayRedirectOutcome.Ambiguous -> if (botEndpoint != null || steer) {
+                        retainBotCorrection(ambiguous = true)
+                    } else queueRedirectFallback(sessionId, prompt, ambiguous = true)
                     GatewayRedirectOutcome.Rejected,
                     GatewayRedirectOutcome.Unsupported,
                     GatewayRedirectOutcome.Failed,
-                    -> queueRedirectFallback(sessionId, prompt, ambiguous = false)
+                    -> if (botEndpoint != null || steer) {
+                        retainBotCorrection(ambiguous = false)
+                    } else queueRedirectFallback(sessionId, prompt, ambiguous = false)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                queueRedirectFallback(sessionId, prompt, ambiguous = false)
+                if (botEndpoint != null || steer) retainBotCorrection(ambiguous = true)
+                else queueRedirectFallback(sessionId, prompt, ambiguous = false)
             } finally {
                 redirectInFlight = false
             }
@@ -3447,8 +3509,16 @@ internal class ChatViewModel(
     }
 
     fun stop() {
-        if (refuseBotChatMutation() != null) return
+        if (refuseBotChatMutation(allowLiveTurnControl = true) != null) return
         val sessionId = activeSessionId.value ?: return
+        val observedTurn = repository.observedTurnGeneration(sessionId)
+        val botEndpoint = botChatEndpoint?.takeIf { botChatSessionId == sessionId }
+        val navigation = navigationGeneration
+        fun stillOwnsStop(): Boolean = botEndpoint == null || (
+            botEndpoint == botChatEndpoint && botEndpoint.cacheGeneration == cache.endpointGeneration.value &&
+                botEndpoint.connectionGeneration == connectionGeneration() &&
+                activeSessionId.value == sessionId && navigationGeneration == navigation
+            )
         // Authoritative cache truth, not the possibly stale projected kind:
         // an explicit Stop must never cancel a required-input turn.
         if (cache.session(sessionId)?.status == SessionStatus.NeedsInput) {
@@ -3461,9 +3531,16 @@ internal class ChatViewModel(
             .orEmpty()
             .isNotEmpty()
         viewModelScope.launch {
-            composerQueueController.park(sessionId)
+            if (botEndpoint == null) composerQueueController.park(sessionId)
             try {
-                when (repository.requestInterrupt(sessionId)) {
+                val outcome = if (botEndpoint != null) {
+                    if (!stillOwnsStop()) return@launch
+                    repository.requestInterruptAtEndpoint(sessionId, botEndpoint.cacheGeneration, observedTurn)
+                } else repository.requestInterrupt(sessionId)
+                if (!stillOwnsStop()) return@launch
+                // An acknowledged A stop is not a claim about B's new queue.
+                if (botEndpoint != null && repository.observedTurnGeneration(sessionId) != observedTurn) return@launch
+                when (outcome) {
                     com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome.Interrupted -> {
                         if (hadGatewayQueue) {
                             noticeLine = "Stopped. Any queued next-turn messages were discarded with the turn."
@@ -3476,7 +3553,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                noticeLine = "Hermes could not be stopped. Check the Gateway connection."
+                if (stillOwnsStop()) noticeLine = "Hermes could not be stopped. Check the Gateway connection."
             }
         }
     }

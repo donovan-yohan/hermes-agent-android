@@ -3,6 +3,9 @@ package com.hermesagent.mobile.plugins.bots
 /** Immutable identity captured by the rendered row, including owner selection (ABA fence). */
 data class RoutineTarget(val owner: String, val endpoint: Long, val selection: Long, val jobId: String)
 
+/** Immutable identity captured when the creation form is admitted. */
+data class RoutineCreationTarget(val owner: String, val endpoint: Long, val selection: Long)
+
 enum class RoutineAction(val wire: String) {
     Pause("pause"), Resume("resume"), Remove("remove"),
 }

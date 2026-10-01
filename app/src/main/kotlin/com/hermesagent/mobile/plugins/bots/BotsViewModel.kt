@@ -35,6 +35,9 @@ enum class BotsRosterPhase {
 /** Everything the roster surface renders from. */
 data class BotsRosterUiState(
     val phase: BotsRosterPhase = BotsRosterPhase.Loading,
+    val endpoint: Long = 0L,
+    val managementRows: List<BotRosterRow> = emptyList(),
+    val userSections: List<BotSection> = emptyList(),
     /** Visible rows, filed into user sections (Unassigned last). */
     val sections: List<BotSectionBlock> = emptyList(),
     /** The hidden rows, filed the same way — drawn only when revealed. */
@@ -139,6 +142,7 @@ class BotsViewModel(
     private val endpointGeneration: StateFlow<Long> = MutableStateFlow(0L),
     /** Ready-leg identity is observed only by the avatar-enabled production path. */
     private val connectionToken: StateFlow<com.hermesagent.mobile.plugins.PluginConnectionToken?>? = null,
+    private val sectionUpdates: StateFlow<List<BotSection>>? = null,
 ) {
     private val _uiState = MutableStateFlow(BotsRosterUiState())
     val uiState: StateFlow<BotsRosterUiState> = _uiState.asStateFlow()
@@ -180,6 +184,7 @@ class BotsViewModel(
     private var pending = false
 
     init {
+        if (sectionUpdates != null) scope.launch { sectionUpdates.collect { recompute() } }
         _uiState.update {
             it.copy(
                 pinnedKeys = metaByKey.filterValues { meta -> meta.pinned }.keys,
@@ -568,6 +573,7 @@ class BotsViewModel(
         whenEmpty: BotsRosterPhase,
         now: Long,
     ): BotsRosterUiState {
+        val metaByKey = metaByKey + roster.mapNotNull { row -> row.storedMeta?.let { row.rosterKey to it } }.toMap()
         val derived = deriveRosterRows(
             roster = roster,
             metaByKey = metaByKey,
@@ -579,7 +585,13 @@ class BotsViewModel(
         // Normalized once: the same list feeds the block count and both
         // groupings, and `normalizeBotSections` is the one place that decides
         // what a section is.
-        val normalizedSections = normalizeBotSections(sections)
+        val localSections = sectionUpdates?.value ?: sections
+        val adopted = roster.mapNotNull { row ->
+            val id = row.storedMeta?.sectionId
+            val name = row.sectionName
+            if (id != null && name != null) BotSection(id, name) else null
+        }
+        val normalizedSections = normalizeBotSections(localSections + adopted)
         val presentation = deriveRosterPresentation(
             rosterSize = roster.size,
             visibleRosterSize = derived.visibleRows.size,
@@ -592,6 +604,10 @@ class BotsViewModel(
             userSectionCount = normalizedSections.size,
         )
         return from.copy(
+            endpoint = rosterEndpoint,
+            managementRows = roster,
+            userSections = normalizedSections,
+            pinnedKeys = metaByKey.filterValues { it.pinned }.keys,
             phase = if (roster.isEmpty()) whenEmpty else BotsRosterPhase.Ready,
             sections = groupRowsBySection(derived.filteredVisible, normalizedSections, metaByKey),
             hiddenSections = groupRowsBySection(derived.filteredHidden, normalizedSections, metaByKey),
