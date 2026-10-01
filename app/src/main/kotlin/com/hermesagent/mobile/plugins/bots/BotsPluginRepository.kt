@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.math.BigDecimal
 import java.math.RoundingMode
 
 /**
@@ -243,6 +244,28 @@ class BotsPluginRepository(
         PluginHostResult.UnavailableOnGateway -> BotsRoutinesLoad.UnavailableOnGateway
 
         is PluginHostResult.Refused -> BotsRoutinesLoad.Refused(result.safeMessage)
+    }
+
+    /**
+     * Create one routine, bound to the owner and endpoint captured when the
+     * form was admitted. A refusal after dispatch is unconfirmed: this method
+     * never retries, because the Gateway may have persisted the job already.
+     * Wire: cron.manage action=add at
+     * d177b119e9c56c9ddc0b7379ffce52341ec06584.
+     */
+    internal suspend fun createRoutine(target: RoutineCreationTarget, draft: RoutineCreationDraft): RoutineCreationAck {
+        val payload = draft.payload(rawOwnerProfile = target.owner, activeProfile = target.owner)
+            ?: return RoutineCreationAck.Rejected
+        val response = host.requestAtEndpoint(
+            expectedGeneration = target.endpoint,
+            method = CRON_MANAGE,
+            params = payload,
+        )
+        return when (response) {
+            is PluginHostResult.Success -> classifyRoutineCreationAck(response.result)
+            PluginHostResult.UnavailableOnGateway -> RoutineCreationAck.Unconfirmed()
+            is PluginHostResult.Refused -> RoutineCreationAck.Unconfirmed()
+        }
     }
 
     /**
@@ -568,10 +591,26 @@ fun parseBotsRoster(
             connectionId = null,
             connectionLabel = null,
             description = row.text("description").orEmpty().trim(),
-            displayName = row.text("display_name").orEmpty().trim(),
+            displayName = row.meta().string("title")?.takeIf { it.isNotBlank() }
+                ?: row.text("display_name").orEmpty().trim(),
+            storedMeta = if ((row["ui_meta"] as? JsonObject)?.get("hermes-bots") is JsonObject) BotMeta(
+                pinned = row.meta().literalBoolean("pinned") == true,
+                hidden = row.meta().literalBoolean("hidden") == true,
+                sectionId = row.meta().string("sectionId")?.takeIf { it.isNotBlank() },
+            ) else null,
+            sectionName = row.meta().string("sectionName")?.takeIf { it.isNotBlank() },
+            isDefault = row.flag("is_default") || name == "default",
             canonicalSession = parseSessionPreview(row["canonical_session"]),
             lastSession = parseSessionPreview(row["last_session"]),
             workerSession = parseSessionPreview(row["worker_session"]),
+            createdAtMillis = ((row["ui_meta"] as? JsonObject)?.get("hermes-bots") as? JsonObject)
+                ?.let { meta ->
+                    (meta["created"] as? JsonPrimitive)?.takeUnless { it.isString }
+                        ?.content?.takeIf { it.length <= 64 }?.toBigDecimalOrNull()
+                        ?.takeIf { it.signum() >= 0 && it <= BigDecimal.valueOf(Long.MAX_VALUE) }
+                        ?.setScale(0, RoundingMode.DOWN)
+                        ?.let { runCatching { it.longValueExact() }.getOrNull() }?.coerceAtLeast(0L)
+                } ?: 0L,
             hasAvatar = row.flag("has_avatar"),
             avatarRef = avatarWireName(row)?.let(avatars::get),
         )

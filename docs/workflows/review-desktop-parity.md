@@ -18,14 +18,16 @@ citation is worthless without saying which one it is against.
 
 | Surface | Pin | Where it is recorded |
 |---|---|---|
-| UI structure, behaviour and copy — everything this checklist reviews | `564aef2946c436500a5e80ee117b66b789b3f99a` | `AGENTS.md` |
-| Theme values: presets, palettes, colour tokens | `564aef2946c436500a5e80ee117b66b789b3f99a` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
+| UI structure, behaviour and copy — target for new ports | `e27448b231498e79ade668d68c0b6c6206951206` | `AGENTS.md` |
+| Built-in theme registry and palette sync target | `e27448b231498e79ade668d68c0b6c6206951206` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
 | A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/approval-mode.md` pins its Desktop source at `3ca096de` |
 
-Use the UI pin for this checklist, and the theme pin only when the question is
-a colour value. The divergence is tracked in
-[#103](https://github.com/donovan-yohan/hermes-agent-android/issues/103); until
-it closes, write the SHA you actually read next to every `path:line`.
+Use the UI target for new ports and the theme target for registry/palette syncs.
+Neither target retroactively certifies per-surface evidence or historical token
+citations: keep those on the SHA actually inspected until their own audit moves
+them. The [2026-10-01 sync audit](../spikes/upstream-main-sync-2026-10-01.md)
+records this refresh and its limits. Write that inspected SHA next to every
+`path:line`.
 
 The reference checkout `~/.hermes/hermes-agent` is read-only and its `HEAD` is
 neither pin. Never write to it, never fetch, and never check it out to a pin —
@@ -50,8 +52,8 @@ Desktop needs a dev renderer with CDP, run from a **disposable pinned export**
 so no real config, `.env` or auth is in reach:
 
 ```bash
-pin=564aef2946c436500a5e80ee117b66b789b3f99a
-export=/tmp/hermes-desktop-$pin
+pin=e27448b231498e79ade668d68c0b6c6206951206
+export="${TMPDIR:?set TMPDIR to your scratch directory}/hermes-desktop-$pin"
 git clone --no-hardlinks --quiet --no-checkout \
   "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" "$export"
 git -C "$export" checkout --quiet "$pin"
@@ -91,8 +93,9 @@ points at something a later reader can still open.
 **What a browser-hosted Desktop capture cannot see.** The dev renderer runs in
 Chrome, not Electron, so `window.hermesDesktop` does not exist and every control
 gated on it is simply not built into the tree. `New window` and `Open in
-terminal` in the session actions menu are two (`store/windows.ts:146-148,163-165`,
-consumed at `session-actions-menu.tsx:244,260`); anything else reached through
+terminal` in the session actions menu are two (`apps/desktop/src/store/windows.ts:169-171,186-188`,
+consumed at `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:297,313`
+@ `e27448b231498e79ade668d68c0b6c6206951206`); anything else reached through
 that bridge behaves the same way. **A control missing from a Desktop capture is
 never on its own evidence that Desktop does not render it** — check the source
 for a shell gate before writing the absence into a ledger. The reverse still

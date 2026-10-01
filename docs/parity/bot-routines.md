@@ -12,13 +12,17 @@ snapshot used for this slice is the read-only export at
 
 ## Scope of this page
 
-This covers the read-only #310/#313 foundation and #316's existing-row actions:
-pause, resume and delete. The list still includes disabled jobs. Writes send
-only `cron.manage {action:"pause"|"resume"|"remove", name:<job id>, profile:<raw bot>}`.
-Creation, the schedule picker, delivery targets, continuity, repeat editing,
-the inspector and the legacy auto-pause sweep remain #191 scope. Creation and
-unsupported legacy/unknown row actions remain visible, disabled and marked `WIP`.
-This does not close #191 or claim rendered parity acceptance.
+This covers the read-only #310/#313 foundation, #316's existing-row actions,
+and the bounded #191 creation slice. The list still includes disabled jobs.
+Existing-row writes send only `cron.manage {action:"pause"|"resume"|"remove", name:<job id>, profile:<raw bot>}`; creation sends one `cron.manage {action:"add"}` from the selected bot's production form.
+The form preserves Desktop's eight frequency choices in order, starts on Daily,
+and supports all eight through the pure wire model. The current-target correction
+uses `in 30m` for Once, the explicit one-shot contract at
+`cron/jobs.py:823-832` @ `e27448b231498e79ade668d68c0b6c6206951206`. This is an
+intentional safety adaptation from Desktop's recurring bare-duration bug, not a
+claim that Desktop sends that prefix. Delay amount and units are enabled.
+Delivery target, continuity and repeat are retained in the wire model; Edit,
+Run-now and legacy auto-pause remain out of scope and visibly deferred.
 
 ## Sources and action evidence
 
@@ -34,7 +38,7 @@ This does not close #191 or claim rendered parity acceptance.
 | Schedule labels | `cron.tsx:288-324` (`scheduleLabel`) | `routineScheduleLabel`; `BotsRoutinesParseTest` covers every recognised form and the pass-through |
 | Relative next run | `cron.tsx:328-332` with `apps/desktop/src/lib/time.ts:38-56` (`Intl.RelativeTimeFormat`, style `short`) | `routineRelativeLabel`; `BotsRoutinesParseTest` pins `in 5 min` / `in 2 hr` / `in 1 day` and the half-up rounding boundary |
 | The pane's states | `cron.tsx:1277-1318`: stale banner over a held list, loading, failure + Retry, empty, populated | `BotsRoutinesPhase` and `BotsRoutinesScreen`; `BotsRoutinesViewModelTest` and `BotsRoutinesJourneyTest` cover each |
-| The pane's header | `cron.tsx:1252-1275`: the bot's face, its display name and `@handle`, the uppercase pane noun, the New-cron control | `RoutinesOwnerHeader`; the display name travels with the selection (`BotsPlugin`'s `onOpenRoutines` passes `displayName(row.name, row.displayName)`), and the New-cron control is the marked disabled one |
+| The pane's header | `cron.tsx:1252-1275`: the bot's face, its display name and `@handle`, the uppercase pane noun, the New-cron control | `RoutinesOwnerHeader`; the display name travels with the selection (`BotsPlugin`'s `onOpenRoutines` passes `displayName(row.name, row.displayName)`), and the New-cron control opens the creation sheet |
 | The row's controls | `cron.tsx:539-576`: a title button, a pause/resume Switch and a delete control, as siblings | `RoutineRowItem` renders a token switch followed by Codicon Trash, independently actionable; the inspector remains deferred |
 | Mutation and confirmation | `cron.tsx:496-523,559-574`, `cron-owner.test.tsx:53-69`; `tui_gateway/methods_tools.py:1097-1098` | Row delete is immediate, with **no confirmation dialog**, matching Desktop. `BotsRoutineActionsTest` checks exact payloads and literal acknowledgements; `BotsRoutinesJourneyTest` exercises the production route, pending state, rollback, both toggles and direct delete |
 | Reads remain inert | `cron.tsx:131-166` is deliberately not ported | `BotsRoutinesRepositoryTest` still asserts that a read sends only `list`; no legacy auto-pause sweep |
@@ -69,6 +73,39 @@ a completion for another owner does not invalidate the visible owner's read.
 `BotsRoutinePendingIdentityTest` gates actual before-wire and reply handoffs,
 returned-owner reconciliation, cancellation and queued selection rejection.
 
+## Local-delivery reconciliation
+
+The three unmerged commits `2ce11b61e49ef7ac206aa501aee2efc1fda32dbf`,
+`5ea72c947b892a398c5f84acae463afe92cf2f83`, and
+`9773503b3d7e9043faa19f3b4153ff2fbed6fff3` were ported as a reviewed delta, without
+cherry-picking or replacing current-main files. Current-target confirmation uses
+`cron.tsx:960-1100` and plugin `i18n.ts:887-918` at
+`e27448b231498e79ade668d68c0b6c6206951206`.
+
+Reconciliation fixes in addition to that delivery:
+- A confirmed result can be closed before creating a distinct routine; the old
+  implementation retained Created forever and never returned to a usable form.
+- Rejected fields remain editable and are preserved for an explicit corrected retry.
+- An unconfirmed result can be closed to inspect the scheduled list; reopening
+  retains the no-retry outcome rather than trapping the person in a modal.
+- Form entry/edit/submit synchronously fence endpoint changes, including the gap
+  before the endpoint collector runs. Late result publication checks the live endpoint.
+- New/Create require a fresh matching scoped list receipt and live connection; Ready
+  and confirmed scoped Empty are admitted. Unscoped tag-filtered display is never
+  creation permission. Failed refresh, loading, mismatched/rejected/unsupported lists
+  and disconnect revoke admission, including a recheck after the pre-dispatch yield.
+- Actual registered roster and sidebar callbacks carry the originating roster
+  snapshot and refuse a departed endpoint before selecting an owner or navigating.
+- Null/non-string/blank/control-bearing creation ids never confirm a created job.
+- The production host's actual before-wire fence has an added creation regression.
+- Frequency, delivery and continuity copy now follows the current plugin bundle.
+
+Unknown creation receipts and saved-but-unregistered receipts still prevent a second
+add for that owner/endpoint for this model's lifetime. Durable cross-process receipt
+reconciliation is not implemented. Once is now enabled through the explicit
+one-shot contract; inspector/legacy management and rendered parity remain open. Imported test provenance is not a
+new-head pass: this lane runs no Gradle; the parent must execute the reconciled suite.
+
 ## Copy and navigation
 
 The roster row's tap opens the bot's chat, exactly as before; Routines is a
@@ -102,7 +139,10 @@ enum mapped to local copy, and an unrecognised state word renders nothing.
 | A legacy delegated routine is paused on load, and its row says "Paused for security: delete and recreate this legacy job before running it again." (`cron.tsx:131-166`, `:591-595`) | drift | The routine is listed, labelled as one this app cannot manage yet, and its state is whatever the Gateway said — never a pause this app did not perform; its delete also stays WIP | #310/#316. No legacy mutation is issued; the sweep and legacy management stay in #191 |
 | Routines is reached by focusing a bot: Desktop's Bots pane and the Routines tile are on screen at once, and the pane follows `$focusedBotOwner` / `$selectedBot` (`cron.tsx:42`, `:1198-1207`) | mobile-adaptation | A visible, labelled control on each roster row opens that bot's own Routines destination; the pane header names the bot it is scoped to | A phone shows one surface at a time, so the destination needs an entry on the row; the alternative — a hidden gesture — is not discoverable, and the row's own tap must stay Bot Chat. The owner is plugin-scoped instance state because this app's plugin contract has no module globals (`BotsPluginTest` asserts the plugin declares no mutable statics) |
 | The row's face: an avatar or mood-driven `BotFace` beside the display name and `@handle` (`cron.tsx:1253`, `avatar.tsx`) | omission | The header shows the bot's display name and the pane noun, with no face | deferred: #189 — the roster already ledgers the absent avatar surface, and this slice adds no second one |
-| The header's New-cron control (`cron.tsx:1270-1274`) | omission | Creation remains visible and disabled behind WIP | coming soon — #191 |
+| The header's New-cron control (`cron.tsx:1270-1274`) | mobile-adaptation | Creation opens the phone's form; the form keeps the same action visible while an operation is unresolved | The phone needs a single reachable form surface rather than Desktop's pane-local dialog. The create dispatch and unresolved-state lock are production-wired; rendered side-by-side remains owed by the parent capture lane |
+| Desktop's Once choice composes a bare duration (`cron.tsx:672-675` at the current target) | mobile-adaptation | Once is enabled but sends `in <duration>`; Daily remains initial | #191; explicit `cron/jobs.py:823-832` contract @ e27448b; model regression fails with bare duration and passes with one-shot prefix |
+| Desktop renders the seven supported schedule choices plus delivery, continuity and repeat controls in its creation form (`cron.tsx:603-1035`) | mobile-adaptation | The phone form uses the production pure model and preserves all eight enabled frequencies; advanced controls remain model-backed and are continued in the form slice | Android uses a scrollable bottom sheet to fit the picker and keyboard; exact visual comparison is still owed by the parent capture lane |
+| Desktop creation error and partial-save outcomes remain on the creation surface | mobile-adaptation | Safe local outcomes retain exact job identity for saved-registration failure and never show backend error prose or automatically retry | A phone needs a concise next action; unresolved results stay protected and must be reconciled from the list rather than guessed by title |
 | Desktop row controls are enabled without a scope receipt and without terminal-state checks (`cron.tsx:489,559-569`) | drift | Unknown/stale owner scope cannot authorize a write; completed and disabled failed rows cannot toggle but can be deleted. Unknown records remain WIP even when disabled, with no invented paused label; completed records render completed. Legacy remains WIP | #316 / PR #317 F1. A tag fallback licenses display, not a write to a profile's store. Disabled is not evidence of resumability; production-shaped disabled completed/unknown rows are covered through repository, VM and UI |
 | Delete is hover-revealed (`cron.tsx:567`) | mobile-adaptation | Trash remains visible with the Android touch-target floor; switch comes first, no menu or separators, no confirmation | #316. A touch screen has no persistent hover; `BotsRoutinesJourneyTest` checks direct delete |
 | The pane polls every 20s and refetches on its socket opening (`cron.tsx:183-189`) | mobile-adaptation | The destination re-reads when it is entered and when the connection comes back; there is no timer | A phone does not leave this destination mounted while the person works elsewhere, so entering it is the trigger, and a background poll would spend the device's battery on a surface nobody is looking at |
@@ -113,18 +153,19 @@ enum mapped to local copy, and an unrecognised state word renders nothing.
 - pending: #316
 - pending: #191
 
-No rendered Desktop/Android side-by-side was captured for this surface. The
-Android half of a real capture is available and catalogued —
+The Android half of a real capture is available and catalogued —
 `docs/parity/visual-capture-surfaces.json` registers `bot-routines` with a
 `populated`, `read-failure`, `pause-pending`, `action-rollback`, `resumed` and
 `deleted` state, rendered by the debug-only
 `BotsRoutinesParityActivity` from the production view model and screen on
-synthetic data and an immutable clock — and can be dispatched through the
-`Visual parity capture` workflow. What does not exist is the **Desktop** half
-at this pin: the pinned export carries no Routines E2E fixture, so there are no
-same-pin Desktop pixels to compare against, and the parity claim below the pin
-is unearned. This is explicitly pending evidence, not a pixel-parity claim.
-The parent owns exact-head CI capture dispatch and inspection; this author lane
-does not run an emulator. The clock constant is unchanged: 2026-09-17T16:00:00Z,
-seventeen hours before the first next run. Independent exact-head review and CI
-remain acceptance gates, separate from local JVM/Compose/lint evidence.
+synthetic data and an immutable clock. The pinned Desktop E2E fixture is
+`apps/desktop/e2e/bot-routines-pane-narrow.spec.ts:69-101,127-148,181-257`,
+which seeds a real cron job and selects the Routines subtree. Parent capture
+packets `/tmp/hm-desktop-routines-d177-proof` (light) and
+`/tmp/hm-desktop-routines-d177-dark-proof` (dark) provide Desktop evidence;
+this lane does not claim they are a side-by-side or exact-head Android match.
+The parent owns catalog validation, exact-head CI capture dispatch and
+inspection; this author lane does not run an emulator. The clock constant is
+unchanged: 2026-09-17T16:00:00Z, seventeen hours before the first next run.
+Independent exact-head review and CI remain acceptance gates, separate from
+local JVM/Compose/lint evidence.

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 
@@ -51,6 +52,36 @@ enum class BotsRoutinesPhase {
     Rejected,
 }
 
+/** The visible state of the creation form and its one admitted operation. */
+enum class RoutineCreationPhase { Hidden, Editing, Pending, Created, Rejected, SavedRegistrationFailed, Unconfirmed }
+
+data class RoutineCreationUiState(
+    val phase: RoutineCreationPhase = RoutineCreationPhase.Hidden,
+    val draft: RoutineCreationDraft = RoutineCreationDraft(),
+    val jobId: String? = null,
+) {
+    val canSubmit: Boolean get() = phase == RoutineCreationPhase.Editing &&
+        draft.title.trim().isNotEmpty() && draft.instruction.trim().isNotEmpty() &&
+        draft.schedule.compose().isNotBlank() && '\u0000' !in draft.title && '\u0000' !in draft.instruction
+}
+
+private fun RoutineCreationAck.toCreationUiState(): RoutineCreationUiState = RoutineCreationUiState(
+    phase = when (this) {
+        is RoutineCreationAck.Created -> RoutineCreationPhase.Created
+        is RoutineCreationAck.SavedRegistrationFailed -> RoutineCreationPhase.SavedRegistrationFailed
+        RoutineCreationAck.Rejected -> RoutineCreationPhase.Rejected
+        is RoutineCreationAck.Unconfirmed -> RoutineCreationPhase.Unconfirmed
+    },
+    jobId = jobIdOrNull(),
+)
+
+private fun RoutineCreationAck.jobIdOrNull(): String? = when (this) {
+    is RoutineCreationAck.Created -> jobId
+    is RoutineCreationAck.SavedRegistrationFailed -> jobId
+    is RoutineCreationAck.Unconfirmed -> jobId
+    RoutineCreationAck.Rejected -> null
+}
+
 /** Everything the Routines surface renders from. */
 data class BotsRoutinesUiState(
     /** The bot whose store this is, or null before one has been chosen. */
@@ -77,15 +108,21 @@ data class BotsRoutinesUiState(
     val safeMessage: String? = null,
     /** Whether a live Gateway connection exists behind the plugin host door. */
     val connectionUp: Boolean = false,
+    val creationScopeConfirmed: Boolean = false,
     /** Which Gateway the rows belong to. */
     val endpointGeneration: Long = 0L,
     val selection: Long = 0L,
     val pendingJobs: Set<String> = emptySet(),
     val actionFailed: Boolean = false,
+    val creation: RoutineCreationUiState = RoutineCreationUiState(),
 ) {
     fun target(job: RoutineRow): RoutineTarget? = owner?.let {
         RoutineTarget(it, endpointGeneration, selection, job.id)
     }
+
+    val canCreate: Boolean get() = creationScopeConfirmed && connectionUp && owner != null &&
+        phase in setOf(BotsRoutinesPhase.Ready, BotsRoutinesPhase.Empty) && safeMessage == null &&
+        scoped != null && normalizedProfileName(scoped) == normalizedProfileName(owner)
 
     val canMutate: Boolean get() = connectionUp && phase == BotsRoutinesPhase.Ready &&
         !stale && scoped != null && normalizedProfileName(scoped) == normalizedProfileName(owner)
@@ -193,6 +230,15 @@ class BotsRoutinesViewModel(
     private var pending = false
     private var selection = 0L
     private var revision = 0L
+    private data class CreationScope(val owner: String, val endpoint: Long)
+    /**
+     * Accepted adds are keyed by their captured owner and endpoint rather than
+     * the visible selection. An old Gateway's held response must not block a
+     * new Gateway with the same profile name, while A → B → A on one Gateway
+     * remains a single protected operation.
+     */
+    private val creationOperations = mutableMapOf<CreationScope, RoutineCreationTarget>()
+    private val creationOutcomes = mutableMapOf<CreationScope, RoutineCreationAck>()
     private data class MutationKey(val owner: String, val endpoint: Long, val jobId: String)
     private class PendingMutation(val target: RoutineTarget)
     private val mutations = mutableMapOf<MutationKey, PendingMutation>()
@@ -271,6 +317,103 @@ class BotsRoutinesViewModel(
     private fun isCurrent(target: RoutineTarget): Boolean =
         ownsVisibleScope(target) && target.selection == selection
 
+    private fun creationAdmitted(): Boolean = connected.value &&
+        jobsEndpoint == endpointGeneration.value && _uiState.value.canCreate
+
+    fun openCreation() {
+        if (dropIfEndpointChanged() || !creationAdmitted()) return
+        val owner = ownerProfile ?: return
+        val creationScope = CreationScope(owner, jobsEndpoint)
+        if (creationScope in creationOperations) return
+        val prior = creationOutcomes[creationScope]
+        if (prior != null) {
+            _uiState.update { it.copy(creation = prior.toCreationUiState()) }
+        } else {
+            _uiState.update { it.copy(creation = RoutineCreationUiState(phase = RoutineCreationPhase.Editing)) }
+        }
+    }
+
+    fun closeCreation() {
+        val creationScope = ownerProfile?.let { CreationScope(it, jobsEndpoint) }
+        if (creationScope !in creationOperations) {
+            // Closing a sheet is not retry permission. Unknown outcomes remain
+            // retained, but the person must be able to inspect the scheduled list.
+            when (creationOutcomes[creationScope]) {
+                is RoutineCreationAck.Created, RoutineCreationAck.Rejected -> creationOutcomes.remove(creationScope)
+                else -> Unit
+            }
+            _uiState.update { it.copy(creation = RoutineCreationUiState()) }
+        }
+    }
+
+    fun updateCreationDraft(draft: RoutineCreationDraft) {
+        if (dropIfEndpointChanged()) return
+        if (_uiState.value.creation.phase in setOf(RoutineCreationPhase.Editing, RoutineCreationPhase.Rejected)) {
+            ownerProfile?.let { creationOutcomes.remove(CreationScope(it, jobsEndpoint)) }
+            _uiState.update { it.copy(creation = it.creation.copy(draft = draft, phase = RoutineCreationPhase.Editing)) }
+        }
+    }
+
+    fun submitCreation() {
+        if (dropIfEndpointChanged()) return
+        val state = _uiState.value
+        val owner = ownerProfile ?: return
+        val draft = state.creation.draft
+        if (!state.creation.canSubmit || !creationAdmitted()) return
+        val target = RoutineCreationTarget(owner, jobsEndpoint, selection)
+        val creationScope = CreationScope(target.owner, target.endpoint)
+        if (creationScope in creationOperations) return
+        if (!scope.isActive) {
+            val unconfirmed = RoutineCreationAck.Unconfirmed()
+            creationOutcomes[creationScope] = unconfirmed
+            _uiState.update { it.copy(creation = unconfirmed.toCreationUiState()) }
+            return
+        }
+        creationOperations[creationScope] = target
+        _uiState.update { it.copy(creation = it.creation.copy(phase = RoutineCreationPhase.Pending)) }
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            var outcome: RoutineCreationAck? = null
+            try {
+                yield()
+                if (
+                    creationOperations[creationScope] !== target ||
+                    target.endpoint != endpointGeneration.value ||
+                    target.owner != ownerProfile ||
+                    target.selection != selection || !creationAdmitted()
+                ) {
+                    // The operation was admitted locally, but navigation or an
+                    // endpoint switch happened before the request crossed the
+                    // repository seam. It never entered the transport, so refuse
+                    // this queued intent rather than creating for a departed
+                    // owner. Once the repository is entered, the captured target
+                    // owns the response until it settles.
+                    outcome = RoutineCreationAck.Unconfirmed()
+                } else {
+                    outcome = repository.createRoutine(target, draft)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                outcome = RoutineCreationAck.Unconfirmed()
+            } finally {
+                val settled = outcome ?: RoutineCreationAck.Unconfirmed()
+                if (creationOperations[creationScope] === target) {
+                    creationOperations.remove(creationScope)
+                    creationOutcomes[creationScope] = settled
+                    val sameOwner = target.owner == ownerProfile && target.endpoint == jobsEndpoint &&
+                        target.endpoint == endpointGeneration.value
+                    if (sameOwner && target.selection == selection) {
+                        _uiState.update { it.copy(creation = settled.toCreationUiState().copy(draft = draft)) }
+                        if (settled is RoutineCreationAck.Created) refresh()
+                    } else if (sameOwner) {
+                        _uiState.update { it.copy(creation = settled.toCreationUiState().copy(draft = draft)) }
+                        refresh()
+                    }
+                }
+            }
+        }
+    }
+
     init {
         _uiState.update { it.copy(connectionUp = connected.value, endpointGeneration = endpointGeneration.value) }
         scope.launch {
@@ -286,6 +429,7 @@ class BotsRoutinesViewModel(
 
     private fun collectConnectionState(up: Boolean) {
         dropIfEndpointChanged()
+        if (!up) _uiState.update { it.copy(creationScopeConfirmed = false) }
         val edge = up && !wasConnected
         wasConnected = up
         _uiState.update { state ->
@@ -315,7 +459,8 @@ class BotsRoutinesViewModel(
      * destination is entered and left, and blanking the list on the way back in
      * would flash an empty screen over rows that are about to be replaced.
      */
-    fun selectOwner(profile: String, label: String? = null) {
+    fun selectOwner(profile: String, label: String? = null, originatingEndpoint: Long = endpointGeneration.value) {
+        if (originatingEndpoint != endpointGeneration.value) return
         val selected = profile
         if (selected.isBlank()) return
         // The same boundary the read takes, taken synchronously first: a
@@ -332,7 +477,7 @@ class BotsRoutinesViewModel(
         selection++
         jobs = emptyList()
         jobsScoped = null
-        jobsEndpoint = endpointGeneration.value
+        jobsEndpoint = originatingEndpoint
         _uiState.update { state ->
             state.copy(
                 owner = selected,
@@ -341,11 +486,19 @@ class BotsRoutinesViewModel(
                 all = emptyList(),
                 jobs = emptyList(),
                 scoped = null,
+                creationScopeConfirmed = false,
                 filterHint = null,
                 safeMessage = null,
                 selection = selection,
                 pendingJobs = pendingJobs(),
                 actionFailed = false,
+                creation = when {
+                    creationOperations[CreationScope(selected, jobsEndpoint)] != null ->
+                        RoutineCreationUiState(phase = RoutineCreationPhase.Pending)
+                    creationOutcomes[CreationScope(selected, jobsEndpoint)] != null ->
+                        creationOutcomes.getValue(CreationScope(selected, jobsEndpoint)).toCreationUiState()
+                    else -> RoutineCreationUiState()
+                },
                 endpointGeneration = jobsEndpoint,
             )
         }
@@ -410,6 +563,7 @@ class BotsRoutinesViewModel(
         if (jobs.isEmpty()) {
             _uiState.update { it.copy(phase = BotsRoutinesPhase.Loading) }
         }
+        _uiState.update { it.copy(creationScopeConfirmed = false) }
         val load = repository.loadRoutines(profile, endpoint)
         // A switch that lands while the read is on the wire answers about a
         // machine this device has left, and that answer says nothing about the
@@ -423,6 +577,7 @@ class BotsRoutinesViewModel(
         if (readSelection != selection || readRevision != revision || beganDuringMutation || hasCurrentOverlay()) return
         when (load) {
             is BotsRoutinesLoad.Loaded -> {
+                _uiState.update { it.copy(creationScopeConfirmed = true) }
                 jobs = load.jobs
                 jobsScoped = load.scoped
                 jobsEndpoint = endpoint
@@ -543,6 +698,7 @@ class BotsRoutinesViewModel(
                 all = emptyList(),
                 jobs = emptyList(),
                 scoped = null,
+                creationScopeConfirmed = false,
                 filterHint = null,
                 safeMessage = null,
                 // The surface names the endpoint its content belongs to, and
@@ -552,6 +708,10 @@ class BotsRoutinesViewModel(
                 selection = selection,
                 pendingJobs = emptySet(),
                 actionFailed = false,
+                // An unresolved add belongs to the old endpoint. Keep its
+                // operation token alive for response ownership, but never leave
+                // its pending form painted on the replacement Gateway.
+                creation = RoutineCreationUiState(),
             )
         }
     }

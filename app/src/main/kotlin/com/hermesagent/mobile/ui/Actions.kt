@@ -68,6 +68,7 @@ class ChatActions(
     val onSend: () -> Unit = {},
     val onStop: () -> Unit = {},
     val onRedirect: () -> Unit = {},
+    val onSteer: () -> Unit = {},
     val onQueue: () -> Unit = {},
     val onSendNext: (String) -> Unit = {},
     val onResumeQueue: () -> Unit = {},

@@ -1,4 +1,4 @@
-# Bot identity and read-only avatars
+# Bot identity management and read-only avatars
 
 ## Pin
 
@@ -6,8 +6,12 @@
 |---|---|---|
 | Hermes Desktop and Gateway | `d177b119e9c56c9ddc0b7379ffce52341ec06584` | read-only `git -C <snapshot> show <sha>:<path>` |
 
-This page records the Android read-only avatar slice. It does not enable upload,
-clear, pets, generation, or profile mutation.
+The historical evidence below records the Android read-only avatar slice. The
+current management delta at `e27448b231498e79ade668d68c0b6c6206951206` adds bot
+creation, display title/description/SOUL.md editing, configuration duplication and
+confirmed profile deletion. Avatar upload, clear, pets and generation remain absent.
+See [the exact contract audit](bot-management-contract-audit.md); old screenshots
+do not certify these new forms.
 
 ## Sources and implementation evidence
 
@@ -40,7 +44,8 @@ path, or private session text.
 |---|---|---|---|
 | Desktop `ProfileGlyph` is the fallback identity mark; its pinned source emits utility-class spans and no `.profile-glyph` hook | mobile-adaptation | Android keeps the same home/initial fallback and extends the accepted-row path with a read-only static PNG/JPEG/WebP avatar; fallback remains visible for missing, loading, refused, corrupt, stale, synthetic or unavailable rows | `profile-glyph.tsx:10-43` at `d177b119`; no profile-rail avatar equivalence is claimed |
 | Desktop BotFace renders an uploaded avatar in the Bots surface | mobile-adaptation | Android uses the shared profile glyph and fixed 36dp cover-cropped static image to keep one identity treatment across rail, picker, profile roster and Bots on a phone | Real pinned BotFace proof: `/tmp/hm-desktop-avatar-selector-proof/test.log`; executed CSS locator matched exactly one Alpha row, while `.profile-glyph` matched zero; 36dp touch/space budget and shared component contract |
-| Desktop BotFace uses 22% corner rounding | drift | Android's 22dp rounding on a 36dp glyph produces a circular image instead of the Desktop rounded square; this is not exact shape parity | Actual ready captures and source comparison in the [capture review](https://github.com/donovan-yohan/hermes-agent-android/pull/323#issuecomment-5734724739); follow-up: #194 |
+| Desktop BotFace uses 22% corner rounding | mobile-adaptation | Current Bot roster image uses `RoundedCornerShape(percent = 22)` at its 36dp size; the profile rail fallback is unchanged | `avatar.tsx:996-1012` @ `e27448b231498e79ade668d68c0b6c6206951206`; `BotsAvatarShapeTest` pins the geometry. Historical captures below predate this fix; new rendered acceptance remains #194 |
+| Desktop identity dialogs | mobile-adaptation | Scrollable phone forms for create/edit/duplicate/delete; deletion requires explicit confirmation; advanced and avatar controls remain WIP | `BotsManagementRepository` and current-target contract audit; rendered acceptance still #194 |
 | Desktop has no phone lifecycle binding equivalent | mobile-adaptation | Avatar subscriptions are admitted only while the real Compose lifecycle is resumed, disposed on pause/row removal/plugin disposal, and invalidated once on foreground/explicit refresh | `ProfileAvatars.kt`, coordinator revision/current draw guard, lifecycle test |
 | Aligned Desktop/Android scene comparison remains pending | omission | Android's six dark states are rendered and inspected; the executed Desktop proof is Bots-only, with different scene inputs, and does not establish profile-rail avatar parity | deferred: #194 — [Android capture review](https://github.com/donovan-yohan/hermes-agent-android/pull/323#issuecomment-5734724739) |
 

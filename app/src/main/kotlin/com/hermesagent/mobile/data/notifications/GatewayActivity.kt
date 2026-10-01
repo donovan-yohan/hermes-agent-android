@@ -31,6 +31,8 @@ data class GatewayActivityChild(
     val status: LiveSessionStatus,
     val projectLabel: String?,
     val lastActiveAtMillis: Long,
+    /** Role-validated current live prose; [preview] is untrusted registry text. */
+    val liveMessagePreview: String? = null,
 )
 
 /** The whole passive projection for the one active connection. */
@@ -63,6 +65,7 @@ internal fun gatewayActivityChildren(
     projects: ProjectCatalogState,
     pendingInputs: Map<PendingInputKey, PendingInputRequest>,
     activeTurns: Set<String>,
+    liveMessages: LiveNotificationMessages = LiveNotificationMessages(),
 ): List<GatewayActivityChild> {
     val candidates = linkedMapOf<String, LiveSession>()
     if (snapshot is LiveSessionSnapshot.Reported) {
@@ -95,6 +98,7 @@ internal fun gatewayActivityChildren(
             status = candidate.status,
             projectLabel = projectLabelFor(candidate.durableSessionId, projects),
             lastActiveAtMillis = candidate.lastActiveAtMillis,
+            liveMessagePreview = liveMessages.previewFor(candidate.durableSessionId),
         )
     }.sortedWith(
         compareByDescending<GatewayActivityChild> { it.lastActiveAtMillis }
@@ -146,6 +150,7 @@ internal class GatewayActivityProjection(
     private val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>,
     private val activeTurns: StateFlow<Set<String>>,
     private val pollIntervalMillis: Long = 30_000L,
+    private val liveMessages: StateFlow<LiveNotificationMessages> = MutableStateFlow(LiveNotificationMessages()),
 ) {
     private val snapshot = MutableStateFlow<LiveSessionSnapshot>(LiveSessionSnapshot.Unavailable)
     private val mutableActivity = MutableStateFlow(GatewayActivity.Empty)
@@ -216,9 +221,9 @@ internal class GatewayActivityProjection(
                 }
             }
             launch {
-                combine(snapshot, sessions, pendingInputs, activeTurns) { live, cache, pending, turns ->
+                combine(snapshot, sessions, pendingInputs, activeTurns, liveMessages) { live, cache, pending, turns, messages ->
                     GatewayActivity(
-                        gatewayActivityChildren(live, cache.sessions, cache.projects, pending, turns),
+                        gatewayActivityChildren(live, cache.sessions, cache.projects, pending, turns, messages),
                     )
                 }.collect { next ->
                     if (mutableActivity.value != next) mutableActivity.value = next

@@ -8,6 +8,7 @@ import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
 import com.hermesagent.mobile.data.gateway.ConnectionCredentialProbe
 import com.hermesagent.mobile.data.gateway.GatewaySecretSlot
 import com.hermesagent.mobile.data.session.SessionCache
+import com.hermesagent.mobile.plugins.bots.BotStorageEndpoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -130,6 +131,22 @@ internal class ConnectionSwitchController(
     private val switching = Mutex()
     private val pending = MutableStateFlow<String?>(null)
     private val rearm = MutableStateFlow(0L)
+    private val storageOwner = MutableStateFlow<BotStorageEndpoint?>(null)
+    private var storageInitialized = false
+
+    /** One atomic pair, published by the switch owner, never combine(registry, generation). */
+    val botStorageEndpoint: StateFlow<BotStorageEndpoint?> = storageOwner.asStateFlow()
+
+    /** Called before the production route follower starts. Serialized with every switch. */
+    suspend fun initializeStorageEndpoint() = switching.withLock {
+        if (!storageInitialized) publishStorageEndpointLocked()
+    }
+
+    private suspend fun publishStorageEndpointLocked() {
+        val identity = store.connectionRegistry.first().active?.botStorageIdentity()
+        storageOwner.value = identity?.let { BotStorageEndpoint(it, cache.endpointGeneration.value) }
+        storageInitialized = true
+    }
 
     /** The row being switched to, or null. One at a time; a second caller waits. */
     val pendingConnectionId: StateFlow<String?> = pending.asStateFlow()
@@ -159,6 +176,7 @@ internal class ConnectionSwitchController(
             try {
                 leaveLocked(dropDrafts = true)
                 store.setActiveConnection(target.id)
+                publishStorageEndpointLocked()
                 settle(target)
             } finally {
                 pending.value = null
@@ -179,6 +197,7 @@ internal class ConnectionSwitchController(
             try {
                 leaveLocked(dropDrafts = true)
                 save()
+                publishStorageEndpointLocked()
                 rearm.value += 1
                 store.connectionRegistry.first().active?.let { settle(it) }
             } finally {
@@ -198,7 +217,10 @@ internal class ConnectionSwitchController(
      * which is why draft text is not dropped here.
      */
     suspend fun leaveCurrentEndpoint() {
-        switching.withLock { leaveLocked(dropDrafts = false) }
+        switching.withLock {
+            leaveLocked(dropDrafts = false)
+            publishStorageEndpointLocked()
+        }
     }
 
     /**
@@ -208,8 +230,14 @@ internal class ConnectionSwitchController(
      * It takes the same lock, so a removal that arrives mid-switch waits rather
      * than tearing down the connection that switch had just opened.
      */
-    suspend fun abandonCurrentEndpoint() {
-        switching.withLock { leaveLocked(dropDrafts = true) }
+    suspend fun abandonCurrentEndpoint(remove: (suspend () -> Unit)? = null) {
+        switching.withLock {
+            leaveLocked(dropDrafts = true)
+            if (remove != null) {
+                remove()
+                publishStorageEndpointLocked()
+            }
+        }
     }
 
     /**
@@ -225,6 +253,8 @@ internal class ConnectionSwitchController(
         // This is the endpoint's linearization point for mutations. It must
         // happen before disconnect/cache generation change: an operation that
         // was queued after its first ownership read now fails at the wire gate.
+        storageInitialized = true
+        storageOwner.value = null
         endpointDispatchFence.invalidate()
         gateway.disconnect()
         cache.resetForEndpointSwitch()

@@ -238,6 +238,7 @@ fun Composer(
     canRedirect: Boolean = isStreaming,
     canQueue: Boolean = false,
     onRedirect: () -> Unit = {},
+    onSteer: () -> Unit = {},
     onQueue: () -> Unit = {},
     onSendNext: () -> Unit = {},
     canUndo: Boolean = false,
@@ -371,7 +372,16 @@ fun Composer(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        if (action.showQueueSecondary) ComposerSecondaryQueueAction(onQueue)
+                        if (action.primary == ComposerPrimaryAction.Redirect &&
+                            attachments.isEmpty() && !draft.trimStart().startsWith("/")) {
+                            TextButton(
+                                label = "Steer",
+                                onClick = onSteer,
+                                modifier = Modifier.heightIn(min = HermesTheme.spacing.touchTarget)
+                                    .semantics { contentDescription = "Steer at next tool boundary" },
+                            )
+                        }
+                        if (action.showQueueSecondary && canQueue) ComposerSecondaryQueueAction(onQueue)
                         if (action.showStopSecondary) ComposerSecondaryStopAction(onStop)
                         if (layoutMode == ComposerLayoutMode.Full) {
                             ComposerStatusLine(

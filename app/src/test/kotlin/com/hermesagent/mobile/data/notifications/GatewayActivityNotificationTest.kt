@@ -36,7 +36,7 @@ class GatewayActivityNotificationTest {
                 title = "password=<redacted> second line",
                 statusLine = NotificationCopy.ACTIVITY_WORKING,
                 projectLabel = "Mobile",
-                preview = "Done.",
+                preview = null,
             ),
             world.surface.latestActivity.single(),
         )
@@ -61,7 +61,7 @@ class GatewayActivityNotificationTest {
         val rendered = world.surface.latestActivity.single { it.durableSessionId == "chat-1" }
         assertEquals(MAX_NOTIFICATION_TITLE, rendered.title.length)
         assertEquals(MAX_NOTIFICATION_PROJECT, rendered.projectLabel!!.length)
-        assertEquals(MAX_NOTIFICATION_PREVIEW, rendered.preview!!.length)
+        assertNull(rendered.preview)
         val fallback = world.surface.latestActivity.single { it.durableSessionId == "chat-2" }
         assertEquals(NotificationCopy.ACTIVITY_CHILD_TITLE, fallback.title)
         assertNull(fallback.preview)
@@ -73,7 +73,7 @@ class GatewayActivityNotificationTest {
         world.activity.value = GatewayActivity(listOf(child()))
         world.start()
         runCurrent()
-        assertEquals("Done.", world.surface.latestActivity.single().preview)
+        assertNull(world.surface.latestActivity.single().preview)
 
         world.settings.value = NotificationSettings(preview = false)
         runCurrent()
@@ -85,7 +85,7 @@ class GatewayActivityNotificationTest {
 
         world.settings.value = NotificationSettings()
         runCurrent()
-        assertEquals("Done.", world.surface.latestActivity.single().preview)
+        assertNull(world.surface.latestActivity.single().preview)
     }
 
     @Test
@@ -149,6 +149,89 @@ class GatewayActivityNotificationTest {
 
         assertEquals(listOf(NotificationKind.Approval to "chat-2"), world.surface.posted())
         assertEquals("chat-1", world.surface.latestActivity.single().durableSessionId)
+    }
+
+    @Test
+    fun `cached transcript cannot claim freshness over registry and does not repost`() = runTest {
+        val world = World(this)
+        world.activity.value = GatewayActivity(listOf(child(durableSessionId = "bot-session")))
+        world.start()
+        world.sessions.value = SessionCacheState(transcripts = mapOf(
+            "bot-session" to listOf(
+                com.hermesagent.mobile.data.session.UserTurn("u", "Earlier request", 100),
+                com.hermesagent.mobile.data.session.AssistantTurn("a", "Latest answer password=abcdefgh", 1),
+                com.hermesagent.mobile.data.session.ToolActivity("t", "terminal", "secret command", com.hermesagent.mobile.data.session.ToolState.Running),
+            ),
+        ))
+        runCurrent()
+        assertNull(world.surface.latestActivity.single().preview)
+        val posts = world.surface.activity.size
+        world.sessions.value = world.sessions.value.copy(transcripts = mapOf(
+            "bot-session" to listOf(
+                com.hermesagent.mobile.data.session.AssistantTurn("a", "New streaming answer", 2, streaming = true),
+            ),
+        ))
+        runCurrent()
+        assertEquals(posts, world.surface.activity.size)
+        assertNull(world.surface.latestActivity.single().preview)
+        world.sessions.value = world.sessions.value.copy(transcripts = world.sessions.value.transcripts + (
+            "other-session" to listOf(com.hermesagent.mobile.data.session.UserTurn("u", "Unrelated", 3))
+        ))
+        runCurrent()
+        assertEquals(posts, world.surface.activity.size)
+        world.settings.value = NotificationSettings(preview = false)
+        runCurrent()
+        assertNull(world.surface.latestActivity.single().preview)
+    }
+
+    @Test
+    fun `untyped registry payload never reaches shade or changes dedup identity`() = runTest {
+        val world = World(this)
+        world.activity.value = GatewayActivity(listOf(child(preview = "terminal: private output")))
+        world.start()
+        runCurrent()
+        val initial = world.surface.latestActivity.single()
+        assertNull(initial.preview)
+        assertEquals(NotificationCopy.ACTIVITY_WORKING, initial.statusLine)
+        assertEquals("chat-1", initial.durableSessionId)
+        val calls = world.surface.activity.size
+
+        world.activity.value = GatewayActivity(listOf(child(preview = "different tool payload")))
+        runCurrent()
+        assertEquals(calls, world.surface.activity.size)
+
+        world.activity.value = GatewayActivity(listOf(
+            child(preview = "ignored").copy(status = LiveSessionStatus.Waiting),
+        ))
+        runCurrent()
+        assertEquals(calls + 1, world.surface.activity.size)
+        assertEquals(NotificationCopy.activityStatus(LiveSessionStatus.Waiting), world.surface.latestActivity.single().statusLine)
+        assertEquals("chat-1", world.surface.latestActivity.single().durableSessionId)
+    }
+
+    @Test
+    fun `live prose streams silently dedupes and obeys preview preference`() = runTest {
+        val world = World(this)
+        world.start()
+        world.activity.value = GatewayActivity(listOf(child().copy(liveMessagePreview = "**First**")))
+        runCurrent()
+        assertEquals("First", world.surface.latestActivity.single().preview)
+        val posts = world.surface.activity.size
+        world.activity.value = GatewayActivity(listOf(child(preview = "tool output changed").copy(liveMessagePreview = "**First**")))
+        runCurrent()
+        assertEquals(posts, world.surface.activity.size)
+        world.activity.value = GatewayActivity(listOf(child().copy(liveMessagePreview = "**First second**")))
+        runCurrent()
+        assertEquals("First second", world.surface.latestActivity.single().preview)
+        world.settings.value = NotificationSettings(preview = false)
+        runCurrent()
+        assertNull(world.surface.latestActivity.single().preview)
+        world.settings.value = NotificationSettings()
+        runCurrent()
+        assertEquals("First second", world.surface.latestActivity.single().preview)
+        world.activity.value = GatewayActivity(listOf(child())) // New turn has no observed prose yet.
+        runCurrent()
+        assertNull(world.surface.latestActivity.single().preview)
     }
 
     private class World(private val test: kotlinx.coroutines.test.TestScope) {

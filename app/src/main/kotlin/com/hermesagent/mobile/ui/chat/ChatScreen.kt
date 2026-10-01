@@ -1197,6 +1197,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
                             canRedirect = state.composer.runtime.canRedirect,
                             canQueue = state.composer.runtime.canQueue,
                             onRedirect = actions.onRedirect,
+                            onSteer = actions.onSteer,
                             onQueue = actions.onQueue,
                             onSendNext = {
                                 state.composer.runtime.queueEntries.firstOrNull()?.id?.let(actions.onSendNext)

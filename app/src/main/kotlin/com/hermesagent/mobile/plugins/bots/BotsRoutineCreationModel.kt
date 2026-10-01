@@ -8,11 +8,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Pure creation contract; deliberately not wired to a host or UI.
+ * Pure creation contract used by the endpoint-fenced production form.
  * Source pin: d177b119e9c56c9ddc0b7379ffce52341ec06584.
  * apps/desktop/src/plugins/hermes-bots/cron.tsx:603-696,767-919,925-1035.
  */
-internal enum class RoutineFrequency(val id: String) {
+enum class RoutineFrequency(val id: String) {
     Once("once"), Hourly("hourly"), Daily("daily"), Weekdays("weekdays"),
     Weekly("weekly"), Monthly("monthly"), Interval("interval"), Advanced("advanced");
 
@@ -49,7 +49,7 @@ internal fun sanitizeRoutineMonthday(value: String): String = value.filter { it 
  * Blank repeat may include whitespace (Desktop omits it). Advanced text is unrestricted.
  * copy(frequency = ...) retains hidden fields, just like Desktop's partial state patch.
  */
-internal data class RoutineScheduleDraft(
+data class RoutineScheduleDraft(
     val frequency: RoutineFrequency = RoutineFrequency.Daily,
     val time: String = "9:0",
     val weekday: String = "1",
@@ -75,10 +75,10 @@ internal data class RoutineScheduleDraft(
     fun compose(): String {
         val (hour, minute) = time.ifEmpty { "9:0" }.split(':').map(String::toInt)
         return when (frequency) {
-            // Desktop Once is a bare duration. Gateway interprets it as recurring;
-            // preserve this mismatch, do not invent `in ` or repeat=1.
-            // Same pin: cron/jobs.py:770-834,1794-1802,1848-1850.
-            RoutineFrequency.Once -> "${positiveAmount(onceN)}${onceUnit.ifEmpty { "h" }}"
+            // Intentional safety adaptation: Desktop sends a recurring bare duration.
+            // The Gateway explicit one-shot contract is `in 30m` (cron/jobs.py:823-832
+            // @ e27448b231498e79ade668d68c0b6c6206951206). Do not silently repeat Once.
+            RoutineFrequency.Once -> "in ${positiveAmount(onceN)}${onceUnit.ifEmpty { "h" }}"
             RoutineFrequency.Hourly -> "every 1h"
             RoutineFrequency.Daily -> "$minute $hour * * *"
             RoutineFrequency.Weekdays -> "$minute $hour * * 1-5"
@@ -92,9 +92,9 @@ internal data class RoutineScheduleDraft(
 
 private fun positiveAmount(value: String): Int = (value.toIntOrNull() ?: 1).coerceAtLeast(1)
 
-internal enum class RoutineDelivery { History, BotChat }
+enum class RoutineDelivery { History, BotChat }
 
-internal data class RoutineCreationDraft(
+data class RoutineCreationDraft(
     val title: String = "",
     val instruction: String = "",
     val schedule: RoutineScheduleDraft = RoutineScheduleDraft(),
@@ -151,7 +151,7 @@ internal sealed interface RoutineCreationAck {
 internal fun classifyRoutineCreationAck(payload: JsonElement?): RoutineCreationAck {
     val body = payload as? JsonObject ?: return RoutineCreationAck.Unconfirmed()
     fun boolean(key: String): Boolean? = (body[key] as? JsonPrimitive)?.takeUnless { it.isString }?.booleanOrNull
-    val id = (body["job_id"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+    val id = (body["job_id"] as? JsonPrimitive)?.takeIf { it !is kotlinx.serialization.json.JsonNull && it.isString }?.content
         ?.takeIf { it.isNotBlank() && it == it.trim() && it.none(Char::isISOControl) }
     val flags = listOf("job_saved", "scheduler_registered", "retry_create")
     if (flags.any { it in body && boolean(it) == null }) return RoutineCreationAck.Unconfirmed(id)

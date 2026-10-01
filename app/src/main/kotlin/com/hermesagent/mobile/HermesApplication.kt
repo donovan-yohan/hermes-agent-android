@@ -325,6 +325,7 @@ class HermesApplication : Application() {
             sessions = cache.state,
             pendingInputs = sessionRepository.pendingInputs,
             activeTurns = sessionRepository.activeTurns,
+            liveMessages = sessionRepository.liveNotificationMessages,
         )
     }
 
@@ -419,13 +420,17 @@ class HermesApplication : Application() {
         startSessionNotifier()
         startTurnProtection()
         pluginLoader.discover(com.hermesagent.mobile.plugins.BundledPlugins.create(
-            com.hermesagent.mobile.plugins.bots.BotsPlugin(avatarRoster = avatarRoster),
+            com.hermesagent.mobile.plugins.bots.BotsPlugin(
+                avatarRoster = avatarRoster,
+                storageEndpoint = connectionSwitch.botStorageEndpoint,
+            ),
         ))
         appScope.launch {
             combine(gatewayConnection.client, cache.endpointGeneration) { _, _ -> Unit }
                 .collect { avatarRoster.syncOwner() }
         }
         appScope.launch {
+            connectionSwitch.initializeStorageEndpoint()
             followActiveConnection(
                 connections = preferences,
                 profiles = preferences,

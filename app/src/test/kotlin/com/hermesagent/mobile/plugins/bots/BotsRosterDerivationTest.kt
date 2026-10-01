@@ -17,6 +17,18 @@ import org.junit.Test
  */
 class BotsRosterDerivationTest {
 
+    @Test
+    fun `freshly created bots sort by millisecond creation without inventing chat activity`() {
+        val fresh = BotRosterRow("fresh", createdAtMillis = 2_000_000L)
+        val chatted = BotRosterRow("chatted", lastSession = BotSessionPreview(lastActiveSeconds = 1_999L))
+        val pinned = BotRosterRow("pinned")
+        val result = sortBotsForRoster(listOf(chatted, fresh, pinned), mapOf(pinned.rosterKey to BotMeta(pinned = true)))
+        assertEquals(listOf("pinned", "fresh", "chatted"), result.map { it.name })
+        assertNull(fresh.lastActiveMillis)
+        assertTrue(rosterActivityMatches(fresh, RosterActivityFilter.Recent, 2_001_000L))
+        assertFalse(rosterActivityMatches(fresh, RosterActivityFilter.Older, 2_001_000L))
+    }
+
     private val now = 1_800_000_000_000L
 
     private fun bot(

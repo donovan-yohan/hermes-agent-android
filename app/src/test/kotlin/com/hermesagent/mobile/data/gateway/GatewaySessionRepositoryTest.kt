@@ -1,5 +1,11 @@
 package com.hermesagent.mobile.data.gateway
 
+import com.hermesagent.mobile.data.notifications.GatewayActivityProjection
+import com.hermesagent.mobile.data.notifications.NotificationPresence
+import com.hermesagent.mobile.data.notifications.NotificationSettings
+import com.hermesagent.mobile.data.notifications.RecordingNotificationSurface
+import com.hermesagent.mobile.data.notifications.SessionNotifier
+import kotlinx.coroutines.flow.emptyFlow
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.ControlMutationResult
@@ -286,7 +292,7 @@ class GatewaySessionRepositoryTest {
             endpointDispatchFence = fence,
         ) { CLOCK }
         runCurrent()
-        repository.openSession("durable-a")
+        repository.openSessionAtEndpoint("durable-a", "bot-a", 0L)
         oldRpc.calls.clear()
         // Stop only automatic ordinary-session reconnect hydration; the direct
         // endpoint-bound activate below does not depend on this owner scope.
@@ -4727,6 +4733,321 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `unknown runtime provenance requires explicit resume before bot activation`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        assertEquals(2, rpc.calls.count { it.method == "session.resume" })
+        assertEquals("researcher", rpc.call("session.resume").params.string("profile"))
+        assertFalse(rpc.calls.any { it.method == "session.activate" })
+        assertEquals(GatewaySteerOutcome.QueuedByGateway, repository.steerAtEndpoint("durable-a", "bound", 0L))
+    }
+
+    @Test
+    fun `profile scoped resume rejects a runtime already proven foreign`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "profile-a", 0L)
+        assertTrue(runCatching { repository.openSessionAtEndpoint("durable-a", "profile-b", 0L) }.isFailure)
+        assertEquals("profile-b", rpc.call("session.resume").params.string("profile"))
+        assertEquals("profile-a", cache.session("durable-a")?.remoteProfile)
+    }
+
+    @Test
+    fun `profile collision resumes explicit owner rather than activating foreign runtime`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "profile-a", 0L)
+        rpc.resumeA = RESUME_RUNNING.replace("runtime-a", "runtime-b")
+        repository.openSessionAtEndpoint("durable-a", "profile-b", 0L)
+        assertEquals("profile-b", rpc.call("session.resume").params.string("profile"))
+        assertFalse(rpc.calls.any { it.method == "session.activate" })
+        repository.steerAtEndpoint("durable-a", "for B only", 0L)
+        assertEquals("runtime-b", rpc.call("session.steer").params.string("session_id"))
+        rpc.emit("message.delta", "runtime-a", """{"delta":"foreign A"}""")
+        runCurrent()
+        assertFalse(cache.transcript("durable-a").filterIsInstance<AssistantTurn>().any { "foreign A" in it.markdown })
+    }
+
+    @Test
+    fun `profile ABA invalidates old controls paused before wire`() = runTest {
+        for (method in listOf("session.redirect", "session.steer", "session.interrupt")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "profile-a", 0L)
+            val reached = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            rpc.beforeEndpointWire = { name -> if (name == method) { reached.complete(Unit); release.await() } }
+            val operation = async {
+                when (method) {
+                    "session.redirect" -> repository.redirectAtEndpoint("durable-a", "old A", 0L)
+                    "session.steer" -> repository.steerAtEndpoint("durable-a", "old A", 0L)
+                    else -> repository.requestInterruptAtEndpoint("durable-a", 0L)
+                }
+            }
+            reached.await()
+            rpc.resumeA = RESUME_RUNNING.replace("runtime-a", "runtime-b")
+            repository.openSessionAtEndpoint("durable-a", "profile-b", 0L)
+            rpc.resumeA = RESUME_RUNNING
+            repository.openSessionAtEndpoint("durable-a", "profile-a", 0L)
+            release.complete(Unit)
+            operation.await()
+            assertFalse("$method must not inherit a new profile binding", rpc.calls.any { it.method == method })
+        }
+    }
+
+    @Test
+    fun `intent captured before coroutine entry cannot correct a later turn`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        val observed = repository.observedTurnGeneration("durable-a")
+        rpc.emit("message.complete", "runtime-a", """{"text":"A done"}""")
+        rpc.emit("message.start", "runtime-a", """{"id":"turn-b"}""")
+        runCurrent()
+        repository.redirectAtEndpoint("durable-a", "old", 0L, observed)
+        repository.steerAtEndpoint("durable-a", "old", 0L, observed)
+        repository.requestInterruptAtEndpoint("durable-a", 0L, observed)
+        assertFalse(rpc.calls.any { it.method in setOf("session.redirect", "session.steer", "session.interrupt") })
+    }
+
+    @Test
+    fun `held correction replies do not append old correction to a later turn`() = runTest {
+        for (method in listOf("session.redirect", "session.steer")) {
+            val cache = SessionCache()
+            val reply = CompletableDeferred<JsonElement>()
+            val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING; correctionResponse = reply }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+            val operation = async {
+                if (method == "session.redirect") repository.redirectAtEndpoint("durable-a", "old correction", 0L)
+                else repository.steerAtEndpoint("durable-a", "old correction", 0L)
+            }
+            runCurrent()
+            assertEquals(1, rpc.calls.count { it.method == method })
+            rpc.emit("message.complete", "runtime-a", """{"text":"A done"}""")
+            rpc.emit("message.start", "runtime-a", """{"id":"turn-b"}""")
+            runCurrent()
+            reply.complete(json("""{"status":"queued"}"""))
+            operation.await()
+            assertFalse(cache.transcript("durable-a").filterIsInstance<UserTurn>().any { it.text == "old correction" })
+        }
+    }
+
+    @Test
+    fun `observed next turn fences all corrections paused before wire`() = runTest {
+        for (method in listOf("session.redirect", "session.steer", "session.interrupt")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+            val reached = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            rpc.beforeEndpointWire = { name -> if (name == method) { reached.complete(Unit); release.await() } }
+            val operation = async {
+                when (method) {
+                    "session.redirect" -> repository.redirectAtEndpoint("durable-a", "old", 0L)
+                    "session.steer" -> repository.steerAtEndpoint("durable-a", "old", 0L)
+                    else -> repository.requestInterruptAtEndpoint("durable-a", 0L)
+                }
+            }
+            reached.await()
+            rpc.emit("message.complete", "runtime-a", """{"text":"A done"}""")
+            rpc.emit("message.start", "runtime-a", """{"id":"turn-b","role":"assistant"}""")
+            runCurrent()
+            release.complete(Unit)
+            operation.await()
+            assertFalse("$method must not touch B", rpc.calls.any { it.method == method })
+        }
+    }
+
+    @Test
+    fun `late stop acknowledgement preserves replacement turns gateway queue`() = runTest {
+        val cache = SessionCache()
+        val reply = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING; interruptResponse = reply }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        val stop = async { repository.requestInterruptAtEndpoint("durable-a", 0L) }
+        runCurrent()
+        rpc.emit("message.complete", "runtime-a", """{"text":"A stopped","status":"interrupted"}""")
+        rpc.emit("message.start", "runtime-a", """{"id":"turn-b","role":"assistant"}""")
+        runCurrent()
+        // A second client queued on B while A's stop acknowledgement is held.
+        // Hydrate the real Gateway queue projection; a local submit would wait
+        // behind the held stop's dispatch mutex and would not exercise this race.
+        rpc.activateResult = """{"running":true,"queued":{"user":"B queued"}}"""
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        val queue = cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts
+        assertFalse(queue.isNullOrEmpty())
+        reply.complete(json("""{"status":"interrupted"}"""))
+        assertEquals(GatewayInterruptOutcome.Interrupted, stop.await())
+        assertEquals(queue, cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts)
+    }
+
+    @Test
+    fun `completed outcome retains exact assistant prose after next turn replaces cache`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        val outcomes = mutableListOf<GatewayTurnOutcome>()
+        backgroundScope.launch { repository.turnOutcomes.collect { outcomes += it } }
+        runCurrent()
+        repository.openSession("durable-a")
+        rpc.emit("message.start", "runtime-a", """{"id":"one","role":"assistant"}""")
+        rpc.emit("message.delta", "runtime-a", """{"delta":"exact completed prose"}""")
+        rpc.emit("message.complete", "runtime-a", "{}")
+        rpc.emit("message.start", "runtime-a", """{"id":"two","text":"new partial"}""")
+        runCurrent()
+        assertEquals("exact completed prose", outcomes.single().assistantMessagePreview)
+    }
+
+    @Test
+    fun `externally started bot corrections use resumed live runtime without submitting a turn`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+        val repository = LiveGatewaySessionRepository(
+            cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc),
+            backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        assertEquals("researcher", rpc.call("session.resume").params.string("profile"))
+        assertEquals(GatewayRedirectOutcome.Redirected,
+            repository.redirectAtEndpoint("durable-a", "change direction", 0L))
+        assertEquals(GatewaySteerOutcome.QueuedByGateway,
+            repository.steerAtEndpoint("durable-a", "at next tool", 0L))
+        assertEquals("runtime-a", rpc.call("session.redirect").params.string("session_id"))
+        assertEquals("runtime-a", rpc.call("session.steer").params.string("session_id"))
+        assertEquals(GatewayInterruptOutcome.Interrupted, repository.requestInterruptAtEndpoint("durable-a", 0L))
+        assertEquals("runtime-a", rpc.call("session.interrupt").params.string("session_id"))
+        assertFalse(rpc.calls.any { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `bot live controls are fenced at wire dispatch for redirect steer and stop`() = runTest {
+        for (method in listOf("session.redirect", "session.steer", "session.interrupt")) {
+            val cache = SessionCache()
+            val fence = EndpointDispatchFence()
+            val oldRpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
+            val replacement = FakeRpc()
+            val clients = MutableStateFlow<GatewayRpcClient?>(oldRpc)
+            val owner = CoroutineScope(coroutineContext + SupervisorJob())
+            val repository = LiveGatewaySessionRepository(
+                cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                clients, owner, endpointDispatchFence = fence,
+            ) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+            owner.cancel()
+            val reached = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            oldRpc.beforeEndpointWire = { name ->
+                if (name == method) { reached.complete(Unit); release.await() }
+            }
+            val operation = async {
+                when (method) {
+                    "session.redirect" -> repository.redirectAtEndpoint("durable-a", "correction", 0L)
+                    "session.steer" -> repository.steerAtEndpoint("durable-a", "correction", 0L)
+                    else -> repository.requestInterruptAtEndpoint("durable-a", 0L)
+                }
+            }
+            reached.await()
+            fence.invalidate()
+            clients.value = null
+            cache.resetForEndpointSwitch()
+            clients.value = replacement
+            release.complete(Unit)
+            operation.await()
+            assertFalse(oldRpc.calls.any { it.method == method })
+            assertFalse(replacement.calls.any { it.method == method || it.method == "session.resume" })
+            assertTrue(cache.transcript("durable-a").isEmpty())
+        }
+    }
+
+    @Test
+    fun `late bot correction replies never publish into the replacement endpoint`() = runTest {
+        for (method in listOf("session.redirect", "session.steer")) {
+            val cache = SessionCache()
+            val fence = EndpointDispatchFence()
+            val reply = CompletableDeferred<JsonElement>()
+            val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING; correctionResponse = reply }
+            val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+            val owner = CoroutineScope(coroutineContext + SupervisorJob())
+            val repository = LiveGatewaySessionRepository(
+                cache, MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                clients, owner, endpointDispatchFence = fence,
+            ) { CLOCK }
+            runCurrent()
+            repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+            owner.cancel()
+            val operation = async {
+                if (method == "session.redirect") repository.redirectAtEndpoint("durable-a", "old correction", 0L)
+                else repository.steerAtEndpoint("durable-a", "old correction", 0L)
+            }
+            runCurrent()
+            assertEquals(1, rpc.calls.count { it.method == method })
+            fence.invalidate()
+            clients.value = null
+            cache.resetForEndpointSwitch()
+            clients.value = FakeRpc()
+            reply.complete(json("""{"status":"queued"}"""))
+            operation.await()
+            assertTrue(cache.transcript("durable-a").isEmpty())
+        }
+    }
+
+    @Test
+    fun `unbound bot corrections never resume under the selected profile`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(
+            cache, MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+        ) { CLOCK }
+        runCurrent()
+        val before = rpc.calls.size
+        assertEquals(GatewayRedirectOutcome.Failed, repository.redirectAtEndpoint("unknown", "correction", 0L))
+        assertEquals(GatewaySteerOutcome.Failed, repository.steerAtEndpoint("unknown", "correction", 0L))
+        assertEquals(before, rpc.calls.size)
+    }
+
+    @Test
     fun `redirect and steer are separate fenced operations with optimistic user rows`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -7463,6 +7784,166 @@ class GatewaySessionRepositoryTest {
         )
     }
 
+    private class NotificationWorld(val test: TestScope, val rpc: FakeRpc = FakeRpc()) {
+        val cache = SessionCache()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val connected = MutableStateFlow(true)
+        val repository = LiveGatewaySessionRepository(cache, state, clients, test.backgroundScope) { CLOCK }
+        val projection = GatewayActivityProjection(
+            report = { repository.liveSessions() }, connected = connected, hints = emptyFlow(),
+            sessions = cache.state, pendingInputs = repository.pendingInputs, activeTurns = repository.activeTurns,
+            liveMessages = repository.liveNotificationMessages,
+        )
+        val surface = RecordingNotificationSurface()
+
+        suspend fun start(profile: String? = null) {
+            test.testScheduler.runCurrent()
+            if (profile == null) repository.openSession("durable-a") else repository.openSession("durable-a", profile)
+            projection.start(test.backgroundScope)
+            SessionNotifier(
+                pendingInputs = repository.pendingInputs, turnOutcomes = repository.turnOutcomes,
+                sessions = cache.state, connected = connected, activeTurns = repository.activeTurns,
+                socketOpens = emptyFlow(),
+                activity = projection.activity, presence = NotificationPresence(),
+                settingsFlow = MutableStateFlow(NotificationSettings()), surface = surface,
+                clock = { test.testScheduler.currentTime },
+            ).start(test.backgroundScope)
+            test.testScheduler.runCurrent()
+        }
+
+        fun emit(type: String, payload: String, runtime: String = "runtime-a") {
+            rpc.emit(type, runtime, payload)
+            test.testScheduler.runCurrent()
+        }
+
+        fun preview(): String? = surface.latestActivity.single { it.durableSessionId == "durable-a" }.preview
+    }
+
+    @Test
+    fun `repository live deltas repost notifications without tool reasoning or cached prose`() = runTest {
+        val world = NotificationWorld(this, FakeRpc().apply { resumeA = RESUME_RUNNING; historyResult = HISTORY })
+        world.start()
+        assertNull(world.preview()) // Both a hydrated assistant and unsafe registry prose exist.
+        world.emit("message.delta", """{"id":"wire-after-resume","delta":"unanchored"}""")
+        assertNull(world.preview()) // A delta cannot promote hydration to live provenance.
+        world.emit("message.start", """{"id":"live","role":"assistant","content":"Fresh"}""")
+        assertEquals("Fresh", world.preview())
+        val posts = world.surface.activity.size
+        world.emit("message.delta", """{"id":"live","delta":" **answer**"}""")
+        assertEquals("Fresh answer", world.preview())
+        assertTrue(world.surface.activity.size > posts)
+        world.emit("tool.start", """{"id":"tool","name":"terminal","input":"private command"}""")
+        world.emit("tool.complete", """{"id":"tool","output":"private output"}""")
+        world.emit("reasoning.delta", """{"delta":"private thought"}""")
+        world.emit("message.delta", """{"role":"tool","delta":"private tool prose"}""")
+        world.emit("message.start", """{"role":"tool","content":"private tool start"}""")
+        assertEquals("Fresh answer", world.preview())
+        assertEquals("Fresh **answer**", world.projection.activity.value.children.single().liveMessagePreview)
+    }
+
+    @Test
+    fun `repository notification turn generations reject old deltas and clear terminals`() = runTest {
+        val world = NotificationWorld(this)
+        world.start()
+        world.emit("message.start", """{"id":"first","role":"assistant","content":"Old"}""")
+        val first = world.repository.liveNotificationMessages.value.scopes.getValue("durable-a")
+        world.emit("message.start", """{"id":"second","role":"assistant"}""")
+        val second = world.repository.liveNotificationMessages.value.scopes.getValue("durable-a")
+        assertTrue(second.turnGeneration > first.turnGeneration)
+        assertNull(world.preview())
+        world.emit("message.delta", """{"id":"first","delta":"late old content"}""")
+        assertNull(world.preview())
+        world.emit("message.delta", """{"id":"second","delta":"New"}""")
+        assertEquals("New", world.preview())
+        world.emit("message.complete", """{"id":"first","content":"Late final"}""")
+        world.emit("message.complete", """{"role":"tool","content":"Tool final"}""")
+        assertEquals("New", world.preview())
+        world.emit("message.complete", """{"id":"second","content":"Final"}""")
+        assertNull(world.preview())
+        world.emit("message.delta", """{"id":"second","delta":"late terminal"}""")
+        assertNull(world.preview())
+        world.emit("message.start", """{"id":"third","content":"Partial"}""")
+        world.emit("error", """{"error":"failed"}""")
+        assertNull(world.preview())
+    }
+
+    @Test
+    fun `repository queued prompt never replaces live prose and promotion clears it`() = runTest {
+        val world = NotificationWorld(this)
+        world.start()
+        world.emit("message.start", """{"id":"first","content":"Current"}""")
+        world.repository.submit("durable-a", "Queued secret", queued = true)
+        runCurrent()
+        assertEquals("Current", world.preview())
+        world.emit("message.complete", """{"content":"Done"}""")
+        assertNull(world.preview())
+        world.emit("message.start", """{"id":"next"}""")
+        assertNull(world.preview())
+        world.emit("message.delta", """{"delta":"Next answer"}""")
+        assertEquals("Next answer", world.preview())
+    }
+
+    @Test
+    fun `repository endpoint switch and disconnect clear prose and fence old client frames`() = runTest {
+        val world = NotificationWorld(this)
+        world.start()
+        world.emit("message.start", """{"id":"old","content":"Old endpoint"}""")
+        world.cache.resetForEndpointSwitch()
+        runCurrent()
+        assertNull(world.preview())
+        world.emit("message.start", """{"id":"late","content":"Late old endpoint"}""")
+        assertNull(world.preview())
+        val next = FakeRpc()
+        world.clients.value = next
+        runCurrent()
+        world.repository.openSession("durable-a")
+        next.emit("message.start", "runtime-a", """{"id":"new","content":"New endpoint"}""")
+        runCurrent()
+        assertEquals("New endpoint", world.preview())
+        world.emit("message.delta", """{"delta":"Old socket"}""")
+        assertEquals("New endpoint", world.preview())
+        world.connected.value = false
+        world.state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        world.clients.value = null
+        runCurrent()
+        assertTrue(world.repository.liveNotificationMessages.value.messages.isEmpty())
+        assertTrue(world.surface.latestActivity.isEmpty())
+    }
+
+    @Test
+    fun `repository profile collision rebind fences old runtime notification prose`() = runTest {
+        val world = NotificationWorld(this)
+        world.start("bot-a")
+        world.emit("message.start", """{"id":"a","content":"Profile A"}""")
+        world.rpc.resumeA = RESUME_A.replace("runtime-a", "runtime-bot-b")
+        world.repository.openSession("durable-a", "bot-b")
+        runCurrent()
+        assertNull(world.preview())
+        world.emit("message.start", """{"id":"late-a","content":"Wrong profile"}""")
+        assertNull(world.preview())
+        world.emit("message.start", """{"id":"b","content":"Profile B"}""", "runtime-bot-b")
+        assertEquals("Profile B", world.preview())
+    }
+
+    @Test
+    fun `repository rehome moves live scope with prose and tombstone removes both`() = runTest {
+        val world = NotificationWorld(this)
+        world.start()
+        world.emit("message.start", """{"id":"live","role":"user","content":"Live request"}""")
+        assertEquals("Live request", world.preview())
+        val identity = world.repository.liveNotificationMessages.value.scopes.getValue("durable-a")
+        world.emit("session.info", """{"session_key":"canonical","running":true}""")
+        val messages = world.repository.liveNotificationMessages.value
+        assertEquals(identity, messages.scopes["canonical"])
+        assertFalse("durable-a" in messages.messages)
+        assertEquals("Live request", world.surface.latestActivity.single { it.durableSessionId == "canonical" }.preview)
+        world.cache.removeSession("canonical")
+        runCurrent()
+        assertTrue(world.repository.liveNotificationMessages.value.scopes.isEmpty())
+        assertTrue(world.repository.liveNotificationMessages.value.messages.isEmpty())
+    }
+
     private class FakeRpc : EndpointDispatchingGatewayRpcClient {
         private val eventChannel = Channel<GatewayEvent>(capacity = 1_024)
         override val events = eventChannel.receiveAsFlow()
@@ -7489,6 +7970,7 @@ class GatewaySessionRepositoryTest {
         var promptResponse: CompletableDeferred<JsonElement>? = null
         var redirectResult = """{"status":"redirected"}"""
         var redirectFailure: Throwable? = null
+        var correctionResponse: CompletableDeferred<JsonElement>? = null
         var steerResult = """{"status":"queued"}"""
         var steerFailure: Throwable? = null
         var interruptResult = """{"status":"interrupted"}"""
@@ -7545,6 +8027,7 @@ class GatewaySessionRepositoryTest {
         }
 
         private suspend fun responseFor(method: String, params: JsonObject): JsonElement = when (method) {
+                "session.active_list" -> json("""{"sessions":[{"session_key":"durable-a","status":"working","preview":"unsafe registry tool output"}]}""")
                 "session.list" -> json(sessionListResult)
                 "projects.tree" -> {
                     projectTreeFailure?.let { throw it }
@@ -7605,14 +8088,14 @@ class GatewaySessionRepositoryTest {
                         redirectFailure = null
                         throw failure
                     }
-                    json(redirectResult)
+                    correctionResponse?.await() ?: json(redirectResult)
                 }
                 "session.steer" -> {
                     steerFailure?.let { failure ->
                         steerFailure = null
                         throw failure
                     }
-                    json(steerResult)
+                    correctionResponse?.await() ?: json(steerResult)
                 }
                 "session.activate" -> json(activateResult)
                 "session.interrupt" -> {

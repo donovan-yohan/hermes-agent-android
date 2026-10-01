@@ -114,3 +114,12 @@ its own resolved tokens, so a broken preset shows up there first.
 Update `DesktopThemeLedger.PINNED_SHA` and the transcription date in the same
 commit, and add anything this sync taught to this file. Delete steps that
 stopped being true.
+
+A registry-only repin does not certify all semantic tokens or rendered surfaces.
+When palette data is unchanged, prove it with a source diff (including colour
+maths and light synthesis), update the ledger's literal spans, and retain
+historical production citations. Record changed typography/backend/CSS behaviour
+separately rather than treating an identity-gate pass as full theme parity.
+Before committing, use `verify-pin-citations.py --check-range HEAD..WORKTREE`
+against the disposable checkout; `HEAD..HEAD` would omit the pending repin.
+See the [2026-10-01 audit](../spikes/upstream-main-sync-2026-10-01.md).

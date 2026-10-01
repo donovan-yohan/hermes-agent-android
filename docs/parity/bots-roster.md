@@ -21,6 +21,66 @@ Every `path:line` in this page and in the port's source is against that SHA.
 The read-only checkout is **not** at the pin; nothing here was read from its
 working tree.
 
+## Current-target delta
+
+Source recheck: `e27448b231498e79ade668d68c0b6c6206951206`,
+`apps/desktop/src/plugins/hermes-bots/roster-pane-derivation.ts:210-236` and
+`tui_gateway/methods_profiles.py:255-299`. Android now reads the numeric millisecond
+`ui_meta.hermes-bots.created` value, uses `max(created, last-message)` for sorting and
+Recent/Older, and keeps the message/worker age label separate. Malformed, negative,
+overflow and string timestamps do not invent activity. Tests cover these cases.
+
+The New menu now exists after the activity control, with New bot, New group chat,
+separator, New section in Desktop order (`roster-pane-toolbar.tsx:89-122` at this
+target). New bot and New section now open production forms; New group chat remains
+a disabled WIP action. A Sections submenu keeps empty folders manageable on a phone.
+Bot image corners now use 22 percent, not 22dp (`avatar.tsx:996-1012` at this target).
+No new rendered comparison or Gradle test execution is claimed by this author lane.
+
+## Electron menu reference and remaining feature audit
+
+The real Electron reference was visually inspected at
+`/home/donovanyohan/.hermes/profiles/ebi/cache/scratch/bot-reference-e27448b/packet/captures/bot-context-menu.png`.
+It confirms the row-menu order and separator groups. Android now exposes that order
+via an accessible per-row Actions button. Open Bot Chat, pin/unpin, hide/unhide,
+Edit, Duplicate and Move to section are wired. Delete is visible but disabled: the
+Android host has no lifecycle-aware profile-deletion capability. Remaining actions
+use disabled WIP affordances; those are discoverability, not feature completion.
+The reference is source-aligned at the current target, **not input-aligned with an
+Android capture**. No catalog evidence or screenshot acceptance was promoted.
+The packet still lacks failure and avatar reference captures.
+
+Current-target source audit (`apps/desktop/src/plugins/hermes-bots/`):
+- `roster-pane*`, `bot-row`, `data`, `types`: roster loading/search/filtering/activity,
+  search/filtering exists on mobile. Pin/hide and section membership persist through
+  CAS-protected `profiles.configure`. Local section records/order have endpoint-keyed
+  PluginStorage with generation fences, but stay unavailable until the application
+  supplies the saved endpoint identity. Bot duplication is wired; deletion deliberately
+  refuses the unsafe CLI fallback. Recent/scratch session entry and integrated group rows remain missing.
+- `plugin`, `chat`, `conversation`, `relay`: canonical Bot Chat exists; live controls
+  and bare reset-to-compact behavior are patched. Desktop cross-bot relay, richer
+  pane lifecycle and complete composer/tooling parity are not established here.
+- `create-dialog`, `edit-profile-dialog`, `profile-config`, `profile-ops`: full bot
+  creation/edit/copy/delete is now partially delivered: identifier, display title,
+  description and SOUL.md editor, host-side configuration cloning, confirmed deletion.
+  Remote target creation, advanced model/tool/skill controls, avatar authoring and
+  canonical identifier rename remain omissions, not backend-unavailable claims.
+- `avatar-picker`, `avatar`, `pet`: stored image display exists and corners are fixed;
+  generated Blobatar equivalence, image generation/upload/lock and pet authoring remain.
+- `group-chat-view`, `group-slash`: existing mobile group view is not proof of parity
+  for group creation, membership/configuration, slash commands or coordinated turns.
+- `cron`: recurring routine creation is reconciled along with existing list/actions;
+  Once now uses the Gateway explicit one-shot duration contract. Full inspector/edit/
+  legacy management and persistent ambiguous-receipt recovery remain gaps. See bot-routines.md.
+- `screen-pane`, `screen-install`: screen streaming/control/install/image switching
+  and auto-open remain disabled, not implemented.
+- `skills-hub` and profile tools/skills configuration: full bot-specific installation
+  and configuration parity is not delivered in this change.
+
+This audit does **not** claim the user's all-feature/all-visual parity goal is complete.
+The finite management remainder, exact SDK boundaries and current test evidence are
+in [bot-management-contract-audit.md](bot-management-contract-audit.md).
+
 ## Paths that settled the port
 
 | Question | Path |
@@ -120,7 +180,7 @@ quotes and the `…` are the source characters, not a rendering choice.
 | A docked pane in the rail, with a right-click row menu | A full-screen destination entered from Settings → Bots, with a back affordance | A phone has one column; the rail cannot hold a pane beside the conversation, and touch has no right-click |
 | `refetchInterval: 5000` on the roster query, plus an immediate refetch when the socket opens | A read on the connection's edge, a read when the surface resumes, and a repeated read if one lands mid-flight | A 5 s poll is a per-5 s Gateway round trip against a screen a person is looking at; the edge and the surface entry carry every case the poll exists for, and a bot created since the last look still appears |
 | Every row action is revealed on hover | Nothing is hidden behind hover; what exists is always drawn | Touch has no hover, so a control that appears on hover never appears |
-| Sections are filed by dragging a row onto a heading | The same sections render; filing is not on this surface yet | Drag inside a scrolling list is a known phone failure; the audit's plan is an explicit "Move to section" sheet |
+| Sections are filed by dragging a row onto a heading | Explicit Move to section sheet, with Unassigned and named sections | Drag inside a scrolling list is a known phone failure; membership and name are saved to the same profile metadata contract |
 | Desktop-scale glyphs inside its own hit boxes | The same glyphs inside 48dp targets, and a `contentDescription` or a label on every control | Touch targets are a platform floor, and the visual size of the glyph is not what grows |
 
 ## Visual report
@@ -179,14 +239,14 @@ contract. The rendered comparison stays owed against #216.
 | A failed roster request shows Retry (`roster-pane-content.tsx:71-83`) | mobile-adaptation | `UnavailableOnGateway` keeps the same wrapped explanation but omits Retry and disables the Bots entry | Retrying a method that this Gateway build does not implement cannot recover; upgrading/restarting or switching endpoints reconstructs the contribution. Other read failures retain `RETRY_NOW`. |
 | Activity-toasts bell before New (`roster-pane-toolbar.tsx:64-78`) | omission | Disabled `bell-slash` in a 48dp target, marked WIP | coming soon — Desktop defaults this persisted preference off; Android has neither the roster-activity notification path nor a matching persistence seam, so it is visible and inert rather than pretending to save a setting. |
 | Ordered kind/activity filter dropdown (`roster-pane-toolbar.tsx:118-172`) | mobile-adaptation | One `list-filter` menu, Kind then Activity, preserving all three then all four Desktop labels and their order | Two always-visible horizontal pill rows consume the list viewport and cannot retain 48dp targets at phone width; one touch menu preserves the ordered choices and leaves the roster readable. |
-| `New bot or group chat` dropdown: New Bot, New Group, New section (`i18n.ts:274,308-311`) | drift | Absent; no marker chip stands in its place | #189 owes it as a visible, disabled control behind the WIP chip, not as a silently missing one |
+| `New bot or group chat` dropdown | mobile-adaptation | New bot opens its production form; New section explains unavailable storage until stable endpoint identity is supplied; group creation remains WIP. Existing section options follow so empty sections remain manageable | #189; `BotsManagementViewModel`, `BotManagementSheet`, current-target contract audit and journey regression |
 | Gateway filter group, and the gateway sections the roster buckets rows into (`roster-sections.tsx`) | drift | Absent; the roster is one flat Gateway, and the active-filter count covers the two axes that exist | #189 — this app is single-connection by design (`docs/adr/0002-shared-remote-gateway.md`), but the axis still owes its disabled chip |
 | Group-chat rows inside the roster (`roster-pane-derivation.ts`, `bot-row.tsx:483-528`) | drift | Absent; selecting `Group chats only` honestly matches nothing | #189; group chats ride the gateway's hosted-room protocol (`docs/adr/0004-hosted-rooms-for-group-chats.md`) and are their own slice |
-| Pin, hide, rename, reorder and section editing (`user-sections-ui.tsx`, `bot-row.tsx:100-444`) | drift | The roster renders pinned and hidden state from `BotMeta`, and nothing can write it yet | #189 — the editing surface is the writer the port's read-only `metaByKey` constructor input is waiting for |
+| Pin, hide, rename, reorder and section editing (`user-sections-ui.tsx`, `bot-row.tsx:100-444`) | mobile-adaptation | Server-persisted pin/hide/membership and title; endpoint-scoped local section CRUD awaits application identity wiring; explicit filing sheet instead of drag | #189; `BotsManagementRepositoryTest`, `BotsManagementViewModelTest`; CAS and readback contract audit |
 | Desktop's row is a mood-driven face and an avatar (`bot-row.tsx`, `avatar-picker.tsx`) | drift | Absent; the row is the name, the @handle, the age and the preview | #189, with the avatar/pet surface |
 | `Active now` means a live turn or a live worker (`row-helpers.ts:125-186`) | drift | Activity inside 90 s, or a live worker inside 150 s, from `worker_session` | #189 — the worker half landed with this port; the live-turn half is the live-state slice |
-| Row ordering uses `max(created, lastMsg)` (`roster-pane-derivation.ts` `sortRosterBots`) | drift | Ordering drops the `created` term, so a bot created and never spoken to sorts last | #189 — `created` is on the wire and nothing in this app reads it |
+| Row ordering uses `max(created, lastMsg)` | mobile-adaptation | Same order, with strict numeric validation for the Gateway creation stamp; age labels remain message/worker-based | Current-target delta above; `BotsRosterDerivationTest` and `BotsPluginRepositoryTest` |
 | The stale banner needs `error && !live && roster.length` (`roster-pane.tsx:395-400`) | drift | Banner shows for any failed refresh over a held roster; there is no live-turn signal to exclude | #189 — the `!live` term arrives with the live-state slice |
 | The no-match card is `aria-live="polite" role="status"` (`:108-119`) | drift | A plain failure slot with no live region | #189 — the announcement is owed with the semantics sweep |
-| Empty *named* sections stay rendered as dashed drop slots (`roster-pane-sections.tsx:126-133`) | mobile-adaptation | Empty named sections are dropped; a section with rows renders | Without drag-and-drop there is no drop target, so an empty slot would be a heading with nothing to do and no way to fill it |
+| Empty *named* sections stay rendered as dashed drop slots (`roster-pane-sections.tsx:126-133`) | mobile-adaptation | Empty sections are available in New → Sections and Move to section, not empty drag slots | Phone filing is explicit; rename/reorder/delete remain reachable for empty folders |
 | Desktop's own type, spacing and radii | mobile-adaptation | Drawn from `HermesTheme.tokens` and `HermesTheme.type`, one-to-one with Desktop's categories | The port preserves the design language; the token layer is this app's contract for it, and a raw colour or a preset name would import a different language |

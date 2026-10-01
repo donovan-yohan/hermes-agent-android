@@ -4,17 +4,18 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `95f20517c25ee418da5337f4ead347008baaa2b3`. Identity, registry and typography
+ * `e27448b231498e79ade668d68c0b6c6206951206`. Identity, registry and typography
  * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
  * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
  * extraction), so `hasHandTunedDark` is read from there. Transcribed
- * 2026-08-31 and re-verified 2026-09-22 from a disposable upstream checkout.
- * The registry and shared palettes are unchanged from the previous pin.
+ * 2026-08-31 and re-verified 2026-10-01 from a disposable upstream checkout.
+ * Registry identity and shared palettes are unchanged from the previous pin;
+ * Desktop mono fallback stacks changed, but Android retains platform families.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
  * upstream checkout, and a test that silently skips when a path is missing is
  * not a gate. The live diff against a real checkout is
- * `scripts/check-theme-parity.py`, which the `sync-hermes-desktop-themes`
+ * `.chalk/skills/sync-hermes-desktop-themes/scripts/check-theme-parity.py`, which the `sync-hermes-desktop-themes`
  * skill drives; the two are complementary, not redundant — this one catches
  * "someone deleted a preset from Android", the script catches "Desktop moved
  * and nobody noticed".
@@ -24,13 +25,13 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "95f20517c25ee418da5337f4ead347008baaa2b3"
+    const val PINNED_SHA = "e27448b231498e79ade668d68c0b6c6206951206"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** Where the palettes live since upstream's shared-package extraction. */
     const val PALETTE_SOURCE_PATH = "apps/shared/src/theme-presets.ts"
 
-    /** `presets.ts:407` — `DEFAULT_SKIN_NAME`. */
+    /** `presets.ts:415` — `DEFAULT_SKIN_NAME`. */
     const val DEFAULT_SKIN = "nous"
 
     data class Entry(
@@ -43,19 +44,19 @@ object DesktopThemeLedger {
         val sourceLines: String,
     )
 
-    /** `presets.ts:390-402` — `BUILTIN_THEMES`, in declaration order. */
+    /** `presets.ts:398-410` — `BUILTIN_THEMES`, in declaration order. */
     val ENTRIES: List<Entry> = listOf(
-        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "121-169"),
-        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "58-106"),
-        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "172-219"),
-        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "222-267"),
-        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "270-315"),
-        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "321-331"),
-        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "337-346"),
-        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "348-357"),
-        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "360-365"),
-        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "380-388"),
-        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "368-377"),
+        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "129-177"),
+        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "66-114"),
+        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "180-227"),
+        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "230-275"),
+        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "278-323"),
+        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "329-339"),
+        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "345-354"),
+        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "356-365"),
+        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "368-373"),
+        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "388-396"),
+        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "376-385"),
     )
 
     /**

@@ -14,6 +14,9 @@ import com.hermesagent.mobile.data.composer.NewSessionComposerOverrides
 import com.hermesagent.mobile.data.composer.ReasoningEffort
 import com.hermesagent.mobile.data.composer.SessionComposerControls
 import com.hermesagent.mobile.data.attachments.ImageRefLines
+import com.hermesagent.mobile.data.notifications.LiveNotificationMessage
+import com.hermesagent.mobile.data.notifications.LiveNotificationMessages
+import com.hermesagent.mobile.data.notifications.LiveNotificationScope
 import com.hermesagent.mobile.data.attachments.OutgoingAttachment
 import com.hermesagent.mobile.data.attachments.StagedAttachmentReference
 import com.hermesagent.mobile.data.profiles.DEFAULT_PROFILE
@@ -332,9 +335,19 @@ interface GatewaySessionRepository {
         interrupt(durableId)
         return GatewayInterruptOutcome.Interrupted
     }
+    /** Capture synchronously at UI intent, before launching a coroutine. -1 means no observed turn. */
+    fun observedTurnGeneration(durableId: String): Long = -1L
+
+    suspend fun requestInterruptAtEndpoint(durableId: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long? = null): GatewayInterruptOutcome =
+        GatewayInterruptOutcome.NotActive
     suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome =
         GatewayRedirectOutcome.Unsupported
     suspend fun steer(durableId: String, text: String): GatewaySteerOutcome = GatewaySteerOutcome.Unsupported
+    /** Live corrections must never resolve a Bot Chat id on a replacement endpoint. */
+    suspend fun redirectAtEndpoint(durableId: String, text: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long? = null): GatewayRedirectOutcome =
+        GatewayRedirectOutcome.Unsupported
+    suspend fun steerAtEndpoint(durableId: String, text: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long? = null): GatewaySteerOutcome =
+        GatewaySteerOutcome.Unsupported
     suspend fun listProcesses(durableId: String): GatewayProcessListOutcome = GatewayProcessListOutcome.Unsupported
     suspend fun killProcess(durableId: String, processId: String): GatewayProcessKillOutcome =
         GatewayProcessKillOutcome.Unsupported
@@ -1016,6 +1029,73 @@ internal class LiveGatewaySessionRepository(
     private val processRefreshesInFlight = mutableSetOf<String>()
     /** Per-connection ordering fences for live state and progress hydration. */
     private val runtimeEventRevisions = mutableMapOf<String, RuntimeEventRevision>()
+    // Provenance is established by a profile-scoped resume, never inferred from
+    // the currently selected profile or a durable id (different DBs can collide).
+    private val runtimeProfiles = mutableMapOf<String, String?>()
+    private val observedTurnGenerations = mutableMapOf<String, Long>()
+
+    private val mutableLiveNotificationMessages = MutableStateFlow(LiveNotificationMessages())
+    val liveNotificationMessages: StateFlow<LiveNotificationMessages> = mutableLiveNotificationMessages.asStateFlow()
+
+    private fun clearLiveNotificationRuntime(runtimeId: String) {
+        val current = mutableLiveNotificationMessages.value
+        val ids = current.scopes.filterValues { it.runtimeSessionId == runtimeId }.keys
+        mutableLiveNotificationMessages.value = current.copy(
+            scopes = current.scopes - ids, messages = current.messages - ids,
+        )
+    }
+
+    private fun startLiveNotificationMessage(durableId: String, runtimeId: String, entry: TranscriptEntry) {
+        if (connectionStateFlow.value.status != GatewayConnectionStatus.Connected || cache.session(durableId) == null) return
+        val identity = LiveNotificationScope(connectionGeneration, runtimeId, observedTurnGenerations[runtimeId] ?: return)
+        val current = mutableLiveNotificationMessages.value
+        mutableLiveNotificationMessages.value = current.copy(
+            scopes = current.scopes + (durableId to identity),
+            messages = current.messages + (durableId to LiveNotificationMessage(identity, entry)),
+        )
+    }
+
+    private fun appendLiveNotificationDelta(durableId: String, runtimeId: String, payload: JsonObject) {
+        val current = mutableLiveNotificationMessages.value
+        val identity = current.scopes[durableId] ?: return
+        if (identity != LiveNotificationScope(connectionGeneration, runtimeId, observedTurnGenerations[runtimeId] ?: return)) return
+        val message = current.messages[durableId]?.takeIf { it.scope == identity } ?: return
+        val assistant = message.entry as? AssistantTurn ?: return
+        if (payload.messageId()?.let { it != assistant.id } == true) return
+        // Append only to directly observed prose, never assistantByRuntime: hydration can seed that map.
+        mutableLiveNotificationMessages.value = current.copy(messages = current.messages + (
+            durableId to message.copy(entry = assistant.copy(markdown = assistant.markdown + payload.deltaText()))
+        ))
+    }
+
+    private fun rehomeLiveNotificationMessage(fromId: String, targetId: String) {
+        val notifications = mutableLiveNotificationMessages.value
+        val message = notifications.messages[fromId]
+        val identity = notifications.scopes[fromId]
+        mutableLiveNotificationMessages.value = notifications.copy(
+            scopes = (notifications.scopes - fromId - targetId) + if (identity != null) mapOf(targetId to identity) else emptyMap(),
+            messages = (notifications.messages - fromId - targetId) + if (message != null) mapOf(targetId to message) else emptyMap(),
+        )
+    }
+
+    private fun advanceObservedTurn(runtimeId: String) {
+        clearLiveNotificationRuntime(runtimeId)
+        observedTurnGenerations[runtimeId] = sequence.incrementAndGet()
+    }
+
+    override fun observedTurnGeneration(durableId: String): Long = synchronized(stateLock) {
+        identities.runtimeFor(durableId)?.takeIf { it in activeRuntimeIds }
+            ?.let { observedTurnGenerations[it] } ?: -1L
+    }
+
+    private fun observedBinding(durableId: String, runtimeId: String) = SessionBinding(
+        durableId, runtimeId, observedTurnGenerations[runtimeId] ?: 0L,
+    )
+
+    private fun isObservedTurn(binding: SessionBinding): Boolean =
+        identities.runtimeFor(binding.durableId) == binding.runtimeId &&
+            (binding.turnGeneration == null ||
+                binding.turnGeneration == (observedTurnGenerations[binding.runtimeId] ?: 0L))
     private val activeRuntimeIds = linkedSetOf<String>()
     private val reconnectDurableIds = mutableSetOf<String>()
     private val ephemeralSessions = mutableSetOf<String>()
@@ -1055,6 +1135,32 @@ internal class LiveGatewaySessionRepository(
 
     init {
         scope.launch {
+            cache.state.collect {
+                synchronized(stateLock) {
+                    val state = cache.state.value
+                    val current = mutableLiveNotificationMessages.value
+                    mutableLiveNotificationMessages.value = current.copy(
+                        scopes = current.scopes.filterKeys { it in state.sessions },
+                        messages = current.messages.filterKeys { it in state.sessions },
+                    )
+                }
+            }
+        }
+        scope.launch {
+            cache.endpointGeneration.collect {
+                synchronized(stateLock) {
+                    mutableLiveNotificationMessages.value = LiveNotificationMessages(connectionGeneration)
+                }
+            }
+        }
+        scope.launch {
+            connectionStateFlow.collect { state ->
+                if (state.status != GatewayConnectionStatus.Connected) synchronized(stateLock) {
+                    mutableLiveNotificationMessages.value = LiveNotificationMessages(connectionGeneration)
+                }
+            }
+        }
+        scope.launch {
             clientFlow.collect { next ->
                 eventJob?.cancel()
                 bootstrapRefreshJob?.cancel()
@@ -1062,6 +1168,7 @@ internal class LiveGatewaySessionRepository(
                     val previous = observedClient
                     observedClient = next
                     connectionGeneration++
+                    mutableLiveNotificationMessages.value = LiveNotificationMessages(connectionGeneration)
                     if (previous != null && previous !== next) {
                         connectionScopedRuntimeIds().forEach { runtimeId ->
                             identities.durableFor(runtimeId)?.let { durableId ->
@@ -1114,6 +1221,8 @@ internal class LiveGatewaySessionRepository(
                     publishEarlierMessagesLocked()
                     processRefreshesInFlight.clear()
                     runtimeEventRevisions.clear()
+                    runtimeProfiles.clear()
+                    observedTurnGenerations.clear()
                     activeRuntimeIds.clear()
                     localSubmitStartedAtByRuntime.clear()
                     liveTurnRuntimeIds.clear()
@@ -1147,6 +1256,7 @@ internal class LiveGatewaySessionRepository(
                     )
                 }
                 if (next != null) {
+                    val sourceEndpointGeneration = cache.endpointGeneration.value
                     eventJob = scope.launch {
                         launch {
                             next.events.collect { event ->
@@ -1154,7 +1264,8 @@ internal class LiveGatewaySessionRepository(
                                     skinSourceScope()
                                 } else null
                                 val refreshMetadata = synchronized(stateLock) {
-                                    if (reset.generation != connectionGeneration || clientFlow.value !== next) {
+                                    if (reset.generation != connectionGeneration || clientFlow.value !== next ||
+                                        sourceEndpointGeneration != cache.endpointGeneration.value) {
                                         false
                                     } else if (gatewayEventLane(event.type) == GatewayEventLane.Global) {
                                         // No runtime to route by: the session lane's
@@ -1961,6 +2072,7 @@ internal class LiveGatewaySessionRepository(
         val rootId = row.lineageRootId?.takeIf { it.isNotBlank() && it != row.id } ?: return row
         if (cache.session(row.id) != null) return row
         val existing = cache.session(rootId) ?: return row
+        rehomeLiveNotificationMessage(rootId, row.id)
         cache.rehomeSession(rootId, existing.copy(id = row.id), cache.transcript(rootId))
         if (ephemeralSessions.remove(rootId)) ephemeralSessions += row.id
         branchByDurableId.remove(rootId)?.let { branchByDurableId[row.id] = it }
@@ -2168,7 +2280,12 @@ internal class LiveGatewaySessionRepository(
         // to leave it. The replacement Gateway never minted the id, so the
         // resume is refused before any of its branches run.
         requireEndpoint(expectedEndpointGeneration)
-        val knownRuntime = synchronized(stateLock) { identities.runtimeFor(durableId) }
+        val knownRuntime = synchronized(stateLock) {
+            identities.runtimeFor(durableId)?.takeIf { runtime ->
+                explicitProfile == null ||
+                    (runtimeProfiles.containsKey(runtime) && runtimeProfiles[runtime] == explicitProfile)
+            }
+        }
         val liveSnapshot: JsonObject
         val snapshotRevision: RuntimeEventRevision
         val runtimeId: String
@@ -2210,7 +2327,23 @@ internal class LiveGatewaySessionRepository(
             canonicalId = liveSnapshot.canonicalDurableId() ?: durableId
             snapshotRevision = synchronized(stateLock) {
                 ensureCurrent(connection)
+                if (explicitProfile != null && runtimeProfiles[runtimeId] != null &&
+                    runtimeProfiles[runtimeId] != explicitProfile) {
+                    throw GatewayRpcException("Hermes returned a runtime belonging to another profile.")
+                }
+                identities.runtimeFor(canonicalId)?.takeIf { it != runtimeId }?.let { old ->
+                    releaseRuntimeGuard(old)
+                    assistantByRuntime.remove(old)
+                    optimisticCorrectionsByRuntime.remove(old)
+                    if (explicitProfile != null && runtimeProfiles[old] != explicitProfile) {
+                        // The cache has one slot per durable id. Never merge A's
+                        // transcript/queue into B's colliding slot; A's late frames
+                        // are also orphaned by the identity rebind below.
+                        cache.removeSession(canonicalId)
+                    }
+                }
                 identities.bind(canonicalId, runtimeId)
+                runtimeProfiles[runtimeId] = owningProfile
                 runtimeEventRevision(runtimeId)
             }
         }
@@ -2259,7 +2392,7 @@ internal class LiveGatewaySessionRepository(
                 canonicalRow.withGatewayQueueProjection(projection, runtimeId, mayHaveMissedDrain)
             } else {
                 canonicalRow
-            }
+            }.let { if (explicitProfile != null) it.copy(remoteProfile = explicitProfile) else it }
             cache.rehomeSession(durableId, row, reconciled)
             hydratedTodos?.takeUnless(::todoListActive)?.let { todos ->
                 setComposerTodos(canonicalId, runtimeId, todos)
@@ -3105,6 +3238,7 @@ internal class LiveGatewaySessionRepository(
                 localSubmitStartedAtMillis = now
                 unscopedTurnIsLive = false
             }
+            advanceObservedTurn(binding.runtimeId)
             activeRuntimeIds += binding.runtimeId
             localSubmitStartedAtByRuntime[binding.runtimeId] = now
             liveTurnRuntimeIds -= binding.runtimeId
@@ -3481,9 +3615,23 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) { keys.forEach { retiredKeys[it] = Unit } }
     }
 
-    override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome {
+    override suspend fun requestInterrupt(durableId: String): GatewayInterruptOutcome =
+        requestInterruptInternal(durableId, null)
+
+    override suspend fun requestInterruptAtEndpoint(durableId: String, expectedEndpointGeneration: Long, expectedTurnGeneration: Long?): GatewayInterruptOutcome =
+        requestInterruptInternal(durableId, expectedEndpointGeneration, expectedTurnGeneration)
+
+    private suspend fun requestInterruptInternal(durableId: String, expectedEndpointGeneration: Long?, expectedTurnGeneration: Long? = null): GatewayInterruptOutcome {
+        try {
+            requireEndpoint(expectedEndpointGeneration)
+        } catch (failure: Throwable) {
+            return interruptPreflightFailureOutcome(failure)
+        }
         val (binding, interruptEpoch) = synchronized(stateLock) {
             val runtimeId = identities.runtimeFor(durableId) ?: return GatewayInterruptOutcome.NotActive
+            if (expectedTurnGeneration != null && expectedTurnGeneration != observedTurnGenerations[runtimeId]) {
+                return GatewayInterruptOutcome.NotActive
+            }
             val session = cache.session(durableId)
             if (session?.status == SessionStatus.NeedsInput) return GatewayInterruptOutcome.NeedsInput
             // A live app-submitted or remotely reported turn is interruptible
@@ -3493,7 +3641,7 @@ internal class LiveGatewaySessionRepository(
             }
             val nextEpoch = (interruptEpochByDurableId[durableId] ?: 0L) + 1L
             interruptEpochByDurableId[durableId] = nextEpoch
-            SessionBinding(durableId, runtimeId) to nextEpoch
+            observedBinding(durableId, runtimeId) to nextEpoch
         }
         val connection = try {
             connectionSnapshot()
@@ -3501,7 +3649,7 @@ internal class LiveGatewaySessionRepository(
             return interruptPreflightFailureOutcome(failure)
         }
         val ordered = turnDispatchMutexes.withLockWithin(durableId, stopDispatchWaitMillis) {
-            requestInterruptNow(binding, connection, interruptEpoch)
+            requestInterruptNow(binding, connection, interruptEpoch, expectedEndpointGeneration)
         }
         // prompt.submit can wait 30 minutes for a lost acknowledgement. Once
         // its frame has been sent, waiting longer does not improve ordering:
@@ -3514,37 +3662,53 @@ internal class LiveGatewaySessionRepository(
         // Source: NousResearch/hermes-agent @ 3ca096de5f8183cb2e0ec23673f294d5978656a3,
         // tui_gateway/ws.py:339 (loop), :341 (receive_text), :392 (dispatch);
         // tui_gateway/server.py:198-362 (_LONG_HANDLERS), :2110-2147 (dispatch).
-        return ordered ?: requestInterruptNow(binding, connection, interruptEpoch)
+        return ordered ?: requestInterruptNow(binding, connection, interruptEpoch, expectedEndpointGeneration)
     }
 
     private suspend fun requestInterruptNow(
         binding: SessionBinding,
         connection: ConnectionSnapshot,
         interruptEpoch: Long,
+        expectedEndpointGeneration: Long?,
     ): GatewayInterruptOutcome {
         var confirmed = false
         var markerOwner: Long? = null
+        var queueAtDispatch: List<ComposerGatewayQueuedPrompt> = emptyList()
         return try {
-            synchronized(stateLock) {
+            // Ordinary Sessions retain their non-endpoint RPC semantics. Their
+            // preflight still owns attribution; endpoint-bound Bot calls install
+            // it only inside the atomic wire callback below.
+            if (expectedEndpointGeneration == null) synchronized(stateLock) {
                 ensureCurrent(connection)
-                // Mark before the suspend boundary: a terminal event can arrive
-                // while the RPC acknowledgement is still in flight, and it must
-                // retain the fact that this app dispatched the Stop request. A
-                // prior local Stop owns the marker until it is consumed, so a
-                // second rejected request cannot revoke that attribution.
+                if (!ownsActiveUnscopedTurn(binding, connection)) return GatewayInterruptOutcome.NotActive
+                queueAtDispatch = cache.session(binding.durableId)?.composerStatus?.gatewayQueuedPrompts.orEmpty()
                 markerOwner = installLocalInterruptMarker(binding.runtimeId)
             }
-            val result = connection.client.request("session.interrupt", objectParams("session_id", binding.runtimeId))
-                .asObject("session.interrupt")
+            val result = requestAtEndpointDispatch(
+                connection, expectedEndpointGeneration, "session.interrupt", objectParams("session_id", binding.runtimeId),
+                consentDispatch = { send ->
+                    synchronized(stateLock) {
+                        if (!ownsActiveUnscopedTurn(binding, connection) ||
+                            cache.session(binding.durableId)?.status == SessionStatus.NeedsInput) false
+                        else {
+                            queueAtDispatch = cache.session(binding.durableId)?.composerStatus?.gatewayQueuedPrompts.orEmpty()
+                            markerOwner = installLocalInterruptMarker(binding.runtimeId)
+                            send()
+                        }
+                    }
+                },
+            ).asObject("session.interrupt")
             val interrupted = result.string("status") == "interrupted"
             synchronized(stateLock) {
                 ensureCurrent(connection)
-                if (interrupted) {
+                if (interrupted && isObservedTurn(binding)) {
                     confirmedInterruptEpochByDurableId[binding.durableId] = maxOf(
                         interruptEpoch,
                         confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L,
                     )
-                    clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
+                    if (cache.session(binding.durableId)?.composerStatus?.gatewayQueuedPrompts.orEmpty() == queueAtDispatch) {
+                        clearGatewayQueuedPrompts(binding.durableId, binding.runtimeId)
+                    }
                     confirmed = true
                 }
             }
@@ -3564,11 +3728,26 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome {
+    override suspend fun redirect(durableId: String, text: String): GatewayRedirectOutcome =
+        redirectInternal(durableId, text, null)
+
+    override suspend fun redirectAtEndpoint(
+        durableId: String,
+        text: String,
+        expectedEndpointGeneration: Long,
+        expectedTurnGeneration: Long?,
+    ): GatewayRedirectOutcome = redirectInternal(durableId, text, expectedEndpointGeneration, expectedTurnGeneration)
+
+    private suspend fun redirectInternal(
+        durableId: String,
+        text: String,
+        expectedEndpointGeneration: Long?,
+        expectedTurnGeneration: Long? = null,
+    ): GatewayRedirectOutcome {
         val correction = text.trim()
         require(correction.isNotEmpty())
         val binding = try {
-            ensureRuntime(durableId)
+            correctionBinding(durableId, expectedEndpointGeneration, expectedTurnGeneration)
         } catch (failure: Throwable) {
             return redirectPreflightFailureOutcome(failure)
         }
@@ -3583,14 +3762,21 @@ internal class LiveGatewaySessionRepository(
         if (!ownsActiveUnscopedTurn(binding, connection)) return GatewayRedirectOutcome.Rejected
 
         return try {
-            val result = connection.client.request(
+            val result = requestAtEndpointDispatch(
+                connection,
+                expectedEndpointGeneration,
                 "session.redirect",
                 buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("text", JsonPrimitive(correction))
                 },
+                consentDispatch = { send ->
+                    synchronized(stateLock) {
+                        ownsActiveUnscopedTurn(binding, connection) && send()
+                    }
+                },
             ).asObject("session.redirect")
-            synchronized(stateLock) { ensureCurrent(connection) }
+            if (!canMutateBoundSession(binding, connection)) return GatewayRedirectOutcome.Ambiguous
             when (result.string("status")) {
                 "redirected" -> {
                     recordOptimisticCorrection(binding, connection, correction)
@@ -3615,11 +3801,26 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
-    override suspend fun steer(durableId: String, text: String): GatewaySteerOutcome {
+    override suspend fun steer(durableId: String, text: String): GatewaySteerOutcome =
+        steerInternal(durableId, text, null)
+
+    override suspend fun steerAtEndpoint(
+        durableId: String,
+        text: String,
+        expectedEndpointGeneration: Long,
+        expectedTurnGeneration: Long?,
+    ): GatewaySteerOutcome = steerInternal(durableId, text, expectedEndpointGeneration, expectedTurnGeneration)
+
+    private suspend fun steerInternal(
+        durableId: String,
+        text: String,
+        expectedEndpointGeneration: Long?,
+        expectedTurnGeneration: Long? = null,
+    ): GatewaySteerOutcome {
         val correction = text.trim()
         require(correction.isNotEmpty())
         val binding = try {
-            ensureRuntime(durableId)
+            correctionBinding(durableId, expectedEndpointGeneration, expectedTurnGeneration)
         } catch (failure: Throwable) {
             return steerPreflightFailureOutcome(failure)
         }
@@ -3634,14 +3835,21 @@ internal class LiveGatewaySessionRepository(
         if (!ownsActiveUnscopedTurn(binding, connection)) return GatewaySteerOutcome.Rejected
 
         return try {
-            val result = connection.client.request(
+            val result = requestAtEndpointDispatch(
+                connection,
+                expectedEndpointGeneration,
                 "session.steer",
                 buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("text", JsonPrimitive(correction))
                 },
+                consentDispatch = { send ->
+                    synchronized(stateLock) {
+                        ownsActiveUnscopedTurn(binding, connection) && send()
+                    }
+                },
             ).asObject("session.steer")
-            synchronized(stateLock) { ensureCurrent(connection) }
+            if (!canMutateBoundSession(binding, connection)) return GatewaySteerOutcome.Ambiguous
             when (result.string("status")) {
                 "queued" -> {
                     recordOptimisticCorrection(binding, connection, correction)
@@ -4170,17 +4378,34 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    /**
+     * A correction operates on the runtime resumed with the bot's explicit profile.
+     * Never silently resume an unbound Bot id with the currently selected profile.
+     * Liveness includes remotely reported turns; local prompt ownership is irrelevant.
+     */
+    private suspend fun correctionBinding(durableId: String, endpoint: Long?, expectedTurn: Long?): SessionBinding {
+        if (endpoint == null) ensureRuntime(durableId)
+        requireEndpoint(endpoint)
+        return synchronized(stateLock) {
+            val binding = observedBinding(durableId, identities.runtimeFor(durableId)
+                ?: throw GatewayRpcException("Open this Bot Chat again before correcting it."))
+            if (expectedTurn != null && expectedTurn != binding.turnGeneration) {
+                throw GatewayRpcException("The observed turn has changed. Review the conversation before correcting it.")
+            }
+            binding
+        }
+    }
+
     private fun ownsActiveUnscopedTurn(binding: SessionBinding, connection: ConnectionSnapshot): Boolean =
         synchronized(stateLock) {
             ensureCurrent(connection)
-            identities.runtimeFor(binding.durableId) == binding.runtimeId &&
-                binding.runtimeId in activeRuntimeIds
+            isObservedTurn(binding) && binding.runtimeId in activeRuntimeIds
         }
 
     private fun canMutateBoundSession(binding: SessionBinding, connection: ConnectionSnapshot): Boolean =
         synchronized(stateLock) {
             ensureCurrent(connection)
-            identities.runtimeFor(binding.durableId) == binding.runtimeId
+            isObservedTurn(binding)
         }
 
     private fun recordOptimisticCorrection(
@@ -4190,7 +4415,7 @@ internal class LiveGatewaySessionRepository(
     ) {
         synchronized(stateLock) {
             ensureCurrent(connection)
-            if (identities.runtimeFor(binding.durableId) != binding.runtimeId) return
+            if (!isObservedTurn(binding)) return
             val correction = UserTurn(
                 id = "local-correction-${sequence.incrementAndGet()}",
                 text = text,
@@ -4450,6 +4675,7 @@ internal class LiveGatewaySessionRepository(
                 // locally requested Stop attribution.
                 locallyRequestedInterruptRuntimeIds.remove(runtimeId)
                 if ((payload.string("role") ?: "assistant") == "assistant") {
+                    advanceObservedTurn(runtimeId)
                     consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     val turn = AssistantTurn(
                         id = payload.messageId() ?: "gateway-assistant-${sequence.incrementAndGet()}",
@@ -4463,11 +4689,27 @@ internal class LiveGatewaySessionRepository(
                     markRuntimeLive(runtimeId)
                     ephemeralSessions.remove(durableId)
                     setStatus(durableId, SessionStatus.Working)
+                    startLiveNotificationMessage(durableId, runtimeId, turn)
+                } else if (payload.string("role") == "user") {
+                    advanceObservedTurn(runtimeId)
+                    val turn = UserTurn(
+                        id = payload.messageId() ?: "gateway-user-${sequence.incrementAndGet()}",
+                        text = payload.contentText(), atMillis = payload.timestamp(clock()),
+                    )
+                    cache.putEntry(durableId, turn)
+                    markRuntimeLive(runtimeId)
+                    startLiveNotificationMessage(durableId, runtimeId, turn)
                 }
                 false
             }
 
             "message.delta" -> {
+                if (payload.string("role")?.let { it != "assistant" } == true) return false
+                if (payload.messageId()?.let { id ->
+                        (mutableLiveNotificationMessages.value.messages[durableId]?.entry as? AssistantTurn)
+                            ?.id?.let { it != id }
+                    } == true) return false
+                appendLiveNotificationDelta(durableId, runtimeId, payload)
                 val current = assistantByRuntime[runtimeId] ?: AssistantTurn(
                     id = payload.messageId() ?: "gateway-assistant-${sequence.incrementAndGet()}",
                     markdown = "",
@@ -4484,6 +4726,11 @@ internal class LiveGatewaySessionRepository(
             }
 
             "message.complete" -> {
+                if (payload.string("role")?.let { it != "assistant" } == true) return false
+                if (payload.messageId()?.let { id ->
+                        (mutableLiveNotificationMessages.value.messages[durableId]?.entry as? AssistantTurn)
+                            ?.id?.let { it != id }
+                    } == true) return false
                 clearPendingInputsForRuntime(runtimeId)
                 // The authoritative end-of-turn figure. The Gateway stops and
                 // joins its usage ticker *before* emitting this precisely so no
@@ -5046,6 +5293,7 @@ internal class LiveGatewaySessionRepository(
             (unscopedRuntimeId == runtimeId && localSubmitStartedAtMillis != null)
 
     private fun markRuntimeLive(runtimeId: String) {
+        if (runtimeId !in activeRuntimeIds) advanceObservedTurn(runtimeId)
         activeRuntimeIds += runtimeId
         liveTurnRuntimeIds += runtimeId
         if (unscopedRuntimeId == runtimeId) {
@@ -5137,6 +5385,8 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun releaseRuntimeGuard(runtimeId: String) {
+        clearLiveNotificationRuntime(runtimeId)
+        if (runtimeId in activeRuntimeIds) advanceObservedTurn(runtimeId)
         todoToolIdsByRuntime.remove(runtimeId)
         activeRuntimeIds.remove(runtimeId)
         localSubmitStartedAtByRuntime.remove(runtimeId)
@@ -5239,7 +5489,10 @@ internal class LiveGatewaySessionRepository(
         setStatus(durableId, SessionStatus.Idle)
         ephemeralSessions.remove(durableId)
         releaseRuntimeGuard(runtimeId)
-        turnOutcomeEvents.tryEmit(GatewayTurnOutcome(durableId, failed = errorText != null))
+        turnOutcomeEvents.tryEmit(GatewayTurnOutcome(
+            durableId, failed = errorText != null,
+            assistantMessagePreview = completed.markdown.takeIf(String::isNotBlank),
+        ))
     }
 
     private fun applyTool(type: String, durableId: String, runtimeId: String, payload: JsonObject) {
@@ -5747,6 +6000,7 @@ internal class LiveGatewaySessionRepository(
         )
         val row = existing?.copy(id = targetId)
             ?: SessionSummary(targetId, "New session", "", clock())
+        rehomeLiveNotificationMessage(fromId, targetId)
         cache.rehomeSession(fromId, row, entries)
         if (ephemeralSessions.remove(fromId)) ephemeralSessions += targetId
         branchByDurableId.remove(fromId)?.let { branchByDurableId[targetId] = it }
@@ -6049,7 +6303,7 @@ internal class LiveGatewaySessionRepository(
         val reconnectDurableIds: List<String>,
         val clearProjects: Boolean,
     )
-    private data class SessionBinding(val durableId: String, val runtimeId: String)
+    private data class SessionBinding(val durableId: String, val runtimeId: String, val turnGeneration: Long? = null)
     private data class OptimisticSubmit(
         val session: SessionSummary?,
         val transcript: List<TranscriptEntry>,

@@ -43,6 +43,30 @@ class ComposerSliceFourAccessibilityTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
+    fun `composer exposes distinct steer callback without redirect or submit`() {
+        var steers = 0
+        var redirects = 0
+        var submits = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                Box(Modifier.width(390.dp)) {
+                    Composer(
+                        draft = "Use the next tool result", onDraftChange = {},
+                        onSend = { submits++ }, onStop = {}, isStreaming = true,
+                        canSend = false, connected = true, statusLine = "Working",
+                        onRedirect = { redirects++ }, onSteer = { steers++ },
+                    )
+                }
+            }
+        }
+        compose.onNodeWithContentDescription("Steer at next tool boundary")
+            .assertIsDisplayed().assertHeightIsAtLeast(HermesSpacing().touchTarget).performClick()
+        assertEquals(1, steers)
+        assertEquals(0, redirects)
+        assertEquals(0, submits)
+    }
+
+    @Test
     fun `status stack keeps ordered groups and omits unavailable coding controls`() {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {

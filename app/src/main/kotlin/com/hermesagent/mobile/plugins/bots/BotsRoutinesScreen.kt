@@ -64,8 +64,11 @@ import java.util.Locale
  */
 class BotsRoutinesActions(
     val onRetry: () -> Unit = {},
-    /**
-     * The surface became visible. Desktop refetches this pane on its socket
+    val onOpenCreation: () -> Unit = {},
+    val onCloseCreation: () -> Unit = {},
+    val onUpdateCreation: (RoutineCreationDraft) -> Unit = {},
+    val onSubmitCreation: () -> Unit = {},
+    /** The surface became visible. Desktop refetches this pane on its socket
      * opening and then on a 20 s poll; this destination is entered and left
      * rather than left mounted, so entering it is the trigger.
      */
@@ -92,7 +95,10 @@ fun BotsRoutinesScreen(
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
         ) {
-            RoutinesOwnerHeader(state)
+            RoutinesOwnerHeader(state, actions)
+            if (state.creation.phase != RoutineCreationPhase.Hidden) {
+                RoutineCreationSheet(state.creation, actions, state.ownerLabel ?: state.owner.orEmpty(), state.canCreate)
+            }
 
             Spacer(Modifier.height(12.dp))
             Hairline()
@@ -147,6 +153,8 @@ fun BotsRoutinesScreen(
                     title = BotsRoutinesCopy.EMPTY_TITLE,
                     description = state.emptyHint ?: BotsRoutinesCopy.EMPTY_DESC,
                     icon = HermesIcon.Watch,
+                    onCreate = actions.onOpenCreation,
+                    createEnabled = state.canCreate,
                 )
 
                 else -> RoutineList(state = state, nowMillis = now, actions = actions)
@@ -167,7 +175,7 @@ fun BotsRoutinesScreen(
  * The add control is Desktop's, rendered disabled behind the marker chip.
  */
 @Composable
-private fun RoutinesOwnerHeader(state: BotsRoutinesUiState) {
+private fun RoutinesOwnerHeader(state: BotsRoutinesUiState, actions: BotsRoutinesActions) {
     val tokens = HermesTheme.tokens
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -188,7 +196,16 @@ private fun RoutinesOwnerHeader(state: BotsRoutinesUiState) {
                 maxLines = 1,
             )
         }
-        ComingSoonIconAction(icon = HermesIcon.Add, label = BotsRoutinesCopy.NEW_CRON)
+        if (state.creation.phase == RoutineCreationPhase.Hidden) {
+            PrimaryButton(label = BotsRoutinesCopy.NEW_CRON, onClick = actions.onOpenCreation, enabled = state.canCreate, modifier = Modifier.testTag("Routine create header"))
+        } else {
+            Text(
+                text = BotsRoutinesCopy.NEW_CRON,
+                style = HermesTheme.type.caption,
+                color = tokens.textTertiary,
+                modifier = Modifier.testTag(CREATION_PENDING_TAG),
+            )
+        }
     }
 }
 
@@ -361,6 +378,8 @@ private fun RoutinesMessage(
     description: String,
     icon: HermesIcon,
     onRetry: (() -> Unit)? = null,
+    onCreate: (() -> Unit)? = null,
+    createEnabled: Boolean = false,
 ) {
     Column(
         Modifier
@@ -371,10 +390,10 @@ private fun RoutinesMessage(
     ) {
         EmptyState(title = title, description = description, icon = icon, centered = true)
         Spacer(Modifier.height(12.dp))
-        if (onRetry != null) {
-            PrimaryButton(label = BotsRosterCopy.RETRY_NOW, onClick = onRetry)
-        } else {
-            ComingSoonAction(label = BotsRoutinesCopy.NEW_CRON)
+        when {
+            onRetry != null -> PrimaryButton(label = BotsRosterCopy.RETRY_NOW, onClick = onRetry)
+            onCreate != null -> PrimaryButton(label = BotsRoutinesCopy.NEW_CRON, onClick = onCreate, enabled = createEnabled)
+            else -> ComingSoonAction(label = BotsRoutinesCopy.NEW_CRON)
         }
     }
 }
@@ -399,6 +418,7 @@ internal const val ROUTINES_LIST_TAG = "Routines list"
 
 /** A state message's test handle. */
 internal const val ROUTINES_MESSAGE_TAG = "Routines message"
+internal const val CREATION_PENDING_TAG = "Routine creation pending"
 
 /** The legacy-delegation notice's test handle. */
 internal const val LEGACY_NOTICE_TAG = "Routines legacy notice"

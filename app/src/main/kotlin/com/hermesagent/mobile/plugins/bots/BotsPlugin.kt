@@ -30,9 +30,9 @@ import kotlinx.coroutines.cancel
  * share a singleton.
  *
  * [sections] and [metaByKey] are the user's own pin/hide/section choices
- * (Desktop's `$botSections` / `$botMeta`). They are constructor inputs, and the
- * plugin storage door is where they will be read from once the editing surface
- * that writes them lands.
+ * (Desktop's `$botSections` / `$botMeta`). Constructor inputs remain fixture
+ * defaults; the management surface persists sections through PluginStorage and
+ * profile metadata through the endpoint-fenced Gateway door.
  */
 class BotsPlugin(
     private val sections: List<BotSection> = emptyList(),
@@ -48,6 +48,8 @@ class BotsPlugin(
      */
     private val hostOverride: PluginHost? = null,
     private val avatarRoster: com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator? = null,
+    private val storageEndpoint: kotlinx.coroutines.flow.StateFlow<BotStorageEndpoint?> =
+        kotlinx.coroutines.flow.MutableStateFlow(null),
 ) : HermesPlugin {
 
     override val id: String = "bots"
@@ -64,10 +66,22 @@ class BotsPlugin(
         )
         ctx.onDispose { avatarProducer?.close() }
 
+        var refreshRoster: () -> Unit = {}
+        val management = BotsManagementViewModel(
+            host, ctx.storage, pluginScope, onChanged = { refreshRoster() }, initialSections = sections,
+            storageEndpoint = storageEndpoint,
+        )
+        val managementActions = BotManagementActions(
+            onClose = management::close, onUpdate = management::updateDraft,
+            onSectionName = management::updateSectionName, onSection = management::selectSection,
+            onSubmit = management::submit, onDeleteSection = management::deleteSection,
+            onMoveSection = management::moveSection,
+        )
         val viewModel = BotsViewModel(
             repository = BotsPluginRepository(host, avatarProducer),
             scope = pluginScope,
             sections = sections,
+            sectionUpdates = management.sections,
             metaByKey = metaByKey,
             // The roster is read on the connection's edge, never at
             // registration: the app discovers plugins before it has dialled
@@ -81,6 +95,7 @@ class BotsPlugin(
             endpointGeneration = host.endpointGeneration,
             connectionToken = avatarRoster?.let { host.connectionToken },
         )
+        refreshRoster = viewModel::refresh
         val actions = BotsActions(
             onRefresh = viewModel::refresh,
             onSearchChange = viewModel::setSearchQuery,
@@ -89,6 +104,9 @@ class BotsPlugin(
             onSetHiddenExpanded = viewModel::setHiddenExpanded,
             onClearFilters = viewModel::clearFilters,
             onResume = viewModel::surfaceResumed,
+            onNewBot = management::openNew,
+            onSection = { section, snapshot -> management.openSection(snapshot.endpoint, section, snapshot.managementRows, snapshot.userSections) },
+            onRowAction = management::act,
         )
         // The Routines surface's state, and the one place a bot's profile
         // reaches it. It is plugin-scoped like the roster's: no module global,
@@ -101,11 +119,18 @@ class BotsPlugin(
         )
         val routinesActions = BotsRoutinesActions(
             onRetry = routines::refresh,
+            onOpenCreation = routines::openCreation,
+            onCloseCreation = routines::closeCreation,
+            onUpdateCreation = routines::updateCreationDraft,
+            onSubmitCreation = routines::submitCreation,
             onResume = routines::surfaceResumed,
             onAction = routines::act,
         )
-        fun openRoutines(row: BotRosterRow, navigate: (String) -> Unit) {
-            routines.selectOwner(profile = row.name, label = displayName(row.name, row.displayName))
+        fun openRoutines(row: BotRosterRow, origin: BotsRosterUiState, navigate: (String) -> Unit) {
+            if (origin.endpoint != host.endpointGeneration.value || !host.connected.value ||
+                origin.managementRows.none { it == row }) return
+            routines.selectOwner(profile = row.name, label = displayName(row.name, row.displayName),
+                originatingEndpoint = origin.endpoint)
             navigate("$id:$ROUTINES_ROUTE_ID")
         }
 
@@ -118,12 +143,15 @@ class BotsPlugin(
                     render = {
                         val nav = LocalPluginNavigation.current
                         val state by viewModel.uiState.collectAsStateWithLifecycle()
+                        val origin = state
+                        val managementState by management.state.collectAsStateWithLifecycle()
+                        BotManagementSheet(managementState, managementActions)
                         BotsRosterScreen(
                             state = state,
                             onBack = nav.onBack,
                             onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
                             onOpenRoutines = { row ->
-                                openRoutines(row, nav.onNavigate)
+                                openRoutines(row, origin, nav.onNavigate)
                             },
                             actions = actions,
                         )
@@ -153,11 +181,14 @@ class BotsPlugin(
                         content = { onBack ->
                             val nav = LocalPluginNavigation.current
                             val state by viewModel.uiState.collectAsStateWithLifecycle()
+                            val origin = state
+                            val managementState by management.state.collectAsStateWithLifecycle()
+                            BotManagementSheet(managementState, managementActions)
                             BotsRosterScreen(
                                 state = state,
                                 onBack = onBack,
                                 onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
-                                onOpenRoutines = { row -> openRoutines(row, nav.onNavigate) },
+                                onOpenRoutines = { row -> openRoutines(row, origin, nav.onNavigate) },
                                 actions = actions,
                                 embedded = true,
                             )

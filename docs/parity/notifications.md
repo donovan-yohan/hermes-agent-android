@@ -153,10 +153,63 @@ Desktop polls the same snapshot at 1.5 s only while its window is visible
 window someone is looking at, and which a phone with a foreground service does
 not need.
 
+**Preview provenance gate.** Successful completion alerts consume the immutable
+`GatewayTurnOutcome.assistantMessagePreview` captured from the exact completed
+assistant entry. Errors never preview. Clarify notifications retain the exact
+live question. Eligible prose is redacted, stripped of Markdown code/links/markup,
+collapsed to one line and bounded to 400 characters, subject to preview preference.
+Passive children can render `liveMessagePreview` from the scoped live-event
+projection below; without that authoritative input they retain safe status.
+
+The adversarial review at `e27448b231498e79ade668d68c0b6c6206951206` found
+`tui_gateway/server.py:3022-3023` scans history without filtering message role;
+`3024-3027` then overrides it with queued/inflight text. This untyped `preview`
+can be tool output. Redaction is not a role validator. A role-filtered *cached*
+transcript is also insufficient: it has no common revision with the registry and
+may predate the active turn. Neither wall-clock sorting nor observing cache
+changes establishes freshness. The unsafe fallback and cache observer were
+removed rather than presenting old prose as the latest server message.
+
+**Passive live-message repository integration:**
+
+`LiveGatewaySessionRepository.liveNotificationMessages` is wired by
+`HermesApplication` into `GatewayActivityProjection`. Accepted live `message.start`
+frames establish a role-validated user/assistant scope; assistant deltas append only
+within that scope, never to a hydrated transcript entry. A connection that joined
+mid-stream without observing the start deliberately stays status-only until a fresh
+start. Explicit non-assistant deltas and mismatched message ids cannot supply prose.
+`GatewaySessionRepositoryTest` drives the real repository, projection and notifier
+through a recording notification surface, including streaming reposts, cache/tool
+exclusion, queued turnover, endpoint/disconnect and profile-runtime collision fences,
+canonical rehomes and tombstones. This is JVM evidence, not a device-shade capture.
+
+- Publish one atomic `LiveNotificationMessages(connectionGeneration, scopes, messages)`.
+  Maps are keyed by canonical durable session id. Each `LiveNotificationScope`
+  contains connection generation, runtime id and a monotonic turn generation.
+- Advance the scope and clear the old message on every observed turn start, including
+  runtime reuse and queued-turn promotion. Clear all state on disconnect/endpoint
+  switch; remove the session on completion/failure/tombstone. Fence late events by
+  their captured scope. Canonical rehomes must move scope and message together.
+- Populate `LiveNotificationMessage(scope, entry)` only from directly observed,
+  accepted live user/assistant events; update the same entry on assistant deltas.
+  Never seed it from history hydration, sidebar snippets, registry `preview`,
+  reasoning, tools, diagnostics or a queued-but-not-started user prompt.
+- `previewFor` verifies the current connection/runtime/turn scope, permits only
+  `UserTurn` and non-error/non-terminated `AssistantTurn`, and rejects everything
+  else. Generation checks—not timestamps—fence retained stale entries.
+- A server-side typed role/prose/revision field would be needed to preview registry-only
+  remote sessions whose live prose this connection has not observed. Such sessions
+  intentionally stay status-only; never reinterpret the untyped legacy field.
+
+Completion production is a separate repository responsibility: capture the exact
+finalized assistant markdown on `GatewayTurnOutcome`, not a subsequent cache scan.
+This consumer never substitutes history when the outcome's prose is absent.
+These are connected notifications, not push infrastructure.
+
 **Privacy.** A child carries the redacted session title, the project label only
-when the authoritative catalog knows one, and the same display-safe preview text
-the sidebar uses (through `redact()`, bounded to 400 characters, and gated by the
-existing preview preference). Never a command, tool output, approval text, sudo
+when the authoritative catalog knows one, and safe status or eligible live prose.
+No untyped registry or cached message preview crosses this boundary. Never a command,
+tool output, approval text, sudo
 or secret name, hostname or path. Every child is `VISIBILITY_PRIVATE` with a
 public version that says only `Hermes activity`, so a locked screen learns that
 chats are live and nothing about which.
@@ -190,7 +243,7 @@ given a class they do not deserve.
 | A parked approval keeps its notification across a reconnect | drift | Notifications for an already-notified prompt vanish on disconnect and deduplication prevents re-posting on reconnect | The repository clears its pending map on every client change and the notifier follows it, clearing shade notifications. For prompts already announced pre-disconnect, deduplication refuses re-posting on reconnect replay, so the shade stays clear until in-app interaction or new activity occurs; #99 |
 | Shade buttons are `Approve` and `Reject` (`native-notifications.ts:349`) | mobile-adaptation | Supported choices from the Gateway offer, capped at Android's three: run once, the strongest grant on offer, then the refusal — with `setAuthenticationRequired` on a persistent grant | The earlier note said `session` and `always` stay in the app because "a persistent grant should not be one mis-tap from a lock screen". The objection is real and has an Android answer: the OS refuses to fire the action until the device is unlocked (API 31+; below it the grant is simply not offered). Unknown choices stay in the app: the shade receiver deliberately whitelists the known wire vocabulary, so rendering an action it cannot send would lie. Desktop's own approval words are reused rather than its notification pair, because beside `Always allow` the word `Approve` no longer says which of the two it is (`en.ts:3749,3752,3759,3754`) |
 | No settings panel divergence — Desktop lists every kind in one undivided list (`notifications-settings.tsx`) | mobile-adaptation | Two sections, a permission row that appears only when the OS grant is gone, and a preview toggle | A preference screen that let somebody turn six things on while Android drops all of them would be lying by omission, and Desktop has no grant to lose. The permission row offers Android's own settings page rather than re-requesting, because Android stops showing the dialog after two denials |
-| The completion body is empty; the title carries the news (`en.ts:181`) | mobile-adaptation | A preview line, on by default: the question, or the line a turn ended on, in `BigTextStyle` | A phone notification saying only `Input needed` makes somebody open the app to learn whether it was worth opening the app for; Desktop's is beside the window that already answers that. The preference is the first gate and not the only one — an approval, a sudo or secret prompt and the two state kinds carry no preview at any setting, and `publicVersion` is unchanged, so a locked phone is still told only the kind |
+| The completion body is empty; the title carries the news (`en.ts:181`) | mobile-adaptation | A preview line, on by default for a validated live question, in `BigTextStyle`; completions use the exact assistant prose captured on their terminal outcome | A phone notification saying only `Input needed` makes somebody open the app to learn whether it was worth opening the app for; Desktop's is beside the window that already answers that. The preference is the first gate and not the only one — an approval, a sudo or secret prompt and the two state kinds carry no preview at any setting, and `publicVersion` is unchanged, so a locked phone is still told only the kind |
 | — | mobile-adaptation | `connectionLost`: the Gateway went away with a turn running or a prompt parked | Desktop's renderer is either running or quit. This app's socket can drop on its own mid-turn, which silently ends the turn and stops the shade's own approval buttons from being answerable, and nothing else is in a position to say so while the app is backgrounded. Only a drop *from* connected, and only for conversations that had something in flight |
 | — | mobile-adaptation | `stillWaiting`: one reminder, five minutes after an announced prompt is still unanswered | A notification can be swiped into a shade and forgotten while an agent stays blocked behind it; a renderer on a screen someone is sitting at cannot be. Android has one reminder identity per session, so simultaneous prompts deterministically bind it to one live request; resolving that request clears or repoints the reminder to another due prompt. It uses the `Approvals` channel because a calmer channel would make the reminder quieter than the prompt it recalls. |
 | `backgroundDone`, `credits` and `plugin` kinds | omission | In the preference store, never dispatched | non-goal: none has a mobile source at all — no backgrounded terminal, no credit ledger, no desktop plugins. They are carried so S-N2's settings screen is a pure UI slice and the disabled rows have something to bind to |
