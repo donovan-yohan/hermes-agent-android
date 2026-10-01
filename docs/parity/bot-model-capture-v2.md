@@ -128,3 +128,19 @@ The validator checks evidence structure and consistency, not the authenticity of
 pixels. A worker must retain raw safe traces, inspect the genuine UI, hash the
 actual files, and fail when observations differ. Unit-test receipts are synthetic
 test inputs and must never be published as capture results.
+
+## Visual report
+
+- pending: #194
+- No v2 runtime packet has been produced. The Android driver currently resolves
+  the default v1 fixture even when its CLI receives a v2 ID; its preflight rejects
+  that mismatch. The debug host retains request parameters for tests but exports
+  no runtime RPC response trace, normalized input identity, or pending-request
+  monotonic bracket. Do not restamp a v1 receipt as v2.
+
+## Divergences
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Shared confirmation dialog and reopened saved editor | mobile-adaptation | Inline fixture-staged production actions, not recorded Save/consent gestures | State/platform agreement above |
+| Complete runtime v2 capture evidence | omission | Contract registered; runtime proof export and explicit worker dispatch remain unimplemented | deferred: #194 — no v2 visual approval |
