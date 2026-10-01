@@ -14,7 +14,7 @@ import time
 assert os.environ.get('GITHUB_ACTIONS') == 'true'
 assert os.environ['ANDROID_SERIAL'] == 'emulator-5580'
 mode = sys.argv[1]
-assert mode in ('standalone', 'predecessor')
+assert mode in ('standalone', 'predecessor', 'full')
 out = Path(os.environ['RUNNER_TEMP']) / 'api34-focus' / mode
 out.mkdir(parents=True, exist_ok=True)
 adb = ['adb', '-s', 'emulator-5580']
@@ -44,7 +44,13 @@ assert runner == 'com.hermesagent.mobile.debug.test/androidx.test.runner.Android
 subprocess.run(['bash', 'scripts/prepare-ci-emulator.sh'], check=True, timeout=45)
 composer = 'com.hermesagent.mobile.device.ComposerImeTest#theComposerFieldTakesARealInputConnection'
 predecessor = 'com.hermesagent.mobile.device.ActivityRecreateTest#theOpenDestinationSurvivesARealActivityRecreate'
-expected = [composer] if mode == 'standalone' else [predecessor, composer]
+full_suite = [predecessor, composer,
+    'com.hermesagent.mobile.device.MainActivityBootTest#coldLaunchDoesNotPerformNetworkWorkOnMainThread',
+    'com.hermesagent.mobile.device.OrientationTest#rotatingKeepsTheConnectionCopyAndMovesToTheWideLayout',
+    'com.hermesagent.mobile.device.PlatformAccessibilityTest#theChromeActionsReachThePlatformAccessibilityTree',
+    'com.hermesagent.mobile.device.TouchTargetTest#everyOnScreenActionMeetsTheTouchFloorAtTheDeviceDensity',
+    'com.hermesagent.mobile.device.TouchTargetTest#theComposerAndChromeControlsKeepTheirOwnTouchFloor']
+expected = {'standalone': [composer], 'predecessor': [predecessor, composer], 'full': full_suite}[mode]
 start = threading.Event()
 stop = threading.Event()
 # Allowlist focus ownership only. Full dumps live only in process memory.
@@ -81,6 +87,16 @@ def sample():
             if stop.wait(.5):
                 break
 
+# Bounded intervention on this guarded, dedicated synthetic CI AVD only.
+# Do not suppress error dialogs, force-stop the app, retry, or change test waits.
+launcher = 'com.google.android.apps.nexuslauncher'
+assert call('shell', 'pm', 'path', launcher).startswith('package:')
+before = [probe(item) for item in probes.items()]
+call('shell', 'am', 'force-stop', '--user', '0', launcher)
+after = [probe(item) for item in probes.items()]
+(out / 'preparation.json').write_text(json.dumps({
+    'action': 'force-stop', 'package': launcher, 'user': 0,
+    'before': before, 'after': after}, indent=2))
 thread = threading.Thread(target=sample)
 thread.start()
 cmd = adb + ['shell', 'am', 'instrument', '-w', '-r', '-e', 'class', ','.join(expected), runner]

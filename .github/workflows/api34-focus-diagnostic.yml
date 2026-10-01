@@ -14,7 +14,7 @@ jobs:
   focus:
     if: github.ref == 'refs/heads/diagnostic/api34-focus' || (github.event_name == 'pull_request' && github.head_ref == 'diagnostic/api34-focus' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       ANDROID_SERIAL: emulator-5580
     steps:
@@ -70,6 +70,21 @@ jobs:
           emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: python3 .github/diagnostics/api34_focus.py predecessor
+      - name: Full seven-test suite after focused passes, same APK pair
+        timeout-minutes: 7
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          avd-name: focus-full
+          emulator-port: 5580
+          force-avd-creation: true
+          emulator-boot-timeout: 180
+          emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 .github/diagnostics/api34_focus.py full
       - name: Retain only synthetic focus and raw instrumentation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -81,4 +96,5 @@ jobs:
             ${{ runner.temp }}/api34-focus/*/identity.json
             ${{ runner.temp }}/api34-focus/*/result.json
             ${{ runner.temp }}/api34-focus/*/focus.jsonl
+            ${{ runner.temp }}/api34-focus/*/preparation.json
             ${{ runner.temp }}/api34-focus/*/instrumentation.txt
