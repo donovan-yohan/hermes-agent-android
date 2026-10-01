@@ -4,13 +4,14 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `e27448b231498e79ade668d68c0b6c6206951206`. Identity, registry and typography
+ * `587e673e2a2fae0616d8b750bb189217080f621a`. Identity, registry and typography
  * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
  * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
  * extraction), so `hasHandTunedDark` is read from there. Transcribed
  * 2026-08-31 and re-verified 2026-10-01 from a disposable upstream checkout.
- * Registry identity and shared palettes are unchanged from the previous pin;
- * Desktop mono fallback stacks changed, but Android retains platform families.
+ * Registry identity, shared palettes, colour keys and typography are unchanged
+ * from e27448b231498e79ade668d68c0b6c6206951206. Backend Classic Hermes selection
+ * changed separately; this built-in ledger does not certify backend skin parity.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
  * upstream checkout, and a test that silently skips when a path is missing is
@@ -25,7 +26,7 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "e27448b231498e79ade668d68c0b6c6206951206"
+    const val PINNED_SHA = "587e673e2a2fae0616d8b750bb189217080f621a"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** Where the palettes live since upstream's shared-package extraction. */
