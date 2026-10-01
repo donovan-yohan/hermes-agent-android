@@ -1,0 +1,86 @@
+{
+  "sequence": 6,
+  "log": [
+    {
+      "sequence": 1,
+      "event": "action:roster:edit"
+    },
+    {
+      "sequence": 2,
+      "event": "roster:edit-dispatch"
+    },
+    {
+      "sequence": 3,
+      "event": "action:editor:advanced"
+    },
+    {
+      "sequence": 4,
+      "method": "profiles.describe",
+      "params": {
+        "name": "synthetic-planner"
+      },
+      "request_id": "34",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": {
+        "model": {
+          "provider": "synthetic-provider",
+          "default": "synthetic-planner-v1"
+        },
+        "soul": "Review synthetic release plans.",
+        "skills": [],
+        "toolsets": [],
+        "mcp_servers": []
+      },
+      "error": null,
+      "outcome": "loaded"
+    },
+    {
+      "sequence": 5,
+      "method": "mcp.catalog",
+      "params": {
+        "profile": "synthetic-planner"
+      },
+      "request_id": "35",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": {
+        "servers": []
+      },
+      "error": null,
+      "outcome": "loaded"
+    },
+    {
+      "sequence": 6,
+      "method": "model.options",
+      "params": {
+        "include_unconfigured": true,
+        "explicit_only": false
+      },
+      "request_id": "36",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": null,
+      "error": null,
+      "outcome": "pending"
+    }
+  ],
+  "saved": {
+    "provider": "synthetic-provider",
+    "default": "synthetic-planner-v1"
+  },
+  "pending": {
+    "request_id": "36",
+    "start": 524,
+    "pending": true,
+    "response": null,
+    "error": null
+  },
+  "violations": []
+}

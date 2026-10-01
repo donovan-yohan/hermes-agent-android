@@ -21,6 +21,12 @@ Screenshots are PNG at the device's native resolution. Demos are recorded as
 MP4 and exported to GIF; commit both, with matching base names, so the README
 can show the GIF while a reader can still open the sharper MP4.
 
+## Model editor supplement
+
+[Model editor v2](bot-model-v2/REPORT.md): paired Android/Electron evidence,
+original capture provenance and explicit platform adaptations; bounded model
+editor acceptance only. See [capture index](CAPTURE.md#model-editor-v2-supplement).
+
 ## Contents
 
 `screenshots/` holds PNGs of the session list, the transcript, the composer,

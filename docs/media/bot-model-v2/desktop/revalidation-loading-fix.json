@@ -1,0 +1,135 @@
+{
+  "packet": "model-contract-v2-packet-final",
+  "original_validation_sha256": "6ff82710c6b26915a9c2f7dfcf814b17dd10c8fb023e7c0afec1d6f3b32b9f6a",
+  "original_accepted": 12,
+  "original_rejected": 2,
+  "accepted": 14,
+  "rejected": 0,
+  "packet_files_unchanged": 116,
+  "manifest_entries_verified": 115,
+  "validator_sha256": "4757e179584a07ff558191daa85b895315b774bb11d68efe69a0acfb377e2ade",
+  "results": [
+    {
+      "receipt": "accepted/confirmation-dark.receipt.json",
+      "receipt_sha256": "4f35ba1b81f134ec6911551b7c795064e645a42786125908a23ffdbe309df415",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/confirmation-light.receipt.json",
+      "receipt_sha256": "f4cad93cea88ddcfc62b76ed99e913d52db31f4c43f0e35662a77c79f645d329",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/inventory-error-dark.receipt.json",
+      "receipt_sha256": "6c14a6a1ff5dfde1fe3559542f9dba7ebf86f8cd0babddc5312fcc2990d2e8b3",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/inventory-error-light.receipt.json",
+      "receipt_sha256": "1347e5e1a29b735de7325dbd7c06bdc4fbe6dc3419767ea2250a581631044102",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/loaded-dark.receipt.json",
+      "receipt_sha256": "d84a5f7813d9aeb7819e05b74aa3197044d1db94fba9739235bf0ea2e12052b6",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/loaded-light.receipt.json",
+      "receipt_sha256": "6440992f34e8b95af6165f320305f75747d7174479df8dea1f6e22f0aa3c13ed",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/manual-dark.receipt.json",
+      "receipt_sha256": "1ec543214dc22fd88403d5a8710072e3f3ef36e4ef7e9edf2f73f243f89a2fd9",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/manual-light.receipt.json",
+      "receipt_sha256": "04767c951a9da84d4b9b9f9ed3298d402d595bfcc77913fc43d15ffc7018538a",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/save-refused-dark.receipt.json",
+      "receipt_sha256": "8b7cf8d344e200f8dd098f525ec43739c712695eb5316f5e905d94cea2eb09bc",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/save-refused-light.receipt.json",
+      "receipt_sha256": "c28e60ef37aabe8ef25a696308a3e58455b832d5459a2b351adaaa8f4db5ccfb",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/saved-dark.receipt.json",
+      "receipt_sha256": "9a6d6b07ab7cafe9346a5ee5a605ddd0e62018f74107e20cab01adde64abc838",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "accepted/saved-light.receipt.json",
+      "receipt_sha256": "1b80fb6945a8558a2a7539bea1ca0dee60116f9ecbf1d03eb91136de619bf6ab",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued"
+    },
+    {
+      "receipt": "rejected/inventory-loading-dark.receipt.json",
+      "receipt_sha256": "eee21be5ab6ed784cdf4e108010d13a689d0fb0e0199b9858f30e27b5c0548d1",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+      "loading_bracket": {
+        "screenshot_sha256": "191ba2e1a4dda4b15f98b9d971526df6c1ee23d362c280c7b2fca9974a8c1958",
+        "request_id": "36",
+        "basis": "monotonic-since-interception",
+        "before": {
+          "request_id": "36",
+          "pending": true,
+          "response": null,
+          "error": null,
+          "elapsed_ms": 1789
+        },
+        "after": {
+          "request_id": "36",
+          "pending": true,
+          "response": null,
+          "error": null,
+          "elapsed_ms": 2350
+        }
+      }
+    },
+    {
+      "receipt": "rejected/inventory-loading-light.receipt.json",
+      "receipt_sha256": "7a55e8dc84f4e0a38e8f9902c719e5cda9d5327ed2172c7afa468aa63cd0adfe",
+      "exit_code": 0,
+      "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+      "loading_bracket": {
+        "screenshot_sha256": "6b6bd2ed94c05d95e741c95c6b8e3d7dc2b62cea12611fb614381dff53d12802",
+        "request_id": "36",
+        "basis": "monotonic-since-interception",
+        "before": {
+          "request_id": "36",
+          "pending": true,
+          "response": null,
+          "error": null,
+          "elapsed_ms": 1957
+        },
+        "after": {
+          "request_id": "36",
+          "pending": true,
+          "response": null,
+          "error": null,
+          "elapsed_ms": 2499
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+[
+  {
+    "state": "bot-model-confirmation",
+    "theme": "dark",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "ff0fc68e188447650dadbe3293db20d11ac6bfcb77abd8a59ff6459cb1e071b7",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-confirmation",
+    "theme": "light",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "4eba5db1d5131f01c2874a276cae3eece32a61a96ceeb773c79c8a981da14959",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-inventory-error",
+    "theme": "dark",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "bf7c1d97483be0e35f1eb3a553329d7e275dfe5d6f3289753e79566919b7ecf7",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-inventory-error",
+    "theme": "light",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "c5070e6383468de4cafb89c9b99b67577f39dc5c8c7b032074d4868bf3aae126",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-inventory-loading",
+    "theme": "dark",
+    "exit_code": 1,
+    "validation": "FAIL  visible fields must match the editor phase; hidden fields must not be claimed",
+    "screenshot_sha256": "191ba2e1a4dda4b15f98b9d971526df6c1ee23d362c280c7b2fca9974a8c1958",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-inventory-loading",
+    "theme": "light",
+    "exit_code": 1,
+    "validation": "FAIL  visible fields must match the editor phase; hidden fields must not be claimed",
+    "screenshot_sha256": "6b6bd2ed94c05d95e741c95c6b8e3d7dc2b62cea12611fb614381dff53d12802",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-loaded",
+    "theme": "dark",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "6d1647c8d1d8cf6314d3a166eea06cbd04a97fe6b282e1d3bf97d7cba1ec6819",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-loaded",
+    "theme": "light",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "005751d61a5b61fcb5c5a9310e7d47f78c42d676a85316c47aefc834206e4b47",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-manual",
+    "theme": "dark",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "e22d7ea5a1ee9cb61e85fdcaada0daf27896bb3d8791cfefb9255a7a34b406ec",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-manual",
+    "theme": "light",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "d127cc5e04c93f78a253e0c217bf06b80ea1861d8851be8899a578103b9028d6",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-save-refused",
+    "theme": "dark",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "419876e264f4c63931554c79d317ed8957747f45ba2a747f074edf4c203c0cd7",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-save-refused",
+    "theme": "light",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "3ade37ee49a452d3385768994969f34da7fad1b5723aa6a21ca1e3ffc558bdb4",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-saved",
+    "theme": "dark",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "bfbedc1a8f95b8c8a4cdcdac9d31d624d572e3479bc9121faf08b3481c2516fd",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  },
+  {
+    "state": "bot-model-saved",
+    "theme": "light",
+    "exit_code": 0,
+    "validation": "ok    desktop capture receipt is safe, complete, and catalogued",
+    "screenshot_sha256": "690ffb4ec1aa1f4e52f477551375321497c1d80e5b88b5cb333cf8b0b5f5f74f",
+    "fixture_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff"
+  }
+]

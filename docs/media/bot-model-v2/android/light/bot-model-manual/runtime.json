@@ -1,0 +1,264 @@
+{
+  "before": {
+    "fixture_id": "bot-model-config-synthetic-v2",
+    "state": "bot-model-manual",
+    "theme": "light",
+    "runtime": {
+      "authoritative_model": "synthetic-planner-v1",
+      "events": [
+        "describe:loaded",
+        "model.options:loaded",
+        "describe:loaded"
+      ],
+      "requests": [
+        {
+          "sequence": 1,
+          "request_id": "synthetic-rpc-1",
+          "method": "profiles.describe",
+          "params": {
+            "name": "synthetic-planner"
+          },
+          "response": {
+            "name": "synthetic-planner",
+            "description": "Reviews release plans",
+            "soul": "Review synthetic release plans.",
+            "model": {
+              "provider": "synthetic-provider",
+              "default": "synthetic-planner-v1"
+            }
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 17326.491591
+        },
+        {
+          "sequence": 2,
+          "request_id": "synthetic-rpc-2",
+          "method": "model.options",
+          "params": {
+            "profile": "synthetic-planner",
+            "include_unconfigured": true,
+            "explicit_only": false
+          },
+          "response": {
+            "providers": [
+              {
+                "slug": "synthetic-provider",
+                "name": "Synthetic Provider",
+                "aliases": [],
+                "models": [
+                  "synthetic-planner-v1",
+                  "synthetic-planner-v2"
+                ]
+              }
+            ]
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 17326.378883
+        },
+        {
+          "sequence": 3,
+          "request_id": "synthetic-rpc-3",
+          "method": "profiles.describe",
+          "params": {
+            "name": "synthetic-planner"
+          },
+          "response": {
+            "name": "synthetic-planner",
+            "description": "Reviews release plans",
+            "soul": "Review synthetic release plans.",
+            "model": {
+              "provider": "synthetic-provider",
+              "default": "synthetic-planner-v1"
+            }
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 17326.117341
+        },
+        {
+          "sequence": 4,
+          "request_id": "synthetic-rpc-4",
+          "method": "profiles.list",
+          "params": {
+            "include_sessions": true
+          },
+          "response": {
+            "profiles": [
+              {
+                "name": "synthetic-planner",
+                "ui_meta": {
+                  "hermes-bots": {
+                    "title": "Synthetic Planner"
+                  }
+                }
+              }
+            ]
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 17326.100424
+        }
+      ]
+    },
+    "capture_inputs": {
+      "skin": "mono",
+      "theme": "light",
+      "locale": "en-US",
+      "timezone": "UTC",
+      "clock": "2026-09-17T16:00:00Z",
+      "timers": "live"
+    },
+    "synthetic_inputs": {
+      "name": "synthetic-planner",
+      "title": "Synthetic Planner",
+      "description": "Reviews release plans",
+      "soul": "Review synthetic release plans.",
+      "provider": "synthetic-provider",
+      "provider_name": "Synthetic Provider",
+      "initial_model": "synthetic-planner-v1",
+      "requested_model": "synthetic-planner-v2",
+      "confirmation_message": "Synthetic model cost and data policy require confirmation."
+    },
+    "draft": {
+      "provider": "synthetic-provider",
+      "model": "synthetic-planner-v1"
+    }
+  },
+  "after": {
+    "fixture_id": "bot-model-config-synthetic-v2",
+    "state": "bot-model-manual",
+    "theme": "light",
+    "runtime": {
+      "authoritative_model": "synthetic-planner-v1",
+      "events": [
+        "describe:loaded",
+        "model.options:loaded",
+        "describe:loaded"
+      ],
+      "requests": [
+        {
+          "sequence": 1,
+          "request_id": "synthetic-rpc-1",
+          "method": "profiles.describe",
+          "params": {
+            "name": "synthetic-planner"
+          },
+          "response": {
+            "name": "synthetic-planner",
+            "description": "Reviews release plans",
+            "soul": "Review synthetic release plans.",
+            "model": {
+              "provider": "synthetic-provider",
+              "default": "synthetic-planner-v1"
+            }
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 18392.688842
+        },
+        {
+          "sequence": 2,
+          "request_id": "synthetic-rpc-2",
+          "method": "model.options",
+          "params": {
+            "profile": "synthetic-planner",
+            "include_unconfigured": true,
+            "explicit_only": false
+          },
+          "response": {
+            "providers": [
+              {
+                "slug": "synthetic-provider",
+                "name": "Synthetic Provider",
+                "aliases": [],
+                "models": [
+                  "synthetic-planner-v1",
+                  "synthetic-planner-v2"
+                ]
+              }
+            ]
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 18392.569467
+        },
+        {
+          "sequence": 3,
+          "request_id": "synthetic-rpc-3",
+          "method": "profiles.describe",
+          "params": {
+            "name": "synthetic-planner"
+          },
+          "response": {
+            "name": "synthetic-planner",
+            "description": "Reviews release plans",
+            "soul": "Review synthetic release plans.",
+            "model": {
+              "provider": "synthetic-provider",
+              "default": "synthetic-planner-v1"
+            }
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 18392.306592
+        },
+        {
+          "sequence": 4,
+          "request_id": "synthetic-rpc-4",
+          "method": "profiles.list",
+          "params": {
+            "include_sessions": true
+          },
+          "response": {
+            "profiles": [
+              {
+                "name": "synthetic-planner",
+                "ui_meta": {
+                  "hermes-bots": {
+                    "title": "Synthetic Planner"
+                  }
+                }
+              }
+            ]
+          },
+          "outcome": "loaded",
+          "pending": false,
+          "error": null,
+          "elapsed_ms": 18392.288675
+        }
+      ]
+    },
+    "capture_inputs": {
+      "skin": "mono",
+      "theme": "light",
+      "locale": "en-US",
+      "timezone": "UTC",
+      "clock": "2026-09-17T16:00:00Z",
+      "timers": "live"
+    },
+    "synthetic_inputs": {
+      "name": "synthetic-planner",
+      "title": "Synthetic Planner",
+      "description": "Reviews release plans",
+      "soul": "Review synthetic release plans.",
+      "provider": "synthetic-provider",
+      "provider_name": "Synthetic Provider",
+      "initial_model": "synthetic-planner-v1",
+      "requested_model": "synthetic-planner-v2",
+      "confirmation_message": "Synthetic model cost and data policy require confirmation."
+    },
+    "draft": {
+      "provider": "synthetic-provider",
+      "model": "synthetic-planner-v1"
+    }
+  }
+}

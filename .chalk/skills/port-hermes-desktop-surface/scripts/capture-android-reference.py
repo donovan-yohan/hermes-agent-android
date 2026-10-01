@@ -409,15 +409,102 @@ def ordered_accessibility_actions(serial: str | None, actions: list[str], *,
     return evidence
 
 
-def bracketed_screenshot(serial, package, activity, expected, launch_started=None):
+def read_model_runtime(serial, package):
+    raw = shell(serial, "content", "call", "--uri", f"content://{package}.model-runtime",
+                "--method", "snapshot")
+    match = re.search(r"snapshot=([A-Za-z0-9+/=]+)", raw)
+    if not match:
+        raise SystemExit("debug synthetic runtime export is unavailable")
+    return json.loads(base64.b64decode(match[1], validate=True))
+
+
+def accessibility_boundary_matches(nodes, label):
+    """Resolve Android's explicit accessible name before a visual text caption.
+
+    Text fields publish a content description and a separate visible caption.
+    Count the named field, not its non-control caption; duplicate named fields
+    still fail uniqueness. Text-only buttons/banners use exact text fallback.
+    """
+    described = [n for n in nodes if n.get("content_description") == label]
+    return len(described) if described else sum(n.get("text") == label for n in nodes)
+
+
+def model_v2_proof(spec, before, after, steps, nodes, screenshot_hash):
+    """Normalize observed transport results; never synthesize requests from a state label."""
+    for sample in (before, after):
+        if any(sample.get(k) != spec[k] for k in ("fixture_id", "state", "theme")):
+            raise SystemExit("runtime export belongs to another fixture/state/theme")
+        if sample["capture_inputs"] != {**spec["capture_inputs"], "theme": spec["theme"]} or sample["synthetic_inputs"] != spec["synthetic_inputs"]:
+            raise SystemExit("runtime normalization differs from registered inputs")
+    runtime = after["runtime"]
+    mapping = spec["platform_spec"]
+    calls, reads, inventories = [], [], []
+    for item in runtime["requests"]:
+        params, response = item["params"], item["response"]
+        if item["method"] == "profiles.configure":
+            if set(params) - {"name", "provider", "model", "confirm_expensive_model"}:
+                raise SystemExit("runtime configure contains non-model mutation")
+            calls.append({"sequence": item["sequence"], "profile": params["name"],
+                          "patch": {k: params[k] for k in ("provider", "model")},
+                          "confirmed": params.get("confirm_expensive_model", False),
+                          "outcome": item["outcome"], "response": response})
+        elif item["method"] == "profiles.describe" and item["outcome"] == "loaded":
+            if params != {"name": response["name"]}:
+                raise SystemExit("describe response does not match named request")
+            reads.append({"sequence": item["sequence"], "profile": params["name"], "model": response["model"]["default"]})
+        elif item["method"] == "model.options":
+            if params != {"profile": spec["synthetic_inputs"]["name"], "include_unconfigured": True, "explicit_only": False}:
+                raise SystemExit("inventory routing differs from production request")
+            inventories.append(item)
+    if len(inventories) != 1:
+        raise SystemExit("expected one actual inventory request")
+    inventory = inventories[0]
+    events = list(runtime["events"])
+    if inventory["pending"]:
+        events.append("model.options:pending")
+    if any(s["action"] == "tap:Enter manually" and s.get("pre_tap") for s in steps):
+        events.append("manual-entry:tapped")
+    # A general identity editor also performs a named describe. Keep all reads,
+    # while projecting only the model transition vocabulary into state events.
+    selected_events = []
+    for event in events:
+        if event in mapping["required_events"] and event not in selected_events:
+            selected_events.append(event)
+    if selected_events != mapping["required_events"]:
+        raise SystemExit("runtime transitions do not establish requested state")
+    labels = {n.get(k, "") for n in nodes for k in ("text", "content_description")}
+    fields = None
+    manual = {"Provider", "Model ID"} <= labels
+    if spec["state"] not in ("bot-model-confirmation", "bot-model-save-refused"):
+        fields = after["draft"]
+        if not all(any(value in label for label in labels) for value in fields.values()):
+            raise SystemExit("runtime model pair is not visible in captured accessibility")
+    proof = {k: mapping[k] for k in ("selector", "locator", "presentation", "interaction_semantics", "action_origin", "ordered_actions")}
+    proof.update(source="runtime-capture-worker", events=selected_events, nodes=nodes,
+                 locator_matches=accessibility_boundary_matches(nodes, mapping["selector"]),
+                 action_evidence=[{"action": s["action"], "origin": mapping["action_origin"], "sequence": i+1, "nodes": s["accessibility"]["nodes"]} for i, s in enumerate(steps)],
+                 model_calls=calls, describe_reads=reads, authoritative_model=runtime["authoritative_model"], fields=fields,
+                 inventory={"method": inventory["method"], "scope": {"kind": "inventory-profile-parameter", "profile": inventory["params"]["profile"]}, "outcome": inventory["outcome"]},
+                 manual_fields_visible=manual)
+    if inventory["pending"]:
+        previous = next(c for c in before["runtime"]["requests"] if c["request_id"] == inventory["request_id"])
+        keys = ("request_id", "pending", "response", "error", "elapsed_ms")
+        proof["loading_bracket"] = {"screenshot_sha256": screenshot_hash, "request_id": inventory["request_id"],
+            "basis": "monotonic-since-interception", "before": {k: previous[k] for k in keys}, "after": {k: inventory[k] for k in keys}}
+    return proof
+
+
+def bracketed_screenshot(serial, package, activity, expected, launch_started=None, runtime_reader=None):
     """Fail closed if the state/focus changes or the conservative launch budget expires."""
     verify_app_identity(serial, package, activity)
     before = accessibility_snapshot(serial, expected, attempts=1, package=package)
+    runtime_before = runtime_reader() if runtime_reader else None
     started = time.monotonic()
     if launch_started is not None and not 0 <= started - launch_started < 20:
         raise SystemExit("loading capture exceeded the production 20-second deadline before screenshot")
     screenshot = adb(serial, "exec-out", "screencap", "-p", binary=True)
     ended = time.monotonic()
+    runtime_after = runtime_reader() if runtime_reader else None
     after = accessibility_snapshot(serial, expected, attempts=1, package=package)
     verify_app_identity(serial, package, activity)
     checked = time.monotonic()
@@ -429,7 +516,10 @@ def bracketed_screenshot(serial, package, activity, expected, launch_started=Non
                   "screenshot_start_seconds": started - launch_started,
                   "screenshot_end_seconds": ended - launch_started,
                   "postcheck_seconds": checked - launch_started}
-    return screenshot, {"before": before, "after": after, "timing": timing}
+    bracket = {"before": before, "after": after, "timing": timing}
+    if runtime_reader:
+        bracket["runtime"] = {"before": runtime_before, "after": runtime_after}
+    return screenshot, bracket
 
 
 def main() -> None:
@@ -463,7 +553,8 @@ def main() -> None:
     ordered = json.loads(args.ordered_actions) if args.ordered_actions else None
     if ordered is not None and (args.tap_text or args.swipe_list_up):
         raise SystemExit("ordered actions cannot be mixed with legacy single-tap capture")
-    spec = request(load_catalog(), args.name.split("--", 1)[0], args.state, args.theme)
+    spec = request(load_catalog(), args.name.split("--", 1)[0], args.state, args.theme,
+                   fixture_id=args.fixture_id, platform="android" if args.fixture_id == "bot-model-config-synthetic-v2" else None)
     interactions = ordered if ordered is not None else interaction_receipt(args.tap_text, args.swipe_list_up)
     if (args.name != f"{spec['surface']}--{args.state}" or args.fixture_id != spec["fixture_id"]
             or f"{args.package}/{args.activity}" != spec["android_activity"]
@@ -492,7 +583,8 @@ def main() -> None:
     # fixture held the focused window through them.
     identity = verify_app_identity(args.serial, args.package, args.activity)
     screenshot, bracket = bracketed_screenshot(args.serial, args.package, args.activity,
-                                               args.expected_accessibility, launch_started if loading else None)
+                                               args.expected_accessibility, launch_started if loading else None,
+                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None)
     accessibility = bracket["after"]
     output = Path(args.out or f"build/visual-parity/{args.name}/android").resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -525,6 +617,22 @@ def main() -> None:
         # How the state above the fold was actually reached: real drags, on the
         # screen the platform reported. No serial and no path ever lands here.
         contract["list_swipe"] = list_swipe
+    if args.fixture_id == "bot-model-config-synthetic-v2":
+        samples = bracket.pop("runtime")
+        screenshot_hash = hashlib.sha256(screenshot).hexdigest()
+        implementation = {}
+        for relative in ("app/src/debug/kotlin/com/hermesagent/mobile/BotManagementParityFixture.kt",
+                         "app/src/debug/kotlin/com/hermesagent/mobile/BotModelRuntimeProvider.kt",
+                         "app/src/debug/kotlin/com/hermesagent/mobile/ProfileAvatarsParityActivity.kt",
+                         "app/src/debug/AndroidManifest.xml"):
+            implementation[relative] = (REPO_ROOT / relative).read_text()
+        implementation_bytes = json.dumps(implementation, sort_keys=True, indent=2).encode()
+        contract.update(capture_mapping=spec["platform_spec"], capture_inputs=samples["after"]["capture_inputs"],
+                        synthetic_inputs=samples["after"]["synthetic_inputs"], screenshot_sha256=screenshot_hash,
+                        fixture_implementation_sha256=hashlib.sha256(implementation_bytes).hexdigest(),
+                        state_proof=model_v2_proof(spec, samples["before"], samples["after"], steps, accessibility["nodes"], screenshot_hash))
+        (output / "runtime.json").write_text(json.dumps(samples, indent=2) + "\n")
+        (output / "fixture-implementation.json").write_bytes(implementation_bytes)
     validate_receipt(contract, "android")
     (output / "reference.png").write_bytes(screenshot)
     (output / "contract.json").write_text(json.dumps(contract, indent=2) + "\n", encoding="utf-8")

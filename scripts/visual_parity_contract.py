@@ -269,7 +269,11 @@ def validate_state_proof(receipt: dict[str, Any], spec: dict[str, Any], platform
         raise ValueError("model writes must be strictly ordered")
     if proof.get("authoritative_model") != assertions["authoritative_model"]:
         raise ValueError("authoritative model contradicts capture phase")
-    expected_fields = None if receipt["state"] in {"bot-model-confirmation", "bot-model-save-refused"} else {
+    # Desktop 587e673e model-picker.tsx:148–153 returns only a spinner while
+    # loading. Original authoritative state still requires named describe proof.
+    hidden_fields = receipt["state"] in {"bot-model-confirmation", "bot-model-save-refused"} or (
+        platform == "desktop" and receipt["state"] == "bot-model-inventory-loading")
+    expected_fields = None if hidden_fields else {
         "provider": inputs["provider"], "model": assertions["authoritative_model"]}
     if "fields" not in proof or proof["fields"] != expected_fields:
         raise ValueError("visible fields must match the editor phase; hidden fields must not be claimed")

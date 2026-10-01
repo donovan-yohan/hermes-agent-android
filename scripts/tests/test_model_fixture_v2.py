@@ -42,7 +42,8 @@ class ModelFixtureV2Test(unittest.TestCase):
                  inventory={'method':'model.options','scope':spec['transport_mapping'][platform],
                             'outcome': 'pending' if state.endswith('inventory-loading') else
                             'refused' if state.endswith('inventory-error') else 'loaded'})
-        if state in ('bot-model-confirmation','bot-model-save-refused'):
+        if (state in ('bot-model-confirmation','bot-model-save-refused')
+                or (platform == 'desktop' and state == 'bot-model-inventory-loading')):
             p['fields']=None  # No claim that hidden editor fields are visible.
         if saved:
             p['describe_reads'].append({'sequence':5,'profile':'synthetic-planner','model':model})
@@ -132,8 +133,48 @@ class ModelFixtureV2Test(unittest.TestCase):
         r=self.receipt('bot-model-inventory-error'); r['state_proof']['manual_fields_visible']=False
         with self.assertRaises(ValueError): contract.validate_receipt(r,'desktop')
 
+    def test_desktop_loading_hides_fields_but_requires_original_rpc_state(self):
+        r=self.receipt('bot-model-inventory-loading')
+        self.assertIsNone(r['state_proof']['fields'])
+        contract.validate_receipt(r,'desktop')
+        mutations=[lambda p:p.pop('fields'),
+                   lambda p:p.update(fields={'provider':'synthetic-provider','model':'synthetic-planner-v1'}),
+                   lambda p:p.pop('authoritative_model'),
+                   lambda p:p.update(authoritative_model='synthetic-planner-v2'),
+                   lambda p:p.pop('describe_reads'),
+                   lambda p:p.update(describe_reads=[]),
+                   lambda p:p['describe_reads'][0].update(profile='another-profile'),
+                   lambda p:p['describe_reads'][0].update(model='synthetic-planner-v2'),
+                   lambda p:p.update(model_calls=self.receipt()['state_proof']['model_calls']),
+                   lambda p:p['inventory'].update(outcome='loaded'),
+                   lambda p:p.pop('loading_bracket')]
+        for index,mutate in enumerate(mutations):
+            bad=copy.deepcopy(r); mutate(bad['state_proof'])
+            with self.subTest(mutation=index),self.assertRaises(ValueError):
+                contract.validate_receipt(bad,'desktop')
+
+    def test_loading_exception_does_not_hide_other_editor_fields(self):
+        for platform in ('desktop','android'):
+            states=['loaded','inventory-error','manual','saved']
+            if platform == 'android': states.append('inventory-loading')
+            for state in states:
+                r=self.receipt('bot-model-'+state,platform=platform)
+                contract.validate_receipt(r,platform)
+                for missing in (False,True):
+                    bad=copy.deepcopy(r)
+                    if missing: del bad['state_proof']['fields']
+                    else: bad['state_proof']['fields']=None
+                    with self.subTest(platform=platform,state=state,missing=missing),self.assertRaisesRegex(ValueError,'visible fields'):
+                        contract.validate_receipt(bad,platform)
+
     def test_loading_proof_is_per_png_pending_and_strictly_before_deadline(self):
         r=self.receipt('bot-model-inventory-loading')
+        contract.validate_receipt(r,'desktop')
+        for side in ('before','after'):
+            for key in ('pending','elapsed_ms','response','error','request_id'):
+                bad=copy.deepcopy(r); del bad['state_proof']['loading_bracket'][side][key]
+                with self.subTest(missing=key,side=side),self.assertRaises(ValueError):
+                    contract.validate_receipt(bad,'desktop')
         for key,value in [('pending',False),('elapsed_ms',20000),('elapsed_ms',float('nan')),
                           ('request_id','another'),('response',{}),('error','timeout')]:
             for side in ('before','after'):

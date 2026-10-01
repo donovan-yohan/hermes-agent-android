@@ -1,0 +1,26 @@
+{
+  "scope": "bounded synthetic existing-Bot model editor; no Gradle rerun during publication",
+  "android_receipts_validated": 14,
+  "desktop_receipts_validated": 14,
+  "original_pngs_hash_verified": 30,
+  "desktop_original_manifest_entries_verified": 115,
+  "android_original_runtime_patch_fixture_sources_reconstructed": 4,
+  "android_publication_snapshot_source_test_harness_files_matched": 9,
+  "desktop_fixture_patch_reconstruction_matched": true,
+  "local_installed_apk_and_fixture_match": true,
+  "python_tests": {"run": 166, "exit_code": 0},
+  "repository_static_gate": {"command": "bash scripts/check-repo-invariants.sh", "exit_code": 0},
+  "citation_gate": {
+    "command": "python3 scripts/verify-pin-citations.py --check-range fba060888b21a3ce0c456809f1f464fd0e5938ba..WORKTREE",
+    "exit_code": 0,
+    "changed_files_with_activity": 2,
+    "true_at_named_sha": 1,
+    "left_on_own_pin": 4,
+    "not_provable": 0,
+    "unattributable": 18,
+    "note": "Diff-driven gate; not a claim that every prose reference is independently attributable."
+  },
+  "privacy": "Allowlisted unchanged synthetic PNGs, safe JSON receipts and observed traces, curated report and reconstructible sources/patches only; no APK, raw execution logs, archives, serials, private host paths or AppleDouble files.",
+  "source_diff_check": "Reconstructed pre-publication snapshot matches all nine current source/test/harness files; publication edits are documentation/evidence only.",
+  "whitespace_check": "Source/docs checked; hash-significant archived patch files excluded."
+}

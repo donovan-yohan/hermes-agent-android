@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "surface": "bot-model-config",
+  "state": "bot-model-confirmation",
+  "fixture_id": "bot-model-config-synthetic-v2",
+  "theme": "light",
+  "viewport": {
+    "width": 1220,
+    "height": 800
+  },
+  "desktop_upstream_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "capture_mapping": {
+    "action_origin": "recorded-ui-gestures",
+    "assertions": {
+      "authoritative_model": "synthetic-planner-v1",
+      "confirmed_write_count": 0,
+      "inventory_outcome": "loaded",
+      "model_write_count": 1
+    },
+    "capture_boundary": "shared-confirm-dialog",
+    "interaction_semantics": "real-ui-gesture",
+    "locator": {
+      "exact": true,
+      "kind": "role",
+      "name": "Switch to synthetic-planner-v2?",
+      "role": "dialog"
+    },
+    "ordered_actions": [
+      "roster:edit",
+      "editor:advanced",
+      "model:change",
+      "editor:save"
+    ],
+    "presentation": "shared-dialog",
+    "required_events": [
+      "model-edit:changed",
+      "save:clicked",
+      "configure:confirmation-required",
+      "shared-confirm-dialog:visible"
+    ],
+    "required_labels": [
+      "Switch to synthetic-planner-v2?",
+      "Synthetic model cost and data policy require confirmation."
+    ],
+    "selector": "shared-confirm-dialog",
+    "selector_kind": "semantic-boundary-resolved-by-worker"
+  },
+  "capture_inputs": {
+    "clock": "2026-09-17T16:00:00Z",
+    "locale": "en-US",
+    "skin": "mono",
+    "timers": "live",
+    "timezone": "UTC",
+    "theme": "light"
+  },
+  "synthetic_inputs": {
+    "confirmation_message": "Synthetic model cost and data policy require confirmation.",
+    "description": "Reviews release plans",
+    "initial_model": "synthetic-planner-v1",
+    "name": "synthetic-planner",
+    "provider": "synthetic-provider",
+    "provider_name": "Synthetic Provider",
+    "requested_model": "synthetic-planner-v2",
+    "soul": "Review synthetic release plans.",
+    "title": "Synthetic Planner"
+  },
+  "screenshot_sha256": "4eba5db1d5131f01c2874a276cae3eece32a61a96ceeb773c79c8a981da14959",
+  "fixture_implementation_sha256": "c4c97acad6387c6f5056ec96961c7ed40e1332e03e40666d2c6e8749fe30d8ff",
+  "state_proof": {
+    "source": "runtime-capture-worker",
+    "selector": "shared-confirm-dialog",
+    "locator": {
+      "exact": true,
+      "kind": "role",
+      "name": "Switch to synthetic-planner-v2?",
+      "role": "dialog"
+    },
+    "presentation": "shared-dialog",
+    "interaction_semantics": "real-ui-gesture",
+    "action_origin": "recorded-ui-gestures",
+    "ordered_actions": [
+      "roster:edit",
+      "editor:advanced",
+      "model:change",
+      "editor:save"
+    ],
+    "events": [
+      "model-edit:changed",
+      "save:clicked",
+      "configure:confirmation-required",
+      "shared-confirm-dialog:visible"
+    ],
+    "nodes": [
+      {
+        "text": "Switch to synthetic-planner-v2?\n\nSynthetic model cost and data policy require confirmation.\n\nKeep current model\nSwitch anyway\nClose",
+        "content_description": "",
+        "role": "dialog"
+      },
+      {
+        "text": "Switch to synthetic-planner-v2?\n\nSynthetic model cost and data policy require confirmation.\n\nKeep current model\nSwitch anyway",
+        "content_description": "",
+        "role": "div"
+      },
+      {
+        "text": "Switch to synthetic-planner-v2?\n\nSynthetic model cost and data policy require confirmation.",
+        "content_description": "",
+        "role": "div"
+      },
+      {
+        "text": "Switch to synthetic-planner-v2?",
+        "content_description": "",
+        "role": "h2"
+      },
+      {
+        "text": "Synthetic model cost and data policy require confirmation.",
+        "content_description": "",
+        "role": "p"
+      },
+      {
+        "text": "Keep current model\nSwitch anyway",
+        "content_description": "",
+        "role": "div"
+      },
+      {
+        "text": "Keep current model",
+        "content_description": "",
+        "role": "button"
+      },
+      {
+        "text": "Switch anyway",
+        "content_description": "",
+        "role": "button"
+      },
+      {
+        "text": "Close",
+        "content_description": "Close",
+        "role": "button"
+      },
+      {
+        "text": "Close",
+        "content_description": "",
+        "role": "span"
+      }
+    ],
+    "locator_matches": 1,
+    "action_evidence": [
+      {
+        "sequence": 1,
+        "action": "roster:edit",
+        "origin": "recorded-ui-gestures",
+        "nodes": [
+          {
+            "text": "Edit…",
+            "content_description": "",
+            "role": "menuitem"
+          }
+        ],
+        "wire_sequence": 1
+      },
+      {
+        "sequence": 2,
+        "action": "editor:advanced",
+        "origin": "recorded-ui-gestures",
+        "nodes": [
+          {
+            "text": "Advanced — model, skills, toolsets, SOUL.md",
+            "content_description": "",
+            "role": "button"
+          }
+        ],
+        "wire_sequence": 3
+      },
+      {
+        "sequence": 3,
+        "action": "model:change",
+        "origin": "recorded-ui-gestures",
+        "nodes": [
+          {
+            "text": "synthetic-planner-v1",
+            "content_description": "",
+            "role": "combobox"
+          },
+          {
+            "text": "synthetic-planner-v1",
+            "content_description": "",
+            "role": "span"
+          }
+        ],
+        "wire_sequence": 7
+      },
+      {
+        "sequence": 4,
+        "action": "editor:save",
+        "origin": "recorded-ui-gestures",
+        "nodes": [
+          {
+            "text": "Save",
+            "content_description": "",
+            "role": "button"
+          }
+        ],
+        "wire_sequence": 8
+      }
+    ],
+    "model_calls": [
+      {
+        "sequence": 9,
+        "profile": "synthetic-planner",
+        "patch": {
+          "provider": "synthetic-provider",
+          "model": "synthetic-planner-v2"
+        },
+        "confirmed": false,
+        "outcome": "warning",
+        "response": {
+          "ok": true,
+          "confirm_required": true,
+          "confirm_message": "Synthetic model cost and data policy require confirmation.",
+          "applied": {
+            "model": false
+          }
+        }
+      }
+    ],
+    "authoritative_model": "synthetic-planner-v1",
+    "fields": null,
+    "describe_reads": [
+      {
+        "sequence": 4,
+        "profile": "synthetic-planner",
+        "model": "synthetic-planner-v1"
+      }
+    ],
+    "inventory": {
+      "method": "model.options",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "outcome": "loaded"
+    }
+  }
+}

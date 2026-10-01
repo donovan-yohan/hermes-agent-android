@@ -1,0 +1,123 @@
+{
+  "sequence": 9,
+  "log": [
+    {
+      "sequence": 1,
+      "event": "action:roster:edit"
+    },
+    {
+      "sequence": 2,
+      "event": "roster:edit-dispatch"
+    },
+    {
+      "sequence": 3,
+      "event": "action:editor:advanced"
+    },
+    {
+      "sequence": 4,
+      "method": "profiles.describe",
+      "params": {
+        "name": "synthetic-planner"
+      },
+      "request_id": "32",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": {
+        "model": {
+          "provider": "synthetic-provider",
+          "default": "synthetic-planner-v1"
+        },
+        "soul": "Review synthetic release plans.",
+        "skills": [],
+        "toolsets": [],
+        "mcp_servers": []
+      },
+      "error": null,
+      "outcome": "loaded"
+    },
+    {
+      "sequence": 5,
+      "method": "mcp.catalog",
+      "params": {
+        "profile": "synthetic-planner"
+      },
+      "request_id": "33",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": {
+        "servers": []
+      },
+      "error": null,
+      "outcome": "loaded"
+    },
+    {
+      "sequence": 6,
+      "method": "model.options",
+      "params": {
+        "include_unconfigured": true,
+        "explicit_only": false
+      },
+      "request_id": "34",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": {
+        "providers": [
+          {
+            "slug": "synthetic-provider",
+            "name": "Synthetic Provider",
+            "models": [
+              "synthetic-planner-v1",
+              "synthetic-planner-v2"
+            ]
+          }
+        ]
+      },
+      "error": null,
+      "outcome": "loaded"
+    },
+    {
+      "sequence": 7,
+      "event": "action:model:change"
+    },
+    {
+      "sequence": 8,
+      "event": "action:editor:save"
+    },
+    {
+      "sequence": 9,
+      "method": "profiles.configure",
+      "params": {
+        "name": "synthetic-planner",
+        "model": "synthetic-planner-v2",
+        "provider": "synthetic-provider"
+      },
+      "request_id": "38",
+      "scope": {
+        "kind": "bot-scoped-websocket",
+        "profile": "synthetic-planner"
+      },
+      "response": {
+        "ok": true,
+        "confirm_required": true,
+        "confirm_message": "Synthetic model cost and data policy require confirmation.",
+        "applied": {
+          "model": false
+        }
+      },
+      "error": null,
+      "outcome": "warning"
+    }
+  ],
+  "saved": {
+    "provider": "synthetic-provider",
+    "default": "synthetic-planner-v1"
+  },
+  "pending": null,
+  "violations": []
+}

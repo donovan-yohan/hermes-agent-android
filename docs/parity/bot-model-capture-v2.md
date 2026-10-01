@@ -1,9 +1,10 @@
-# Future model capture contract v2
+# Model capture contract v2
 
-Status: registered **future-capture contract**, not a completed capture. No existing
-PNG, receipt, fixture implementation, source hash or failed-validation history is
-relabelled. Default dispatch still selects v1. A v2 worker must implement the
-new evidence contract before issuing receipts; changing a fixture ID is not enough.
+Status: **bounded model-editor visual acceptance completed** with 14 Android and
+14 Desktop runtime receipts. [Paired report](../media/bot-model-v2/REPORT.md).
+No existing PNG, receipt, fixture implementation, source hash or failed-validation
+history is relabelled. Default dispatch still selects v1; explicit v2 dispatch now
+uses actual runtime export and proof, not restamped fixture metadata.
 
 Authoritative machine contract:
 `visual-capture-surfaces.json` → `surfaces.bot-model-config.fixture_versions.bot-model-config-synthetic-v2`.
@@ -59,8 +60,9 @@ subartifact is `initial-refusal-notice` with its observed unique locator, labels
 and PNG hash. If the editor closes, also supply `refused-reopened`, independently
 located at exact role dialog `Edit profile`, with its own PNG hash. Never crop the
 full shell and label it a dialog. If native first-refusal notice cannot be captured,
-fail capture; do not substitute a confirmed-retry refusal. This contract makes no
-claim that a particular initial-refusal notice has already been observed.
+fail capture; do not substitute a confirmed-retry refusal. The completed packet
+observes the native initial-refusal alert and separately reopened editor; its
+receipt retains the actual runtime-discovered boundary rather than assuming it.
 
 ## Receipt schema (additional to every unchanged v1 provenance check)
 
@@ -90,8 +92,16 @@ claim that a particular initial-refusal notice has already been observed.
   Profile and pair must match registered inputs. No unrelated title/SOUL mutation.
 - `authoritative_model`: v2 only after saved; otherwise v1.
 - `fields`: visible provider/model pair for read/manual/saved editor captures.
-  Null for confirmation/refusal: the receipt does not infer hidden editor fields
-  from a modal/notice crop. Android inline content remains in retained nodes.
+  Explicit null for confirmation/refusal and **Desktop inventory-loading only**:
+  the receipt must not infer hidden editor fields from a modal/notice crop or spinner.
+  At Desktop pin `587e673e2a2fae0616d8b750bb189217080f621a`,
+  `apps/desktop/src/plugins/hermes-bots/model-picker.tsx:148–153` returns only
+  `GlyphSpinner` while `isLoading`, before either field-rendering branch.
+  Loading still requires original `authoritative_model`, the named initial v1
+  `describe_reads` RPC proof, zero writes, pending scoped inventory and the complete
+  per-PNG request/deadline bracket below. Missing `fields` keys are never accepted;
+  loaded/manual/error/saved editor states require their exact visible pair.
+  Android loading field requirements are unchanged; inline content remains in nodes.
 - `describe_reads`: nonempty ordered `{sequence, profile, model}` objects; initial
   named read must precede writes and contain v1. Saved requires named v2 read after
   apply. Desktop saved also requires `reopen_sequence` strictly between apply and
@@ -131,16 +141,28 @@ test inputs and must never be published as capture results.
 
 ## Visual report
 
-- pending: #194
-- No v2 runtime packet has been produced. The Android driver currently resolves
-  the default v1 fixture even when its CLI receives a v2 ID; its preflight rejects
-  that mismatch. The debug host retains request parameters for tests but exports
-  no runtime RPC response trace, normalized input identity, or pending-request
-  monotonic bracket. Do not restamp a v1 receipt as v2.
+- report: ../media/bot-model-v2/REPORT.md
+- commit: fba060888b21a3ce0c456809f1f464fd0e5938ba
+- Capture commit above is the dirty Android base, not an unchanged commit APK; see report provenance.
+- Desktop packet `model-contract-v2-packet-final` has genuine captures for all
+  seven states in both themes. Its original validation history remains **12 accepted,
+  2 rejected**: loading truthfully reported `fields:null`. Source-backed correction
+  of this validator requirement accepts all **14 unchanged receipts** on revalidation.
+  Dark loading bracket: **1789→2350 ms**; light: **1957→2499 ms**; both stay pending
+  with null response/error, strictly before 20000 ms. All 116 packet files remained
+  byte-identical and all 115 original manifest entries verified. The new sibling
+  `model-contract-v2-revalidation-loading-fix.json` records validator/receipt hashes
+  and fresh CLI results; original `validation.json`, accepted/rejected directories,
+  PNGs, receipts and capture history were not rewritten or moved. This is contract
+  revalidation, not a new capture or visual-parity approval.
+- Android now has 14 fresh v2 receipts with actual allowlisted runtime export,
+  explicit version dispatch, normalized inputs and per-PNG pending brackets.
+  Fixture source bytes and installed/local APK hashes match; original dirty
+  base and runtime patch are retained in the paired report. No v1 restamping.
 
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | Shared confirmation dialog and reopened saved editor | mobile-adaptation | Inline fixture-staged production actions, not recorded Save/consent gestures | State/platform agreement above |
-| Complete runtime v2 capture evidence | omission | Contract registered; runtime proof export and explicit worker dispatch remain unimplemented | deferred: #194 — no v2 visual approval |
+| Wide Advanced editor / native dialogs | mobile-adaptation | Scrollable phone controls and inline staged results preserve bounded model contract without claiming recorded consent gestures | [Paired report](../media/bot-model-v2/REPORT.md); explicit phone viewport and action-origin boundary |

@@ -73,8 +73,9 @@ are allowlisted to one model-only pair and require warning then exact consent;
 success remains pending until named describe readback completes. Regression tests
 hold that readback and inspect method-plus-params traces. The ordered accessibility
 driver and executable instructions are in `docs/workflows/visual-parity-capture.md`.
-New aligned model-editor pixel evidence remains outstanding; this is neither a
-live backend nor a physical/emulator visual acceptance report.
+The completed [v2 paired report](../media/bot-model-v2/REPORT.md) now provides
+aligned emulator/Electron evidence for this bounded editor, not live backend or
+physical-device acceptance.
 
 Fixture follow-up verification (uncommitted working tree based on `65c2bb7`):
 9 focused debug tests passed. Full unfiltered `check assembleDebug --rerun-tasks`
@@ -91,10 +92,17 @@ run, and these counts do not promote the pending visual report to acceptance.
 | Provider/model selects and custom form | mobile-adaptation | Touch menus with bounded height and manual fields; unmatched current values remain visible and unchanged | `BotsModelJourneyTest`; phone touch/viewport budget |
 | Clear model pin via CLI and configure on creation | omission | Reset and new/duplicate model controls remain disabled WIP | coming soon — no bounded reset contract or creation model write is delivered |
 | Skills, toolsets, MCP and avatar authoring | omission | Existing unsupported controls remain WIP; this change does not implement them | coming soon — `BotManagementSheet` |
-| Pinned aligned rendered comparison | omission | Registered Compose interaction evidence, but no new Desktop/Android pixel comparison | deferred: #194 — no full visual parity approval |
+| Wide Advanced editor, shared warning and reopened saved state | mobile-adaptation | Narrow phone editor with inline fixture-staged production results; no recorded Save/consent claim | [Paired v2 report](../media/bot-model-v2/REPORT.md); phone viewport and per-section mutation scope |
 
 ## Visual report
 
-- pending: #194
-- No new aligned rendered report. Historical Bot identity screenshots do not
-  certify this editor's inventory, warning, error or saved states.
+- report: ../media/bot-model-v2/REPORT.md
+- commit: fba060888b21a3ce0c456809f1f464fd0e5938ba
+- Completed bounded model-editor acceptance: 14 Android + 14 Desktop receipts,
+  30 original PNGs. The commit above is the dirty capture base, not a clean
+  publication-commit APK. Original patches, source and APK hashes are retained.
+- Final pre-publication full build receipt: 3,271 debug / 2,594 release tests,
+  zero failures/errors, one skipped each; 166 Python tests. Earlier counts above
+  are historical build stages, not the final gate. No Gradle rerun for publication.
+- Whole-Bot parity, live Gateway and physical-device acceptance remain outside
+  this report; fresh review and exact-head CI remain separate gates.
