@@ -1,8 +1,8 @@
 [
   {
     "path": "REPORT.md",
-    "sha256": "70820528b26d55c89d361f277666239a8fbaf82b43425023d972cc3cef9b485b",
-    "bytes": 10639
+    "sha256": "2b4c933dadb289be117348304ed771da32d890ed4644753d67b11941bccfe5be",
+    "bytes": 10778
   },
   {
     "path": "android/mcp-disabled/dark/contract.json",
@@ -601,8 +601,8 @@
   },
   {
     "path": "provenance.json",
-    "sha256": "cb1bceb95a338a7fa7bdca021d6998b8d2fb4a30d474b44cfc34c7c64f9ad74c",
-    "bytes": 1475
+    "sha256": "d44c9927d839b5ac67c2e7a4ed2b09c17ad18d001128361fc6e0087db0a69ec6",
+    "bytes": 1566
   },
   {
     "path": "runtime-audit.json",
