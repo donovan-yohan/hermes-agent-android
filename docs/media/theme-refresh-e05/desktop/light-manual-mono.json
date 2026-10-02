@@ -1,0 +1,16 @@
+{
+  "source": "e05b16348b1d06a3311237423b0a4fc30d9c5aa1",
+  "fixture": "theme-default-backend-real-v1",
+  "state": "manual-mono",
+  "theme": "mono",
+  "mode": "light",
+  "storedTheme": "mono",
+  "storedMode": "light",
+  "registry": null,
+  "events": [],
+  "requests": [],
+  "responses": [],
+  "body": "SESSIONS\nBOTS\nNew session\nCtrl\nN\nCapabilities\nMessaging\nArtifacts\nScheduled jobs\n\nNo sessions yet\n\nNew project\nNEW SESSION\nGateway\nready\nSmart\nModel\nChat\nAppearance\nGeneral\nTheme\nTypography\nWindow & layout\nChat display\nPet\nWorkspace\nSafety\nBrowser\nPasswords & Logins\nMemory & Context\nVoice\nAdvanced\nNotifications\nBilling\nProviders\nGateways\nKeyboard Shortcuts\nTools & Keys\nSessions\nAbout\nSettings\nAppearance\nTheme\nTheme\nLight\nDark\nSystem\nDesktop palettes only. The selected mode is applied on top.\nMono\nClean grayscale — minimal and focused\nNous\nGitHub chrome, Nous blue accent\nGitHub\nGitHub Light Default and Dark Default\nCatppuccin\nSoothing pastels — Latte and Mocha\nEverforest\nWarm, low-contrast forest greens\nSolarized\nFixed-contrast light and dark\nNous Alt\nGlass neutrals, cream on mission-blue\nMidnight\nDeep blue-violet with cool accents\nEmber\nWarm crimson and bronze — forge vibes\nSlate\nCool slate blue — focused developer theme\nCyberpunk\nNeon green on black — matrix terminal\nSearch\nCtrl\nK",
+  "background": "color-mix(in srgb, #ffffff 92%, #f3f3f3)",
+  "skinCSS": false
+}

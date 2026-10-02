@@ -1,0 +1,22 @@
+[
+  {
+    "receipt": "manual-mono-light.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "manual-mono-dark.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "retired-default-offline-light.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "retired-default-offline-dark.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  }
+]

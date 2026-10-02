@@ -1,0 +1,30 @@
+[
+  {
+    "path": "app/src/debug/AndroidManifest.xml",
+    "sha256": "b24d2938dcd5b6ef7538526f396768e0f9e85f603860880e925f3ec4ca9cc78d"
+  },
+  {
+    "path": "app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt",
+    "sha256": "4e391bae4acdc6105535f8397c7193562910a656e8a831ee3745fb8413a5043a"
+  },
+  {
+    "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/appearance/AppearanceScreen.kt",
+    "sha256": "da6031ffadfe8cc7260daa16ae60c806d3a912148a0ffb1d446aefa5c391395c"
+  },
+  {
+    "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/theme/HermesTheme.kt",
+    "sha256": "e95c5740b9801c202dc9087fd947f0adbe147878f17b6c373eda956622c1a3aa"
+  },
+  {
+    "path": "app/src/main/kotlin/com/hermesagent/mobile/data/prefs/HermesPreferences.kt",
+    "sha256": "8ee1f1aec4b10576577842e1f464e71b01b0f1412c9531d7d85ba01f72a10c44"
+  },
+  {
+    "path": "app/src/main/kotlin/com/hermesagent/mobile/data/connections/ConnectionRegistryCodec.kt",
+    "sha256": "5d769ee1766d084848d531b910ce839d4d909e65067f1d39f2c66506afe1be9d"
+  },
+  {
+    "path": "app/src/main/kotlin/com/hermesagent/mobile/data/themes/BackendSkinSync.kt",
+    "sha256": "2f079ab82fd1f9eae9b40855ed4cecac3b5d657fab9cd3eb9c5257c1771ad5cf"
+  }
+]
