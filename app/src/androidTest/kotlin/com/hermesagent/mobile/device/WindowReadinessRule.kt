@@ -16,7 +16,7 @@ internal class WindowReadinessRule(private val activity: () -> Activity) : TestR
             while (!ready()) {
                 check(SystemClock.uptimeMillis() < deadline) {
                     val originalState = state()
-                    FailureFocusSnapshot.capture(description.className + "#" + description.methodName)
+                    FailureFocusSnapshot.capture(description.className + "#" + description.methodName, activity)
                     "Activity not awake, unlocked and input-focused within " +
                         "${DeviceLane.PLATFORM_TIMEOUT_MILLIS} ms: $originalState"
                 }

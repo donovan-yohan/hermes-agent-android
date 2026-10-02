@@ -1,0 +1,182 @@
+{
+  "android": [
+    {
+      "state": "skills-refused",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-empty",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-pending",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-unconfirmed",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-saved",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-disabled",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-error",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-pending",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-loaded",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-loading",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-loading",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-reopened",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-disabled",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-empty",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-essential",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-saved",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-loaded",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-unavailable",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-reopened",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-essential",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-error",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-unconfirmed",
+      "theme": "dark",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-refused",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    },
+    {
+      "state": "skills-unavailable",
+      "theme": "light",
+      "canonical_receipt_exit": 0,
+      "xml_brackets": 2
+    }
+  ],
+  "loading_deadlines": {
+    "skills-pending--dark": {
+      "basis": "monotonic-before-fixture-launch",
+      "deadline_seconds": 20,
+      "screenshot_start_seconds": 4.237130327994237,
+      "screenshot_end_seconds": 4.605174922995502,
+      "postcheck_seconds": 7.253404463001061
+    },
+    "skills-pending--light": {
+      "basis": "monotonic-before-fixture-launch",
+      "deadline_seconds": 20,
+      "screenshot_start_seconds": 4.231766469005379,
+      "screenshot_end_seconds": 4.6208537990023615,
+      "postcheck_seconds": 7.313117966012214
+    },
+    "skills-loading--light": {
+      "basis": "monotonic-before-fixture-launch",
+      "deadline_seconds": 20,
+      "screenshot_start_seconds": 4.192742412997177,
+      "screenshot_end_seconds": 4.541999056993518,
+      "postcheck_seconds": 7.1732224879960995
+    },
+    "skills-loading--dark": {
+      "basis": "monotonic-before-fixture-launch",
+      "deadline_seconds": 20,
+      "screenshot_start_seconds": 4.27793313699658,
+      "screenshot_end_seconds": 4.624769597998238,
+      "postcheck_seconds": 7.2502667529915925
+    }
+  },
+  "desktop_png_hashes_verified": 14,
+  "desktop_patch_reconstruction_verified": true,
+  "desktop_canonical_acceptance": false,
+  "owned_emulator_shutdown_verified": true
+}

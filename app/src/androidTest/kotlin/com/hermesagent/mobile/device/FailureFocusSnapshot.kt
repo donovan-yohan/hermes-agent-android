@@ -10,7 +10,7 @@ internal object FailureFocusSnapshot {
     // Installed only by the disposable synthetic test; invoked only after nonce gating.
     @Volatile var syntheticIdentityProbe: ((String) -> Unit)? = null
 
-    fun capture(test: String) {
+    fun capture(test: String, activity: (() -> android.app.Activity)? = null) {
         // Diagnostics must never replace the original readiness failure.
         runCatching {
             val args = InstrumentationRegistry.getArguments()
@@ -23,6 +23,24 @@ internal object FailureFocusSnapshot {
             emit("BEGIN test=$test uptime=${SystemClock.uptimeMillis()}")
             // Input FIRST, while the failing Activity is still alive. Only the
             // first FocusedWindows block is current; never retain focus history.
+            fun activityIdentity(phase: String) {
+                runCatching {
+                    activity?.let { getActivity ->
+                        onMain {
+                            val owner = getActivity()
+                            val decor = owner.window.decorView
+                            emit("ACTIVITY_WINDOW_IDENTITY phase=$phase " +
+                                "main=${android.os.Looper.myLooper() == android.os.Looper.getMainLooper()} " +
+                                "component=${owner.componentName.flattenToShortString()} " +
+                                "attached=${decor.isAttachedToWindow} display=${decor.display?.displayId} " +
+                                "windowFocus=${decor.hasWindowFocus()} windowIdFocus=${decor.windowId?.isFocused} " +
+                                "tokenPresent=${decor.windowToken != null} destroyed=${owner.isDestroyed} " +
+                                "uptime=${SystemClock.uptimeMillis()}")
+                        }
+                    }
+                }.onFailure { runCatching { emit("PROBE_ERROR activityIdentity $phase ${it.javaClass.simpleName}") } }
+            }
+            activityIdentity("before")
             identity("before")
             probe("input") { text ->
                 val lines = text.lines()
@@ -32,6 +50,7 @@ internal object FailureFocusSnapshot {
                         it.startsWith("    ") || it.isBlank()
                     }.take(12)
             }
+            activityIdentity("after")
             identity("after")
             probe("activity activities") { text -> text.lines().filter {
                 it.contains("topResumedActivity=") || it.contains("mResumedActivity:") ||

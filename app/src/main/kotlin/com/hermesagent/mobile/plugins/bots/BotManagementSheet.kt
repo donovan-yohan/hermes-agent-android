@@ -38,6 +38,7 @@ fun BotManagementSheet(
     modelState: BotModelState = BotModelState(), modelActions: BotModelActions = BotModelActions(),
     toolsetsState: BotToolsetsState = BotToolsetsState(), toolsetsActions: BotToolsetsActions = BotToolsetsActions(),
     avatarState: BotAvatarState = BotAvatarState(), avatarActions: BotAvatarActions = BotAvatarActions(),
+    skillsState: BotSkillsState = BotSkillsState(), skillsActions: BotSkillsActions = BotSkillsActions(),
 ) {
     val dialog = state.dialog ?: return
     val tokens = HermesTheme.tokens
@@ -93,7 +94,9 @@ fun BotManagementSheet(
                     if (dialog == BotManagementDialog.Edit && toolsetsState.ticket?.target == state.target)
                         BotToolsetsEditor(toolsetsState, toolsetsActions)
                     else ComingSoonAction("Toolsets")
-                    ComingSoonAction("Skills")
+                    if (dialog == BotManagementDialog.Edit && skillsState.ticket?.target == state.target)
+                        BotSkillsEditor(skillsState, skillsActions)
+                    else ComingSoonAction("Skills")
                     ComingSoonAction("MCP servers")
                 }
                 BotManagementDialog.Delete -> {

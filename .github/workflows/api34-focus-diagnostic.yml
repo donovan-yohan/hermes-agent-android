@@ -1,4 +1,4 @@
-name: Disposable API34 synthetic collector deliberate failure
+name: Disposable API34 Skills exact-source normal seven once
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -16,7 +16,7 @@ jobs:
     env:
       ANDROID_SERIAL: emulator-5554
       FOCUS_SYNTHETIC_OPT_IN: b291-failure-only
-      FOCUS_EXPERIMENT: synthetic-collector-only
+      FOCUS_EXPERIMENT: normal-seven-once
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,7 +60,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo 'AVD created; no test preconditioning.'
-      - name: Synthetic collector ONLY - deliberate readiness failure, not recurrence
+      - name: Normal seven FIRST and ONCE - no preconditioning or retry
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 34

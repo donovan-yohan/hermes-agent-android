@@ -32,7 +32,7 @@ class SyntheticCollectorTest(unittest.TestCase):
     def test_actual_decors_probed_on_main_around_input(self):
         from pathlib import Path
         root = Path(__file__).resolve().parents[2]
-        source = (root / 'app/src/androidTest/kotlin/com/hermesagent/mobile/device/SyntheticFocusDenialTest.kt').read_text()
+        source = (root / '.github/diagnostics/SyntheticFocusDenialTest.kt').read_text()
         capture = (root / 'app/src/androidTest/kotlin/com/hermesagent/mobile/device/FailureFocusSnapshot.kt').read_text()
         self.assertIn('val activityDecor = compose.activity.window.decorView', source)
         self.assertIn('val dialogDecor = checkNotNull(dialog.window).decorView', source)
