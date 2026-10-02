@@ -4,6 +4,21 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Configured MCP historical candidate supplement
+
+[Report](bot-configured-mcp-aac3177b/REPORT.md), [paired gallery](bot-configured-mcp-aac3177b/pairs.md),
+[per-file hashes](bot-configured-mcp-aac3177b/files.json) and [runtime audit](bot-configured-mcp-aac3177b/runtime-audit.json):
+26 original API 37 Android captures (13 discovered catalog states × light/dark),
+26 passing canonical-schema receipts and 14 genuine Desktop observations at
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67`. Android candidate
+`aac3177b0cb4b73482d1802d5b407a7bb8f40cfe`, existing/installed APK
+`ffdd9460d1a5236979fb2b0644da0747e6e86d63a3d4bb77e3da37d4ba43766c`.
+No rebuild or source integration. Actual production VM methods over synthetic
+transport are not touch gestures. Desktop uses current Connectors, not the
+fallback checklist; all 14 observational receipts retain canonical rejection.
+Task-owned emulator/display stopped and absence checked; existing devices and
+shared packages untouched. Review pending; no push or parity acceptance claim.
+
 ## Installed Skills supplement
 
 [Recovery report](../parity/captures/installed-skills-4df25613/REPORT.md),

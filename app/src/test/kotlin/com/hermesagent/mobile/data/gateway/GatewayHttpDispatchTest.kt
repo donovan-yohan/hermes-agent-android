@@ -13,7 +13,7 @@ import org.junit.Test
 
 class GatewayHttpDispatchTest {
     @Test fun `guarded transport neither follows redirects nor replays retryable PUT`() = runTest {
-        for (status in listOf(302, 307, 503)) {
+        for (status in listOf(302, 307, 408, 503)) {
             val count = java.util.concurrent.atomic.AtomicInteger()
             val server = java.net.ServerSocket(0, 50, java.net.InetAddress.getByName("127.0.0.1"))
             val worker = Thread {

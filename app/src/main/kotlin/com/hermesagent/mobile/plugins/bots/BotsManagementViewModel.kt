@@ -46,6 +46,7 @@ class BotsManagementViewModel(
     val model = BotsModelViewModel(host, scope, onChanged)
     val toolsets = BotsToolsetsViewModel(host, scope, onChanged)
     val skills = BotsSkillsViewModel(host, scope)
+    val mcp = BotsMcpViewModel(host, scope)
     val avatar = BotsAvatarViewModel(host, scope, onChanged)
     private val repository = BotsManagementRepository(host)
 
@@ -107,6 +108,7 @@ class BotsManagementViewModel(
         model.close()
         toolsets.close()
         skills.close()
+        mcp.close()
         avatar.close()
         revision++
         sectionMembers = emptyList()
@@ -155,6 +157,7 @@ class BotsManagementViewModel(
                 model.open(target)
                 toolsets.open(target)
                 skills.open(target)
+                mcp.open(target)
                 avatar.open(target)
                 val admitted = revision
                 scope.launch {

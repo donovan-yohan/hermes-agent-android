@@ -1,0 +1,282 @@
+[
+  {
+    "platform": "android",
+    "state": "mcp-loaded",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loaded",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-disabled",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-disabled",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-plugin",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-plugin",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unknown",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unknown",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loading",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loading",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-pending",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-pending",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-saved",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-saved",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-reopened",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-reopened",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-error",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-error",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unavailable",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unavailable",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-refused",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-refused",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-empty",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-empty",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unconfirmed",
+    "theme": "light",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unconfirmed",
+    "theme": "dark",
+    "exit_code": 0,
+    "output": "ok    android capture receipt is safe, complete, and catalogued\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "disabled",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "disabled",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "empty",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "empty",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "loading",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "loading",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "pending",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "pending",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "read-refused-settled",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "read-refused-settled",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "reopened",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "reopened",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "saved",
+    "theme": "dark",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "platform": "desktop",
+    "state": "saved",
+    "theme": "light",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  }
+]
