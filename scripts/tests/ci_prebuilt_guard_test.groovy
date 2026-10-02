@@ -1,4 +1,10 @@
 // Execute the actual init script with a minimal Gradle API boundary, no Gradle.
+def loader = new GroovyClassLoader()
+loader.parseClass('''
+package com.android.build.gradle.internal.tasks
+class TestPreBuildTask { String path; boolean enabled = true; List actions = [{}] }
+class Fixture extends TestPreBuildTask {}
+''')
 def check = { String scenario, String expected ->
     def root = new File('/synthetic-checkout')
     def provider = { String name -> new Expando(get: { -> [asFile: new File(root, name)] }) }
@@ -6,8 +12,9 @@ def check = { String scenario, String expected ->
                 testedApksDir: provider('app/build/outputs/apk/debug')]
     def task = [path: ':app:connectedDebugAndroidTest', enabled: true,
                 ignoreFailures: false, testData: new Expando(get: { -> data })]
-    def tasks = [[path: ':app:preBuild', actions: []],
-                 [path: ':app:preDebugAndroidTestBuild', actions: []], task]
+    def comparison = loader.loadClass('com.android.build.gradle.internal.tasks.Fixture').newInstance()
+    comparison.path = ':app:preDebugAndroidTestBuild'
+    def tasks = [[path: ':app:preBuild', actions: []], comparison, task]
     def start = [configurationCacheRequested: false]
     switch (scenario) {
         case 'compile': tasks.add([path: ':app:compileDebugKotlin']); break
@@ -18,7 +25,9 @@ def check = { String scenario, String expected ->
         case 'ignore-failures': task.ignoreFailures = true; break
         case 'cache': start.configurationCacheRequested = true; break
         case 'prebuild-action': tasks[0].actions = [{ -> }]; break
-        case 'variant-action': tasks[1].actions = [{ -> }]; break
+        case 'variant-action': comparison.actions.add({ -> }); break
+        case 'disabled-comparison': comparison.enabled = false; break
+        case 'wrong-comparison': tasks[1] = new Expando(path: comparison.path, actions: [{}], enabled: true); break
         case 'test-dir': data.testApkDir = provider('other-test'); break
         case 'app-dir': data.testedApksDir = provider('other-app'); break
     }
@@ -36,5 +45,6 @@ check('valid', null)
 ['disabled', 'ignore-failures'].each { check(it, 'test execution') }
 check('cache', 'configuration cache')
 ['test-dir', 'app-dir'].each { check(it, 'APK directories') }
-['prebuild-action', 'variant-action'].each { check(it, 'lifecycle actions') }
-println('12 guard scenarios passed')
+check('prebuild-action', 'lifecycle actions')
+['variant-action', 'disabled-comparison', 'wrong-comparison'].each { check(it, 'classpath comparison') }
+println('14 guard scenarios passed')

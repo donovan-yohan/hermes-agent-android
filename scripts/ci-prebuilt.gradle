@@ -11,10 +11,17 @@ gradle.taskGraph.whenReady { graph ->
         throw new IllegalStateException('unexpected prebuilt task graph: ' +
             graph.allTasks.collect { it.path }.join(', '))
     }
-    // Keep lifecycle dependencies, rather than exclude a hook that could gain
-    // a verification gate later. Only their proven no-action shape is safe.
-    if (graph.allTasks.take(2).any { !it.actions.empty }) {
+    // Keep the no-action root hook and AGP's classpath-version verification.
+    // TestPreBuildTask/ClasspathComparisonTask only compares dependency maps;
+    // it is NOT a compiler. Never exclude it to make this guard pass.
+    if (!graph.allTasks[0].actions.empty) {
         throw new IllegalStateException('unexpected prebuilt lifecycle actions')
+    }
+    def comparison = graph.allTasks[1]
+    if (comparison.class.superclass.name !=
+            'com.android.build.gradle.internal.tasks.TestPreBuildTask' ||
+        comparison.actions.size() != 1 || !comparison.enabled) {
+        throw new IllegalStateException('unexpected prebuilt classpath comparison')
     }
     def task = graph.allTasks[2]
     if (!task.enabled || task.ignoreFailures) {
@@ -30,5 +37,5 @@ gradle.taskGraph.whenReady { graph ->
             new File(root, 'app/build/outputs/apk/debug').canonicalFile) {
         throw new IllegalStateException('prebuilt APK directories mismatch')
     }
-    println('Prebuilt task graph verified: connected tests + two actionless lifecycle tasks')
+    println('Prebuilt task graph verified: connected tests + classpath check + actionless root')
 }
