@@ -97,6 +97,32 @@ Rendered light/dark/phone/wide comparison of the default reset remains pending
 under the appearance ledger's existing #292 gate. No new visual parity or live
 Gateway compatibility claim is made.
 
+## Completed Gradle validation — 2026-10-02
+
+Validated implementation `9bbdca7b3700c1109a83b2934fc8a6f819d10efb` after the
+previous lane owner released Gradle. Both commands above used
+`--max-workers=1 --no-parallel -Pkotlin.compiler.execution.strategy=in-process
+-Dorg.gradle.jvmargs="-Xmx6g -Dfile.encoding=UTF-8" --no-daemon` and
+`ANDROID_HOME=/opt/android-sdk`.
+
+- Focused handoff classes: **96 tests, zero failures/errors/skips**.
+- Full debug: **3,335 tests, zero failures/errors, one skipped**.
+- Full release: **2,643 tests, zero failures/errors, one skipped**.
+- `check :app:assembleDebug`: **BUILD SUCCESSFUL**, including lint and repository
+  invariant gates. The initial foreground tool invocation timed out after 420s;
+  no Gradle process remained. The same command completed on a tracked retry.
+- No implementation or test changes were needed; this follow-up changes evidence
+  documentation only and preserves the review's pending visual gate.
+- APK: `app/build/outputs/apk/debug/app-debug.apk`, 24,583,321 bytes.
+- APK SHA-256: `5e8584f1d2398931e7c5bd7b5aa4f9629cd70415b75169959967aaa61bad8758`.
+
+Focused XML counts were saved before the full suite replaced the report. Local
+logs and count snapshots are in the active profile's scratch directory:
+`e05-focused-gradle.log`, `e05-focused-results.json`,
+`e05-check-assemble.log`, `e05-check-assemble-retry.log`, and
+`e05-full-results.json`. Desktop capture was not touched. This is build/test
+validation, not physical-device or rendered parity acceptance.
+
 ## Explicit pending upstream checklist (not implemented here)
 
 - [ ] Truncated replay: discard incomplete catch-up, advance watermark and resync

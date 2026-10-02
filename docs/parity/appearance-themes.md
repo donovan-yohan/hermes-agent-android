@@ -87,8 +87,11 @@ Builtin identity is unchanged: the inventory gate discovered 11 matching entries
 
 Tests: `GatewayThemeParserTest`, `BackendSkinSyncTest`, `AppearanceThemeResolverTest`
 and the added legacy-choice case in `HermesPreferencesTest`. The standalone JVM
-subset is green; the preference/Compose integration and full Android build remain
-unverified until the Skills worker releases the Gradle lane. See the
+subset and subsequent Android Gradle validation are green at `9bbdca7b`: all 96
+focused tests passed; full debug/release suites reported 3,335/2,643 tests with
+zero failures or errors and one skipped in each. `check :app:assembleDebug`
+passed with one worker, no parallel execution, and in-process Kotlin compilation.
+This does not replace the pending rendered comparison. See the
 [scoped refresh audit](../spikes/upstream-theme-refresh-e05b1634-2026-10-01.md).
 
 Visual comparison remains **pending: #292**, including the retired-default reset
