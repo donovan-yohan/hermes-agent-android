@@ -67,6 +67,11 @@ real Bot roster state rather than a placeholder row.
 
 ## Visual report
 
+[Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
+contains synthetic production-Compose window draws and the main-vs-fixed test
+results. It supplements, and does not discharge, the paired/device obligation.
+
+
 - pending: #71
 
 A genuine mono Desktop shell reference has been captured from the disposable

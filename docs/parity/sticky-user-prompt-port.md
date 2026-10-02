@@ -95,6 +95,11 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 
 ## Visual report
 
+[Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
+contains synthetic production-Compose window draws and the main-vs-fixed test
+results. It supplements, and does not discharge, the paired/device obligation.
+
+
 - pending: #72
 
 `StickyPromptParityActivity` is a debug-manifest-only sanitized two-turn visual
