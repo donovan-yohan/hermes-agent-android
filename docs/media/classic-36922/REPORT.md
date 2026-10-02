@@ -148,6 +148,37 @@ and Android system time are observational inputs, not deterministic fixture data
 The same theme/actions are reproducible; byte-identical whole-screen output is
 not promised. #292 remains pending. Historical e05/older evidence is unchanged.
 
+## Independent publication review
+
+Reviewed capture commit `ae0ef705a54c72418f15128ef46eced5c94b94e1` without
+production edits or local Gradle execution. All eight published PNGs match the
+retained originals byte-for-byte; image dimensions, PNG and receipt hashes match
+the artifact index. Direct visual inspection confirms the stated selection,
+clipping, palette and differing connection contexts, with no private content.
+Both complete source manifests were independently compared against immutable
+Git archives: 1,595 Android and 17,051 Desktop entries matched. The Desktop
+fixture patch reconstructed its published SHA-256 in a fresh initialized export.
+The existing local APK independently hashes to the exact digest above. Installed
+APK identity and device teardown remain historical capture evidence, not a new
+installation or device inspection during review.
+
+All eight canonical receipt checks again rejected the observations with the
+recorded provenance error. The repository static gate passed, including 191
+Python tests, product-copy/evidence checks and pin-citation range
+`5477daf0..ae0ef705` (25 citations proved, 145 retained on their own pin;
+266 unattributable spans are not citation proofs). Initial pin checks could not
+read an uncached upstream blob; after that blob was available, the complete gate
+passed. The theme registry checker matched all 12 presets against the verified
+Desktop export. Whitespace and added-content privacy scans passed.
+
+Existing unit-test XML reports for the approved production snapshot contain
+3,405 debug and 2,708 release tests, zero failures/errors and one skipped test
+per variant. These are historical results, not a fresh exact-publication-head
+Gradle run. Fresh remote CI is a separate publication gate. Review approves
+publication of this bounded observational evidence, not full parity; #292
+remains pending and the overall ceiling remains Concern.
+
 See the [appearance ledger](../../parity/appearance-themes.md) and
-[capture index](../CAPTURE.md). Documentation-only local commit; no push or issue
-mutation.
+[capture index](../CAPTURE.md). The original capture was committed locally
+without a push or issue mutation; this review authorizes PR publication only,
+not merge or issue completion.

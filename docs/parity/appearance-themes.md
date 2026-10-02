@@ -137,4 +137,5 @@ validator rejection. Android disconnected and Desktop synthetic Gateway-ready
 screens are appearance references, not identical session states. Backend
 seed/apply/repeat and matched phone/wide viewport coverage remain **pending: #292**.
 The existing e05 report is unchanged historical evidence, not evidence for Classic.
-Independent review is still required; ceiling remains **Concern**.
+Independent review verified the bounded observational packet and its immutable
+artifacts; full parity remains unverified and the ceiling remains **Concern**.
