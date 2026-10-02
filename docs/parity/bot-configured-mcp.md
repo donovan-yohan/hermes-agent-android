@@ -61,7 +61,7 @@ Inspected actual target source, not the historical staged checklist:
 
 ## Visual report
 
-- pending independent acceptance review: #194
+- pending: #194 — independent acceptance review remains outstanding.
 
 [Historical candidate capture](../media/bot-configured-mcp-aac3177b/REPORT.md)
 now provides 26 Android state/theme receipts from candidate `aac3177b` and 14
@@ -73,7 +73,11 @@ write/readback adaptation is explicitly distinguished from Desktop whole-map
 persistence, reload send and synthetic probe. No live Gateway, physical phone,
 TalkBack speech, full on-device registered-route journey, or cross-platform
 visual equivalence is certified. Main Classic integration was deliberately
-excluded; the current ceiling remains Concern until independent review.
+excluded from that historical capture. The branch now includes main
+`c5a5524c60b551e21cd3a2041a4fd29d67b97611` through a history-preserving merge;
+this does not change the captured source/APK pins or certify new pixels.
+The current ceiling remains Concern until independent review. Draft publication
+is for review only, not evidence acceptance.
 
 ## Deterministic fixture and evidence boundary
 
