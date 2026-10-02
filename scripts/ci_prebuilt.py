@@ -37,8 +37,8 @@ def verify(root):
 def run(root, *, preflight):
     # AGP 8.13.2 connected inputs: APK directories/listings, test classes and R.
     # Exclude their canonical producers, not arbitrary graph tasks. The init
-    # guard rejects any remaining task (including a newly added verification
-    # dependency); it NEVER disables tasks or ignores failures.
+    # guard rejects extra tasks or lifecycle actions (including a newly added
+    # verification dependency); it NEVER disables tasks or ignores failures.
     producers = ('packageDebug', 'packageDebugAndroidTest',
                  'createDebugApkListingFileRedirect',
                  'createDebugAndroidTestApkListingFileRedirect',

@@ -86,7 +86,7 @@ class IdentityTest(unittest.TestCase):
 
     def test_preflight_and_connected_use_same_guard_without_cache(self):
         self.assertTrue(hasattr(self.gate, 'run'), 'connected wrapper missing')
-        with patch.object(self.gate.subprocess, 'run') as run:
+        with patch.object(self.gate.subprocess, 'run') as run, patch('builtins.print'):
             self.gate.run(self.root, preflight=True)
             first = run.call_args.args[0]
             self.gate.run(self.root, preflight=False)

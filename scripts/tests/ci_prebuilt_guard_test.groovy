@@ -6,7 +6,8 @@ def check = { String scenario, String expected ->
                 testedApksDir: provider('app/build/outputs/apk/debug')]
     def task = [path: ':app:connectedDebugAndroidTest', enabled: true,
                 ignoreFailures: false, testData: new Expando(get: { -> data })]
-    def tasks = [task]
+    def tasks = [[path: ':app:preBuild', actions: []],
+                 [path: ':app:preDebugAndroidTestBuild', actions: []], task]
     def start = [configurationCacheRequested: false]
     switch (scenario) {
         case 'compile': tasks.add([path: ':app:compileDebugKotlin']); break
@@ -16,6 +17,8 @@ def check = { String scenario, String expected ->
         case 'disabled': task.enabled = false; break
         case 'ignore-failures': task.ignoreFailures = true; break
         case 'cache': start.configurationCacheRequested = true; break
+        case 'prebuild-action': tasks[0].actions = [{ -> }]; break
+        case 'variant-action': tasks[1].actions = [{ -> }]; break
         case 'test-dir': data.testApkDir = provider('other-test'); break
         case 'app-dir': data.testedApksDir = provider('other-app'); break
     }
@@ -33,4 +36,5 @@ check('valid', null)
 ['disabled', 'ignore-failures'].each { check(it, 'test execution') }
 check('cache', 'configuration cache')
 ['test-dir', 'app-dir'].each { check(it, 'APK directories') }
-println('10 guard scenarios passed')
+['prebuild-action', 'variant-action'].each { check(it, 'lifecycle actions') }
+println('12 guard scenarios passed')

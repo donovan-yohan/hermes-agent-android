@@ -5,11 +5,18 @@ if (gradle.startParameter.configurationCacheRequested) {
     throw new IllegalStateException('prebuilt guard requires configuration cache disabled')
 }
 gradle.taskGraph.whenReady { graph ->
-    if (graph.allTasks.collect { it.path } != [':app:connectedDebugAndroidTest']) {
+    def expected = [':app:preBuild', ':app:preDebugAndroidTestBuild',
+                    ':app:connectedDebugAndroidTest']
+    if (graph.allTasks.collect { it.path } != expected) {
         throw new IllegalStateException('unexpected prebuilt task graph: ' +
             graph.allTasks.collect { it.path }.join(', '))
     }
-    def task = graph.allTasks[0]
+    // Keep lifecycle dependencies, rather than exclude a hook that could gain
+    // a verification gate later. Only their proven no-action shape is safe.
+    if (graph.allTasks.take(2).any { !it.actions.empty }) {
+        throw new IllegalStateException('unexpected prebuilt lifecycle actions')
+    }
+    def task = graph.allTasks[2]
     if (!task.enabled || task.ignoreFailures) {
         throw new IllegalStateException('prebuilt guard requires real test execution')
     }
@@ -23,5 +30,5 @@ gradle.taskGraph.whenReady { graph ->
             new File(root, 'app/build/outputs/apk/debug').canonicalFile) {
         throw new IllegalStateException('prebuilt APK directories mismatch')
     }
-    println('Prebuilt task graph verified: :app:connectedDebugAndroidTest only')
+    println('Prebuilt task graph verified: connected tests + two actionless lifecycle tasks')
 }
