@@ -143,10 +143,12 @@ internal class OkHttpGatewayHttp(
             ?.build()
             ?: return GatewayHttpResult.Rejected(0, MALFORMED_REQUEST_MESSAGE)
         val scoped = http.newBuilder()
+            // Connection-owned credentials may include custom token headers;
+            // OkHttp only strips Authorization on cross-origin redirects.
+            .followRedirects(false)
+            .followSslRedirects(false)
             .apply {
                 if (dispatch != null) {
-                    followRedirects(false)
-                    followSslRedirects(false)
                     retryOnConnectionFailure(false)
                     authenticator(okhttp3.Authenticator.NONE)
                     proxyAuthenticator(okhttp3.Authenticator.NONE)

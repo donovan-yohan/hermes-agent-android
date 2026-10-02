@@ -144,6 +144,138 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `cron refusal does not restore a draft the user cleared during admission`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        repository.submitGate = CompletableDeferred()
+        repository.failSubmit = true
+        viewModel.setDraft("discard me")
+        viewModel.submit()
+        runCurrent()
+        viewModel.setDraft("")
+        runCurrent()
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+        assertEquals("", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cron duplicate tap cannot claim an attachment added while admission waits`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        repository.submitGate = CompletableDeferred()
+        viewModel.setDraft("pending text")
+        viewModel.submit()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "synthetic file".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/cron-note", "notes.txt", "text/plain")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
+        assertEquals(1, repository.submitAttempts)
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `cron acceptance never clears a replacement profiles same id draft`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        repository.submitGate = CompletableDeferred()
+        viewModel.setDraft("same draft")
+        viewModel.submit()
+        runCurrent()
+        val submission = requireNotNull(repository.lastSubmitJob)
+        assertFalse(submission.isCompleted)
+        assertTrue(repository.submitted.isEmpty())
+        viewModel.selectSession("session-b")
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "other"))
+        viewModel.selectSession(id)
+        runCurrent()
+        viewModel.setDraft("same draft")
+        runCurrent()
+        assertEquals(id, viewModel.uiState.value.activeSessionId)
+        assertEquals("other", cache.session(id)?.remoteProfile)
+        assertEquals("same draft", viewModel.uiState.value.draft)
+        repository.submitGate!!.complete(Unit)
+        submission.join()
+        runCurrent()
+        assertFalse(submission.isCancelled)
+        assertEquals(listOf(id to "same draft"), repository.submitted)
+        assertEquals("same draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cron view only open explains admission instead of loading a writable composer`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        repository.readOnlyReason = "This scheduled run is view-only. Start a new chat to continue."
+        viewModel.selectSession(id)
+        runCurrent()
+        assertEquals(repository.readOnlyReason, viewModel.uiState.value.notice?.text)
+    }
+
+    @Test
+    fun `cron UI selection carries leases revoked by ABA navigation`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        val open = repository.lastOpenLease
+        assertNotNull(open)
+        assertTrue(open!!.dispatch { true })
+        repository.submitGate = CompletableDeferred()
+        viewModel.setDraft("keep draft")
+        viewModel.submit()
+        runCurrent()
+        val send = repository.lastSubmitLease
+        assertNotNull(send)
+        viewModel.selectSession("session-b")
+        viewModel.selectSession(id)
+        assertFalse(open.dispatch { true })
+        assertFalse(send!!.dispatch { true })
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `cron admission keeps draft visible while pending and after refusal`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        viewModel.setDraft("keep this exact draft")
+        repository.submitGate = CompletableDeferred()
+        repository.failSubmit = true
+        viewModel.submit()
+        runCurrent()
+        assertEquals("keep this exact draft", viewModel.uiState.value.draft)
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+        assertEquals("keep this exact draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
     fun `gateway logs missing live transport reports failure instead of ignoring action`() = runTest(dispatcher) {
         val vm = ChatViewModel(cache, repository, clock = { CLOCK }, gatewayHttp = { null })
         cache.setTranscript("session-a", listOf(AssistantTurn("failed", "", CLOCK, error = "failed")))
@@ -3558,6 +3690,7 @@ class ChatViewModelTest {
         /** A specific refusal, for the failures whose *kind* is what is under test. */
         var submitFailure: Throwable? = null
         var submitGate: CompletableDeferred<Unit>? = null
+        var lastSubmitJob: kotlinx.coroutines.Job? = null
         var submitAttempts = 0
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
         var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
@@ -3701,8 +3834,13 @@ class ChatViewModelTest {
          * make one session's `session.resume` land after another selection.
          */
         val openGates = mutableMapOf<String, CompletableDeferred<Unit>>()
+        var readOnlyReason: String? = null
+        override fun sessionReadOnlyReason(durableId: String): String? = readOnlyReason
+        var lastOpenLease: com.hermesagent.mobile.data.gateway.SessionSelectionLease? = null
+        var lastSubmitLease: com.hermesagent.mobile.data.gateway.SessionSelectionLease? = null
 
         override suspend fun openSession(durableId: String): String {
+            lastOpenLease = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.SessionSelectionLease]
             opened += durableId
             openGates[durableId]?.await()
             transcriptOnOpen?.let { cache.setTranscript(durableId, it) }
@@ -3804,6 +3942,8 @@ class ChatViewModelTest {
             queued: Boolean,
             attachments: List<OutgoingAttachment>,
         ): GatewaySubmitOutcome {
+            lastSubmitLease = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.SessionSelectionLease]
+            lastSubmitJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             submitAttempts += 1
             submitGate?.await()
             submitFailure?.let { throw it }
