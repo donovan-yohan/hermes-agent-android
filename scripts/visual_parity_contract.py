@@ -185,7 +185,7 @@ def validate_receipt(receipt: dict[str, Any], platform: str) -> None:
         labels = accessibility_labels(evidence)
         if expected and (evidence.get("expected_description") != expected or expected not in labels):
             raise ValueError("Android receipt lacks catalogued post-interaction accessibility state")
-        if receipt["state"] in ("bot-model-inventory-loading", "bot-avatar-loading", "skills-loading", "skills-pending"):
+        if receipt["state"] in ("bot-model-inventory-loading", "bot-avatar-loading", "skills-loading", "skills-pending", "mcp-loading", "mcp-pending"):
             deadline = 60 if receipt["state"] == "bot-avatar-loading" else 20
             bracket = receipt.get("screenshot_bracket")
             if not isinstance(bracket, dict):

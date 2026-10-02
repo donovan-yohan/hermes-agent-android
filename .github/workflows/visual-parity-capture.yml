@@ -11,12 +11,25 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [bot-installed-skills, composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, bot-management, bot-model-config, bot-avatar-editor, bot-steer, notification-latest]
+        options: [bot-configured-mcp, bot-installed-skills, composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, bot-management, bot-model-config, bot-avatar-editor, bot-steer, notification-latest]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true
         type: choice
         options:
+          - mcp-loaded
+          - mcp-disabled
+          - mcp-plugin
+          - mcp-unknown
+          - mcp-loading
+          - mcp-pending
+          - mcp-saved
+          - mcp-reopened
+          - mcp-error
+          - mcp-unavailable
+          - mcp-refused
+          - mcp-empty
+          - mcp-unconfirmed
           - skills-loaded
           - skills-disabled
           - skills-loading

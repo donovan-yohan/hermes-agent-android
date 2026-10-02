@@ -39,6 +39,7 @@ fun BotManagementSheet(
     toolsetsState: BotToolsetsState = BotToolsetsState(), toolsetsActions: BotToolsetsActions = BotToolsetsActions(),
     avatarState: BotAvatarState = BotAvatarState(), avatarActions: BotAvatarActions = BotAvatarActions(),
     skillsState: BotSkillsState = BotSkillsState(), skillsActions: BotSkillsActions = BotSkillsActions(),
+    mcpState: BotMcpState = BotMcpState(), mcpActions: BotMcpActions = BotMcpActions(),
 ) {
     val dialog = state.dialog ?: return
     val tokens = HermesTheme.tokens
@@ -97,7 +98,9 @@ fun BotManagementSheet(
                     if (dialog == BotManagementDialog.Edit && skillsState.ticket?.target == state.target)
                         BotSkillsEditor(skillsState, skillsActions)
                     else ComingSoonAction("Skills")
-                    ComingSoonAction("MCP servers")
+                    if (dialog == BotManagementDialog.Edit && mcpState.ticket?.target == state.target)
+                        BotMcpEditor(mcpState, mcpActions)
+                    else ComingSoonAction("MCP servers")
                 }
                 BotManagementDialog.Delete -> {
                     Text("Permanently delete ${state.target?.name.orEmpty()} and its profile data? This cannot be undone.",

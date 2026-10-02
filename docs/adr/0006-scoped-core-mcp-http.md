@@ -1,6 +1,8 @@
 # ADR 0006 — Typed, revocable MCP selection HTTP capability
 
-**Status:** host foundation only; no UI or deployment certification.
+**Status:** accepted host foundation; no deployment certification.
+The subsequent [configured MCP editor](../parity/bot-configured-mcp.md) consumes
+this unchanged door; its independent visual acceptance remains pending.
 **Authority:** `NousResearch/hermes-agent` at
 `36922ad064d65dcf25f8f48df81e1ccf9a55de67`. `36922` is a short Git SHA, **not a port**.
 **Mobile base:** `5477daf02af33bccd6f614b0394458c1c9d427ca`.
