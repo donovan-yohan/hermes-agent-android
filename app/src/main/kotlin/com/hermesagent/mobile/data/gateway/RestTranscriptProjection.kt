@@ -52,6 +52,11 @@ import kotlinx.serialization.json.longOrNull
  *   An unrecognised kind keeps the row and its role, with the metadata left
  *   off, exactly as before: nothing reads a kind this app has no row for, and
  *   forwarding it would invite a future renderer to trust a shape no test pins.
+ * - Persisted interruption and validated `failed_turn` error metadata also
+ *   survive projection, including blank terminal boundaries. This extension is
+ *   from `apps/desktop/src/lib/chat-messages/hydration.ts:180-208,223-224,580-613`
+ *   @ `e05b16348b1d06a3311237423b0a4fc30d9c5aa1`; it does not update the
+ *   historical projection pins above. Synthetic error cards have no row address.
  */
 internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject> {
     val projected = mutableListOf<JsonObject>()
@@ -103,7 +108,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             // every row that made no call. Reading the key's presence would drop every
             // reasoning-only assistant turn — the row upstream keeps deliberately
             // ten lines below (`server.py:9770-9787`).
-            if ((row["tool_calls"] as? JsonArray)?.isNotEmpty() == true && text.isBlank()) continue
+            if ((row["tool_calls"] as? JsonArray)?.isNotEmpty() == true && text.isBlank() &&
+                row.persistedTurnFailure() == null && !row.persistedInterrupted()
+            ) continue
         }
 
         if (role == "tool") {
@@ -133,7 +140,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
         val reasoning = REASONING_KEYS.filter { key ->
             role == "assistant" && row[key]?.takeUnless { it is JsonNull } != null
         }
-        if (text.isBlank() && reasoning.isEmpty()) continue
+        val failedTurn = row.persistedTurnFailure() != null
+        val interrupted = role == "assistant" && row.persistedInterrupted()
+        if (text.isBlank() && reasoning.isEmpty() && !failedTurn && !interrupted) continue
 
         // The typed display metadata a timeline row is classified by. Forwarded
         // whole — object or JSON text — because the shared parser is the one
@@ -151,8 +160,9 @@ internal fun projectRestTranscriptRows(rows: List<JsonObject>): List<JsonObject>
             row["timestamp"]?.takeUnless { it is JsonNull }?.let { put("timestamp", it) }
             row.rowIdPrimitive()?.let { put("row_id", it) }
             reasoning.forEach { key -> row[key]?.let { put(key, it) } }
-            timelineKind?.let { kind ->
-                put("display_kind", JsonPrimitive(kind.wireName))
+            timelineKind?.let { kind -> put("display_kind", JsonPrimitive(kind.wireName)) }
+            if (failedTurn) put("display_kind", JsonPrimitive("failed_turn"))
+            if (timelineKind != null || failedTurn || interrupted) {
                 row["display_metadata"]?.takeUnless { it is JsonNull }?.let { put("display_metadata", it) }
             }
         }

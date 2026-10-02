@@ -1537,6 +1537,32 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `bot completion while correction waits preserves draft on terminal rejection`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        for (action in listOf(viewModel::redirectDraftFromUi, viewModel::steerDraftFromUi)) {
+            cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Working))
+            runCurrent()
+            val release = CompletableDeferred<Unit>()
+            repository.botRedirectGate = release
+            repository.redirectOutcome = GatewayRedirectOutcome.Rejected
+            repository.steerOutcome = com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected
+            viewModel.setDraft("keep unsent correction")
+            action()
+            runCurrent()
+            cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Idle))
+            release.complete(Unit)
+            runCurrent()
+            assertEquals("keep unsent correction", viewModel.uiState.value.draft)
+            assertTrue(repository.submitted.isEmpty())
+            assertTrue(cache.transcript("bot-chat").isEmpty())
+        }
+    }
+
+    @Test
     fun `held steer acknowledgement preserves replacement draft`() = runTest(dispatcher) {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()

@@ -5,6 +5,20 @@ This attempt remains unchanged below. A subsequent authorized separate-emulator
 state/theme receipts and 14 Desktop semantic pairings without replacing this
 emulator's shared package. It does not retroactively change this attempt's result.
 
+## Visual report
+
+- Historical attempt: blocked before capture; no visual acceptance is claimed.
+- Subsequent [recovery report](captures/installed-skills-4df25613/REPORT.md) and
+  [rendered comparison](captures/installed-skills-4df25613/comparison.html) retain
+  their separate source and artifact identities and evidence limitations.
+- pending: #194
+
+## Divergences
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Installed Skills visual acceptance | omission | This historical attempt produced no Android receipts because installed APK bytes did not match the requested artifact | deferred: #194 — Artifact identity gate and evidence accounting below; subsequent recovery is separate, not retroactive acceptance |
+
 ## Artifact identity gate
 
 - Requested Android source: `4df256139b8d2bf03f903516152e299cd9949aa5`.
