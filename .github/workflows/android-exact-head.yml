@@ -134,12 +134,18 @@ jobs:
           # still passes a byte-true move even when this range moves no pin at
           # all — including when the base is missing and the range check cannot
           # run.
+          python3 scripts/test_pin_citation_bounds.py
           python3 scripts/verify-pin-citations.py --self-test
-          # A force-push to a rewritten root, or a branch's first push, leaves a
-          # `before` this checkout does not have; there is no range to check.
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            echo "::notice::base ${BASE_SHA} is not in this checkout; no range to check."
-            exit 0
+          # A missing base or a stalled probe cannot prove the range. Fail closed.
+          status=0
+          GIT_ALLOW_PROTOCOL= GIT_NO_LAZY_FETCH=1 timeout --kill-after=1s 30s git -c protocol.allow=never \
+            cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || status=$?
+          if [[ "$status" == 124 || "$status" == 137 ]]; then
+            echo "::error::git stage=base-probe timed out; citation check incomplete"
+            exit 3
+          elif [[ "$status" != 0 ]]; then
+            echo "::error::base revision unavailable; citation check incomplete"
+            exit 3
           fi
           # On a pull request the base is the tip of the target branch, which may
           # have advanced past this branch's fork point. Two-dot against that tip
@@ -152,7 +158,12 @@ jobs:
             range="${BASE_SHA}..${HEAD_SHA}"
           fi
           upstream="$RUNNER_TEMP/hermes-agent-upstream"
-          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream"
+          echo "git stage=upstream-clone started (limit 60s)"
+          GIT_TERMINAL_PROMPT=0 timeout --kill-after=1s 60s git clone --quiet \
+            --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {
+              echo "::error::git stage=upstream-clone failed or timed out (60s); citation check incomplete"
+              exit 3
+            }
           python3 scripts/verify-pin-citations.py \
             --check-range "$range" \
             --upstream "$upstream" --fetch
