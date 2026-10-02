@@ -22,6 +22,22 @@ class SyntheticCollectorTest(unittest.TestCase):
                       'FocusSnapshot: SYNTHETIC BEFORE_DIALOG_DISMISS frames=13 lifecycle=RESUMED destroyed=false attached=true focus=false',
                       'FocusSnapshot: SYNTHETIC LIFECYCLE ON_DESTROY']
 
+    def test_native_dialog_is_named_before_input_channel_creation(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[2] /
+                  'app/src/androidTest/kotlin/com/hermesagent/mobile/device/SyntheticFocusDenialTest.kt').read_text()
+        self.assertLess(source.index('setTitle("PR344_SYNTHETIC_FOCUS_DENIAL")'),
+                        source.index('                        show()'))
+
+    def test_no_optional_dependency_receipt_required(self):
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / '.github/workflows/api34-focus-diagnostic.yml').read_text()
+        self.assertNotIn('diagnosticResolvedVersions', workflow)
+        self.assertNotIn('api34-resolved-versions.txt', workflow)
+        self.assertFalse((root / '.github/diagnostics/resolved-versions.init.gradle').exists())
+        self.assertTrue(verify(self.result, self.lines))
+
     def test_expected_deliberate_failure(self):
         self.assertTrue(verify(self.result, self.lines))
 

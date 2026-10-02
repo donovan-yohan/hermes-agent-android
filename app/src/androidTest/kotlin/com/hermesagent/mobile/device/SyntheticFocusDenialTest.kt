@@ -49,8 +49,10 @@ class SyntheticFocusDenialTest {
                     Dialog(owner).apply {
                         setCancelable(false)
                         setContentView(TextView(owner).apply { text = "Synthetic focus denial" })
-                        show()
+                        // InputDispatcher names the input channel when the window is added.
+                        // A title changed after show() leaves that original channel name intact.
                         checkNotNull(window).setTitle("PR344_SYNTHETIC_FOCUS_DENIAL")
+                        show()
                     }
                 }
                 try {
