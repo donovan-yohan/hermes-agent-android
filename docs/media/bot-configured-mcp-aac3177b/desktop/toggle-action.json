@@ -1,0 +1,71 @@
+{
+  "origin": "Playwright real switch click",
+  "before": "- switch \"Turn Synthetic Research on\"",
+  "bounds": {
+    "x": 1093.5,
+    "y": 380.90625,
+    "width": 28,
+    "height": 16
+  },
+  "transportBefore": {
+    "probe": {
+      "scenario": "disabled",
+      "log": [
+        {
+          "request": {
+            "profile": "synthetic-mcp",
+            "connectionId": "local",
+            "priority": "foreground",
+            "path": "/api/config"
+          },
+          "phase": "read",
+          "at": 1790931288375,
+          "result": {
+            "mcp_servers": {
+              "synthetic-research": {
+                "command": "synthetic-mcp-command",
+                "args": [
+                  "--synthetic"
+                ],
+                "enabled": false
+              },
+              "synthetic-notes": {
+                "url": "https://example.invalid/mcp",
+                "enabled": false
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "profile": "synthetic-mcp",
+            "connectionId": "local",
+            "priority": "foreground",
+            "path": "/api/mcp/catalog"
+          },
+          "phase": "read",
+          "at": 1790931288376,
+          "result": {
+            "entries": []
+          }
+        }
+      ],
+      "pendingReads": 0,
+      "pendingWrites": 0,
+      "servers": {
+        "synthetic-research": {
+          "command": "synthetic-mcp-command",
+          "args": [
+            "--synthetic"
+          ],
+          "enabled": false
+        },
+        "synthetic-notes": {
+          "url": "https://example.invalid/mcp",
+          "enabled": false
+        }
+      }
+    },
+    "rpc": []
+  }
+}

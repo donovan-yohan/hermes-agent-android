@@ -61,12 +61,19 @@ Inspected actual target source, not the historical staged checklist:
 
 ## Visual report
 
-- pending: #194
+- pending independent acceptance review: #194
 
-Independent review and native Desktop/Android light/dark capture are a later
-acceptance step, as requested. No pixels, installed-device behavior, TalkBack
-speech, or live Gateway mutation is certified by this implementation.
-The current ceiling is Concern until that evidence is reviewed.
+[Historical candidate capture](../media/bot-configured-mcp-aac3177b/REPORT.md)
+now provides 26 Android state/theme receipts from candidate `aac3177b` and 14
+actual current Desktop Connectors observations at the exact pin above, with
+[paired originals](../media/bot-configured-mcp-aac3177b/pairs.md), before/after
+runtime telemetry, source manifests and APK hashes. Android canonical-schema
+validation passes; Desktop observations remain noncanonical. The bounded named
+write/readback adaptation is explicitly distinguished from Desktop whole-map
+persistence, reload send and synthetic probe. No live Gateway, physical phone,
+TalkBack speech, full on-device registered-route journey, or cross-platform
+visual equivalence is certified. Main Classic integration was deliberately
+excluded; the current ceiling remains Concern until independent review.
 
 ## Deterministic fixture and evidence boundary
 

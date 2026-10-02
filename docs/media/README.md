@@ -21,6 +21,14 @@ Screenshots are PNG at the device's native resolution. Demos are recorded as
 MP4 and exported to GIF; commit both, with matching base names, so the README
 can show the GIF while a reader can still open the sharper MP4.
 
+## Configured MCP historical candidate supplement
+
+[Configured MCP candidate report](bot-configured-mcp-aac3177b/REPORT.md) and
+[paired originals](bot-configured-mcp-aac3177b/pairs.md): 26 Android canonical-schema
+receipts and 14 actual Desktop Connectors observations. Bounded named autosave
+versus whole-map persistence/reload/probe, not equivalent authority or live health.
+Desktop remains observational; independent acceptance review is pending.
+
 ## Toolsets selection supplement
 
 [Toolsets selection v1](bot-toolsets-v1/REPORT.md): 24 actual Android state/theme

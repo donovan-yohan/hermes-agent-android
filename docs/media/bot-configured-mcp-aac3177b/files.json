@@ -1,0 +1,622 @@
+[
+  {
+    "path": "REPORT.md",
+    "sha256": "70820528b26d55c89d361f277666239a8fbaf82b43425023d972cc3cef9b485b",
+    "bytes": 10639
+  },
+  {
+    "path": "android/mcp-disabled/dark/contract.json",
+    "sha256": "a2abf29f9d84917f85b9428f2e813f87b9e6bcf922dc57c08fa4a6f35743094a",
+    "bytes": 39070
+  },
+  {
+    "path": "android/mcp-disabled/dark/reference.png",
+    "sha256": "97870fed5b024c2b27b66b2311f388157ac1361fdfdc9f3a6335c08b3815f11b",
+    "bytes": 111634,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-disabled/light/contract.json",
+    "sha256": "6bff8bc9b523b880aa6694b7576be485cb8a1ab78a152d10f8828fe2f2c972c3",
+    "bytes": 39072
+  },
+  {
+    "path": "android/mcp-disabled/light/reference.png",
+    "sha256": "3b45b3c094671a508853b432fc76c0264c104dc521cb8566364b058cede5f42a",
+    "bytes": 106529,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-empty/dark/contract.json",
+    "sha256": "c32456615a22b30c775f555c68f5c351316e9896cf54a40f4adb01f9914e84aa",
+    "bytes": 34985
+  },
+  {
+    "path": "android/mcp-empty/dark/reference.png",
+    "sha256": "6e46b19072df7062f30eca3381b73e4feb08282a0fd7525f09feb0bef157540e",
+    "bytes": 110369,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-empty/light/contract.json",
+    "sha256": "19409e7671beb56f725619de6ad73187d287c351bd9420b7d9a53c2706949949",
+    "bytes": 34988
+  },
+  {
+    "path": "android/mcp-empty/light/reference.png",
+    "sha256": "f21ce51d1f32967142a524e8fe3c395b6396667186dd612cf8fc47777dccee39",
+    "bytes": 104777,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-error/dark/contract.json",
+    "sha256": "5f1d8e426685a16203149a0b60e66a49df508025ef9a5eca65a0fb313d25f303",
+    "bytes": 35122
+  },
+  {
+    "path": "android/mcp-error/dark/reference.png",
+    "sha256": "a90ecd767c4082dac2b31b0fb927781c3f1c40f540a7e277b16b0006d43a0ed8",
+    "bytes": 113681,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-error/light/contract.json",
+    "sha256": "f7a0577bda32be53659c0f820a51da7c53eb98cc17cb03f213830a61942a415e",
+    "bytes": 35125
+  },
+  {
+    "path": "android/mcp-error/light/reference.png",
+    "sha256": "6e4d52604661881286931c191b5fa5c454b2b9c64464d1c6454b171a605c6600",
+    "bytes": 108234,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-loaded/dark/contract.json",
+    "sha256": "0f7f8d81cfbe3c8fdeadb09308dae9ad48e95dbd81a4ada86bce58e61d5a0f18",
+    "bytes": 39057
+  },
+  {
+    "path": "android/mcp-loaded/dark/reference.png",
+    "sha256": "bdd4ef7faabd64e1c82f2d324c2bee41a93d4132439dbc385a9cc9056eeeb496",
+    "bytes": 110617,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-loaded/light/contract.json",
+    "sha256": "ad18379699305fe9293aaf6aa18edd5cd80e2767b56d653e5fc96b7f44cb52a4",
+    "bytes": 39060
+  },
+  {
+    "path": "android/mcp-loaded/light/reference.png",
+    "sha256": "df01187c483458e484bf6bd4fdc16fc0fc06e4e236ca4f1bd24df909886549bc",
+    "bytes": 104983,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-loading/dark/contract.json",
+    "sha256": "7b2128070c0e74356a9bdb67697bbceefe2b7ffdaaba77ba82930fc766bb1fbc",
+    "bytes": 35010
+  },
+  {
+    "path": "android/mcp-loading/dark/reference.png",
+    "sha256": "b9bdd5b7a58b5be9799e73c5d80b71b3d327a61e82bcce12f42a543524c510e8",
+    "bytes": 108136,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-loading/light/contract.json",
+    "sha256": "ea053eb94219930ddd9091ee3efb6d6dc005643cf50f393b16c8cc8731ae9972",
+    "bytes": 35026
+  },
+  {
+    "path": "android/mcp-loading/light/reference.png",
+    "sha256": "63145d46f202297b5a2b1cdccd08b24f46e1926f6cc21f18e0ae897f01555b3b",
+    "bytes": 103474,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-pending/dark/contract.json",
+    "sha256": "d2cffbdf356c3f2d55498589ef30cb58a3c2252991992311d800c7c018e6653d",
+    "bytes": 42206
+  },
+  {
+    "path": "android/mcp-pending/dark/reference.png",
+    "sha256": "721aa2793da22247888f4227952105f5926bfc0d697a4c06020ec85e75047790",
+    "bytes": 118909,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-pending/light/contract.json",
+    "sha256": "b1c4339f8f8f8fbcbcdbc0f049064bc57d8b41524ae925d19ff4ee8c6b8044d9",
+    "bytes": 42212
+  },
+  {
+    "path": "android/mcp-pending/light/reference.png",
+    "sha256": "97c2e949d0c3f91507a95fb91a4aaed5605cfd55cfa7ae5890e8a97af57b3d67",
+    "bytes": 113858,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-plugin/dark/contract.json",
+    "sha256": "ac968d75eb53f7cd715fa1b5332f8b51c0bee79cbbbec28f31c6227f409a03b5",
+    "bytes": 39870
+  },
+  {
+    "path": "android/mcp-plugin/dark/reference.png",
+    "sha256": "97a5f5782ce70805df0ac5916b0e91c39f56c60b4b9a838f7d6c7bcd4dbd9d34",
+    "bytes": 117902,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-plugin/light/contract.json",
+    "sha256": "806d5f5f9ce8c55ba43159eff107f89845f10c70d66f48e223e08238c2d01731",
+    "bytes": 39873
+  },
+  {
+    "path": "android/mcp-plugin/light/reference.png",
+    "sha256": "c0b74b58162f10c831f1c249f309b132bc2026854b1b8755ff1e598182d1b472",
+    "bytes": 112541,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-refused/dark/contract.json",
+    "sha256": "91842683714e68f9408253a81c0977b3dda5e55eb76d4753a75d33cae2ec80b2",
+    "bytes": 43684
+  },
+  {
+    "path": "android/mcp-refused/dark/reference.png",
+    "sha256": "890a7a87183efb155f53d167236634caf3c85599fcd5a0e4fbef853ddd322a8c",
+    "bytes": 124970,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-refused/light/contract.json",
+    "sha256": "f24214e094ba70455e3b19ed114aa559e0899bcb8a3d119cd9e9de3c74572775",
+    "bytes": 43688
+  },
+  {
+    "path": "android/mcp-refused/light/reference.png",
+    "sha256": "ea9dad8e51c867b67208ea4ae04d572d9b1e90968d70bc14ee4b338ef5bf09a8",
+    "bytes": 119328,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-reopened/dark/contract.json",
+    "sha256": "79dabe4be1b86f01401f5862590b159a6c1689bb3fafcb24768a894dc8ede0dd",
+    "bytes": 43993
+  },
+  {
+    "path": "android/mcp-reopened/dark/reference.png",
+    "sha256": "4ff2d8174e8cd0216d49c3c29a136d883bf2c6c3a72bd4042d0c651ad1932421",
+    "bytes": 110193,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-reopened/light/contract.json",
+    "sha256": "e6395a0cc608de426b5a5754c18782de08b5fd1ab8cd9f62d29cf765f5ef766b",
+    "bytes": 43997
+  },
+  {
+    "path": "android/mcp-reopened/light/reference.png",
+    "sha256": "f53c85c8adb7999e1e4de98fce51739e2499d3e92ed472ae672d668b11932ae5",
+    "bytes": 104734,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-saved/dark/contract.json",
+    "sha256": "8301de732cd6e546234ae8cb0cc4feecf73a8ac82bf55fa9b283e5fb491d722a",
+    "bytes": 43915
+  },
+  {
+    "path": "android/mcp-saved/dark/reference.png",
+    "sha256": "731bc84b7fa28bff712fa41ac43d675c89f80506f017c7c4c4946bc4d0c3a241",
+    "bytes": 123833,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-saved/light/contract.json",
+    "sha256": "acbf7f855ec9671a3681b9f105ef9a1fc2010cf2216a9f3edd6ba7612e3edec1",
+    "bytes": 43917
+  },
+  {
+    "path": "android/mcp-saved/light/reference.png",
+    "sha256": "7da8cd724e5aa196d03d682e0963d058608a82f7c49084451f8837e3972ff111",
+    "bytes": 118343,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-unavailable/dark/contract.json",
+    "sha256": "9461bd42aabcdf69428c24fc1304c46a9f80c283e3324a38fbee64cd8daddc39",
+    "bytes": 35786
+  },
+  {
+    "path": "android/mcp-unavailable/dark/reference.png",
+    "sha256": "47fc4eaa94de969b266d3514ca49bb23133c2d7f46026e3a92fd60a2a667469b",
+    "bytes": 113249,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-unavailable/light/contract.json",
+    "sha256": "03b4efa11d6cd3e50282f4fe42b41834f13cde9ad11579fa456d0f8a319d3b1f",
+    "bytes": 35790
+  },
+  {
+    "path": "android/mcp-unavailable/light/reference.png",
+    "sha256": "e64d4d893863b50e35404ce1730171151bb3c251b14d03c434b82f056cad9f08",
+    "bytes": 107694,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-unconfirmed/dark/contract.json",
+    "sha256": "a36bfceb5834f652085ed204b2a271e73a8e678204cf5c2c56fb448ba7a629af",
+    "bytes": 40132
+  },
+  {
+    "path": "android/mcp-unconfirmed/dark/reference.png",
+    "sha256": "e1775688f244fe3b01688d41b9cfbf350a3e608e8b949dcd080a898385c198c2",
+    "bytes": 122183,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-unconfirmed/light/contract.json",
+    "sha256": "deb8d2bf68d404ceb61f19a0a09f45af8b3225537664f7a49ef78708d75e7ead",
+    "bytes": 40135
+  },
+  {
+    "path": "android/mcp-unconfirmed/light/reference.png",
+    "sha256": "e6e42796b0cb61d947cedf537005292c080b0fc4174c914326f9e30ad51c001d",
+    "bytes": 116830,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-unknown/dark/contract.json",
+    "sha256": "709debdd4116be9de85353743fb700a1618efe102d087ad60b5e67960b1cd0d7",
+    "bytes": 39885
+  },
+  {
+    "path": "android/mcp-unknown/dark/reference.png",
+    "sha256": "083eacbc516366dfeffa21cdfdb194ae8ba465324b57673ae83edf0df1ceca15",
+    "bytes": 118981,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/mcp-unknown/light/contract.json",
+    "sha256": "175983bec87e2e11accec043c587e649eca32f29c2fc29fbc4e95b491f18bea8",
+    "bytes": 39887
+  },
+  {
+    "path": "android/mcp-unknown/light/reference.png",
+    "sha256": "d52c3e9e0ed59aff54f176389b4f813d2a905e8ee973efca7207c0812461011d",
+    "bytes": 113634,
+    "dimensions": [
+      1080,
+      1920
+    ]
+  },
+  {
+    "path": "android/source-manifest.json",
+    "sha256": "bb527b59ce2eaa1875860b79ec9ee176a4411539ef5127264a680c1359f83de4",
+    "bytes": 456311
+  },
+  {
+    "path": "desktop/build-manifest.json",
+    "sha256": "d6de20bec1c79f7ac44147a3440b5c7c596178ff1824c1f45623e1dc43b5fe9e",
+    "bytes": 202927
+  },
+  {
+    "path": "desktop/configured-mcp-reference.spec.ts",
+    "sha256": "028458023e15770dc27189fc6da5674b62be2e3d757abeccf8a38da39db9d43b",
+    "bytes": 8202
+  },
+  {
+    "path": "desktop/disabled-dark.json",
+    "sha256": "48433c5fb57d22d3d3b05fbe8a15902694461e85e9d1daf312bae87e90996621",
+    "bytes": 6094
+  },
+  {
+    "path": "desktop/disabled-dark.png",
+    "sha256": "abbae579a72dce2bf4b5b0c7c8f04d4e18b23d2858422118b62e83e59d32a9e1",
+    "bytes": 47250,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/disabled-light.json",
+    "sha256": "9c55e0e772c83b86a6cd9c2fd68c065cf7ee37fe319005ebacc1bb7efcc4d4c1",
+    "bytes": 6096
+  },
+  {
+    "path": "desktop/disabled-light.png",
+    "sha256": "2a98f15a92ab034bad260b7b0fd5bd8619cc60c29518312abb2906c037abae9c",
+    "bytes": 43401,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/empty-dark.json",
+    "sha256": "953647f42227012ded49a193566a9c3eff46c42afecb89bfd1da71315f3db2e0",
+    "bytes": 4419
+  },
+  {
+    "path": "desktop/empty-dark.png",
+    "sha256": "7e293f4dd22570ebb66c349448a340cf77abea2360fcbeb8ba7eb9f93850081f",
+    "bytes": 42152,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/empty-light.json",
+    "sha256": "b595bc89d69ae4dc45af93f07d3db9eb62b3998a6d55d324f4846dee05b2e075",
+    "bytes": 4421
+  },
+  {
+    "path": "desktop/empty-light.png",
+    "sha256": "1ea1f7080c455082d69cf425b6f159e46531c7f036f68ee525829a6f1e4071a4",
+    "bytes": 39037,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/fixture.patch",
+    "sha256": "4dbd3589ffd724d56e9039b90d766aef580ecf9525da2cb87c0492e433100254",
+    "bytes": 8556
+  },
+  {
+    "path": "desktop/loading-dark.json",
+    "sha256": "998484e5f878a65ee89aa955c7529f8bba303e99e2a483ab0df03805b8239d16",
+    "bytes": 4877
+  },
+  {
+    "path": "desktop/loading-dark.png",
+    "sha256": "4014667a0ef7e9fb74037f8f8ae5a67bfe3f0d27b65995b55775ccbf7985eeba",
+    "bytes": 37483,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/loading-light.json",
+    "sha256": "0f8493005ede00ccca9046808d9d3f3207e2c0ecdb8cd4bf82c73ea86850ae36",
+    "bytes": 4879
+  },
+  {
+    "path": "desktop/loading-light.png",
+    "sha256": "96fa1912a23a7235ca30a47d63acb4ee583f393437c9698d4fedf72dc756cc04",
+    "bytes": 34130,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/pending-dark.json",
+    "sha256": "da0c1f42afab94d7904038af7f49ac6771b7759531a9c4bac3c311bfb723471f",
+    "bytes": 7589
+  },
+  {
+    "path": "desktop/pending-dark.png",
+    "sha256": "e74ec5bd1ccd0919271c77c8c18d44f5b1a9456c64a528dac1199e8700241f15",
+    "bytes": 47522,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/pending-light.json",
+    "sha256": "1cdbd1ec7137400b6e2dbfb4222611fb0ca025017a4628b4505ce0a2043985fb",
+    "bytes": 7591
+  },
+  {
+    "path": "desktop/pending-light.png",
+    "sha256": "cfd9c472fe110c4bed826f75f506a4d17e4d01dad223aee95fd2374363571498",
+    "bytes": 44100,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/read-refused-settled-dark.json",
+    "sha256": "13145ec9384789a378209ef2ca012df6969e38d2d31654ade3e7fd5a17abc0ee",
+    "bytes": 6706
+  },
+  {
+    "path": "desktop/read-refused-settled-dark.png",
+    "sha256": "d355217ad450cdb7b401d0efec6f3b1f409070e0112f38b12a69ba72794f405b",
+    "bytes": 42326,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/read-refused-settled-light.json",
+    "sha256": "fabe52b46e28d41f545cad05abf7c5d0a2cab108b4e17ad9a5178e0141f402b2",
+    "bytes": 6708
+  },
+  {
+    "path": "desktop/read-refused-settled-light.png",
+    "sha256": "c2156e7853254faa956237af0e0289a8a1506282d63e73f6cfd4b5b422171573",
+    "bytes": 39128,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/reopened-dark.json",
+    "sha256": "9c54de5ac7f27eab4892fd66eb214f88964873f41bff2f83609ba1604e830e79",
+    "bytes": 10395
+  },
+  {
+    "path": "desktop/reopened-dark.png",
+    "sha256": "ab5e633389986821840e607bd200c0d7c0682b5949a3ecf624f0a4cce52e7182",
+    "bytes": 48341,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/reopened-light.json",
+    "sha256": "65216dd481e5a766d6b9017209874a64ccfebd550ce78faaff6ea9b495755d2d",
+    "bytes": 10397
+  },
+  {
+    "path": "desktop/reopened-light.png",
+    "sha256": "789e63fcf9ea720aec70c7c831e3243994a53b0633c68b58040e934b9a6d5364",
+    "bytes": 44764,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/saved-dark.json",
+    "sha256": "c2839e44315583381fcec96471e3008ae0ca633163aeaa2c670d9251fd299cda",
+    "bytes": 9068
+  },
+  {
+    "path": "desktop/saved-dark.png",
+    "sha256": "bbbefaf0db24ba948455897fab731f8763a1de268bea97e55c6e53c9a19511d2",
+    "bytes": 48339,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/saved-light.json",
+    "sha256": "e5683703b6853f82292bceb32b813df109cce27a74efaefe97d23855caf0f6bc",
+    "bytes": 9070
+  },
+  {
+    "path": "desktop/saved-light.png",
+    "sha256": "3c82ccecdee4461dc391d2d58c98da7a11a3180dc569c98007383ec8e6ebe52a",
+    "bytes": 44795,
+    "dimensions": [
+      1160,
+      720
+    ]
+  },
+  {
+    "path": "desktop/source-manifest.json",
+    "sha256": "39602dec04f1f1637942dafc982dabe396ddfb8b3f5cac3d5e61c7a09db7b548",
+    "bytes": 4441578
+  },
+  {
+    "path": "desktop/toggle-action.json",
+    "sha256": "47bbcc149c59186a9957d8543600a7078bb9060dd71e27947d829d5148aa50d2",
+    "bytes": 1700
+  },
+  {
+    "path": "pairs.md",
+    "sha256": "3e21a04f9d4764fc7873eb563f7d908ce34a9827281fc69e805035fdb05966c7",
+    "bytes": 6506
+  },
+  {
+    "path": "provenance.json",
+    "sha256": "cb1bceb95a338a7fa7bdca021d6998b8d2fb4a30d474b44cfc34c7c64f9ad74c",
+    "bytes": 1475
+  },
+  {
+    "path": "runtime-audit.json",
+    "sha256": "cc9e6d21fdeda1a827e682f58aaac09e6f6b2eab6f4c373a9abc6f475ca33473",
+    "bytes": 6433
+  },
+  {
+    "path": "validation-history.json",
+    "sha256": "e298bad9b22d9ea2ab92587faa454e5e7eb5a6a8aea1c6cb5951b2c76694f9e5",
+    "bytes": 12418
+  },
+  {
+    "path": "validation.json",
+    "sha256": "ec5150afc8b43e056842cd78510eda44565d34d73c6282becf82b22415953d20",
+    "bytes": 7249
+  }
+]

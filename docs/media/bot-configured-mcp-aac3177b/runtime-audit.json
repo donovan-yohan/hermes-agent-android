@@ -1,0 +1,282 @@
+[
+  {
+    "platform": "android",
+    "state": "mcp-disabled",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-disabled",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-empty",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-empty",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-error",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-error",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loaded",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loaded",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loading",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-loading",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-pending",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-pending",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-plugin",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-plugin",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-refused",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-refused",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-reopened",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-reopened",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-saved",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-saved",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unavailable",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unavailable",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unconfirmed",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unconfirmed",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unknown",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "android",
+    "state": "mcp-unknown",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "disabled",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "disabled",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "empty",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "empty",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "loading",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "loading",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "pending",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "pending",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "read-refused-settled",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "read-refused-settled",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "reopened",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "reopened",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "saved",
+    "theme": "dark",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  },
+  {
+    "platform": "desktop",
+    "state": "saved",
+    "theme": "light",
+    "runtime_both_brackets_verified": true,
+    "original_hash_match": true
+  }
+]
