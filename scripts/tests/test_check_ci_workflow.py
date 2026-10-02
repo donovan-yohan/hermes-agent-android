@@ -63,6 +63,13 @@ class CiWorkflowCheckerTest(unittest.TestCase):
                     self.assertNotEqual(self.valid_text, broken)
                     self.assertEqual(1, self._run(broken))
 
+    def test_rejects_connected_step_execution_overrides(self) -> None:
+        marker = '      - name: Run the instrumented lane'
+        for field in ('if: false', 'continue-on-error: true'):
+            with self.subTest(field=field):
+                broken = self.valid_text.replace(marker, marker + '\n        ' + field)
+                self.assertEqual(1, self._run(broken))
+
     def test_rejects_assembly_after_snapshot_boot(self) -> None:
         block, without = self._remove_step(self.valid_text,
             '      - name: Assemble instrumented APKs before emulator boot',

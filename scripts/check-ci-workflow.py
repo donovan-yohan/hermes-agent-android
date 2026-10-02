@@ -230,7 +230,10 @@ def main() -> int:
                 "the instrumented lane must not depend on another job; "
                 "an emulator failure must not withhold the rolling APK"
             )
-        if '            python3 scripts/ci_prebuilt.py connected' not in instrumented_job.splitlines():
+        connected = _indented_block(instrumented_job, '      - name: Run the instrumented lane')
+        if re.search(r'^        (if|continue-on-error):', connected, re.M):
+            failures.append('the connected step must run unconditionally and propagate failure')
+        if '            python3 scripts/ci_prebuilt.py connected' not in connected.splitlines():
             failures.append("the instrumented lane must run the guarded connected androidTest task")
         assembly = _indented_block(instrumented_job,
                                   '      - name: Assemble instrumented APKs before emulator boot')
