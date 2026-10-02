@@ -72,7 +72,7 @@ jobs:
           emulator-port: 5554
           disable-animations: true
           script: |
-            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :diagnosticResolvedVersions --init-script .github/diagnostics/resolved-versions.init.gradle --no-daemon --no-build-cache
+            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :diagnosticResolvedVersions --init-script .github/diagnostics/resolved-versions.init.gradle --no-configuration-cache --no-daemon --no-build-cache
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
             python3 .github/diagnostics/api34_connected.py
