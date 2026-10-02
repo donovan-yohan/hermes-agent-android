@@ -45,6 +45,7 @@ class BotsManagementViewModel(
 ) {
     val model = BotsModelViewModel(host, scope, onChanged)
     val toolsets = BotsToolsetsViewModel(host, scope, onChanged)
+    val skills = BotsSkillsViewModel(host, scope)
     val avatar = BotsAvatarViewModel(host, scope, onChanged)
     private val repository = BotsManagementRepository(host)
 
@@ -105,6 +106,7 @@ class BotsManagementViewModel(
     private fun reset() {
         model.close()
         toolsets.close()
+        skills.close()
         avatar.close()
         revision++
         sectionMembers = emptyList()
@@ -152,6 +154,7 @@ class BotsManagementViewModel(
                 mutableState.value = BotManagementState(BotManagementDialog.Edit, target, draft, busy = true)
                 model.open(target)
                 toolsets.open(target)
+                skills.open(target)
                 avatar.open(target)
                 val admitted = revision
                 scope.launch {

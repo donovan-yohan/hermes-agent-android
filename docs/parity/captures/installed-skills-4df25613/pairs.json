@@ -1,0 +1,86 @@
+[
+  {
+    "android": "android/skills-loaded--light/reference.png",
+    "desktop": "desktop/loaded-default-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-loaded--dark/reference.png",
+    "desktop": "desktop/loaded-default-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-disabled--light/reference.png",
+    "desktop": "desktop/loaded-disabled-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-disabled--dark/reference.png",
+    "desktop": "desktop/loaded-disabled-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-loading--light/reference.png",
+    "desktop": "desktop/loading-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-loading--dark/reference.png",
+    "desktop": "desktop/loading-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-pending--light/reference.png",
+    "desktop": "desktop/changed-autosave-pending-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-pending--dark/reference.png",
+    "desktop": "desktop/changed-autosave-pending-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-saved--light/reference.png",
+    "desktop": "desktop/saved-autosave-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-saved--dark/reference.png",
+    "desktop": "desktop/saved-autosave-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-reopened--light/reference.png",
+    "desktop": "desktop/saved-reopened-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-reopened--dark/reference.png",
+    "desktop": "desktop/saved-reopened-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-error--light/reference.png",
+    "desktop": "desktop/error-light.png",
+    "theme": "light",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  },
+  {
+    "android": "android/skills-error--dark/reference.png",
+    "desktop": "desktop/error-dark.png",
+    "theme": "dark",
+    "comparison": "semantic reference only; Desktop noncanonical"
+  }
+]

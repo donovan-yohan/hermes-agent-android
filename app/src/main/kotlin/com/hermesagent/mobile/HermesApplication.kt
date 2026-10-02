@@ -293,6 +293,7 @@ class HermesApplication : Application() {
                     gatewayConnection.client,
                     cache.endpointGeneration,
                     endpointDispatchFence,
+                    http = { gatewayConnection.gatewayHttp.value },
                 )
             },
         )

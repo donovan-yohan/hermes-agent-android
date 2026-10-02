@@ -67,7 +67,7 @@ fi
 # Ordered model captures launch inside Python, after installed APK identity is
 # collected. This keeps signing/pull work outside the production loading budget.
 launch_args=()
-if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" || "$CAPTURE_SURFACE" == "bot-installed-skills" ]]; then
   launch_args=(--launch-fixture)
 else
   adb shell am start -W -S -n "$activity" \

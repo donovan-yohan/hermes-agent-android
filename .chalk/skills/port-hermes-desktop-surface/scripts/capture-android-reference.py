@@ -561,7 +561,7 @@ def main() -> None:
             or interactions != spec["state_spec"].get("interaction", [])
             or (args.expected_accessibility or None) != spec["state_spec"].get("post_interaction_accessibility")):
         raise SystemExit("capture arguments do not match the catalogued fixture/actions/state")
-    loading = args.state in ("bot-model-inventory-loading", "bot-avatar-loading")
+    loading = args.state in ("bot-model-inventory-loading", "bot-avatar-loading", "skills-loading", "skills-pending")
     if loading and not args.launch_fixture:
         raise SystemExit("loading capture requires a measured fresh fixture launch")
     provenance = installed_apk_provenance(args.serial, args.package, args.apk)
