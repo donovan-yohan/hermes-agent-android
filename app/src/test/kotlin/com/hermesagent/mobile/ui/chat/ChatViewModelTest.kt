@@ -199,13 +199,23 @@ class ChatViewModelTest {
         viewModel.setDraft("same draft")
         viewModel.submit()
         runCurrent()
+        val submission = requireNotNull(repository.lastSubmitJob)
+        assertFalse(submission.isCompleted)
+        assertTrue(repository.submitted.isEmpty())
         viewModel.selectSession("session-b")
         cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "other"))
         viewModel.selectSession(id)
         runCurrent()
         viewModel.setDraft("same draft")
-        repository.submitGate!!.complete(Unit)
         runCurrent()
+        assertEquals(id, viewModel.uiState.value.activeSessionId)
+        assertEquals("other", cache.session(id)?.remoteProfile)
+        assertEquals("same draft", viewModel.uiState.value.draft)
+        repository.submitGate!!.complete(Unit)
+        submission.join()
+        runCurrent()
+        assertFalse(submission.isCancelled)
+        assertEquals(listOf(id to "same draft"), repository.submitted)
         assertEquals("same draft", viewModel.uiState.value.draft)
     }
 
@@ -3680,6 +3690,7 @@ class ChatViewModelTest {
         /** A specific refusal, for the failures whose *kind* is what is under test. */
         var submitFailure: Throwable? = null
         var submitGate: CompletableDeferred<Unit>? = null
+        var lastSubmitJob: kotlinx.coroutines.Job? = null
         var submitAttempts = 0
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
         var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
@@ -3932,6 +3943,7 @@ class ChatViewModelTest {
             attachments: List<OutgoingAttachment>,
         ): GatewaySubmitOutcome {
             lastSubmitLease = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.SessionSelectionLease]
+            lastSubmitJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             submitAttempts += 1
             submitGate?.await()
             submitFailure?.let { throw it }
