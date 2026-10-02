@@ -49,7 +49,7 @@ if sys.argv[1:] == ["shell", "ime", "list", "-s", "-a"]:
         workflow = (ROOT / ".github/workflows/android-exact-head.yml").read_text()
         compile_at = workflow.index("./gradlew :app:assembleDebug :app:assembleDebugAndroidTest")
         prepare_at = workflow.index("./scripts/prepare-ci-emulator.sh", compile_at)
-        run_at = workflow.index("./gradlew :app:connectedDebugAndroidTest", prepare_at)
+        run_at = workflow.index("python3 scripts/ci_prebuilt.py connected", prepare_at)
         self.assertLess(compile_at, prepare_at)
         self.assertLess(prepare_at, run_at)
 

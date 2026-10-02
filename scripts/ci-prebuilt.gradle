@@ -1,0 +1,27 @@
+// CI-only, AGP 8.13.2. Never disable arbitrary tasks to make this guard pass.
+// TaskExecutionGraph callbacks must run on EVERY invocation, not be bypassed
+// by configuration-cache reuse (gradle.properties enables it by default).
+if (gradle.startParameter.configurationCacheRequested) {
+    throw new IllegalStateException('prebuilt guard requires configuration cache disabled')
+}
+gradle.taskGraph.whenReady { graph ->
+    if (graph.allTasks.collect { it.path } != [':app:connectedDebugAndroidTest']) {
+        throw new IllegalStateException('unexpected prebuilt task graph: ' +
+            graph.allTasks.collect { it.path }.join(', '))
+    }
+    def task = graph.allTasks[0]
+    if (!task.enabled || task.ignoreFailures) {
+        throw new IllegalStateException('prebuilt guard requires real test execution')
+    }
+    // AGP consumes these providers, not an independently installed APK. Verify
+    // they point at the exact directories whose APK + metadata hashes we check.
+    def data = task.testData.get()
+    def root = gradle.rootProject.projectDir
+    if (data.testApkDir.get().asFile.canonicalFile !=
+            new File(root, 'app/build/outputs/apk/androidTest/debug').canonicalFile ||
+        data.testedApksDir.get().asFile.canonicalFile !=
+            new File(root, 'app/build/outputs/apk/debug').canonicalFile) {
+        throw new IllegalStateException('prebuilt APK directories mismatch')
+    }
+    println('Prebuilt task graph verified: :app:connectedDebugAndroidTest only')
+}
