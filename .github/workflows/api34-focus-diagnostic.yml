@@ -17,6 +17,7 @@ jobs:
       ANDROID_SERIAL: emulator-5554
       FOCUS_SYNTHETIC_OPT_IN: b291-failure-only
       FOCUS_EXPERIMENT: normal-seven-once
+      SYSTEMUI_ANR_OPT_IN: pr344-single-synthetic-run
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,6 +49,8 @@ jobs:
           key: avd-api34-google_apis-x86_64-pixel_6-v2
           restore-keys: |
             avd-api34-google_apis-x86_64-pixel_6-
+      - name: Sample only numeric host resource pressure
+        run: python3 .github/diagnostics/systemui_host.py > /dev/null 2>&1 &
       - name: Create the AVD snapshot if main cache is absent
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
@@ -76,6 +79,17 @@ jobs:
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
             python3 .github/diagnostics/api34_connected.py
+      - name: Retain failure-only sanitized SystemUI evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disposable-systemui-anr-${{ github.event.pull_request.head.sha }}
+          retention-days: 2
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/api34-focus/full/systemui-anr.json
+            ${{ runner.temp }}/api34-focus/full/systemui-anr-error.json
+            ${{ runner.temp }}/systemui-host.jsonl
       - name: Retain only synthetic allowlisted evidence
         if: always()
         uses: actions/upload-artifact@v4

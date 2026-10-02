@@ -139,6 +139,12 @@ def main():
         focus_lines = [json.loads(line)['line'] for line in focus_path.read_text().splitlines()] if focus_path.exists() else []
         result['classification'] = 'DELIBERATE_FAILURE_COLLECTOR_VALIDATION_NOT_RECURRENCE'
         result['collector_verified'] = verify(result, focus_lines)
+    if not result['passed']:
+        try:
+            from systemui_anr import collect
+            collect(out, True, nonce)
+        except Exception as exc:
+            (out / 'systemui-anr-error.json').write_text(json.dumps({'error_type': type(exc).__name__}))
     (out / 'result.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
     return rc if rc > 0 else (0 if result['passed'] else 1)
