@@ -79,6 +79,10 @@ class ThemeSemanticParityTest {
         Expected("solarized", true, "#ff03232c", "#ff001f26", "#ff0e1e23", "#ff0c1a1f", "#ff152932", "#ff234751", "#12ffffff", "#e0ffffff"),
         Expected("nous-alt", false, "#fff8f9fe", "#fff3f7ff", "#fffdfdfd", "#fffdfdfd", "#fffcfcfc", "#3d0053fd", "#0d141414", "#e0141414"),
         Expected("nous-alt", true, "#ff0d2667", "#ff09286f", "#ff142345", "#ff121f3d", "#ff152750", "#ff3a63bd", "#12ffffff", "#e0ffffff"),
+        // Classic only: converter goldens at 36922ad064d65dcf25f8f48df81e1ccf9a55de67,
+        // styles.css:217-224,297-307,410-418,598-625; context.tsx:218-222.
+        Expected("classic", false, "#fff5f5f5", "#fff3f2f2", "#fff9f9f9", "#fff9f9f9", "#fffcfcfc", "#ffcd7f32", "#0d141414", "#e0141414"),
+        Expected("classic", true, "#ff171726", "#ff1f1e31", "#ff1b1b23", "#ff18181f", "#ff2b261e", "#ffcd7f32", "#12ffffff", "#e0ffffff"),
         Expected("midnight", false, "#fffefefe", "#fff4f4f9", "#fffdfdfd", "#fffdfdfd", "#fffcfcfc", "#ffdeddee", "#0d141414", "#e0141414"),
         Expected("midnight", true, "#ff090918", "#ff06061a", "#ff13131e", "#ff11111a", "#ff151528", "#ff242466", "#12ffffff", "#e0ffffff"),
         Expected("ember", false, "#fffefefe", "#fff8f3ef", "#fffdfdfd", "#fffdfdfd", "#fffcfcfc", "#ffe9dbd1", "#0d141414", "#e0141414"),
@@ -135,7 +139,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `inline code is a fixed ink per mode, never the theme foreground`() {
-        // styles.css:366 pins #141414 / #ffffff so a code span reads the same in
+        // styles.css:366 @ 564aef2946c436500a5e80ee117b66b789b3f99a pins #141414 / #ffffff so a code span reads the same in
         // every skin. Every preset must therefore agree with every other one.
         for (dark in listOf(false, true)) {
             val inks = BuiltinThemes.ALL.map { preset ->
@@ -246,7 +250,7 @@ class ThemeSemanticParityTest {
         // (`styles.css:196-202`, `:root.dark:528-530`), which cover exactly the
         // six hues ANSI names — using the diff-foreground knob Desktop already
         // uses to turn one of those seeds into legible ink
-        // (`styles.css:224,227`, `:root.dark:531-532`). `bright` follows
+        // (`styles.css:224,227`, `:root.dark:531-532`) @ 564aef2946c436500a5e80ee117b66b789b3f99a. `bright` follows
         // Desktop's own direction: across those same six hues
         // (`lib/ansi.ts:149-154` against their bright rungs at `:157-162`)
         // Desktop steps the bright rung one Tailwind step *lighter* in both
@@ -587,7 +591,7 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `the rendered mode follows the background, not the request`() {
-        // context.tsx:148-158. It is a no-op for all built-ins — asserted so
+        // context.tsx:148-158 @ 564aef2946c436500a5e80ee117b66b789b3f99a. It is a no-op for all built-ins — asserted so
         // the parity claim covers it — but it is what keeps a future bright
         // "dark" palette a data edit instead of a component change.
         for (preset in BuiltinThemes.ALL) {
@@ -674,7 +678,7 @@ class ThemeSemanticParityTest {
         // eight `--context-usage-*` variables, each an expression over the named
         // colour set at `styles.css:210-216` / `:root.dark:556-558`. The Gateway
         // never sends a value for a category, only one of these names
-        // (`agent/context_breakdown.py:19-28`), so if this drifts the whole
+        // (`agent/context_breakdown.py:19-28` @ 564aef2946c436500a5e80ee117b66b789b3f99a), so if this drifts the whole
         // panel silently paints one flat colour.
         for (preset in BuiltinThemes.ALL) {
             for (requested in listOf(false, true)) {

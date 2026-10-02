@@ -1,0 +1,80 @@
+{
+  "unique_observations": 8,
+  "canonical_accepted": 0,
+  "fixture_sha256": "fa728b8f01d936ab009e7cc1825ef2bcc18dbfa8fdd7aea6347ae9a49dd0a75d",
+  "fixture_reconstructed_identical": true,
+  "artifacts": [
+    {
+      "platform": "android",
+      "state": "dark-classic-picker",
+      "png": "android/dark-classic-picker.png",
+      "png_sha256": "a7d252cd9ae9f5b60318d6c7c156cb792a46c45732718787410d7f7544045b09",
+      "receipt_sha256": "23b3f5133aaedcd8b1d3ec0153c8e497e3e0fabfeb314e27d64317b776060393",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "platform": "android",
+      "state": "dark-classic-screen",
+      "png": "android/dark-classic-screen.png",
+      "png_sha256": "d9d87a088eb3da8c4e47768603cc895262f680e7c69a7176a381999b23615958",
+      "receipt_sha256": "9ff1c85d77c836d1849bbfe0e53ac4aad25be70799d7a6c8003ec1a35f264d24",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "platform": "android",
+      "state": "light-classic-picker",
+      "png": "android/light-classic-picker.png",
+      "png_sha256": "1e12d39ae893d3e9a44cd683bb7f9c629d99a719a5bd75cc49eb5b251febf090",
+      "receipt_sha256": "2f016c0ad183eeaf2d126f6ecc4097fcf21b0d0f39deef7ff1d24323336b70d4",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "platform": "android",
+      "state": "light-classic-screen",
+      "png": "android/light-classic-screen.png",
+      "png_sha256": "8b45120a2503d7ff06ee5c307932dfe6bd49395100dc2cf365983b623910bf04",
+      "receipt_sha256": "04d4e67839c0d9f725f621b98daf414f8fcea69da01c4f156c1a332148607e76",
+      "width": 1280,
+      "height": 2856
+    },
+    {
+      "platform": "desktop",
+      "state": "dark-classic-picker",
+      "png": "desktop/dark-classic-picker.png",
+      "png_sha256": "2d9bfd77531844202b716343d3fa07493426123ab799368d4b0a5d21dd970a85",
+      "receipt_sha256": "4a6a35eabfbd28f970d78db7d4b0e7a868a19b144bf7a33e858387816587236e",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "platform": "desktop",
+      "state": "dark-classic-screen",
+      "png": "desktop/dark-classic-screen.png",
+      "png_sha256": "7a94fccfac82651f3f4c47728fdd881f45415b5e2ab60b702df6180254885dd0",
+      "receipt_sha256": "d2f71a2d25c77149ee0259bff6bba97e1688cf202cc3022d50c72e7c39d97ec5",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "platform": "desktop",
+      "state": "light-classic-picker",
+      "png": "desktop/light-classic-picker.png",
+      "png_sha256": "79a0cfa81187d14aadc0b075483a39aa90939251b0ea9fb838319d33cf589686",
+      "receipt_sha256": "fb5fe601c64e55b66e0162eabef90f4394a852675edc02b055552353827b2b0a",
+      "width": 1220,
+      "height": 800
+    },
+    {
+      "platform": "desktop",
+      "state": "light-classic-screen",
+      "png": "desktop/light-classic-screen.png",
+      "png_sha256": "5943073f363e8021efa3d6e31de5d71e3ffa8e51c648dd379674db0e21dc6691",
+      "receipt_sha256": "e865baa974eae61976d8f8284c5e9314c86c01d417fcc9e87f10351963e755b0",
+      "width": 1220,
+      "height": 800
+    }
+  ]
+}

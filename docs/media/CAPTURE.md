@@ -31,6 +31,18 @@ New disposable emulator only, now shut down. Desktop receipts remain noncanonica
 five Android-only states have no supplied Desktop counterpart. Synthetic fixture
 staging is not human interaction or live-server evidence. No Gradle or push.
 
+## Classic 36922 manual-selection supplement
+
+[Fresh narrow paired report](classic-36922/REPORT.md): four approved-APK Android
+phone PNG/XML observations and four actual pinned Desktop wide observations,
+Classic picker and screen in light/dark after Nous Alt selection. Eight unique
+observations, four comparison pairs, zero canonical validator acceptances.
+Android used a new task-owned AVD, now verified stopped; existing emulator and
+physical-device package code were not replaced. Immutable-source manifests and
+reconstructible Desktop fixture are included. Screen connection contexts differ;
+backend transitions and matched viewport coverage remain pending under #292.
+Historical packets below retain their original pins and bytes.
+
 ## e05 theme refresh supplement
 
 [Narrow paired report](theme-refresh-e05/REPORT.md): four actual API 37 Android

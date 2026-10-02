@@ -173,10 +173,10 @@ def parse_desktop(source: str, palettes: dict[str, bool]) -> tuple[list[Preset],
 
 
 def _field(body: str, key: str, symbol: str) -> str:
-    match = re.search(rf"^\s*{key}: '([^']*)'", body, re.MULTILINE)
+    match = re.search(rf"""^\s*{key}: (['"])(.*?)\1\s*,?\s*$""", body, re.MULTILINE)
     if not match:
         die(f"preset `{symbol}` has no `{key}` field")
-    return match.group(1)
+    return match.group(2)
 
 
 # ── android ─────────────────────────────────────────────────────────────────

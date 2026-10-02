@@ -183,9 +183,9 @@ internal fun mapGatewayThemePalette(background: LayerR, midground: LayerR, foreg
 /** Convert the frozen Desktop HermesSkin contract into the mobile palette. */
 internal fun parseBackendSkin(payload: JsonObject): GatewayTheme? {
     val name = payload.string("name")?.trim()?.takeIf { isSafeCustomThemeName(it) } ?: return null
-    // apps/desktop/src/themes/backend-sync.ts:94-101 @ e05b16348b1d06a3311237423b0a4fc30d9c5aa1:
-    // default has no palette opinion. The sync layer still handles explicit application.
-    if (name == "default" || BuiltinThemes.ALL.any { it.name == name }) return null
+    // backend-sync.ts:44-47,105-116 @ 36922ad064d65dcf25f8f48df81e1ccf9a55de67:
+    // Reserved names are apply targets, never backend palette definitions.
+    if (BuiltinThemes.isReserved(name)) return null
     val colors = (payload["colors"] as? JsonObject) ?: return null
     fun color(vararg keys: String): Color? = keys.asSequence()
         .mapNotNull { colors[it].stringOrNull() }

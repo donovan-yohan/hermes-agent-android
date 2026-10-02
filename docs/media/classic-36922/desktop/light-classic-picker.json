@@ -1,0 +1,541 @@
+{
+  "kind": "observational-not-canonical",
+  "platform": "desktop",
+  "source_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "fixture": "classic-manual-real-v1",
+  "state": "picker",
+  "theme": "classic",
+  "mode": "light",
+  "storedTheme": "classic",
+  "storedMode": "light",
+  "body": "SESSIONS\nBOTS\nNew session\nCtrl\nN\nCapabilities\nMessaging\nArtifacts\nScheduled jobs\n\nNo sessions yet\n\nNew project\nNEW SESSION\nGateway\nready\nSmart\nModel\nChat\nAppearance\nGeneral\nTheme\nTypography\nWindow & layout\nChat display\nPet\nWorkspace\nSafety\nBrowser\nPasswords & Logins\nMemory & Context\nVoice\nAdvanced\nNotifications\nBilling\nProviders\nGateways\nKeyboard Shortcuts\nTools & Keys\nSessions\nAbout\nSettings\nAppearance\nTheme\nTheme\nLight\nDark\nSystem\nDesktop palettes only. The selected mode is applied on top.\nClassic Hermes\nGold on navy, the CLI's original look\nNous\nGitHub chrome, Nous blue accent\nGitHub\nGitHub Light Default and Dark Default\nCatppuccin\nSoothing pastels — Latte and Mocha\nEverforest\nWarm, low-contrast forest greens\nSolarized\nFixed-contrast light and dark\nNous Alt\nGlass neutrals, cream on mission-blue\nMidnight\nDeep blue-violet with cool accents\nEmber\nWarm crimson and bronze — forge vibes\nMono\nClean grayscale — minimal and focused\nSlate\nCool slate blue — focused developer theme\nCyberpunk\nNeon green on black — matrix terminal\nSearch\nCtrl\nK",
+  "buttons": [
+    {
+      "text": "",
+      "label": "Minimize"
+    },
+    {
+      "text": "New session\nCtrl\nN",
+      "label": null
+    },
+    {
+      "text": "Capabilities",
+      "label": null
+    },
+    {
+      "text": "Messaging",
+      "label": null
+    },
+    {
+      "text": "Artifacts",
+      "label": null
+    },
+    {
+      "text": "Scheduled jobs",
+      "label": null
+    },
+    {
+      "text": "New project",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "default"
+    },
+    {
+      "text": "",
+      "label": "New profile"
+    },
+    {
+      "text": "",
+      "label": "Import profile…"
+    },
+    {
+      "text": "",
+      "label": "Manage profiles…"
+    },
+    {
+      "text": "",
+      "label": "Manage gateways…"
+    },
+    {
+      "text": "",
+      "label": "Close"
+    },
+    {
+      "text": "",
+      "label": "New session tab"
+    },
+    {
+      "text": "",
+      "label": "Close"
+    },
+    {
+      "text": "",
+      "label": "Restore"
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "Gateway\nready",
+      "label": null
+    },
+    {
+      "text": "Smart",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Close settings"
+    },
+    {
+      "text": "Model",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Model"
+    },
+    {
+      "text": "Main model",
+      "label": null
+    },
+    {
+      "text": "Fallback models",
+      "label": null
+    },
+    {
+      "text": "Auxiliary models",
+      "label": null
+    },
+    {
+      "text": "Mixture of Agents",
+      "label": null
+    },
+    {
+      "text": "Chat",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Chat"
+    },
+    {
+      "text": "Behavior",
+      "label": null
+    },
+    {
+      "text": "Attachments",
+      "label": null
+    },
+    {
+      "text": "Appearance",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Collapse: Appearance"
+    },
+    {
+      "text": "General",
+      "label": null
+    },
+    {
+      "text": "Theme",
+      "label": null
+    },
+    {
+      "text": "Typography",
+      "label": null
+    },
+    {
+      "text": "Window & layout",
+      "label": null
+    },
+    {
+      "text": "Chat display",
+      "label": null
+    },
+    {
+      "text": "Pet",
+      "label": null
+    },
+    {
+      "text": "Workspace",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Workspace"
+    },
+    {
+      "text": "Projects & discovery",
+      "label": null
+    },
+    {
+      "text": "Shell environment",
+      "label": null
+    },
+    {
+      "text": "Files & execution",
+      "label": null
+    },
+    {
+      "text": "Safety",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Safety"
+    },
+    {
+      "text": "Approvals",
+      "label": null
+    },
+    {
+      "text": "Privacy & network",
+      "label": null
+    },
+    {
+      "text": "Checkpoints",
+      "label": null
+    },
+    {
+      "text": "Browser",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Browser"
+    },
+    {
+      "text": "Browser profile",
+      "label": null
+    },
+    {
+      "text": "Local & private URLs",
+      "label": null
+    },
+    {
+      "text": "Passwords & Logins",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Passwords & Logins"
+    },
+    {
+      "text": "Saved credentials",
+      "label": null
+    },
+    {
+      "text": "Password managers",
+      "label": null
+    },
+    {
+      "text": "Memory & Context",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Memory & Context"
+    },
+    {
+      "text": "Persistent memory",
+      "label": null
+    },
+    {
+      "text": "Context & compression",
+      "label": null
+    },
+    {
+      "text": "Voice",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Voice"
+    },
+    {
+      "text": "Voice conversation",
+      "label": null
+    },
+    {
+      "text": "Speech to text",
+      "label": null
+    },
+    {
+      "text": "Text to speech",
+      "label": null
+    },
+    {
+      "text": "Advanced",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Advanced"
+    },
+    {
+      "text": "Desktop & startup",
+      "label": null
+    },
+    {
+      "text": "Agent limits",
+      "label": null
+    },
+    {
+      "text": "Tool access",
+      "label": null
+    },
+    {
+      "text": "Terminal backend",
+      "label": null
+    },
+    {
+      "text": "Subagents",
+      "label": null
+    },
+    {
+      "text": "Output limits",
+      "label": null
+    },
+    {
+      "text": "Notifications",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Notifications"
+    },
+    {
+      "text": "Desktop alerts",
+      "label": null
+    },
+    {
+      "text": "Sounds",
+      "label": null
+    },
+    {
+      "text": "Billing",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Billing"
+    },
+    {
+      "text": "Overview",
+      "label": null
+    },
+    {
+      "text": "Providers",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Providers"
+    },
+    {
+      "text": "Accounts",
+      "label": null
+    },
+    {
+      "text": "API keys",
+      "label": null
+    },
+    {
+      "text": "Custom Endpoints",
+      "label": null
+    },
+    {
+      "text": "Gateways",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Gateways"
+    },
+    {
+      "text": "This window",
+      "label": null
+    },
+    {
+      "text": "Saved connections",
+      "label": null
+    },
+    {
+      "text": "Remote updates",
+      "label": null
+    },
+    {
+      "text": "Keyboard Shortcuts",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Keyboard Shortcuts"
+    },
+    {
+      "text": "Key bindings",
+      "label": null
+    },
+    {
+      "text": "HUD gesture",
+      "label": null
+    },
+    {
+      "text": "Screen capture",
+      "label": null
+    },
+    {
+      "text": "Tools & Keys",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Tools & Keys"
+    },
+    {
+      "text": "Tools",
+      "label": null
+    },
+    {
+      "text": "Settings",
+      "label": null
+    },
+    {
+      "text": "Sessions",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: Sessions"
+    },
+    {
+      "text": "Archive & retention",
+      "label": null
+    },
+    {
+      "text": "Default project folder",
+      "label": null
+    },
+    {
+      "text": "About",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "Expand: About"
+    },
+    {
+      "text": "Version & updates",
+      "label": null
+    },
+    {
+      "text": "Uninstall",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "Theme",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "Appearance",
+      "label": null
+    },
+    {
+      "text": "Light",
+      "label": null
+    },
+    {
+      "text": "Dark",
+      "label": null
+    },
+    {
+      "text": "System",
+      "label": null
+    },
+    {
+      "text": "Classic Hermes\nGold on navy, the CLI's original look",
+      "label": null
+    },
+    {
+      "text": "Nous\nGitHub chrome, Nous blue accent",
+      "label": null
+    },
+    {
+      "text": "GitHub\nGitHub Light Default and Dark Default",
+      "label": null
+    },
+    {
+      "text": "Catppuccin\nSoothing pastels — Latte and Mocha",
+      "label": null
+    },
+    {
+      "text": "Everforest\nWarm, low-contrast forest greens",
+      "label": null
+    },
+    {
+      "text": "Solarized\nFixed-contrast light and dark",
+      "label": null
+    },
+    {
+      "text": "Nous Alt\nGlass neutrals, cream on mission-blue",
+      "label": null
+    },
+    {
+      "text": "Midnight\nDeep blue-violet with cool accents",
+      "label": null
+    },
+    {
+      "text": "Ember\nWarm crimson and bronze — forge vibes",
+      "label": null
+    },
+    {
+      "text": "Mono\nClean grayscale — minimal and focused",
+      "label": null
+    },
+    {
+      "text": "Slate\nCool slate blue — focused developer theme",
+      "label": null
+    },
+    {
+      "text": "Cyberpunk\nNeon green on black — matrix terminal",
+      "label": null
+    },
+    {
+      "text": "Search\nCtrl\nK",
+      "label": null
+    }
+  ],
+  "background": "color-mix(in srgb, #f5f5f5 92%, #f3f3f3)",
+  "width": 1220,
+  "height": 800
+}

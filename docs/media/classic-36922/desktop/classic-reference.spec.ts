@@ -1,0 +1,35 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import {test,expect} from '@playwright/test'
+import {setupMockBackend,waitForAppReady} from './fixtures'
+const out=process.env.CLASSIC_PACKET!
+for(const mode of ['light','dark'] as const) test(`Classic manual reference ${mode}`,async()=>{
+ test.setTimeout(180000)
+ const f=await setupMockBackend()
+ const page=f.page
+ const capture=async(state:string)=>{
+  await expect(page.locator('html')).toHaveAttribute('data-hermes-theme','classic')
+  await expect(page.locator('html')).toHaveAttribute('data-hermes-mode',mode)
+  await page.waitForTimeout(1500)
+  await page.screenshot({animations:'disabled',path:path.join(out,`${mode}-classic-${state}.png`)})
+  const proof=await page.evaluate(()=>({theme:document.documentElement.dataset.hermesTheme,mode:document.documentElement.dataset.hermesMode,storedTheme:localStorage.getItem('hermes-desktop-theme-v2'),storedMode:localStorage.getItem('hermes-desktop-mode-v1'),body:document.body.innerText,buttons:[...document.querySelectorAll('button')].map(e=>({text:e.innerText,label:e.getAttribute('aria-label')})),background:getComputedStyle(document.documentElement).getPropertyValue('--background'),width:innerWidth,height:innerHeight}))
+  fs.writeFileSync(path.join(out,`${mode}-classic-${state}.json`),JSON.stringify({kind:'observational-not-canonical',platform:'desktop',source_sha:'36922ad064d65dcf25f8f48df81e1ccf9a55de67',fixture:'classic-manual-real-v1',state,...proof},null,2))
+ }
+ try{
+  await waitForAppReady(f)
+  await page.getByRole('button',{name:'No thanks',exact:true}).click()
+  await page.getByRole('button',{name:'Open settings',exact:true}).click()
+  await page.getByText('Appearance',{exact:true}).click()
+  await page.getByText('Theme',{exact:true}).click()
+  await expect(page.getByText('Desktop palettes only. The selected mode is applied on top.',{exact:true})).toBeVisible()
+  await page.getByRole('button',{name:mode==='light'?'Light':'Dark',exact:true}).click()
+  await page.getByText('Nous Alt',{exact:true}).click()
+  await expect(page.locator('html')).toHaveAttribute('data-hermes-theme','nous-alt')
+  await page.getByText('Classic Hermes',{exact:true}).click()
+  await capture('picker')
+  await page.keyboard.press('Escape')
+  await expect(page.getByText('Desktop palettes only. The selected mode is applied on top.',{exact:true})).not.toBeVisible()
+  await expect(page.getByRole('button',{name:'Open settings',exact:true})).toBeVisible()
+  await capture('screen')
+ }finally{await f.cleanup()}
+})
