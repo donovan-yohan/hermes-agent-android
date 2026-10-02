@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 40
     env:
       ANDROID_SERIAL: emulator-5554
-      FOCUS_SYNTHETIC_OPT_IN: 651d659-full-first
+      FOCUS_SYNTHETIC_OPT_IN: b291-failure-only
     steps:
       - uses: actions/checkout@v4
         with:

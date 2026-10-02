@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Disposable synthetic CI: observe one unchanged connected full-suite invocation."""
-import concurrent.futures
+import secrets
 import hashlib
 import json
 import os
@@ -38,7 +38,7 @@ def validate_xml(paths):
 
 def main():
     assert os.environ.get('GITHUB_ACTIONS') == 'true'
-    assert os.environ.get('FOCUS_SYNTHETIC_OPT_IN') == '651d659-full-first'
+    assert os.environ.get('FOCUS_SYNTHETIC_OPT_IN') == 'b291-failure-only'
     assert os.environ['ANDROID_SERIAL'] == 'emulator-5554'
     adb = ['adb', '-s', 'emulator-5554']
     def call(*args):
@@ -59,44 +59,24 @@ def main():
                 'monotonic': time.monotonic(), 'epoch': time.time(),
                 'command': ['./gradlew', ':app:connectedDebugAndroidTest', '--no-daemon', '--no-build-cache']}
     (out / 'identity.json').write_text(json.dumps(manifest, indent=2))
-    # Reused allowlist: full dumps never leave process memory.
-    probes = {
-        'window': (['window', 'windows'], r'mCurrentFocus=|mFocusedApp=|mTopFocusedDisplayId=|mDisplayId=|^\s*Window #'),
-        'input': (['input'], r'FocusedApplications:|FocusedWindows:|FocusedApplication:|FocusedWindow:|focusedWindow=|focusedApplication=|^\s*displayId=|^\s*Display \d+ \[.*(?:Window|Activity|name=)'),
-        'activity': (['activity', 'activities'], r'topResumedActivity=|mResumedActivity:|^Display #|^\s*\* Task\{|^\s*RootTask #'),
-    }
-    stop = threading.Event()
+    nonce = secrets.token_hex(16)
+    call('shell', 'setprop', 'debug.hermes.focus_nonce', nonce)
+    manifest['command'] += [
+        '-Pandroid.testInstrumentationRunnerArguments.focusSnapshotNonce=' + nonce,
+        '-Pandroid.testInstrumentationRunnerArguments.focusSnapshotSerial=emulator-5554',
+    ]
+    (out / 'identity.json').write_text(json.dumps(manifest, indent=2))
     current: dict[str, str | None] = {'test': None}
-    def probe(item):
-        name, (args, pattern) = item
-        began = time.monotonic()
-        test = current['test']
-        try:
-            result = subprocess.run(adb + ['shell', 'dumpsys'] + args, text=True,
-                                    capture_output=True, timeout=2)
-            return {'probe': name, 'monotonic': began, 'epoch': time.time(), 'test': test,
-                    'exit': result.returncode,
-                    'fields': [s for s in result.stdout.splitlines() if re.search(pattern, s)]}
-        except subprocess.TimeoutExpired:
-            return {'probe': name, 'monotonic': began, 'test': test, 'error': 'timeout'}
-    def sample():
-        # Bounded whole-invocation coverage includes BOTH historically failing classes.
-        deadline = time.monotonic() + 300
-        with (out / 'focus.jsonl').open('w') as f, concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            for index in range(500):
-                if stop.is_set() or time.monotonic() >= deadline:
-                    break
-                for result in pool.map(probe, probes.items()):
-                    f.write(json.dumps({'sample': index, **result}) + '\n')
-                    f.flush()
-                if stop.wait(.5):
-                    break
-    logcat = subprocess.Popen(adb + ['logcat', '-v', 'epoch', '-T', '1', 'TestRunner:I', '*:S'],
+    logcat = subprocess.Popen(adb + ['logcat', '-v', 'epoch', '-T', '1', 'TestRunner:I', 'FocusSnapshot:I', '*:S'],
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     assert logcat.stdout is not None
     def events():
         with (out / 'test-events.jsonl').open('w') as f:
             for line in logcat.stdout:
+                if 'FocusSnapshot:' in line:
+                    with (out / 'focus.jsonl').open('a') as focus:
+                        focus.write(json.dumps({'epoch': time.time(), 'line': line.strip()}) + '\n')
+                    continue
                 match = re.search(r'TestRunner: (started|finished|failed): (\w+)\((com\.hermesagent\.mobile\.device\.\w+)\)', line)
                 if not match:
                     continue
@@ -110,9 +90,7 @@ def main():
                 if status == 'finished':
                     current['test'] = None
     observer = threading.Thread(target=events)
-    sampler = threading.Thread(target=sample)
     observer.start()
-    sampler.start()
     timed_out = False
     rc = 1
     try:
@@ -126,7 +104,6 @@ def main():
                 os.killpg(proc.pid, signal.SIGKILL)
                 rc = proc.wait()
     finally:
-        stop.set()
         logcat.terminate()
         try:
             logcat.wait(timeout=5)
@@ -134,8 +111,14 @@ def main():
             logcat.kill()
             logcat.wait()
         observer.join(timeout=5)
-        sampler.join(timeout=5)
     result = validate_xml(Path('app/build/outputs/androidTest-results/connected').glob('**/TEST-*.xml'))
+    events_seen = [json.loads(line) for line in (out / 'test-events.jsonl').read_text().splitlines()]
+    expected_events = Counter('com.hermesagent.mobile.device.' + x for x in EXPECTED)
+    result['exact_start_finish'] = all(
+        Counter(e['test'] for e in events_seen if e['status'] == status) == expected_events
+        for status in ('started', 'finished'))
+    result['failure_events'] = [e['test'] for e in events_seen if e['status'] == 'failed']
+    result['passed'] = result['passed'] and result['exact_start_finish'] and not result['failure_events']
     result.update(raw_exit=rc, timed_out=timed_out, apks_after=hashes())
     result['same_apks'] = manifest['apks'] == result['apks_after']
     result['passed'] = result['passed'] and rc == 0 and not timed_out and result['same_apks']
