@@ -1,0 +1,9 @@
+{
+  "final_capture_fixture": "apps/desktop/e2e/theme-contract.spec.ts",
+  "sha256": "412ee6155f990a616aa4f9709293dcff3770afc209ce1ddda1daf17f2f5dd414",
+  "patch_reconstruction_matches_disk_and_packet": true,
+  "desktop_images_and_receipts_verified": 8,
+  "reference_probe_file": "apps/desktop/e2e/theme-reference.spec.ts",
+  "reference_probe_sha256": "3949385d91515c0c6095655b3c3a7cb92b8bc4c110ee746d81df2b9c0bc60abf",
+  "reference_probe_note": "Earlier discovery-only file remains 19 lines. It is not the final capture fixture and is not in fixture.patch. Actual final command targets theme-contract.spec.ts explicitly."
+}

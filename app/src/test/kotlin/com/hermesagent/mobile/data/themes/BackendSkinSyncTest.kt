@@ -39,28 +39,60 @@ class BackendSkinSyncTest {
         assertEquals(listOf("saved-skin"), boot.state.value.themes.map { it.name })
     }
 
-    @Test fun `classic default is cached restored and applied under its own name`() = runTest {
+    @Test fun `default seed preserves custom selection and explicit reset applies once`() = runTest {
         val cache = BackendSkinCache(temporary.newFolder())
         val scope = ComposerControlsScope("connection-a", "default")
         val repository = GatewayThemeRepository(http = { null })
         val sync = BackendSkinSync(cache, repository, { scope }, { 0L })
-        val classic = Json.parseToJsonElement(
-            """{"name":"default","description":"Classic Hermes — gold and kawaii","colors":{"background":"#123","ui_text":"#fff"}}""",
-        ) as JsonObject
-        assertNull(sync.ingest(classic, apply = false, expectedGeneration = 0L, expectedScope = scope))
-        assertEquals("Classic Hermes", repository.state.value.themes.single().label)
-        assertNull(repository.state.value.activeOnGateway)
-        assertEquals(listOf(classic), cache.read(scope.connectionIdentity, scope.profileIdentity))
-        val boot = GatewayThemeRepository(http = { null })
-        BackendSkinSync(cache, boot, { scope }, { 0L }).restore()
-        assertEquals("default", boot.state.value.themes.single().name)
-        assertNull(boot.state.value.activeOnGateway)
-        assertEquals("default", sync.ingest(classic, apply = true, expectedGeneration = 0L, expectedScope = scope))
-        repository.acknowledgeBackendSkinApply("default", 0L)
-        assertNull(sync.ingest(classic, apply = true, expectedGeneration = 0L, expectedScope = scope))
+        val default = Json.parseToJsonElement("""{"name":"default"}""") as JsonObject
+        var selected = "saved-skin"
+        val persist: suspend (String) -> Boolean = { selected = it; true }
+        assertEquals(false, sync.ingestAndApply(default, false, 0L, scope, persist))
+        assertEquals("saved-skin", selected)
+        assertTrue(repository.state.value.themes.isEmpty())
+        assertTrue(cache.read(scope.connectionIdentity, scope.profileIdentity).isEmpty())
+        assertTrue(sync.ingestAndApply(default, true, 0L, scope, persist))
+        assertEquals("nous", selected)
+        assertEquals("default", repository.state.value.activeOnGateway)
+        selected = "mono" // A manual choice must survive duplicate events and reconnect seeds.
+        assertEquals(false, sync.ingestAndApply(default, false, 0L, scope, persist))
+        assertEquals(false, sync.ingestAndApply(default, true, 0L, scope, persist))
+        assertEquals("mono", selected)
+        val nous = Json.parseToJsonElement("""{"name":"nous"}""") as JsonObject
+        assertTrue(sync.ingestAndApply(nous, true, 0L, scope, persist))
+        selected = "mono"
+        // Desktop guards by the announced name, not the resolved palette name.
+        assertTrue(sync.ingestAndApply(default, true, 0L, scope, persist))
+        assertEquals("nous", selected)
     }
 
-    @Test fun `builtins apply without replacing palettes but default needs a definition`() = runTest {
+    @Test fun `legacy Classic cache is filtered on restore without losing custom or scope isolation`() = runTest {
+        val directory = temporary.newFolder()
+        val cache = BackendSkinCache(directory)
+        var scope = ComposerControlsScope("connection-a", "profile-a")
+        assertTrue(cache.write(scope.connectionIdentity, scope.profileIdentity, listOf(payload)))
+        val classic = Json.parseToJsonElement("""{"name":"default","colors":{"background":"#123"}}""")
+        // Raw on-disk legacy data: do not use today's sanitizing writer to simulate an old cache.
+        directory.listFiles()!!.single().writeText(kotlinx.serialization.json.JsonArray(listOf(classic, payload)).toString())
+        val repository = GatewayThemeRepository(http = { null })
+        val sync = BackendSkinSync(cache, repository, { scope }, { 0L })
+        sync.restore()
+        assertEquals(listOf("saved-skin"), repository.state.value.themes.map { it.name })
+        assertEquals(listOf(payload), cache.read(scope.connectionIdentity, scope.profileIdentity))
+        assertNull(repository.state.value.activeOnGateway)
+        scope = scope.copy(profileIdentity = "profile-b")
+        sync.restore()
+        assertTrue(repository.state.value.themes.isEmpty())
+        scope = ComposerControlsScope("connection-b", "profile-a")
+        sync.restore()
+        assertTrue(repository.state.value.themes.isEmpty())
+        scope = ComposerControlsScope("connection-a", "profile-a")
+        sync.restore()
+        assertEquals(listOf("saved-skin"), repository.state.value.themes.map { it.name })
+        assertNull(repository.state.value.activeOnGateway)
+    }
+
+    @Test fun `builtins and default apply without replacing palettes or needing colors`() = runTest {
         val cache = BackendSkinCache(temporary.newFolder())
         val scope = ComposerControlsScope("connection-a", "default")
         val repository = GatewayThemeRepository(http = { null })
@@ -72,11 +104,31 @@ class BackendSkinSyncTest {
         repository.acknowledgeBackendSkinApply("mono", 0L)
         assertNull(sync.ingest(builtin, apply = false, expectedGeneration = 0L, expectedScope = scope))
         assertNull(sync.ingest(builtin, apply = true, expectedGeneration = 0L, expectedScope = scope))
-        assertNull(sync.ingest(default, apply = true, expectedGeneration = 0L, expectedScope = scope))
+        assertEquals("nous", sync.ingest(default, apply = true, expectedGeneration = 0L, expectedScope = scope))
         assertTrue(repository.state.value.themes.isEmpty())
         assertTrue(cache.read(scope.connectionIdentity, scope.profileIdentity).isEmpty())
         assertEquals("saved-skin", sync.ingest(payload, apply = true, expectedGeneration = 0L, expectedScope = scope))
         assertEquals("mono", sync.ingest(builtin, apply = true, expectedGeneration = 0L, expectedScope = scope))
+    }
+
+    @Test fun `default reset retries failed writes and rejects stale ownership`() = runTest {
+        var scope = ComposerControlsScope("connection-a", "profile-a")
+        var generation = 0L
+        val cache = BackendSkinCache(temporary.newFolder())
+        val repository = GatewayThemeRepository(http = { null }, endpointGeneration = { generation })
+        val sync = BackendSkinSync(cache, repository, { scope }, { generation })
+        val default = JsonObject(payload + ("name" to kotlinx.serialization.json.JsonPrimitive(" default ")))
+        val origin = scope
+        var selected = "saved-skin"
+        assertEquals(false, sync.ingestAndApply(default, true, 0L, origin) { false })
+        assertTrue(sync.ingestAndApply(default, true, 0L, origin) { selected = it; true })
+        assertEquals("nous", selected)
+        assertTrue(repository.state.value.themes.isEmpty())
+        assertTrue(cache.read(origin.connectionIdentity, origin.profileIdentity).isEmpty())
+        scope = scope.copy(profileIdentity = "profile-b")
+        assertEquals(false, sync.ingestAndApply(default, true, 0L, origin) { error("stale profile") })
+        generation++
+        assertEquals(false, sync.ingestAndApply(default, true, 0L, scope) { error("stale generation") })
     }
 
     @Test fun `buffered skin from another profile is rejected at the same generation`() = runTest {
