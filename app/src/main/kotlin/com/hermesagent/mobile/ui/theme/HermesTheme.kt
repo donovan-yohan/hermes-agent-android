@@ -77,9 +77,7 @@ fun HermesTheme(
     // definitions are endpoint-scoped and have already been rejected on a name
     // collision before they reach this composition.
     val preset = remember(selection.themeName, customThemes) {
-        BuiltinThemes.ALL.firstOrNull { it.name == selection.themeName }
-            ?: customThemes.firstOrNull { it.name == selection.themeName }
-            ?: BuiltinThemes.resolve(selection.themeName)
+        resolveAppearancePreset(selection.themeName, customThemes)
     }
     val requestedDark = remember(selection.mode, systemDark) { selection.mode.resolvesToDark(systemDark) }
     // The palette is picked by what the user asked for; everything painted from

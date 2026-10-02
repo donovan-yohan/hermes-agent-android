@@ -1,0 +1,42 @@
+[
+  {
+    "receipt": "dark-manual-mono.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "dark-register-only-default-preserves-mono.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "dark-repeated-default-preserves-manual-mono.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "light-manual-mono.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "light-register-only-default-preserves-mono.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "light-repeated-default-preserves-manual-mono.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "dark-explicit-default-applies-nous.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  },
+  {
+    "receipt": "light-explicit-default-applies-nous.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance\n"
+  }
+]

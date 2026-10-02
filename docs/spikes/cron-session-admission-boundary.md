@@ -1,6 +1,6 @@
 # Cron execution-session admission
 
-Status: implemented in the isolated `fix/cron-session-admission` worktree after explicit authorization of the narrow app-owned detail GET. Based on Android `489baa559ad242a77aa410db48f830e12235d8ea`. No other worktree was merged or modified.
+Status: implemented in the isolated `fix/cron-session-admission` worktree after explicit authorization of the narrow app-owned detail GET. Originally based on Android `489baa559ad242a77aa410db48f830e12235d8ea`; now integrated with main `b291fb1a807452351735c3b49869c8109992b539`. No other worktree was modified.
 
 ## Upstream contract
 
@@ -40,6 +40,6 @@ Focused `GatewayRestClientTest`, `GatewaySessionDetailTransportTest`, `CronSessi
 
 - Detail and messages are existing upstream routes, verified from pinned source and contract-faithful tests; no authenticated live backend was exercised. Older servers without detail or profile stamps leave unknown runs view-only. A previously known verdict survives same-owner lookup failure as Desktop specifies.
 - No server-issued admission/ownership token exists. A scheduler transition unseen between GET and wire send cannot be fenced by the client, and an already-sent frame cannot be retracted.
-- Non-cron behavior and plugin HTTP namespaces are unchanged. Routine pause/remove semantics are not part of execution-session admission.
-- The metadata worktree overlaps `GatewaySessionRepository.kt`; integration remains the parent's responsibility after review. No metadata branch was cherry-picked here.
+- Non-cron sessions acquire no new detail prerequisite, and plugin HTTP namespaces are unchanged. Redirect refusal intentionally applies to all REST requests using the shared `OkHttpGatewayHttp`, including non-cron requests; this is not a claim that all non-cron transport behavior is unchanged. Routine pause/remove semantics are not part of execution-session admission.
+- Integration merges main `b291fb1a807452351735c3b49869c8109992b539` without rewriting the approved cron history. The automatic repository merge retains persisted interruption/failure parsing, conservative retained-failure overlays, durable row addressing, runtime-free read-only hydration, and admission/selection/endpoint fences. Fresh integrated-head tests and independent review are required; prior branch review is not approval of the integration.
 - This is JVM/transport/build evidence, not emulator or physical-device visual acceptance. Existing parity work still owes a rendered view-only/draft journey; see the parity ledger.

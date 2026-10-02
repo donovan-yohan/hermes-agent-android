@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
@@ -30,6 +31,12 @@ class AppearanceThemesJourneyTest {
 
     @get:Rule
     val compose = createComposeRule()
+
+    @Test
+    fun `legacy default pick marks the resolved Nous row selected`() {
+        launch(GatewayThemesState(), selection = AppearanceSelection("default", HermesThemeMode.Dark))
+        compose.onNodeWithContentDescription("Nous skin. GitHub chrome, Nous blue accent").assertIsSelected()
+    }
 
     @Test
     fun `builtins remain selectable while gateway themes are idle`() {
@@ -111,11 +118,12 @@ class AppearanceThemesJourneyTest {
         state: GatewayThemesState,
         onSelectTheme: (String) -> Unit = {},
         onRetry: () -> Unit = {},
+        selection: AppearanceSelection = AppearanceSelection("nous", HermesThemeMode.Dark),
     ) {
         compose.setContent {
-            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark), customThemes = state.themes.map { it.preset }) {
+            HermesTheme(selection, customThemes = state.themes.map { it.preset }) {
                 AppearanceScreen(
-                    selection = AppearanceSelection("nous", HermesThemeMode.Dark),
+                    selection = selection,
                     gatewayThemes = state,
                     actions = AppearanceActions(onSelectTheme = onSelectTheme, onRetryThemes = onRetry),
                 )
