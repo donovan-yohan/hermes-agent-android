@@ -1,4 +1,9 @@
-# Existing-Bot installed Skills — contract gate blocked
+# Existing-Bot installed Skills — original contract gate audit
+
+**Resumption:** the parent authorized the bounded core HTTP host foundation.
+See [ADR 0005](../adr/0005-scoped-core-skills-http.md) for the implemented typed
+capability, dispatch proof/limits, route availability, and remaining editor work.
+The stopped-audit record below is historical; no Skills UI ships in this slice.
 
 ## Outcome
 
