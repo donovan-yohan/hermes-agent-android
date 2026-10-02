@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 MODULE = pathlib.Path(__file__).resolve().parents[1] / "verify-pin-citations.py"
 spec = importlib.util.spec_from_file_location("verify_pin_citations", MODULE)
@@ -22,6 +22,14 @@ class VerifyPinCitationsTest(unittest.TestCase):
     def setUp(self) -> None:
         verifier._blobs.clear()
         verifier._tree_paths.clear()
+        verifier._DEADLINE = None
+        # These are isolated unit tests. An obsolete mock must fail immediately,
+        # never run a real recursive grep, Git command, or network transport.
+        self.process_guard = patch.object(
+            verifier.subprocess, "Popen", side_effect=AssertionError("unexpected real command")
+        )
+        self.process_guard.start()
+        self.addCleanup(self.process_guard.stop)
 
     def test_typed_extensions_keep_full_path_and_ranges(self) -> None:
         text = "apps/desktop/src/x.tsx:12-14,20 and packages/ui/button.jsx:7"
@@ -79,18 +87,18 @@ class VerifyPinCitationsTest(unittest.TestCase):
 
     def test_scan_failure_aborts_instead_of_reporting_zero_files(self) -> None:
         failed = subprocess.CompletedProcess(["grep"], 2, stdout="", stderr="permission denied")
-        with patch.object(verifier.subprocess, "run", return_value=failed):
+        with patch.object(verifier, "subprocess_run", return_value=failed):
             with self.assertRaisesRegex(RuntimeError, "grep exit 2"):
                 verifier.stamped_files("old")
 
     def test_scan_no_match_is_an_empty_success(self) -> None:
         no_match = subprocess.CompletedProcess(["grep"], 1, stdout="", stderr="")
-        with patch.object(verifier.subprocess, "run", return_value=no_match):
+        with patch.object(verifier, "subprocess_run", return_value=no_match):
             self.assertEqual(verifier.stamped_files("old"), [])
 
     def test_nul_delimited_scan_preserves_spaces_in_paths(self) -> None:
         found = subprocess.CompletedProcess(["grep"], 0, stdout="./one file.md\0./two.kt\0", stderr="")
-        with patch.object(verifier.subprocess, "run", return_value=found):
+        with patch.object(verifier, "subprocess_run", return_value=found):
             self.assertEqual(verifier.stamped_files("old"), ["./one file.md", "./two.kt"])
 
     def test_main_scan_failure_removes_a_stale_plan(self) -> None:
@@ -106,12 +114,16 @@ class VerifyPinCitationsTest(unittest.TestCase):
             self.assertFalse(plan.exists())
 
     def test_existing_blob_git_failure_aborts(self) -> None:
-        failure = subprocess.CalledProcessError(128, ["git", "show"])
+        process = MagicMock(returncode=128)
+        process.communicate.return_value = ("", "https://user:SECRET@host/private")
         with patch.object(verifier, "tree_paths", return_value=["apps/a.ts"]), patch.object(
-            verifier.subprocess, "run", side_effect=failure
-        ):
-            with self.assertRaises(subprocess.CalledProcessError):
+            verifier.subprocess, "Popen", return_value=process
+        ) as start:
+            with self.assertRaisesRegex(verifier.GitFailure, "^git stage=blob-read: exit 128$") as error:
                 verifier.blob("old", "apps/a.ts")
+        start.assert_called_once()
+        self.assertNotIn("SECRET", str(error.exception))
+        self.assertNotIn(("old", "apps/a.ts"), verifier._blobs)
 
 
 if __name__ == "__main__":

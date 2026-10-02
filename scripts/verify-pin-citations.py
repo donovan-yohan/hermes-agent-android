@@ -17,12 +17,22 @@ The range mode is deliberately diff-driven. The carrier scan above finds files b
 grepping for the old SHA, so a file whose stamp has already been rewritten to the
 new SHA drops out of that scan — exactly the file a pin-move change just edited.
 A restamp is a diff event, so the diff is where it is discovered.
+
+Git reads are offline and bounded to 30 seconds; explicit clone/fetch stages to
+60 seconds, sharing a 240-second run budget. Timeout cleanup kills the process
+group and waits at most one additional second. With --fetch, exact snapshots
+are materialized once per SHA in scratch, never in the read-only reference.
+Transport failures exit 3, without publishing remote stderr or private paths.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import signal
+import sys
+import time
 import pathlib
 import re
 import subprocess
@@ -81,7 +91,84 @@ _tree_paths: dict[str, list[str]] = {}
 _ensured: set[str] = set()
 _READ: pathlib.Path | None = None
 _SCRATCH: tempfile.TemporaryDirectory | None = None
-_MISSING: set[str] = set()
+
+# One shared wall-clock budget, not N independent network timeouts.
+GIT_SECONDS = 30
+NETWORK_SECONDS = 60
+RUN_SECONDS = 240
+_DEADLINE: float | None = None
+_FETCH = False
+_materialized: set[str] = set()
+
+
+class GitFailure(RuntimeError):
+    """Transport/tool failure; never downgrade this to an absent citation."""
+
+
+def subprocess_run(command, *, capture_output=True, text=True, errors="replace", check=False):
+    global _DEADLINE
+    if _DEADLINE is None:
+        _DEADLINE = time.monotonic() + RUN_SECONDS
+    args = iter(command[1:])
+    operation = command[0]
+    if operation == "git":
+        for arg in args:
+            if arg in ("-C", "-c"):
+                next(args)
+            else:
+                operation = arg
+                break
+    stage = {"cat-file": "commit-probe", "show": "blob-read",
+             "ls-tree": "tree-read", "rev-list": "snapshot-probe",
+             "fetch": "fetch", "clone": "scratch-clone",
+             "config": "source-config", "remote": "scratch-config",
+             "merge-base": "merge-base", "diff": "range-diff"}.get(operation, "local-command")
+    budget = NETWORK_SECONDS if operation in ("fetch", "clone") else GIT_SECONDS
+    timeout = min(budget, _DEADLINE - time.monotonic())
+    if timeout <= 0:
+        raise GitFailure(f"git stage={stage}: total {RUN_SECONDS}s budget exhausted")
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1")
+    if operation not in ("fetch", "clone"):
+        env["GIT_ALLOW_PROTOCOL"] = ""
+    # Suppress promisor reads on older Git too. Explicit fetches below are the
+    # only network admission point; never let a read mutate the reference store.
+    if command[0] == "git":
+        command = ["git", "-c", "remote.origin.promisor=false",
+                   *([] if operation in ("fetch", "clone") else ["-c", "protocol.allow=never"]),
+                   *command[1:]]
+    if operation in ("fetch", "clone"):
+        print(f"git stage={stage} started (limit {timeout:.0f}s)", file=sys.stderr, flush=True)
+    try:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=text, errors=errors, env=env, start_new_session=True)
+    except OSError:
+        raise GitFailure(f"git stage={stage}: could not start command") from None
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill the transport/helpers as well as git. Do not communicate() without
+        # a deadline: an inherited pipe in a descendant can otherwise hang again.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        raise GitFailure(f"git stage={stage}: timed out after {timeout:.0f}s; citation check incomplete") from None
+    # Remote stderr, argv, and absolute paths can contain credentials. Never
+    # return them to callers that format errors or print exception chains.
+    done = subprocess.CompletedProcess([], process.returncode, stdout,
+                                       f"git stage={stage}: exit {process.returncode}")
+    if check and done.returncode:
+        raise GitFailure(done.stderr)
+    return done
+
 
 
 def blob(sha: str, path: str) -> list[str] | None:
@@ -90,7 +177,7 @@ def blob(sha: str, path: str) -> list[str] | None:
         if path not in tree_paths(sha):
             _blobs[key] = None
             return None
-        done = subprocess.run(
+        done = subprocess_run(
             ["git", "-C", str(read_root()), "show", f"{sha}:{path}"],
             capture_output=True,
             text=True,
@@ -109,6 +196,38 @@ def blob(sha: str, path: str) -> list[str] | None:
     return _blobs[key]
 
 
+def materialize(sha: str) -> None:
+    """Fetch one exact snapshot, not one implicit HTTPS request per blob.
+
+    Only proven-complete immutable snapshots are cached within this run.
+    Probe the tree (not history) offline; a complete local snapshot needs no remote.
+    --refetch is necessary when the commit is present but its blobs are not.
+    """
+    if not FULL_SHA_RE.fullmatch(sha):
+        raise GitFailure("materialization requires a full immutable SHA")
+    if sha in _materialized:
+        return
+    if _has(sha):
+        objects = subprocess_run(
+            ["git", "-C", str(read_root()), "rev-list", "--objects",
+             "--no-object-names", "--missing=print", f"{sha}^{{tree}}"], check=True,
+        ).stdout.splitlines()
+        if not any(oid.startswith("?") for oid in objects):
+            _materialized.add(sha)
+            return
+    target = _scratch_clone()
+    print(f"git stage=materialize revision={sha}", file=sys.stderr, flush=True)
+    subprocess_run(
+        ["git", "-C", str(target), "fetch", "--no-tags", "--depth", "1",
+         "--refetch", "--no-filter", "origin", sha], check=True,
+    )
+    _tree_paths.pop(sha, None)
+    for key in list(_blobs):
+        if key[0] == sha:
+            del _blobs[key]
+    _materialized.add(sha)
+
+
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
         if not _has(sha):
@@ -118,7 +237,9 @@ def tree_paths(sha: str) -> list[str]:
             # Action pin, say) from aborting the whole run.
             _tree_paths[sha] = []
             return []
-        done = subprocess.run(
+        if _FETCH:
+            materialize(sha)
+        done = subprocess_run(
             ["git", "-C", str(read_root()), "ls-tree", "-r", "--name-only", sha],
             capture_output=True,
             text=True,
@@ -141,7 +262,7 @@ def read_root() -> pathlib.Path:
 
 
 def _has(sha: str) -> bool:
-    return subprocess.run(
+    return subprocess_run(
         ["git", "-C", str(read_root()), "cat-file", "-e", f"{sha}^{{commit}}"],
         capture_output=True, text=True,
     ).returncode == 0
@@ -161,19 +282,19 @@ def _scratch_clone() -> pathlib.Path:
     scratch = tempfile.TemporaryDirectory(prefix="pin-citations-")
     target = pathlib.Path(scratch.name) / "upstream"
     try:
-        origin = subprocess.run(
+        origin = subprocess_run(
             ["git", "-C", str(UPSTREAM), "config", "--get", "remote.origin.url"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=True,
         ).stdout.strip()
-        clone = subprocess.run(
+        clone = subprocess_run(
             ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
              "--reference", str(UPSTREAM), str(UPSTREAM), str(target)],
             capture_output=True, text=True,
         )
         if clone.returncode != 0:
-            raise RuntimeError(f"cannot build a scratch clone of {UPSTREAM}: {clone.stderr.strip()}")
+            raise GitFailure(clone.stderr)
         if origin:
-            subprocess.run(
+            subprocess_run(
                 ["git", "-C", str(target), "remote", "set-url", "origin", origin],
                 capture_output=True, text=True, check=True,
             )
@@ -194,31 +315,22 @@ def ensure_sha(sha: str, fetch: bool) -> None:
     error rather than reaching the network, so a local `check` cannot silently
     depend on a connection.
 
-    A pin that cannot be obtained is remembered as such: without that, every
-    restamped file citing it retries the same network fetch and reports the same
-    failure, which is both slow and a way to get a rate-limited gate disabled.
+    A transport/tool failure aborts the run rather than being retried for every
+    carrier or mistaken for an absent citation. Successful snapshots are cached.
     """
-    if sha in _ensured or sha in _MISSING:
+    if sha in _ensured:
         return
     if _has(sha):
         _ensured.add(sha)
         return
     if not fetch:
         raise RuntimeError(
-            f"upstream checkout {UPSTREAM} does not have {sha}; "
+            f"upstream checkout does not have {sha}; "
             f"fetch it (--fetch), or point --upstream at a checkout that has it"
         )
-    target = _scratch_clone()
-    fetched = subprocess.run(
-        ["git", "-C", str(target), "fetch", "--no-tags", "--depth", "1",
-         "--filter=blob:none", "origin", sha],
-        capture_output=True, text=True,
-    )
-    if fetched.returncode != 0:
-        _MISSING.add(sha)
-        raise RuntimeError(f"cannot fetch {sha} into {target}: {fetched.stderr.strip()}")
+    materialize(sha)
     if not _has(sha):
-        raise RuntimeError(f"{sha} was fetched into {target} but is still unreadable there")
+        raise GitFailure(f"fetched revision {sha} is still unreadable")
     _ensured.add(sha)
 
 
@@ -347,7 +459,7 @@ def is_provenance(name: str) -> bool:
 
 def stamped_files(old_sha: str) -> list[str]:
     """Return every carrier, aborting rather than mistaking a failed scan for zero."""
-    done = subprocess.run(
+    done = subprocess_run(
         ["grep", "-rlZ", old_sha, "--exclude-dir=.git", "--exclude-dir=.worktrees",
          "--exclude-dir=build", "--exclude-dir=.claude", "."],
         capture_output=True,
@@ -372,7 +484,7 @@ def text_at(repo: str, rev: str, path: str) -> str | None:
     if rev == WORKTREE:
         target = pathlib.Path(repo) / path
         return target.read_text(errors="replace") if target.is_file() else None
-    done = subprocess.run(
+    done = subprocess_run(
         ["git", "-C", repo, "show", f"{rev}:{path}"],
         capture_output=True,
         text=True,
@@ -383,15 +495,14 @@ def text_at(repo: str, rev: str, path: str) -> str | None:
     # Distinguish "this path is not in that revision" from "the read failed".
     # The check must run against `repo`, not the upstream checkout `tree_paths`
     # reads from: they are different repositories and different revisions.
-    present = subprocess.run(
-        ["git", "-C", repo, "cat-file", "-e", f"{rev}:{path}"],
-        capture_output=True, text=True,
+    present = subprocess_run(
+        ["git", "-C", repo, "ls-tree", "--name-only", rev, "--", path],
+        capture_output=True, text=True, check=True,
     )
-    if present.returncode != 0:
+    if not present.stdout.strip():
         return None
     raise RuntimeError(
-        f"cannot read {path} at {rev} in {repo} although it is in that tree: "
-        f"{done.stderr.strip() or 'git show failed'}"
+        done.stderr
     )
 
 
@@ -399,9 +510,9 @@ def changed_files(repo: str, base: str, head: str) -> list[str]:
     command = ["git", "-C", repo, "diff", "--name-only", "--diff-filter=ACMR", base]
     if head != WORKTREE:
         command.append(head)
-    done = subprocess.run(command, capture_output=True, text=True)
+    done = subprocess_run(command, capture_output=True, text=True)
     if done.returncode != 0:
-        raise RuntimeError(f"cannot diff {base}..{head} in {repo}: {done.stderr.strip()}")
+        raise RuntimeError(done.stderr)
     return [name for name in done.stdout.splitlines() if name]
 
 
@@ -879,14 +990,13 @@ def check_range_spec(
     merge_base = head.startswith(".")
     head = head.lstrip(".") or "HEAD"
     if merge_base:
-        done = subprocess.run(
+        done = subprocess_run(
             ["git", "-C", repo, "merge-base", base, head],
             capture_output=True, text=True,
         )
         if done.returncode != 0:
             raise RuntimeError(
-                f"cannot find the merge base of {base} and {head} in {repo}: "
-                f"{done.stderr.strip() or 'no such revision'}"
+                done.stderr
             )
         base = done.stdout.strip()
     return check_range(base, head, repo=repo, fetch=fetch)
@@ -958,6 +1068,8 @@ def check_range(
     kept apart from the findings so a caller can say "not provable here" instead
     of "wrong", which are different claims and must not be conflated.
     """
+    global _FETCH
+    _FETCH = fetch
     findings: list[Finding] = []
     counts = {"files": 0, "checked": 0, "skipped": 0, "unmoved": 0, "ambiguous": 0}
     unreachable: dict[str, list[str]] = {}
@@ -995,6 +1107,8 @@ def check_range(
         for pin in sorted(used):
             try:
                 ensure_sha(pin, fetch)
+            except GitFailure:
+                raise
             except RuntimeError:
                 missing.append(pin)
         if missing:
@@ -1040,11 +1154,11 @@ def self_test() -> None:
     with tempfile.TemporaryDirectory() as directory:
         repo = pathlib.Path(directory) / "fixture"
         repo.mkdir()
-        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess_run(["git", "init", "-q", str(repo)], check=True)
         identity = ["-c", "user.email=fixture@example.invalid", "-c", "user.name=fixture"]
 
         def git(*args: str) -> str:
-            done = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+            done = subprocess_run(["git", "-C", str(repo), *args], capture_output=True, text=True)
             if done.returncode != 0:
                 raise AssertionError(f"fixture git {args} failed: {done.stderr.strip()}")
             return done.stdout.strip()
@@ -1627,4 +1741,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except GitFailure as error:
+        print(f"ERROR  {error}", file=sys.stderr)
+        raise SystemExit(3) from None
