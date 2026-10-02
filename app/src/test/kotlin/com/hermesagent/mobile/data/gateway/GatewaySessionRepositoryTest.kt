@@ -5058,9 +5058,23 @@ class GatewaySessionRepositoryTest {
         runCurrent()
         assertEquals("120", http.requests.last { it.path.endsWith("/messages") }.query["offset"])
         assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
-        assertEquals(TranscriptRowId(100), cache.transcript("durable-a").first().rowId)
         assertEquals(2, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
         assertEquals(listOf("original question"), entries.filterIsInstance<UserTurn>().map { it.text })
+        val backfilled = cache.transcript("durable-a")
+        assertEquals(TranscriptRowId(100), backfilled.first().rowId)
+        // The older durable user is distinct from the retained, identity-free overlay.
+        val users = backfilled.filterIsInstance<UserTurn>()
+        assertEquals(listOf("original question", "original question"), users.map { it.text })
+        assertEquals(listOf(TranscriptRowId(100), null), users.map { it.rowId })
+        val failures = backfilled.filterIsInstance<AssistantTurn>().filter { it.error != null }
+        assertEquals(2, failures.size)
+        failures.forEach { assertNull(it.rowId) }
+        // Backfill prepends only row 100: no lost, reordered, or duplicated tail entries.
+        assertEquals(entries, backfilled.drop(1))
+        assertEquals((100L..219L).map { TranscriptRowId(it) }, backfilled.mapNotNull { it.rowId })
+        assertEquals((101..219).map { "partial $it" },
+            backfilled.filterIsInstance<AssistantTurn>().filter { it.error == null }.map { it.text })
+        assertEquals(backfilled.size, backfilled.map { it.id }.distinct().size)
     }
 
     @Test
