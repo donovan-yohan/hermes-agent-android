@@ -60,9 +60,9 @@ internal class BackendSkinSync(
         if (scope != expectedScope) return null
         if (!restoreLocked(scope, expectedGeneration)) return null
         val name = (payload["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
-        if (name == "default" || BuiltinThemes.ALL.any { it.name == name }) {
-            val announcedName = requireNotNull(name)
-            val target = if (announcedName == "default") BuiltinThemes.DEFAULT_NAME else announcedName
+        if (name != null && BuiltinThemes.isReserved(name)) {
+            val announcedName = name
+            val target = if (announcedName in BuiltinThemes.RETIRED_NAMES) BuiltinThemes.DEFAULT_NAME else announcedName
             return target.takeIf { repository.requestBackendSkinApply(announcedName, apply, expectedGeneration) }
         }
         val theme = parseBackendSkin(payload) ?: return null

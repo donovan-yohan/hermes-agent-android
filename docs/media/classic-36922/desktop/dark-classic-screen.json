@@ -1,0 +1,149 @@
+{
+  "kind": "observational-not-canonical",
+  "platform": "desktop",
+  "source_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "fixture": "classic-manual-real-v1",
+  "state": "screen",
+  "theme": "classic",
+  "mode": "dark",
+  "storedTheme": "classic",
+  "storedMode": "dark",
+  "body": "SESSIONS\nBOTS\nNew session\nCtrl\nN\nCapabilities\nMessaging\nArtifacts\nScheduled jobs\n\nNo sessions yet\n\nNew project\nNEW SESSION\n\nHERMES AGENT\n\nAsk a question, paste an error, or point me at a repo. I can read code, run tools, and help you ship.\n\nScroll to bottom\n⠋\n⠙\n⠹\n⠸\n⠼\n⠴\n⠦\n⠧\n⠇\n⠏\nWaking up …\nMock Model\nMed\nGateway\nready\nSmart",
+  "buttons": [
+    {
+      "text": "",
+      "label": "Hide sidebar"
+    },
+    {
+      "text": "",
+      "label": "Open settings"
+    },
+    {
+      "text": "",
+      "label": "Layout editor"
+    },
+    {
+      "text": "",
+      "label": "HUD mode"
+    },
+    {
+      "text": "",
+      "label": "Swap sidebar sides"
+    },
+    {
+      "text": "",
+      "label": "Show right sidebar"
+    },
+    {
+      "text": "",
+      "label": "Minimize"
+    },
+    {
+      "text": "New session\nCtrl\nN",
+      "label": null
+    },
+    {
+      "text": "Capabilities",
+      "label": null
+    },
+    {
+      "text": "Messaging",
+      "label": null
+    },
+    {
+      "text": "Artifacts",
+      "label": null
+    },
+    {
+      "text": "Scheduled jobs",
+      "label": null
+    },
+    {
+      "text": "New project",
+      "label": null
+    },
+    {
+      "text": "",
+      "label": "default"
+    },
+    {
+      "text": "",
+      "label": "New profile"
+    },
+    {
+      "text": "",
+      "label": "Import profile…"
+    },
+    {
+      "text": "",
+      "label": "Manage profiles…"
+    },
+    {
+      "text": "",
+      "label": "Manage gateways…"
+    },
+    {
+      "text": "",
+      "label": "Close"
+    },
+    {
+      "text": "",
+      "label": "New session tab"
+    },
+    {
+      "text": "Scroll to bottom",
+      "label": "Scroll to bottom"
+    },
+    {
+      "text": "",
+      "label": "Hide status stack"
+    },
+    {
+      "text": "",
+      "label": "Add context"
+    },
+    {
+      "text": "Mock Model",
+      "label": "Model · custom: mock-model"
+    },
+    {
+      "text": "Med",
+      "label": "Effort: Med"
+    },
+    {
+      "text": "",
+      "label": "Voice dictation"
+    },
+    {
+      "text": "",
+      "label": "Start voice conversation"
+    },
+    {
+      "text": "",
+      "label": "Voice chat engine"
+    },
+    {
+      "text": "",
+      "label": "Close"
+    },
+    {
+      "text": "",
+      "label": "Restore"
+    },
+    {
+      "text": "",
+      "label": null
+    },
+    {
+      "text": "Gateway\nready",
+      "label": null
+    },
+    {
+      "text": "Smart",
+      "label": null
+    }
+  ],
+  "background": "color-mix(in srgb, #1a1a2e 74%, #0d0d0e)",
+  "width": 1220,
+  "height": 800
+}

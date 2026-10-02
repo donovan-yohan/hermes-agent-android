@@ -4,17 +4,16 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `e05b16348b1d06a3311237423b0a4fc30d9c5aa1`. Identity, registry and typography
+ * `36922ad064d65dcf25f8f48df81e1ccf9a55de67`. Identity, registry and typography
  * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
  * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
- * extraction), so `hasHandTunedDark` is read from there. Transcribed
- * 2026-08-31 and re-verified 2026-10-01 from a disposable upstream checkout.
- * Registry identity, shared palettes, colour keys and typography are unchanged
- * from e27448b231498e79ade668d68c0b6c6206951206 and the previous target
- * 587e673e2a2fae0616d8b750bb189217080f621a. Entry sourceLines and line citations
- * below retain the original palette transcription's provenance, not new captures.
- * Backend default registration was reverted at this target; this built-in ledger
- * certifies registry identity only, not backend behavior or rendered parity.
+ * extraction). Classic is the exception: presets.ts:342-384 converts explicit
+ * light/dark skin seeds through skin.ts, not a shared palette. Re-verified
+ * 2026-10-02 from a disposable checkout. The other eleven palettes, converter
+ * and shared color maths are byte-identical to e05b16348b1d06a3311237423b0a4fc30d9c5aa1.
+ * Entry sourceLines below identify this target's preset declarations; historical
+ * production palette citations and visual reports retain their inspected pins.
+ * This ledger certifies registry identity, not fresh rendered parity.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
  * upstream checkout, and a test that silently skips when a path is missing is
@@ -29,13 +28,13 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "e05b16348b1d06a3311237423b0a4fc30d9c5aa1"
+    const val PINNED_SHA = "36922ad064d65dcf25f8f48df81e1ccf9a55de67"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** Where the palettes live since upstream's shared-package extraction. */
     const val PALETTE_SOURCE_PATH = "apps/shared/src/theme-presets.ts"
 
-    /** `presets.ts:415` — `DEFAULT_SKIN_NAME`. */
+    /** `presets.ts:462` — `DEFAULT_SKIN_NAME`. */
     const val DEFAULT_SKIN = "nous"
 
     data class Entry(
@@ -48,19 +47,20 @@ object DesktopThemeLedger {
         val sourceLines: String,
     )
 
-    /** `presets.ts:398-410` — `BUILTIN_THEMES`, in declaration order. */
+    /** `presets.ts:444-456` — `BUILTIN_THEMES`, in declaration order. */
     val ENTRIES: List<Entry> = listOf(
-        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "129-177"),
-        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "66-114"),
-        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "180-227"),
-        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "230-275"),
-        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "278-323"),
-        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "329-339"),
-        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "345-354"),
-        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "356-365"),
-        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "368-373"),
-        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "388-396"),
-        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "376-385"),
+        Entry("nous", "Nous", "GitHub chrome, Nous blue accent", true, "130-178"),
+        Entry("github", "GitHub", "GitHub Light Default and Dark Default", true, "67-115"),
+        Entry("catppuccin", "Catppuccin", "Soothing pastels — Latte and Mocha", true, "181-228"),
+        Entry("everforest", "Everforest", "Warm, low-contrast forest greens", true, "231-276"),
+        Entry("solarized", "Solarized", "Fixed-contrast light and dark", true, "279-324"),
+        Entry("nous-alt", "Nous Alt", "Glass neutrals, cream on mission-blue", true, "330-340"),
+        Entry("classic", "Classic Hermes", "Gold on navy, the CLI's original look", true, "379-385"),
+        Entry("midnight", "Midnight", "Deep blue-violet with cool accents", false, "391-400"),
+        Entry("ember", "Ember", "Warm crimson and bronze — forge vibes", false, "402-411"),
+        Entry("mono", "Mono", "Clean grayscale — minimal and focused", false, "414-419"),
+        Entry("slate", "Slate", "Cool slate blue — focused developer theme", false, "434-442"),
+        Entry("cyberpunk", "Cyberpunk", "Neon green on black — matrix terminal", false, "422-431"),
     )
 
     /**

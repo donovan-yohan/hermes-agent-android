@@ -1,0 +1,19 @@
+{
+  "kind": "observational-not-canonical",
+  "platform": "android",
+  "state": "light-classic-screen",
+  "android_source_sha": "e318ecd019c8ac1cd27cfb54780388aedc5dbf7f",
+  "desktop_target_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "apk_sha256": "23ae78171f160078f4728c23aea1e72b2ade2d08f1e20f1133411f5f886889f5",
+  "png_sha256": "8b45120a2503d7ff06ee5c307932dfe6bd49395100dc2cf365983b623910bf04",
+  "before": {
+    "resumed_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
+    "current_focus": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
+    "user": 0
+  },
+  "after": {
+    "resumed_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
+    "current_focus": "com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity",
+    "user": 0
+  }
+}
