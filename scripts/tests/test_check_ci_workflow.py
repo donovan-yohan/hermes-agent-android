@@ -351,12 +351,37 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         )
         self._assert_reports(broken, "must run --self-test")
 
+    def test_accepts_single_line_bounded_upstream_clone(self) -> None:
+        joined = self.valid_text.replace('git clone --quiet \\\n            ', 'git clone --quiet ')
+        self.assertNotEqual(self.valid_text, joined)
+        code, output = self._run_captured(joined)
+        self.assertEqual(0, code, output)
+
+    def test_rejects_unsafe_upstream_clone_contract(self) -> None:
+        for old, new in (
+            ('GIT_TERMINAL_PROMPT=0 ', ''),
+            ('timeout --kill-after=1s 60s git clone', 'git clone'),
+            ('--filter=blob:none ', ''),
+            ('--no-checkout ', ''),
+            ('"$UPSTREAM_URL" "$upstream"', '"$OTHER_URL" "$upstream"'),
+            ('"$UPSTREAM_URL" "$upstream"', '"$UPSTREAM_URL" "$other"'),
+            ('"$upstream" 2>/dev/null || {', '"$upstream" || {'),
+            ('"$upstream" 2>/dev/null || {', '"$upstream" 2>/dev/null && {'),
+            ('              exit 3\n', '              exit 0\n'),
+        ):
+            with self.subTest(removed=old):
+                self._assert_reports(
+                    self.valid_text.replace(old, new, 1),
+                    'bounded, noninteractive, fail-closed upstream clone',
+                )
+
     def test_rejects_pin_citation_job_without_its_own_upstream(self) -> None:
         # The job's whole reason for being separate: it obtains the upstream
         # checkout itself. Left to a workstation's checkout it proves nothing in
         # CI, which is the only place it runs unattended.
         broken = self.valid_text.replace(
-            '          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream"\n',
+            '          GIT_TERMINAL_PROMPT=0 timeout --kill-after=1s 60s git clone --quiet \\\n'
+            '            --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {\n',
             "",
             1,
         )
