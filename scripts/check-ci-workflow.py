@@ -102,7 +102,6 @@ REQUIRED = (
     "name: pin citations",
     "fetch-depth: 0",
     "scripts/verify-pin-citations.py",
-    'git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL"',
     "--upstream \"$upstream\" --fetch",
 )
 # A gate that runs on the wrong range is worse than no gate: it either blames a
@@ -300,6 +299,20 @@ def main() -> int:
         # The job exists because it needs an upstream checkout and nothing else
         # provides one. Pointed at a workstation's checkout it would pass by
         # finding nothing, which is the failure mode a gate must never have.
+        # Check shell logical lines, not their YAML wrapping. Keep the clone's
+        # source/destination and safety contract in this job, including its own
+        # failure branch (an unrelated exit elsewhere must not satisfy it).
+        logical_job = re.sub(r"\\\n[ \t]*", " ", citations_job)
+        clone_contract = (
+            r'^\s*GIT_TERMINAL_PROMPT=0\s+timeout\s+--kill-after=1s\s+60s\s+'
+            r'git clone --quiet\s+--filter=blob:none\s+--no-checkout\s+'
+            r'"\$UPSTREAM_URL"\s+"\$upstream"\s+2>/dev/null\s+\|\|\s*\{\n'
+            r'\s*echo "::error::[^"\n]*"\n\s*exit 3\n\s*\}'
+        )
+        if not re.search(clone_contract, logical_job, re.M):
+            failures.append(
+                "the pin-citation job must use a bounded, noninteractive, fail-closed upstream clone"
+            )
         if "git clone" not in citations_job:
             failures.append(
                 "the pin-citation job must obtain its own upstream checkout; without "
