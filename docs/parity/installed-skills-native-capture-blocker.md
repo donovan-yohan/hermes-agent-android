@@ -1,4 +1,9 @@
-# Installed Skills native acceptance — blocked before capture
+# Installed Skills native acceptance — historical blocked attempt
+
+This attempt remains unchanged below. A subsequent authorized separate-emulator
+[recovery packet](captures/installed-skills-4df25613/REPORT.md) contains 24 Android
+state/theme receipts and 14 Desktop semantic pairings without replacing this
+emulator's shared package. It does not retroactively change this attempt's result.
 
 ## Artifact identity gate
 

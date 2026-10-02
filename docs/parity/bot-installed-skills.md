@@ -42,21 +42,23 @@ the historical profile-config checklist. Source references at this pin:
 |---|---|---|---|
 | Broader catalog with Installed filter, search, bulk actions, detail/edit/archive and installation | omission | Installed-only subset; remaining catalog/install and detail/edit controls stay disabled/WIP | coming soon — bounded task scope; no catalog or installation claim |
 | Optimistic autosave switches | mobile-adaptation | Autosave, but retain observed selection while busy and publish success only after named readback | ADR 0005; essential echo regression |
-| Advanced tab/card layout | mobile-adaptation | Scrollable inline Skills section in the existing phone editor; accessible 48dp Switch rows | `BotSkillsEditor`; registered Compose journey; rendered acceptance pending |
+| Advanced tab/card layout | mobile-adaptation | Scrollable inline Skills section in the existing phone editor; accessible 48dp Switch rows | `BotSkillsEditor`; registered Compose journey; [native packet](captures/installed-skills-4df25613/REPORT.md) |
 | Outer Cancel leaves autosaved changes intact | mobile-adaptation | Same persistence behavior, with explicit phone copy explaining Cancel | Registered journey cancels/reopens after autosave |
 | Desktop loading/error also shows No matches | mobile-adaptation | Distinct loading, empty, unavailable and refusal text rather than contradictory empty results | Synthetic production-state fixture; no matching pixel claim |
 
 ## Visual report
 
 - pending: #194
-- Real Desktop reference: unpublished scratch `installedskills-reference/packet/REPORT.md`.
-  That packet records 14 unchanged light/dark PNGs from four real Electron E2E
-  scenarios at the pin. It remains observational evidence rejected by the canonical
-  receipt validator; this change does not relabel or publish those artifacts.
-- Android pixels have **not** been captured. `BotSkillsParityActivity` and the
-  `bot-installed-skills` catalog/workflow register twelve deterministic states.
-  They run the production ViewModel and typed host over an allowlisted synthetic
-  transport, including essential echo mismatch, refused PUT and lost readback.
+- Recovered local [comparison packet](captures/installed-skills-4df25613/REPORT.md):
+  24 Android PNG/receipt combinations and 48 original XML brackets, plus 14
+  unchanged Desktop references and 14 semantic pairings. APK source remains
+  `4df256139b8d2bf03f903516152e299cd9949aa5`; Desktop remains at the pin above.
+  Android receipts pass the canonical validator. Desktop observations remain
+  noncanonical with their original rejection and reused-build limits preserved.
+- Captured on a new task-owned disposable emulator without changing the existing
+  owner installation. The owned emulator was shut down and process absence verified.
+  `BotSkillsParityActivity` exercises production state over synthetic transport;
+  native pixels are not real-server persistence or human gesture evidence.
 - Loading and pending retain the production 20-second request timeout. Worker and
   validator require fresh-launch monotonic screenshot brackets below that deadline.
   Fixture-staged actions are not human gesture evidence; no runtime RPC exporter,
