@@ -51,6 +51,12 @@ jobs:
             avd-api34-google_apis-x86_64-pixel_6-
       - name: Sample only numeric host resource pressure
         run: python3 .github/diagnostics/systemui_host.py > /dev/null 2>&1 &
+      - name: Build both APKs before any emulator launch
+        run: |
+          python3 .github/diagnostics/build_topology.py pre-build
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+          python3 .github/diagnostics/build_topology.py post-build
+          python3 .github/diagnostics/build_topology.py pre-emulator
       - name: Create the AVD snapshot if main cache is absent
         if: steps.avd-cache.outputs.cache-hit != 'true'
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
@@ -75,7 +81,7 @@ jobs:
           emulator-port: 5554
           disable-animations: true
           script: |
-            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+            python3 .github/diagnostics/build_topology.py post-boot
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
             python3 .github/diagnostics/api34_connected.py
@@ -98,6 +104,9 @@ jobs:
           retention-days: 2
           if-no-files-found: warn
           path: |
+            ${{ runner.temp }}/topology-phases.jsonl
+            ${{ runner.temp }}/topology-environment.json
+            ${{ runner.temp }}/prebuilt-apks.json
             ${{ runner.temp }}/api34-focus/full/identity.json
             ${{ runner.temp }}/api34-focus/full/result.json
             ${{ runner.temp }}/api34-focus/full/focus.jsonl

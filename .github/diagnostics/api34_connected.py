@@ -59,10 +59,14 @@ def main():
             'app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk']
     def hashes():
         return {p: hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in apks}
+    from build_topology import phase
+    prebuilt = json.loads((Path(os.environ['RUNNER_TEMP']) / 'prebuilt-apks.json').read_text())
+    assert hashes() == prebuilt, 'APK changed since pre-emulator assembly'
+    phase('pre-connected')
     manifest = {'sha': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
                 'avd': identity, 'api': 34, 'serial': 'emulator-5554', 'apks': hashes(),
                 'monotonic': time.monotonic(), 'epoch': time.time(),
-                'command': ['./gradlew', ':app:connectedDebugAndroidTest', '--no-daemon', '--no-build-cache']}
+                'command': ['./gradlew', ':app:connectedDebugAndroidTest', '--no-daemon', '--no-build-cache', '-I', '.github/diagnostics/prebuilt-only.gradle']}
     (out / 'identity.json').write_text(json.dumps(manifest, indent=2))
     nonce = secrets.token_hex(16)
     call('shell', 'setprop', 'debug.hermes.focus_nonce', nonce)
@@ -122,6 +126,7 @@ def main():
             logcat.kill()
             logcat.wait()
         observer.join(timeout=5)
+    phase('post-connected')
     result = validate_xml(Path('app/build/outputs/androidTest-results/connected').glob('**/TEST-*.xml'), expected)
     events_seen = [json.loads(line) for line in (out / 'test-events.jsonl').read_text().splitlines()]
     expected_events = Counter('com.hermesagent.mobile.device.' + x for x in expected)

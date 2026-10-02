@@ -1,0 +1,8 @@
+// Diagnostic only: the completed assembly owns every input. Never compile after boot.
+gradle.taskGraph.whenReady { graph ->
+    graph.allTasks.each { task ->
+        task.enabled = task.path == ':app:connectedDebugAndroidTest'
+        println("PREBUILT_TASK ${task.path} enabled=${task.enabled}")
+    }
+    assert graph.allTasks.count { it.enabled } == 1
+}
