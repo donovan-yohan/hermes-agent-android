@@ -1,6 +1,8 @@
 # ADR 0005 — Typed, revocable core Skills HTTP capability
 
-**Status:** implemented host foundation; no editor/UI in this change.
+**Status:** implemented host foundation. The separately added
+[installed-only autosave editor](../parity/bot-installed-skills.md) consumes this
+contract; the foundation decision and host semantics below are unchanged.
 **Authority:** `NousResearch/hermes-agent` @ `587e673e2a2fae0616d8b750bb189217080f621a`.
 The parent workstream's delta audit reports Skills HTTP and profile RPC sources
 unchanged at `e05b16348b1d06a3311237423b0a4fc30d9c5aa1`. This is not a claim of
