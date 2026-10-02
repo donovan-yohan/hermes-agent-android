@@ -23,17 +23,11 @@ class GatewayThemeParserTest {
         assertTrue(theme.preset.description == "Backend skin")
     }
 
-    @Test fun `registers backend default as Classic Hermes without changing the boot default`() {
+    @Test fun `default never registers a converted Classic palette`() {
         val skin = kotlinx.serialization.json.Json.parseToJsonElement(
             """{"name":"default","description":"Classic Hermes — gold and kawaii","colors":{"background":"#101820","ui_text":"#f2f4f8","ui_accent":"#00c2ff"}}""",
         ) as kotlinx.serialization.json.JsonObject
-        val theme = requireNotNull(parseBackendSkin(skin))
-        assertEquals("default", theme.name)
-        assertEquals("Classic Hermes", theme.label)
-        assertEquals(theme.label, theme.preset.label)
-        assertEquals("Classic Hermes — gold and kawaii", theme.description)
-        assertEquals(theme.description, theme.preset.description)
-        assertEquals(Color(0xFF101820), theme.preset.colors.background)
+        assertEquals(null, parseBackendSkin(skin))
         assertEquals("nous", BuiltinThemes.DEFAULT_NAME)
         assertTrue(BuiltinThemes.ALL.none { it.name == "default" })
     }

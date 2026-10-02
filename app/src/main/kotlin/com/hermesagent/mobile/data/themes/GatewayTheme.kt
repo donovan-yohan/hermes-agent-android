@@ -183,9 +183,9 @@ internal fun mapGatewayThemePalette(background: LayerR, midground: LayerR, foreg
 /** Convert the frozen Desktop HermesSkin contract into the mobile palette. */
 internal fun parseBackendSkin(payload: JsonObject): GatewayTheme? {
     val name = payload.string("name")?.trim()?.takeIf { isSafeCustomThemeName(it) } ?: return null
-    // apps/desktop/src/themes/backend-sync.ts:91-125 @ 587e673e2a2fae0616d8b750bb189217080f621a:
-    // default is the backend's Classic Hermes skin, not a Desktop built-in.
-    if (BuiltinThemes.ALL.any { it.name == name }) return null
+    // apps/desktop/src/themes/backend-sync.ts:94-101 @ e05b16348b1d06a3311237423b0a4fc30d9c5aa1:
+    // default has no palette opinion. The sync layer still handles explicit application.
+    if (name == "default" || BuiltinThemes.ALL.any { it.name == name }) return null
     val colors = (payload["colors"] as? JsonObject) ?: return null
     fun color(vararg keys: String): Color? = keys.asSequence()
         .mapNotNull { colors[it].stringOrNull() }
@@ -215,7 +215,7 @@ internal fun parseBackendSkin(payload: JsonObject): GatewayTheme? {
         sidebarBackground = sidebar, sidebarBorder = border,
         userBubble = mix(background, accent, if (dark) .18f else .12f), userBubbleBorder = border,
     )
-    val label = if (name == "default") "Classic Hermes" else payload.string("name")!!.replaceFirstChar { it.uppercase() }
+    val label = payload.string("name")!!.replaceFirstChar { it.uppercase() }
     return GatewayTheme(name, label, payload.string("description") ?: "Hermes skin", preset(name, label, payload.string("description") ?: "Hermes skin", palette))
 }
 

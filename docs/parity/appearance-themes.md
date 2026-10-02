@@ -67,3 +67,32 @@ capture activity.
 |---|---|
 | Built-ins remain selectable offline; custom rows, failure copy, retry action, and spoken custom-row description render | `AppearanceThemesJourneyTest` under Robolectric |
 | Dashboard envelope validation, palette mapping, endpoint generation fence, and REST path/body/echo guards | `GatewayThemeParserTest`, `GatewayThemeRepositoryTest`, and `GatewayRestClientTest` |
+
+## Current backend-skin target (e05b1634)
+
+This subsection is source revalidation at
+`e05b16348b1d06a3311237423b0a4fc30d9c5aa1`, not a repin of the historical
+Dashboard/UI citations or captures above. Unlike Dashboard definitions, backend
+skin definitions are now cached per connection/profile; the opening description
+records the original Dashboard-only port.
+
+`apps/desktop/src/themes/backend-sync.ts:94-101,134-147` retires converted backend
+`default`: connect seeds preserve the chosen theme, explicit reset paints Nous,
+and duplicate announcements cannot undo a later manual choice. The apply guard
+uses backend names, not normalized palette names. Android cache sanitization
+excludes legacy Classic definitions while retaining other scoped skins.
+`apps/desktop/src/themes/context.tsx:51-63,107-112` retires stored `default`,
+`gold`, and `nous-light` at resolution without rewriting a stored custom pick.
+Builtin identity is unchanged: the inventory gate discovered 11 matching entries.
+
+Tests: `GatewayThemeParserTest`, `BackendSkinSyncTest`, `AppearanceThemeResolverTest`
+and the added legacy-choice case in `HermesPreferencesTest`. The standalone JVM
+subset is green; the preference/Compose integration and full Android build remain
+unverified until the Skills worker releases the Gradle lane. See the
+[scoped refresh audit](../spikes/upstream-theme-refresh-e05b1634-2026-10-01.md).
+
+Visual comparison remains **pending: #292**, including the retired-default reset
+in light/dark, phone/wide. Verdict: **Concern**, not rendered parity approval.
+No palette literals, labels, descriptions, picker order or typography changed.
+Existing CSS/platform and per-connection adaptations in the divergence table
+still apply; remote CSS is not executed on Android.

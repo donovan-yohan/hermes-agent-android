@@ -4,14 +4,17 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `587e673e2a2fae0616d8b750bb189217080f621a`. Identity, registry and typography
+ * `e05b16348b1d06a3311237423b0a4fc30d9c5aa1`. Identity, registry and typography
  * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
  * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
  * extraction), so `hasHandTunedDark` is read from there. Transcribed
  * 2026-08-31 and re-verified 2026-10-01 from a disposable upstream checkout.
  * Registry identity, shared palettes, colour keys and typography are unchanged
- * from e27448b231498e79ade668d68c0b6c6206951206. Backend Classic Hermes selection
- * changed separately; this built-in ledger does not certify backend skin parity.
+ * from e27448b231498e79ade668d68c0b6c6206951206 and the previous target
+ * 587e673e2a2fae0616d8b750bb189217080f621a. Entry sourceLines and line citations
+ * below retain the original palette transcription's provenance, not new captures.
+ * Backend default registration was reverted at this target; this built-in ledger
+ * certifies registry identity only, not backend behavior or rendered parity.
  *
  * This exists so the parity test is **offline and deterministic**: CI has no
  * upstream checkout, and a test that silently skips when a path is missing is
@@ -26,7 +29,7 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "587e673e2a2fae0616d8b750bb189217080f621a"
+    const val PINNED_SHA = "e05b16348b1d06a3311237423b0a4fc30d9c5aa1"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** Where the palettes live since upstream's shared-package extraction. */
