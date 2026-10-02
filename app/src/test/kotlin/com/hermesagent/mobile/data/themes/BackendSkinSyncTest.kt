@@ -17,6 +17,30 @@ class BackendSkinSyncTest {
         """{"name":"saved-skin","colors":{"background":"#123","ui_text":"#fff"}}""",
     ) as JsonObject
 
+    @Test fun `every reserved name seeds without repaint then applies without caching a shadow`() = runTest {
+        val names = com.hermesagent.mobile.ui.theme.BuiltinThemes.ALL.map { it.name } + listOf("default", "gold", "nous-light")
+        for (name in names) {
+            val cache = BackendSkinCache(temporary.newFolder())
+            val scope = ComposerControlsScope("connection-a", "default")
+            val repository = GatewayThemeRepository(http = { null })
+            val sync = BackendSkinSync(cache, repository, { scope }, { 0L })
+            val skin = JsonObject(payload + ("name" to kotlinx.serialization.json.JsonPrimitive(name)))
+            assertNull("reserved parser: $name", parseBackendSkin(skin))
+            var selected = "saved-skin"
+            val persist: suspend (String) -> Boolean = { selected = it; true }
+            assertEquals(false, sync.ingestAndApply(skin, false, 0L, scope, persist))
+            assertEquals("saved-skin", selected)
+            assertTrue(sync.ingestAndApply(skin, true, 0L, scope, persist))
+            assertEquals(if (name in listOf("default", "gold", "nous-light")) "nous" else name, selected)
+            selected = "ember"
+            assertEquals(false, sync.ingestAndApply(skin, false, 0L, scope, persist))
+            assertEquals(false, sync.ingestAndApply(skin, true, 0L, scope, persist))
+            assertEquals("ember", selected)
+            assertTrue(repository.state.value.themes.isEmpty())
+            assertTrue(cache.read(scope.connectionIdentity, scope.profileIdentity).isEmpty())
+        }
+    }
+
     @Test fun `live skin becomes a boot definition without repainting or leaking profiles`() = runTest {
         val cache = BackendSkinCache(temporary.newFolder())
         var scope = ComposerControlsScope("connection-a", "default")
@@ -79,6 +103,11 @@ class BackendSkinSyncTest {
         sync.restore()
         assertEquals(listOf("saved-skin"), repository.state.value.themes.map { it.name })
         assertEquals(listOf(payload), cache.read(scope.connectionIdentity, scope.profileIdentity))
+        assertEquals(kotlinx.serialization.json.JsonArray(listOf(payload)), Json.parseToJsonElement(directory.listFiles()!!.single().readText()))
+        val restartedRepository = GatewayThemeRepository(http = { null })
+        BackendSkinSync(BackendSkinCache(directory), restartedRepository, { scope }, { 0L }).restore()
+        assertEquals(listOf("saved-skin"), restartedRepository.state.value.themes.map { it.name })
+        assertNull(restartedRepository.state.value.activeOnGateway)
         assertNull(repository.state.value.activeOnGateway)
         scope = scope.copy(profileIdentity = "profile-b")
         sync.restore()

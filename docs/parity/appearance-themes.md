@@ -68,7 +68,7 @@ capture activity.
 | Built-ins remain selectable offline; custom rows, failure copy, retry action, and spoken custom-row description render | `AppearanceThemesJourneyTest` under Robolectric |
 | Dashboard envelope validation, palette mapping, endpoint generation fence, and REST path/body/echo guards | `GatewayThemeParserTest`, `GatewayThemeRepositoryTest`, and `GatewayRestClientTest` |
 
-## Current backend-skin target (e05b1634)
+## Historical backend-skin target (e05b1634)
 
 This subsection is source revalidation at
 `e05b16348b1d06a3311237423b0a4fc30d9c5aa1`, not a repin of the historical
@@ -107,3 +107,28 @@ parity approval.
 No palette literals, labels, descriptions, picker order or typography changed.
 Existing CSS/platform and per-connection adaptations in the divergence table
 still apply; remote CSS is not executed on Android.
+
+## Current built-in and backend-skin target (36922ad0)
+
+Source-only refresh at `36922ad064d65dcf25f8f48df81e1ccf9a55de67`:
+`apps/desktop/src/themes/presets.ts:342-384,444-468` adds `classic` / Classic
+Hermes after Nous Alt, making 12 built-ins. Android converts the exact light/dark
+seeds and verifies every resulting field against executed Desktop converter
+output. Existing historical capture pins above have not moved.
+
+All built-in and retired backend names are reserved. Cached shadows and invalid
+records are safely rewritten out on boot, preserving valid scoped customs;
+`default`, `gold`, and `nous-light` still resolve/apply to Nous. Registration-only
+seeds do not repaint and repeated acknowledged events preserve manual selection.
+`hermes` and `ares` remain usable custom identities outside command context.
+
+Desktop's `use-skin-command.ts:5-15` maps command-only `gold` / `hermes` to
+Classic. Android has no local skin-command handler: it forwards the original
+command through `prompt.submit`. No interception was introduced, and native
+slash-alias parity is not claimed. Choose Classic in Appearance on Android.
+See [the audit](../spikes/upstream-36922-2026-10-02.md) for source ownership and
+backend-only changes that require an updated Gateway.
+
+Fresh Classic light/dark phone/wide and backend-transition captures remain
+**pending: #292**. The existing e05 report is historical evidence, not evidence
+for Classic. Independent review is still required; ceiling remains **Concern**.

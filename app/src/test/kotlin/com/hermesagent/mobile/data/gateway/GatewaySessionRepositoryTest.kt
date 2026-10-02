@@ -70,6 +70,21 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class GatewaySessionRepositoryTest {
 
+    @Test fun `skin command arguments remain backend owned not appearance aliases`() = runTest {
+        for (name in listOf("gold", "hermes", "default", "classic", "ares", "nous-light")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc()
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            repository.submit("durable-a", "/skin $name")
+            assertEquals("/skin $name", rpc.calls.last { it.method == "prompt.submit" }.params.string("text"))
+            assertTrue(rpc.calls.none { it.method == "slash.exec" })
+        }
+    }
+
     @Test
     fun `unowned cron opens stored transcript without writable resume and refuses send`() = runTest {
         val id = "cron_job_20261002_120000"

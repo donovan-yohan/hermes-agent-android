@@ -14,7 +14,12 @@ internal class BackendSkinCache(private val directory: File) {
         if (!file.isFile || file.length() > MAX_BYTES) return emptyList()
         val entries = Json.parseToJsonElement(file.readText()) as? JsonArray ?: return emptyList()
         if (entries.size > MAX_SKINS) return emptyList()
-        entries.mapNotNull { sanitize(it as? JsonObject) }.distinctBy { it["name"] }
+        val kept = entries.mapNotNull { sanitize(it as? JsonObject) }.distinctBy { it["name"] }
+        // Migrate on boot, not only on the next live skin. The same-directory
+        // replacement leaves the original intact on failure; valid customs are
+        // still usable in memory and the next read retries the migration.
+        if (JsonArray(kept) != entries) write(connection, profile, kept)
+        kept
     }.getOrDefault(emptyList())
 
     /** Writes through a same-directory temporary file so an interrupted write cannot truncate the cache. */
