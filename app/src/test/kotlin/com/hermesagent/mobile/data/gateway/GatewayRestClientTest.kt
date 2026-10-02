@@ -24,6 +24,26 @@ import org.junit.Test
  */
 class GatewayRestClientTest {
 
+    @Test
+    fun `detail GET is exact owner scoped and preserves strict ownership`() = runTest {
+        // sessions.py::get_session_detail @ e05b16348b1d06a3311237423b0a4fc30d9c5aa1
+        val http = RecordingGatewayHttp(success("""{"id":"cron_job_20261002_120000","profile":"work","scheduler_owned":"false","is_active":true,"ended_at":null,"last_active":42}"""))
+        val detail = GatewayRestClient { http }.sessionDetail("cron_job_20261002_120000", "work").valueOrFail()
+        assertNull(detail.schedulerOwned)
+        assertEquals(true, detail.isActive)
+        assertEquals(42.0, detail.lastActiveSeconds)
+        assertEquals("api/sessions/cron_job_20261002_120000", http.requests.single().path)
+        assertEquals(mapOf("profile" to "work"), http.requests.single().query)
+        assertEquals("GET", http.requests.single().method)
+        assertEquals(15_000L, http.requests.single().timeoutMillis)
+        assertEquals(1024L * 1024L, http.requests.single().maxResponseBytes)
+        assertFalse(http.requests.single().captureEnvelope)
+        for (profile in listOf("", "current", " work", "work ")) {
+            assertTrue(GatewayRestClient { http }.sessionDetail("id", profile) is GatewayRestResult.Failed)
+        }
+        assertEquals(1, http.requests.size)
+    }
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
     fun `every queued REST mutation retains its original transport`() = runTest {

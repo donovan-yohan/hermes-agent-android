@@ -289,6 +289,9 @@ interface GatewaySessionRepository {
     ): GatewaySubmitOutcome = error("Regenerate is not implemented by this repository.")
     /** Retry only an authoritative retained startup failure with no durable user row. */
     suspend fun retryRetainedFailure(durableId: String, text: String, expectedEndpointGeneration: Long): Boolean = false
+    /** Cached admission explanation only; writes always refresh the authoritative detail. */
+    fun sessionReadOnlyReason(durableId: String): String? = null
+
     suspend fun submit(durableId: String, text: String): GatewaySubmitOutcome
     /** A queue drain opts into the Gateway's non-interrupting busy behavior. */
     suspend fun submit(durableId: String, text: String, queued: Boolean): GatewaySubmitOutcome =
@@ -825,7 +828,7 @@ internal class LiveGatewaySessionRepository(
      * default is a real thread pool, so a test that drives this repository on
      * virtual time injects its own scheduler instead of racing one.
      */
-    restContext: CoroutineContext = Dispatchers.IO,
+    private val restContext: CoroutineContext = Dispatchers.IO,
     /**
      * The process's one endpoint-dispatch linearization point. HermesApplication
      * supplies the same instance to ConnectionSwitchController; the default is
@@ -967,6 +970,11 @@ internal class LiveGatewaySessionRepository(
 
     /** Session REST routes over the connection-owned transport; holds no credential. */
     private val rest = GatewayRestClient(restContext, http)
+    private val cronAdmission = CronSessionAdmission()
+    private val cronReadVersions = mutableMapOf<CronSessionOwner, Long>()
+    private var cronReadSequence = 0L
+    private data class CronAdmissionCheck(val owner: CronSessionOwner?, val revision: Long, val verdict: CronSessionVerdict)
+    private val CRON_LOOKUP_UNAVAILABLE = "Could not check this scheduled run. View its transcript or try again."
 
     /** Per profile leg, how far this connection's list has read. Cleared with it. */
     private val sessionPageCursors = mutableMapOf<String?, SessionPageCursor>()
@@ -1632,7 +1640,7 @@ internal class LiveGatewaySessionRepository(
         connection: ConnectionSnapshot,
         durableId: String,
         canonicalId: String,
-        runtimeId: String,
+        runtimeId: String?,
         owningProfile: String?,
     ): TranscriptHydration {
         val plan = synchronized(stateLock) {
@@ -1655,7 +1663,7 @@ internal class LiveGatewaySessionRepository(
         val profile = plan.profile
         val restUsable = http() != null &&
             !isCapabilityUnsupported(GatewayOptionalCapability.SessionMessagesRest, connection) &&
-            !plan.compressed
+            (!plan.compressed || runtimeId == null)
         var routeAnswered404 = false
         if (restUsable) {
             val result = rest.sessionMessages(
@@ -1752,6 +1760,7 @@ internal class LiveGatewaySessionRepository(
                 is GatewayRestResult.Failed -> routeAnswered404 = result.statusCode == HTTP_NOT_FOUND
             }
         }
+        if (runtimeId == null) throw GatewayRpcException("The stored transcript is unavailable. Try opening it again.")
         val historyResult = connection.client.request("session.history", historyParams(runtimeId))
         val entries = parseHistory(historyResult, runtimeId, clock())
         // Two independent things have to be true before a 404 is evidence about
@@ -2203,6 +2212,13 @@ internal class LiveGatewaySessionRepository(
         return ProjectCreateOutcome(projectId, catalogRefreshed, scopeCurrent = stillCurrent)
     }
 
+    override fun sessionReadOnlyReason(durableId: String): String? = synchronized(stateLock) {
+        if (!isCronExecutionSessionId(durableId)) return@synchronized null
+        val profile = owningProfileParam(durableId) ?: return@synchronized CRON_LOOKUP_UNAVAILABLE
+        cronAdmission.verdict(CronSessionOwner(cache.endpointGeneration.value, profile, durableId))
+            .takeUnless { it == CronSessionVerdict.Writable }?.let(::cronRefusal)
+    }
+
     override suspend fun openSession(durableId: String): String = openSessionInternal(durableId, null)
 
     override suspend fun openSession(durableId: String, profile: String): String {
@@ -2223,7 +2239,7 @@ internal class LiveGatewaySessionRepository(
         durableId: String,
         explicitProfile: String?,
         expectedEndpointGeneration: Long? = null,
-    ): String = navigationMutex.withLock {
+    ): String = withCronIntent(durableId, explicitProfile) { navigationMutex.withLock {
         val connection = connectionSnapshot()
         // The caller resolved this id on the endpoint it observed, and this
         // call can have waited on the navigation mutex long enough for the app
@@ -2246,6 +2262,32 @@ internal class LiveGatewaySessionRepository(
                 reconnectProfiles[durableId]
             } else {
                 owningProfileParam(durableId)
+            }
+        }
+        if (isCronExecutionSessionId(durableId)) {
+            val verdict = refreshCronAdmission(connection, durableId, owningProfile).verdict
+            if (verdict != CronSessionVerdict.Writable) {
+                // Reading stored history must not start a runtime merely to display it.
+                if (owningProfile == null) throw GatewayRpcException(CRON_LOOKUP_UNAVAILABLE)
+                synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    if (cache.session(durableId)?.remoteProfile != owningProfile ||
+                        transcriptWindows[durableId]?.let { it.profile != owningProfile } == true) {
+                        cache.removeSession(durableId)
+                        transcriptWindows.remove(durableId)
+                    }
+                }
+                val hydration = hydrateTranscript(connection, durableId, durableId, null, owningProfile)
+                currentCoroutineContext()[SessionSelectionLease]
+                    ?.requireCurrent(connection.endpointGeneration, durableId, owningProfile)
+                synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    val existing = cache.session(durableId)?.takeIf { it.remoteProfile == owningProfile }
+                    cache.upsertSession((existing ?: SessionSummary(durableId, "Scheduled run", "", clock(), source = "cron"))
+                        .copy(remoteProfile = owningProfile))
+                    cache.setTranscript(durableId, hydration.entries)
+                }
+                return@withLock durableId
             }
         }
         val liveSnapshot: JsonObject
@@ -2386,7 +2428,7 @@ internal class LiveGatewaySessionRepository(
         }
         refuseServerRequests(connection.client, replayedRefusals)
         canonicalId
-    }
+    } }
 
     override suspend fun createSession(workspacePath: String?): String = createSession(workspacePath, null)
 
@@ -2798,9 +2840,9 @@ internal class LiveGatewaySessionRepository(
         // attached_images slot is session-global, so a concurrent text drain
         // that submitted between our last stage and prompt.submit would claim
         // the staged images for the wrong prompt.
-        return submitMutexes.withLock(durableId) {
+        return withCronIntent(durableId) { submitMutexes.withLock(durableId) {
             submitAttachmentsLocked(durableId, text, queued, attachments, interruptEpoch)
-        }
+        } }
     }
 
     private fun submitInterruptEpoch(durableId: String): Long = synchronized(stateLock) {
@@ -3038,7 +3080,7 @@ internal class LiveGatewaySessionRepository(
         // Before the runtime resolution, because that resolution can itself be
         // a resume: a foreign id must not even be offered to the replacement.
         requireEndpoint(expectedEndpointGeneration)
-        return submitMutexes.withLock(durableId) {
+        return withCronIntent(durableId) { submitMutexes.withLock(durableId) {
             require(wireText.isNotEmpty())
             val binding = ensureRuntime(durableId, expectedEndpointGeneration)
             val connection = connectionSnapshot(binding)
@@ -3055,7 +3097,7 @@ internal class LiveGatewaySessionRepository(
                 interruptEpoch = interruptEpoch,
                 expectedEndpointGeneration = expectedEndpointGeneration,
             )
-        }
+        } }
     }
 
     override suspend fun retryRetainedFailure(
@@ -3293,6 +3335,8 @@ internal class LiveGatewaySessionRepository(
                     // not just the runtime that happens to own the event pin.
                     // Ambiguous acknowledgements still keep the optimistic row.
                     val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds &&
+                        (!isCronExecutionSessionId(binding.durableId) ||
+                            identities.runtimeFor(binding.durableId) == binding.runtimeId) &&
                         connection.generation == connectionGeneration && clientFlow.value === connection.client &&
                         (expectedEndpointGeneration == null || cache.endpointGeneration.value == expectedEndpointGeneration)
                     if (canRollback) {
@@ -4523,6 +4567,15 @@ internal class LiveGatewaySessionRepository(
     ): SessionBinding {
         val connection = connectionSnapshot()
         requireEndpoint(expectedEndpointGeneration)
+        if (isCronExecutionSessionId(durableId)) {
+            val profile = synchronized(stateLock) {
+                val runtime = identities.runtimeFor(durableId)
+                if (runtime != null && runtimeProfiles.containsKey(runtime)) runtimeProfiles[runtime]
+                else owningProfileParam(durableId)
+            }
+            val verdict = refreshCronAdmission(connection, durableId, profile).verdict
+            if (verdict != CronSessionVerdict.Writable) throw GatewayRpcException(cronRefusal(verdict))
+        }
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.runtimeFor(durableId)?.let { return SessionBinding(durableId, it, connection) }
@@ -6200,25 +6253,103 @@ internal class LiveGatewaySessionRepository(
         params: JsonObject,
         consentDispatch: ((() -> Boolean) -> Boolean) = { send -> send() },
     ): JsonElement {
-        if (expectedEndpointGeneration == null) return connection.client.request(method, params)
+        val cronTarget = synchronized(stateLock) {
+            val id = params.string("session_id")
+            val durable = id?.let { identities.durableFor(it) ?: it }
+            if (method in setOf("session.resume", "session.activate", "prompt.submit") &&
+                durable != null && isCronExecutionSessionId(durable)) {
+                durable to (if (method == "session.resume") params.string("profile") else runtimeProfiles[id])
+            } else null
+        }
+        val selection = if (cronTarget != null) currentCoroutineContext()[SessionSelectionLease] else null
+        val cronCheck = cronTarget?.let { refreshCronAdmission(connection, it.first, it.second) }
+        if (cronCheck != null && cronCheck.verdict != CronSessionVerdict.Writable) {
+            throw GatewayRpcException(cronRefusal(cronCheck.verdict))
+        }
+        val dispatchEndpoint = expectedEndpointGeneration ?: cronTarget?.let { connection.endpointGeneration }
+        if (dispatchEndpoint == null) return connection.client.request(method, params)
         val rpc = connection.client as? EndpointDispatchingGatewayRpcClient
             ?: throw GatewayRpcException("The gateway connection changed.")
         val stillOwns = {
-            cache.endpointGeneration.value == expectedEndpointGeneration &&
+            cache.endpointGeneration.value == dispatchEndpoint &&
                 synchronized(stateLock) {
                     connection.generation == connectionGeneration && clientFlow.value === connection.client
                 }
         }
-        val lease = endpointDispatchFence.leaseAt(expectedEndpointGeneration, stillOwns)
+        val lease = endpointDispatchFence.leaseAt(dispatchEndpoint, stillOwns)
             ?: throw GatewayRpcException("The gateway connection changed.")
         val result = rpc.requestAtEndpointDispatch(method, params) { send ->
-            endpointDispatchFence.dispatchIfCurrent(lease, stillOwns) { consentDispatch(send) }
+            endpointDispatchFence.dispatchIfCurrent(lease, stillOwns) {
+                val admitted = {
+                    if (cronCheck == null) consentDispatch(send) else synchronized(stateLock) {
+                        val profileCurrent = method == "session.resume" ||
+                            (runtimeProfiles[params.string("session_id")] == cronTarget.second &&
+                                identities.durableFor(params.string("session_id") ?: "") == cronTarget.first)
+                        profileCurrent && cronReadVersions[cronCheck.owner] == cronCheck.revision &&
+                            consentDispatch(send)
+                    }
+                }
+                if (selection != null) selection.dispatch(admitted) else admitted()
+            }
         }
         // A frame legitimately handed to the old wire cannot be retracted, but
         // its response must never become new-endpoint state.
         if (!stillOwns()) throw GatewayRpcException("The gateway connection changed.")
         return result
     }
+
+    /** Bind non-UI callers too, before navigation/submit mutexes can suspend. */
+    private suspend fun <T> withCronIntent(
+        durableId: String,
+        explicitProfile: String? = null,
+        action: suspend () -> T,
+    ): T {
+        if (!isCronExecutionSessionId(durableId) || currentCoroutineContext()[SessionSelectionLease] != null) return action()
+        val connection = connectionSnapshot()
+        val profile = synchronized(stateLock) {
+            explicitProfile ?: identities.runtimeFor(durableId)?.let { runtimeProfiles[it] }
+                ?: owningProfileParam(durableId)
+        }
+        return kotlinx.coroutines.withContext(SessionSelectionLease(connection.endpointGeneration, durableId, profile) { send -> send() }) {
+            action()
+        }
+    }
+
+    private suspend fun refreshCronAdmission(
+        connection: ConnectionSnapshot,
+        durableId: String,
+        profile: String?,
+    ): CronAdmissionCheck {
+        val selection = currentCoroutineContext()[SessionSelectionLease]
+        selection?.requireCurrent(connection.endpointGeneration, durableId, profile)
+        synchronized(stateLock) { ensureCurrent(connection) }
+        // Null is unknown ownership, never permission to query the selected/launch store.
+        if (profile == null) return CronAdmissionCheck(null, 0, CronSessionVerdict.LookupUnavailable)
+        val owner = CronSessionOwner(connection.endpointGeneration, profile, durableId)
+        val revision = synchronized(stateLock) {
+            cronReadVersions.keys.removeAll { it.endpointGeneration != connection.endpointGeneration }
+            (++cronReadSequence).also { cronReadVersions[owner] = it }
+        }
+        val transport = http()
+        val result = try {
+            GatewayRestClient(restContext) { transport }.sessionDetail(durableId, profile)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+        selection?.requireCurrent(connection.endpointGeneration, durableId, profile)
+        return synchronized(stateLock) {
+            ensureCurrent(connection)
+            if (cronReadVersions[owner] != revision) throw GatewayRpcException("This scheduled run changed. Try again.")
+            CronAdmissionCheck(owner, revision, cronAdmission.record(owner,
+                (result as? GatewayRestResult.Success)?.value, clock()))
+        }
+    }
+
+    private fun cronRefusal(verdict: CronSessionVerdict): String =
+        if (verdict == CronSessionVerdict.LookupUnavailable) CRON_LOOKUP_UNAVAILABLE
+        else "This scheduled run is view-only. Start a new chat to continue."
 
     private fun ensureCurrent(connection: ConnectionSnapshot) {
         if (connection.generation != connectionGeneration || clientFlow.value !== connection.client ||
