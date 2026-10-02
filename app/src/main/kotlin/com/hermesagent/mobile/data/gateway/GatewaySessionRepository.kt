@@ -6750,6 +6750,18 @@ private fun parseMessages(
         val id = message.messageId() ?: fallbackId(index)
         val rowId = message.durableRowId()
         val time = message.timestamp(nowMillis)
+        message.persistedTurnFailure()?.let { failure ->
+            // No durable address: this card represents zero backend rows.
+            // Derive the rendering key from the boundary so overlapping REST
+            // pages and RPC hydration identify the same synthetic occurrence.
+            add(AssistantTurn(
+                id = "failed-turn-${rowId?.value ?: id}",
+                markdown = "",
+                atMillis = time,
+                error = safeGatewayTerminalError(failure.raw, failure.surface),
+                errorDetails = failure.details,
+            ))
+        }
         when (message.string("role")) {
             "user" -> {
                 // A typed timeline row is classified by its own stored
@@ -6782,8 +6794,10 @@ private fun parseMessages(
                     )
                 }
                 val answer = message.answerText()
-                if (answer.isNotBlank()) {
-                    add(AssistantTurn(id, answer, time, rowId = rowId))
+                val interrupted = message.persistedInterrupted()
+                if (answer.isNotBlank() || interrupted) {
+                    add(AssistantTurn(id, answer, time, rowId = rowId,
+                        termination = if (interrupted) TurnTermination.InterruptedExternally else null))
                 }
             }
 
@@ -7395,6 +7409,11 @@ private fun appendInflightProjection(
 ): List<TranscriptEntry> {
     val inflight = projection.inflight
     if (inflight == null && !projection.busy) return history
+    // Retained failures have no authoritative link to a persisted boundary.
+    // History and live snapshots are not atomic: even identical prompt/code
+    // can describe a later unpersisted failure. Keep the overlay visible until
+    // the protocol supplies occurrence identity; same-occurrence replay remains
+    // possible. Boundary-key page merging is separate from this ambiguity.
     val restored = history.toMutableList()
     val atMillis = inflight?.atMillis ?: fallbackTime
     val user = inflight?.user.orEmpty()
