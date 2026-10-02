@@ -3,6 +3,7 @@ package com.hermesagent.mobile.data.gateway
 import com.hermesagent.mobile.data.session.SessionCache
 import com.hermesagent.mobile.data.session.SessionSummary
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -273,6 +274,86 @@ class GatewayProfileRoutingTest {
         )
     }
 
+    @Test
+    fun `queued create retains its project profile and stamps an unstamped response`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        val repository = repository(cache, rpc, backgroundScope)
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "work"))
+        rpc.resumeGate = kotlinx.coroutines.CompletableDeferred()
+        val opening = async { repository.openSession("existing") }
+        runCurrent()
+        val creating = async { repository.createSession("/synthetic/work") }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "lab"))
+        rpc.resumeGate!!.complete(Unit)
+        opening.await()
+        assertEquals("durable-new", creating.await())
+        val request = rpc.calls.single { it.first == "session.create" }.second
+        assertEquals("work", request.text("profile"))
+        assertEquals("/synthetic/work", request.text("cwd"))
+        assertEquals("work", cache.session("durable-new")?.remoteProfile)
+    }
+
+    @Test
+    fun `queued create cannot dispatch on a replacement endpoint`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope) { 1_000L }
+        runCurrent()
+        rpc.resumeGate = kotlinx.coroutines.CompletableDeferred()
+        val opening = async { runCatching { repository.openSession("existing") } }
+        runCurrent()
+        val creating = async { runCatching { repository.createSession("/synthetic/work") } }
+        runCurrent()
+        val replacement = FakeProfileRpc()
+        cache.resetForEndpointSwitch()
+        clients.value = replacement
+        runCurrent()
+        rpc.resumeGate!!.complete(Unit)
+        opening.await()
+        assertTrue(creating.await().exceptionOrNull() is GatewayRpcException)
+        assertTrue(replacement.calls.none { it.first == "session.create" })
+        assertNull(cache.session("durable-new"))
+    }
+
+    @Test
+    fun `in flight create reply cannot populate a replacement endpoint`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope) { 1_000L }
+        runCurrent()
+        rpc.createGate = kotlinx.coroutines.CompletableDeferred()
+        val creating = async { runCatching { repository.createSession("/synthetic/work") } }
+        runCurrent()
+        assertEquals(1, rpc.calls.count { it.first == "session.create" })
+        cache.resetForEndpointSwitch()
+        clients.value = FakeProfileRpc()
+        runCurrent()
+        rpc.createGate!!.complete(Unit)
+        assertTrue(creating.await().exceptionOrNull() is GatewayRpcException)
+        assertNull(cache.session("durable-new"))
+        assertTrue(!repository.hasLiveRuntime("durable-new"))
+    }
+
+    @Test
+    fun `caller captured endpoint is refused before any create dispatch`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeProfileRpc()
+        val repository = repository(cache, rpc, backgroundScope)
+        runCurrent()
+        val endpoint = cache.endpointGeneration.value
+        cache.resetForEndpointSwitch()
+        val outcome = runCatching { repository.createSessionAtEndpoint("/synthetic/work", null, "work", endpoint) }
+        assertTrue(outcome.exceptionOrNull() is GatewayRpcException)
+        assertTrue(rpc.calls.none { it.first == "session.create" })
+    }
+
     private fun repository(
         cache: SessionCache,
         rpc: FakeProfileRpc,
@@ -296,6 +377,8 @@ class GatewayProfileRoutingTest {
         var sessionListByProfile: Map<String?, List<String>> = emptyMap()
         var failListForProfile: String? = null
         var failLaunchLeg = false
+        var resumeGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
+        var createGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
 
         override suspend fun request(method: String, params: JsonObject): JsonElement {
             calls += method to params
@@ -310,10 +393,16 @@ class GatewayProfileRoutingTest {
                     }
                     Json.parseToJsonElement(sessionListJson(sessionListByProfile[profile].orEmpty()))
                 }
-                "session.create" -> Json.parseToJsonElement(
-                    """{"session_id":"runtime-new","stored_session_id":"durable-new","session":{"id":"durable-new","title":"New"}}""",
-                )
-                "session.resume" -> Json.parseToJsonElement("""{"session_id":"runtime-1"}""")
+                "session.create" -> {
+                    createGate?.await()
+                    Json.parseToJsonElement(
+                        """{"session_id":"runtime-new","stored_session_id":"durable-new","session":{"id":"durable-new","title":"New"}}""",
+                    )
+                }
+                "session.resume" -> {
+                    resumeGate?.await()
+                    Json.parseToJsonElement("""{"session_id":"runtime-1"}""")
+                }
                 "session.history" -> Json.parseToJsonElement("""{"messages":[],"count":0}""")
                 else -> Json.parseToJsonElement("{}")
             }

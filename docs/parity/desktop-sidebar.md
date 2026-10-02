@@ -42,7 +42,10 @@ incorrect for this requested behavior.
 Each overview project row now exposes a separately accessible, 48dp
 `New session in <project>` plus; disconnected rows keep it visible but disabled.
 The row selects its catalog project before calling the existing session-create
-flow. That flow snapshots project/workspace before launching its coroutine.
+flow. That flow snapshots profile, project/workspace, endpoint and navigation
+ownership before launching its coroutine; the repository retains transport and
+profile ownership across its navigation-mutex wait. A later selection may leave
+the create cached in its owning profile but cannot adopt its result or composer.
 The entered project header also retains a scoped plus, including HOME.
 This is a mobile-adaptation for a direct touch action rather than relying on
 hover or the global header. `SessionCreateAffordancesTest` verifies action
@@ -95,5 +98,6 @@ parity remains pending; later changes need new exact-head evidence.
 | Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; visual comparison pending #71. |
 | Compact navigation rows | mobile-adaptation | 48dp touch floor | `SessionSidebarNavigationBoundsTest` checks cramped layout and action reachability. |
 | Pane-strip new-session action | mobile-adaptation | Chat-header plus labelled `New session`, since Android has no session tabs; flat sidebar header has its own plus | `SessionCreateAffordancesTest` covers callback, disabled state, compact/wide and project-mode exclusivity; rendered comparison pending #71. |
+| Overview project-row new-session action | mobile-adaptation | 48dp `New session in <project>` plus; visible but disabled when disconnected | `SessionCreateAffordancesTest` verifies action ordering through public `SessionList`; [native synthetic captures](visual/project-push-off-native/README.md) document the visible HOME and example-project controls; rendered comparison pending #71. |
 | Bots mode | mobile-adaptation | Existing Android roster in the sidebar pane | `SessionSidebarNavigationBoundsTest` verifies mode selection and return; rendered roster comparison pending #71. |
 | Active plugin navigation | drift | Sidebar-origin routes retain the wide rail and compact drawer door; rows use semantic active-row fill/accent and suppress the retained chat selection. The compact drawer action shares the route's own header rather than adding a second row. | `SessionSidebarNavigationBoundsTest` covers row selection; `PluginShellRouteJourneyTest` covers header alignment, reopening the drawer and selecting the same active route. Updated device pixels, wide-route geometry and rendered comparison pending #71. |

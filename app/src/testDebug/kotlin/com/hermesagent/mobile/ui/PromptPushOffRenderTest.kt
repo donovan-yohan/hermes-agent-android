@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -21,6 +23,7 @@ import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import java.io.File
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,15 +44,16 @@ class PromptPushOffRenderTest {
         val second = "Second synthetic request\nContinue the example"
         val now = 1_755_600_000_000L
         fun response(label: String) = (1..30).joinToString("\n\n") { "$label synthetic paragraph $it." }
+        val transcript = mutableStateOf(listOf(
+            UserTurn("u1", first, now), AssistantTurn("a1", response("First"), now),
+            UserTurn("u2", second, now), AssistantTurn("a2", response("Second"), now, streaming = true),
+        ))
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 ChatScreen(
                     ChatUiState(
                         activeSession = SessionSummary("synthetic-push-off", "Synthetic handoff", "", now, status = SessionStatus.Working),
-                        transcript = listOf(
-                            UserTurn("u1", first, now), AssistantTurn("a1", response("First"), now),
-                            UserTurn("u2", second, now), AssistantTurn("a2", response("Second"), now, streaming = true),
-                        ),
+                        transcript = transcript.value,
                         isStreaming = true,
                     ), ChatActions(), {},
                 )
@@ -71,7 +75,36 @@ class PromptPushOffRenderTest {
         assertTrue(after.bottom <= incoming.top)
         assertTrue(after.bottom < before.bottom)
         capture("handoff-pushing.png")
-        scroll(110f * compose.density.density)
+        // Actual streamed mutations (same durable row id), not just a static
+        // streaming flag: growing text below a parked collision must not follow
+        // the tail or change which prompt owns the accessible chrome.
+        repeat(3) { delta ->
+            compose.runOnIdle {
+                transcript.value = transcript.value.map { entry ->
+                    if (entry.id == "a2") (entry as AssistantTurn).copy(
+                        markdown = entry.markdown + "\n\nStreamed synthetic delta $delta. " + response("Delta $delta"),
+                    ) else entry
+                }
+            }
+            compose.waitForIdle()
+            val updated = compose.onNodeWithTag("Current prompt bubble", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val next = compose.onNodeWithContentDescription("You said: $second").fetchSemanticsNode().boundsInRoot
+            assertEquals(after.bottom, updated.bottom, compose.density.density)
+            assertEquals(incoming.top, next.top, compose.density.density)
+            assertTrue(updated.bottom <= next.top)
+            assertEquals(1, compose.onAllNodes(hasContentDescription("Current prompt: $first")).fetchSemanticsNodes().size)
+            assertEquals(0, compose.onAllNodes(hasContentDescription("You said: $first")).fetchSemanticsNodes().size)
+            assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $second")).fetchSemanticsNodes().size)
+            assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: $second")).fetchSemanticsNodes().size)
+            capture("handoff-stream-$delta.png")
+        }
+        scroll(-12f * compose.density.density)
+        val reversed = compose.onNodeWithTag("Current prompt bubble", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val incomingReversed = compose.onNodeWithContentDescription("You said: $second").fetchSemanticsNode().boundsInRoot
+        assertEquals(before.bottom, reversed.bottom, compose.density.density)
+        assertEquals(incomingReversed.top - incoming.top, reversed.bottom - after.bottom, compose.density.density + 1f)
+        capture("handoff-reverse.png")
+        scroll(122f * compose.density.density)
         compose.onNodeWithContentDescription("Current prompt: $second").fetchSemanticsNode()
         capture("handoff-complete.png")
     }

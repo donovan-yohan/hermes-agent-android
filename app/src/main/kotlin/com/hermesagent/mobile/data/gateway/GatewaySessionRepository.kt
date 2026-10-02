@@ -228,6 +228,13 @@ interface GatewaySessionRepository {
         workspacePath: String?,
         overrides: NewSessionComposerOverrides?,
     ): String = createSession(workspacePath)
+    /** A create intent captured by the caller before launching or waiting for navigation. */
+    suspend fun createSessionAtEndpoint(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+        profile: String?,
+        expectedEndpointGeneration: Long,
+    ): String = createSession(workspacePath, overrides)
     suspend fun branchSession(durableId: String, count: Int?): String =
         error("Branching is not implemented by this repository.")
     suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> =
@@ -2435,16 +2442,42 @@ internal class LiveGatewaySessionRepository(
     override suspend fun createSession(
         workspacePath: String?,
         overrides: NewSessionComposerOverrides?,
+    ): String {
+        // Capture before the mutex: a queued create must not borrow the next
+        // profile or transport while retaining the previous project's cwd.
+        val (connection, profile) = synchronized(stateLock) {
+            connectionSnapshot() to profileRouting.activeProfile
+        }
+        return createSessionBound(workspacePath, overrides, profile, connection)
+    }
+
+    override suspend fun createSessionAtEndpoint(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+        profile: String?,
+        expectedEndpointGeneration: Long,
+    ): String {
+        val connection = synchronized(stateLock) {
+            requireEndpoint(expectedEndpointGeneration)
+            connectionSnapshot()
+        }
+        return createSessionBound(workspacePath, overrides, profile, connection)
+    }
+
+    private suspend fun createSessionBound(
+        workspacePath: String?,
+        overrides: NewSessionComposerOverrides?,
+        profile: String?,
+        connection: ConnectionSnapshot,
     ): String = navigationMutex.withLock {
-        val connection = connectionSnapshot()
+        synchronized(stateLock) { ensureCurrent(connection) }
         val result = connection.client.request(
             "session.create",
             buildJsonObject {
                 put("source", JsonPrimitive("desktop"))
                 // The new chat belongs to the profile the rail is scoped to
                 // (`methods_session.py:38-43`); omitted means the launch profile.
-                synchronized(stateLock) { profileRouting }.activeProfile
-                    ?.let { put("profile", JsonPrimitive(it)) }
+                profile?.let { put("profile", JsonPrimitive(it)) }
                 workspacePath?.trim()?.takeIf(String::isNotEmpty)?.let { put("cwd", JsonPrimitive(it)) }
                 overrides?.selection?.takeIf { it.isSpecified }?.let { selection ->
                     put("model", JsonPrimitive(selection.model.trim()))
@@ -2471,7 +2504,8 @@ internal class LiveGatewaySessionRepository(
             ensureCurrent(connection)
             identities.bind(durableId, runtimeId)
             ephemeralSessions += durableId
-            cache.upsertSession(parseSession(info, clock(), durableId))
+            val row = parseSession(info, clock(), durableId)
+            cache.upsertSession(row.copy(remoteProfile = row.remoteProfile ?: profile))
             val messages = result["messages"]
             if (messages is JsonArray) {
                 cache.setTranscript(

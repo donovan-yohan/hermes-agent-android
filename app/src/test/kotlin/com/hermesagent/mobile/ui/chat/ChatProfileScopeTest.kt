@@ -330,6 +330,32 @@ class ChatProfileScopeTest {
         }
     }
 
+    @Test
+    fun `create snapshots profile before launch and cannot adopt after switching scope`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.selectProfile("work")
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        viewModel.createSession()
+        // No scheduler drain: profile changes before the create coroutine starts.
+        viewModel.selectProfile("lab")
+        // Model the repository's independently updated routing while the launch
+        // is still queued (the production repository is process-scoped).
+        repository.setProfileRouting(ProfileRouting(activeProfile = "lab"))
+        runCurrent()
+        assertEquals("work", repository.createdProfile)
+        assertNull(viewModel.uiState.value.activeSession)
+        viewModel.setDraft("lab draft")
+        gate.complete(Unit)
+        repository.sessionCreateJob!!.join()
+        runCurrent()
+        assertNull(viewModel.uiState.value.activeSession)
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+        assertEquals("lab draft", viewModel.uiState.value.draft)
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
@@ -357,7 +383,26 @@ class ChatProfileScopeTest {
         override suspend fun openSession(durableId: String): String = durableId
         override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
-        override suspend fun createSession(workspacePath: String?): String = "created"
+        var sessionCreateGate: CompletableDeferred<Unit>? = null
+        var sessionCreateJob: kotlinx.coroutines.Job? = null
+        var createdProfile: String? = null
+        override suspend fun createSession(workspacePath: String?): String {
+            createdProfile = routing.activeProfile
+            sessionCreateJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+            sessionCreateGate?.await()
+            return "created"
+        }
+        override suspend fun createSessionAtEndpoint(
+            workspacePath: String?,
+            overrides: com.hermesagent.mobile.data.composer.NewSessionComposerOverrides?,
+            profile: String?,
+            expectedEndpointGeneration: Long,
+        ): String {
+            createdProfile = profile
+            sessionCreateJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+            sessionCreateGate?.await()
+            return "created"
+        }
 
         override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
             createGate?.await()

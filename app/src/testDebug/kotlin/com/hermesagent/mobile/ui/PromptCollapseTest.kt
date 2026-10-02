@@ -141,10 +141,31 @@ class PromptCollapseTest {
         assertEquals("both bubbles move together", incomingAfter.top - incomingBefore.top, after.bottom - before.bottom, geometryTolerance() + 1f)
         assertTrue(after.bottom < before.bottom)
         assertEquals(0, compose.onAllNodes(hasContentDescription("You said: $first")).fetchSemanticsNodes().size)
-        scrollBy(110f * compose.density.density)
+        // Reverse inside the collision: the same two bubbles must move back
+        // together, rather than the sticky copy covering the incoming prompt.
+        scrollBy(-12f * compose.density.density)
+        val reversed = currentPromptBubble()
+        val incomingReversed = inlinePrompt(second)
+        assertTrue(reversed.bottom <= incomingReversed.top)
+        assertEquals(incomingReversed.top - incomingAfter.top, reversed.bottom - after.bottom, geometryTolerance() + 1f)
+        assertRectNear(before, reversed)
+        scrollBy(122f * compose.density.density)
         assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: $first")).fetchSemanticsNodes().size)
         assertEquals(1, compose.onAllNodes(hasContentDescription("Current prompt: $second")).fetchSemanticsNodes().size)
         assertEquals(0, compose.onAllNodes(hasContentDescription("You said: $second")).fetchSemanticsNodes().size)
+        repeat(122) {
+            scrollBy(-compose.density.density)
+            for (prompt in listOf(first, second)) {
+                val inline = compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size
+                val pinned = compose.onAllNodes(hasContentDescription("Current prompt: $prompt")).fetchSemanticsNodes().size
+                assertTrue("no duplicate owner on reverse pixel $it", inline + pinned <= 1)
+            }
+            assertEquals("incoming stays accessible through reverse handoff", 1,
+                compose.onAllNodes(hasContentDescription("You said: $second")).fetchSemanticsNodes().size +
+                    compose.onAllNodes(hasContentDescription("Current prompt: $second")).fetchSemanticsNodes().size)
+        }
+        assertEquals(1, compose.onAllNodes(hasContentDescription("Current prompt: $first")).fetchSemanticsNodes().size)
+        assertRectNear(before, currentPromptBubble())
     }
 
     @Test

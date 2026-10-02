@@ -17,8 +17,11 @@ semantics are hidden in the same composition as overlay ownership, not through
 a delayed measurement callback. Attachments retain their inline slot.
 
 `PromptCollapseTest` now asserts full-height retention and measured paired
-movement through the public `ChatScreen`; successor, pagination, return,
-selection, touch-size and mask tests remain. Native synchronous window captures
+movement forward and backward through the public `ChatScreen`, including single
+accessible ownership while reversing across handoff. `PromptPushOffRenderTest`
+mutates the streaming assistant row three times while parked in collision and
+asserts stable viewport geometry and owners after every update; successor,
+pagination, return, selection, touch-size and mask tests remain. Native synchronous window captures
 are explicitly Robolectric evidence, not emulator or physical-device acceptance.
 The paired Desktop/device report remains pending under #72. The older collapse
 narrative below is historical and is superseded by this section.
@@ -86,7 +89,6 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | `timeline.tsx:113-125` jumps by message id held from render | mobile-adaptation | The source id is re-resolved at tap time, and tail follow is disarmed | A phone transcript is re-composed under the finger far more often than a desktop one; resolving late is what keeps the jump landing on the prompt the reader can see |
-| Desktop's sticky source keeps its settled message height | mobile-adaptation | Android collapses the same-width source into the four-line pin from `LazyListState` scroll distance, with reversible intermediate geometry (`ChatScreen.kt:662-698,874-990`) | A long prompt otherwise replaces a full-height inline bubble with compact chrome at one item boundary on a phone; `PromptCollapseTest` and `PromptBubbleDecorationRenderTest` cover actual width, the pagination row, forward/reverse one-pixel movement, corners and border |
 | Sticky bubble is chrome the pointer scrolls past | mobile-adaptation | The bubble shares the transcript `LazyListState` | A drag or fling begun on the overlay keeps scrolling instead of creating a dead strip under the thumb |
 | Return-to-prompt is a pointer-sized affordance | mobile-adaptation | A 48 dp `Return to prompt` action whose accessibility label includes the prompt text | Touch floor, and the spoken label has to name which prompt it returns to |
 | The prompt excerpt renders `@image:` references as prose | mobile-adaptation | References are split out; an attachment-only prompt has no excerpt | One phone-width line of excerpt cannot spend itself on a wire-format path |
