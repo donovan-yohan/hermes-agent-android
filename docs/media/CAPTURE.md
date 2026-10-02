@@ -16,6 +16,16 @@ New disposable emulator only, now shut down. Desktop receipts remain noncanonica
 five Android-only states have no supplied Desktop counterpart. Synthetic fixture
 staging is not human interaction or live-server evidence. No Gradle or push.
 
+## e05 theme refresh supplement
+
+[Narrow paired report](theme-refresh-e05/REPORT.md): four actual API 37 Android
+phone PNG/XML pairs and eight e05 Desktop wide observations. Exact approved APK
+and implementation pins are retained. Manual Mono is paired; Android offline
+retired-default resolution is not Desktop backend-default activation. Both packets
+are noncanonical; Android event transitions and matched viewport coverage remain
+pending under #292. Publication review required; no rendered parity approval.
+
+
 ## Toolsets selection supplement
 
 [Side-by-side report](bot-toolsets-v1/report.html), [limits](bot-toolsets-v1/REPORT.md),
