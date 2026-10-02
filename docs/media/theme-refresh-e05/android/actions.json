@@ -1,0 +1,342 @@
+[
+  {
+    "action": "tap",
+    "label": "Open settings",
+    "ancestor_path": [
+      {
+        "index": "4",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Open settings",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[1124,156][1268,300]",
+        "drawing-order": "4",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "ResumedActivity: ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "mCurrentFocus=Window{b39b96f u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Appearance. Mode, theme, and chat chrome.",
+    "ancestor_path": [
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.widget.Button",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Appearance. Mode, theme, and chat chrome.",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[0,303][1280,480]",
+        "drawing-order": "0",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "ResumedActivity: ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "mCurrentFocus=Window{b39b96f u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Light mode",
+    "ancestor_path": [
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Light mode",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "false",
+        "enabled": "true",
+        "focusable": "false",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[54,544][440,688]",
+        "drawing-order": "0",
+        "hint": ""
+      },
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "",
+        "checkable": "true",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[54,544][440,688]",
+        "drawing-order": "0",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "ResumedActivity: ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "mCurrentFocus=Window{b39b96f u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Mono skin. Clean grayscale \u2014 minimal and focused",
+    "ancestor_path": [
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Mono skin. Clean grayscale \u2014 minimal and focused",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "false",
+        "enabled": "true",
+        "focusable": "false",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[0,2161][1280,2326]",
+        "drawing-order": "0",
+        "hint": ""
+      },
+      {
+        "index": "20",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "",
+        "checkable": "true",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[0,2161][1280,2326]",
+        "drawing-order": "20",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "ResumedActivity: ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "mCurrentFocus=Window{b39b96f u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Dark mode",
+    "ancestor_path": [
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Dark mode",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "false",
+        "enabled": "true",
+        "focusable": "false",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[446,544][833,688]",
+        "drawing-order": "0",
+        "hint": ""
+      },
+      {
+        "index": "1",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "",
+        "checkable": "true",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[446,544][833,688]",
+        "drawing-order": "1",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "ResumedActivity: ActivityRecord{121189024 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000003}",
+      "mCurrentFocus=Window{b39b96f u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Open settings",
+    "ancestor_path": [
+      {
+        "index": "4",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Open settings",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[1124,156][1268,300]",
+        "drawing-order": "4",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{10989139 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000004}",
+      "ResumedActivity: ActivityRecord{10989139 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000004}",
+      "mCurrentFocus=Window{5708211 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Appearance. Mode, theme, and chat chrome.",
+    "ancestor_path": [
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.widget.Button",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Appearance. Mode, theme, and chat chrome.",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[0,303][1280,480]",
+        "drawing-order": "0",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{10989139 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000004}",
+      "ResumedActivity: ActivityRecord{10989139 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000004}",
+      "mCurrentFocus=Window{5708211 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  },
+  {
+    "action": "tap",
+    "label": "Dark mode",
+    "ancestor_path": [
+      {
+        "index": "0",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "Dark mode",
+        "checkable": "false",
+        "checked": "false",
+        "clickable": "false",
+        "enabled": "true",
+        "focusable": "false",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[446,544][833,688]",
+        "drawing-order": "0",
+        "hint": ""
+      },
+      {
+        "index": "1",
+        "text": "",
+        "resource-id": "",
+        "class": "android.view.View",
+        "package": "com.hermesagent.mobile.debug",
+        "content-desc": "",
+        "checkable": "true",
+        "checked": "false",
+        "clickable": "true",
+        "enabled": "true",
+        "focusable": "true",
+        "focused": "false",
+        "scrollable": "false",
+        "long-clickable": "false",
+        "password": "false",
+        "selected": "false",
+        "bounds": "[446,544][833,688]",
+        "drawing-order": "1",
+        "hint": ""
+      }
+    ],
+    "focus": [
+      "topResumedActivity=ActivityRecord{10989139 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000004}",
+      "ResumedActivity: ActivityRecord{10989139 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity t1000004}",
+      "mCurrentFocus=Window{5708211 u10 com.hermesagent.mobile.debug/com.hermesagent.mobile.MainActivity}"
+    ]
+  }
+]
