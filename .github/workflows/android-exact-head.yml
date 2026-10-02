@@ -224,6 +224,13 @@ jobs:
           # attempt pays the cold-boot cost again.
           restore-keys: |
             avd-api34-google_apis-x86_64-pixel_6-
+      # Finish CPU/memory-heavy APK assembly before either cold or warm boot.
+      # Resource isolation only; this is not a proven SystemUI ANR fix.
+      - name: Assemble instrumented APKs before emulator boot
+        run: |
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+          python3 scripts/ci_prebuilt.py record
+          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
       - name: Create the AVD snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
         # Pinned to a commit, for the reason given above the setup-android pin.
@@ -256,10 +263,9 @@ jobs:
           # Stop only this synthetic AVD's known launcher after normal preparation;
           # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
           script: |
-            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache
+            python3 scripts/ci_prebuilt.py connected
       - name: Upload instrumented lane evidence
         if: always()
         uses: actions/upload-artifact@v4

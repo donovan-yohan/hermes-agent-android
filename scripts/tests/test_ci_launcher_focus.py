@@ -23,10 +23,9 @@ class CiLauncherFocusTest(unittest.TestCase):
         commands = [line.strip() for line in lane.split('          script: |\n', 1)[1].splitlines()
                     if line.strip() and not line.lstrip().startswith('#')]
         self.assertEqual(commands, [
-            './gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache',
             './scripts/prepare-ci-emulator.sh',
             f'adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 {LAUNCHER}',
-            './gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache',
+            'python3 scripts/ci_prebuilt.py connected',
         ])
         self.assertEqual(text.count(' shell am force-stop '), 1)
         self.assertNotIn('hide_error_dialogs', text)
@@ -35,7 +34,7 @@ class CiLauncherFocusTest(unittest.TestCase):
             adb = Path(directory) / 'adb'
             adb.write_text('#!/usr/bin/env python3\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n')
             adb.chmod(0o755)
-            result = subprocess.run(['sh', '-ec', commands[2]], check=True,
+            result = subprocess.run(['sh', '-ec', commands[1]], check=True,
                                     capture_output=True, text=True,
                                     env={**os.environ, 'PATH': directory + ':' + os.environ['PATH'],
                                          'ANDROID_SERIAL': 'emulator-5554'})

@@ -93,7 +93,7 @@ REQUIRED = (
     "Enable KVM",
     "~/.android/avd/*",
     "~/.android/adb*",
-    "./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache",
+    "python3 scripts/ci_prebuilt.py connected",
     "app/build/outputs/androidTest-results/connected/**",
     # The pin-citation job. Its contract is the range it checks and the fact that
     # it obtains an upstream checkout of its own: without one it would either pass
@@ -230,8 +230,25 @@ def main() -> int:
                 "the instrumented lane must not depend on another job; "
                 "an emulator failure must not withhold the rolling APK"
             )
-        if "connectedDebugAndroidTest" not in instrumented_job:
-            failures.append("the instrumented lane must run the connected androidTest task")
+        connected = _indented_block(instrumented_job, '      - name: Run the instrumented lane')
+        if re.search(r'^        (if|continue-on-error):', connected, re.M):
+            failures.append('the connected step must run unconditionally and propagate failure')
+        if '            python3 scripts/ci_prebuilt.py connected' not in connected.splitlines():
+            failures.append("the instrumented lane must run the guarded connected androidTest task")
+        assembly = _indented_block(instrumented_job,
+                                  '      - name: Assemble instrumented APKs before emulator boot')
+        expected_assembly = [
+            '      - name: Assemble instrumented APKs before emulator boot',
+            '        run: |',
+            '          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache',
+            '          python3 scripts/ci_prebuilt.py record',
+            '          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v',
+        ]
+        if assembly.splitlines() != expected_assembly:
+            failures.append('the prebuilt assembly, identity gates must run without bypass')
+        for boot in ('      - name: Create the AVD snapshot', '      - name: Run the instrumented lane'):
+            if not assembly or boot not in instrumented_job or instrumented_job.index(assembly) > instrumented_job.index(boot):
+                failures.append('APK assembly and identity recording must precede both emulator boots')
         for pin in INSTRUMENTED_DEVICE:
             if pin not in instrumented_job:
                 failures.append(f"the instrumented lane must pin its device: {pin}")
