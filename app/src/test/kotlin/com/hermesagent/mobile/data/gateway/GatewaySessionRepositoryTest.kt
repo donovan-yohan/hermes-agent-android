@@ -5073,7 +5073,7 @@ class GatewaySessionRepositoryTest {
         assertEquals(entries, backfilled.drop(1))
         assertEquals((100L..219L).map { TranscriptRowId(it) }, backfilled.mapNotNull { it.rowId })
         assertEquals((101..219).map { "partial $it" },
-            backfilled.filterIsInstance<AssistantTurn>().filter { it.error == null }.map { it.text })
+            backfilled.filterIsInstance<AssistantTurn>().filter { it.error == null }.map { it.markdown })
         assertEquals(backfilled.size, backfilled.map { it.id }.distinct().size)
     }
 
