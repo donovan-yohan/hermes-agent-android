@@ -5000,7 +5000,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `persisted failure survives live completion refresh and reopen exactly once`() = runTest {
+    fun `persisted failure survives refresh while ambiguous retained overlay stays visible`() = runTest {
         for (retained in listOf(false, true)) {
             val cache = SessionCache()
             val rpc = FakeRpc().apply { resumeA = RESUME_RUNNING }
@@ -5017,18 +5017,20 @@ class GatewaySessionRepositoryTest {
             repeat(2) {
                 repository.openSession("durable-a")
                 val entries = cache.transcript("durable-a")
-                assertEquals(1, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
-                assertEquals(1, entries.filterIsInstance<UserTurn>().size)
-                assertNull(entries.filterIsInstance<AssistantTurn>().single { it.error != null }.rowId)
+                // No shared occurrence identity: even a same-occurrence overlay
+                // cannot safely be suppressed from prompt/code equality.
+                assertEquals(if (retained) 2 else 1, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
+                assertEquals(if (retained) 2 else 1, entries.filterIsInstance<UserTurn>().size)
+                entries.filterIsInstance<AssistantTurn>().filter { it.error != null }.forEach { assertNull(it.rowId) }
             }
             repository.openSession("durable-b")
             repository.openSession("durable-a")
-            assertEquals(1, cache.transcript("durable-a").filterIsInstance<AssistantTurn>().count { it.error != null })
+            assertEquals(if (retained) 2 else 1, cache.transcript("durable-a").filterIsInstance<AssistantTurn>().count { it.error != null })
         }
     }
 
     @Test
-    fun `retained failure with user outside REST tail does not replay prompt or error`() = runTest {
+    fun `retained failure with user outside REST tail remains visible without occurrence identity`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
             activateResult = """{"running":false,"inflight":{"user":"original question","status":"error","error":"synthetic failure","error_surface":{"layer":"provider","code":"unavailable"}}}"""
@@ -5057,12 +5059,12 @@ class GatewaySessionRepositoryTest {
         assertEquals("120", http.requests.last { it.path.endsWith("/messages") }.query["offset"])
         assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
         assertEquals(TranscriptRowId(100), cache.transcript("durable-a").first().rowId)
-        assertEquals(1, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
-        assertTrue(entries.filterIsInstance<UserTurn>().isEmpty())
+        assertEquals(2, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
+        assertEquals(listOf("original question"), entries.filterIsInstance<UserTurn>().map { it.text })
     }
 
     @Test
-    fun `retained failure after persisted correction does not replay original prompt or error`() = runTest {
+    fun `retained failure after persisted correction remains visible without occurrence identity`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
             historyResult = """{"messages":[{"role":"user","row_id":39,"text":"original question"},{"role":"user","row_id":40,"text":"accepted correction"},{"role":"assistant","row_id":41,"text":"","display_kind":"failed_turn","display_metadata":{"error_surface":{"layer":"provider","code":"unavailable"}}}]}"""
@@ -5075,8 +5077,39 @@ class GatewaySessionRepositoryTest {
         repository.openSession("durable-a")
         repository.openSession("durable-a")
         val entries = cache.transcript("durable-a")
-        assertEquals(1, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
-        assertEquals(listOf("original question", "accepted correction"), entries.filterIsInstance<UserTurn>().map { it.text })
+        assertEquals(2, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
+        assertEquals(listOf("original question", "accepted correction", "original question", "accepted correction"),
+            entries.filterIsInstance<UserTurn>().map { it.text })
+    }
+
+    @Test
+    fun `genuinely later unpersisted failure with identical prompt and code is not suppressed`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"messages":[{"role":"user","row_id":40,"text":"question"},{"role":"assistant","row_id":41,"text":"","display_kind":"failed_turn","display_metadata":{"error_surface":{"layer":"provider","code":"unavailable"}}}]}"""
+            activateResult = """{"running":false}"""
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        assertEquals(1, cache.transcript("durable-a").filterIsInstance<AssistantTurn>().count { it.error != null })
+        // A later turn begins and fails while history still contains only the
+        // earlier committed occurrence. Neither its user nor boundary is saved.
+        rpc.activateResult = """{"running":true,"inflight":{"user":"question","status":"running"}}"""
+        repository.openSession("durable-a")
+        rpc.activateResult = """{"running":false,"inflight":{"user":"question","status":"error","error":"synthetic failure","error_surface":{"layer":"provider","code":"unavailable"}}}"""
+        repeat(2) {
+            repository.openSession("durable-a")
+            val entries = cache.transcript("durable-a")
+            val errors = entries.filterIsInstance<AssistantTurn>().filter { it.error != null }
+            assertEquals(2, errors.size)
+            assertEquals(2, errors.map { it.id }.distinct().size)
+            assertEquals(listOf("unavailable", "unavailable"), errors.map { it.errorDetails?.code })
+            assertEquals(listOf("question", "question"), entries.filterIsInstance<UserTurn>().map { it.text })
+            assertEquals(listOf(TranscriptRowId(40), null), entries.filterIsInstance<UserTurn>().map { it.rowId })
+        }
     }
 
     @Test

@@ -36,26 +36,48 @@ local Stop. The live Stop attribution path is unchanged, and redirect does not
 send or imply Stop.
 
 Android continues to refresh authoritative history; no Desktop replay mechanism
-was added. A retained inflight failure is omitted only when its tail user and
-error code already match the hydrated tail failure.
+was added. The new retained-overlay prompt/code heuristic has been removed.
+Retained failure overlays remain visible even when the prompt and error code
+match a persisted failure. This can replay a same-occurrence error and prompt;
+that ambiguity is **not fixed** by this hydration deliverable.
 
-## Retained-failure review blocker
-
-The reviewer identified two duplicate-replay cases now covered by repository
-regressions: a 120-row REST tail that omits the original user, and a persisted
-mid-turn correction whose text differs from `inflight.user`. Both currently
-restore two errors instead of one. The REST regression also exercises the
-actual older-page route and checks its raw-row offset of 120.
+## Conservative visibility and protocol limitation
 
 At the pinned upstream revision, `tui_gateway/session_history.py:413-454`
 keeps the original `user`, appends separate `corrections`, and retains failure
-state until another turn starts. The inflight failure has no persisted boundary
-row ID or shared turn identity. A same-code tail error alone cannot distinguish
-an already-persisted failure from an older failure followed by a new failure
-before its user/boundary is committed. Missing user text is not authority.
-Do not broaden deduplication on code/text alone; resolving that ambiguity needs
-an explicit protocol identity or an agreed snapshot-ordering invariant. These
-regressions are intentionally RED pending that decision; production is unchanged.
+state until another turn starts. The source audit found no authoritative link
+from retained failure to persisted boundary, no atomic history/live snapshot,
+and no persistence receipt. Prompt equality (including a repeated identical
+prompt), error-code equality, correction text, and missing user text are not
+occurrence identity. A later failure may arrive before its user/boundary is saved.
+
+Executable repository tests now assert conservative visibility, not successful
+same-occurrence deduplication: both errors remain visible for an omitted REST-tail
+user, a persisted correction, and an ambiguous matching prompt. The REST case
+still exercises older-page loading and raw-row offset 120. A separate regression
+first hydrates an older failure, observes a later running turn with the identical
+prompt, then restores its failure while history remains unchanged; both errors
+and both prompt occurrences must survive. Boundary-identity overlap/tail-merge
+tests remain unchanged: those have real persisted identity, unlike overlays.
+
+## Future protocol acceptance — not current passing tests
+
+The two impossible deduplication expectations from `972b144b` are relocated here,
+not disabled with `@Ignore` or claimed fixed by revised assertions:
+
+1. **User outside REST tail:** with a 120-row page (assistant rows 101–219,
+   failed boundary 220, original user 100 outside the page), a retained failure
+   authoritatively linked to boundary 220 must not replay its prompt or error.
+   Expect one error and no user in the initial tail; older-page loading still
+   requests raw offset 120 and hydrates user row 100.
+2. **Persisted correction:** with original user 39, correction 40, failed boundary
+   41, and retained original user plus correction, an authoritative link to 41
+   must yield one error and exactly the two persisted users, without replay.
+
+Both require a protocol-supplied shared occurrence/boundary identity or an
+explicit, verified atomic ordering/receipt contract before executable acceptance
+can honestly demand dedupe. Any future implementation must also retain the later
+unpersisted identical-prompt/code failure. Do not infer the link from text/code.
 
 Historical RED was run in an isolated base worktree at `651d659b` with the
 original new tests transplanted: 462 tests, 8 failures, no compilation failure.
@@ -64,8 +86,11 @@ The existing different-turn/same-code regression remains intact.
 ## Verification hand-off
 
 Tests were authored with Gradle execution explicitly deferred to the coordinating
-worker. No JVM RED/GREEN result, Android build, device capture, or visual parity
-is claimed by this implementation commit.
+worker (Skills owns Gradle). No JVM RED/GREEN result for this revision, Android
+build, device capture, or visual parity is claimed by this implementation commit.
+Independent review is required before integration; this is a local handoff only.
+The existing commits are preserved without reset/rewrite, and the original WIP
+worktree is untouched.
 
 Requested focused checks:
 
@@ -82,6 +107,7 @@ Requested focused checks:
 
 The regression cases cover strict interruption, object/string metadata,
 blank failures, invalid descriptors, redaction, address-free synthetic cards,
-page overlap and tail grafting, live error refresh/reopen, retained error dedupe,
+page overlap and tail grafting, live error refresh/reopen, conservative retained
+failure visibility (not same-occurrence dedupe),
 redirect attribution, and completion-before-wire correction rejection with a
 second live session. ViewModel rejection retains the unsent correction draft.

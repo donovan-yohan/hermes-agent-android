@@ -7409,19 +7409,11 @@ private fun appendInflightProjection(
 ): List<TranscriptEntry> {
     val inflight = projection.inflight
     if (inflight == null && !projection.busy) return history
-    if (projection.retainedFailure) {
-        // Desktop reconciliation.ts:333-357 @
-        // e05b16348b1d06a3311237423b0a4fc30d9c5aa1 scopes error dedupe to
-        // the tail turn, never all occurrences of a provider's error code.
-        val lastUser = history.indexOfLast { it is UserTurn }
-        val tailUser = history.getOrNull(lastUser) as? UserTurn
-        val code = parseTurnErrorDetails(inflight?.error, inflight?.errorSurface).code
-        if (code != null && (inflight?.user.isNullOrBlank() || tailUser?.text == inflight?.user) &&
-            history.drop(lastUser + 1).filterIsInstance<AssistantTurn>().any {
-                it.error != null && it.errorDetails?.code == code
-            }
-        ) return history
-    }
+    // Retained failures have no authoritative link to a persisted boundary.
+    // History and live snapshots are not atomic: even identical prompt/code
+    // can describe a later unpersisted failure. Keep the overlay visible until
+    // the protocol supplies occurrence identity; same-occurrence replay remains
+    // possible. Boundary-key page merging is separate from this ambiguity.
     val restored = history.toMutableList()
     val atMillis = inflight?.atMillis ?: fallbackTime
     val user = inflight?.user.orEmpty()
