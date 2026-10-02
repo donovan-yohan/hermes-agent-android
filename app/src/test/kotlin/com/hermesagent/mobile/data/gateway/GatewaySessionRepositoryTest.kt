@@ -5028,6 +5028,58 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `retained failure with user outside REST tail does not replay prompt or error`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            activateResult = """{"running":false,"inflight":{"user":"original question","status":"error","error":"synthetic failure","error_surface":{"layer":"provider","code":"unavailable"}}}"""
+        }
+        val partialRows = (101..219).joinToString(",") {
+            """{"id":$it,"role":"assistant","content":"partial $it"}"""
+        }
+        val http = FakeGatewayRest { request ->
+            if (request.query["offset"] == "120") {
+                restTranscriptOf("durable-a", listOf(100 to "original question"), 120, 120)
+            } else {
+                restPage("""{"session_id":"durable-a","messages":[$partialRows,{"id":220,"role":"assistant","content":"","display_kind":"failed_turn","display_metadata":{"error_surface":{"layer":"provider","code":"unavailable"}}}],"pagination":{"limit":120,"offset":0,"order":"latest","returned":120}}""")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.openSession("durable-a")
+        val entries = cache.transcript("durable-a")
+        assertTrue("durable-a" in repository.sessionsWithEarlierMessages.value)
+        repository.loadEarlierMessages("durable-a")
+        runCurrent()
+        assertEquals("120", http.requests.last { it.path.endsWith("/messages") }.query["offset"])
+        assertTrue("durable-a" !in repository.sessionsWithEarlierMessages.value)
+        assertEquals(TranscriptRowId(100), cache.transcript("durable-a").first().rowId)
+        assertEquals(1, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
+        assertTrue(entries.filterIsInstance<UserTurn>().isEmpty())
+    }
+
+    @Test
+    fun `retained failure after persisted correction does not replay original prompt or error`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply {
+            historyResult = """{"messages":[{"role":"user","row_id":39,"text":"original question"},{"role":"user","row_id":40,"text":"accepted correction"},{"role":"assistant","row_id":41,"text":"","display_kind":"failed_turn","display_metadata":{"error_surface":{"layer":"provider","code":"unavailable"}}}]}"""
+            activateResult = """{"running":false,"inflight":{"user":"original question","corrections":["accepted correction"],"status":"error","error":"synthetic failure","error_surface":{"layer":"provider","code":"unavailable"}}}"""
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        repository.openSession("durable-a")
+        val entries = cache.transcript("durable-a")
+        assertEquals(1, entries.filterIsInstance<AssistantTurn>().count { it.error != null })
+        assertEquals(listOf("original question", "accepted correction"), entries.filterIsInstance<UserTurn>().map { it.text })
+    }
+
+    @Test
     fun `retained failure of next user turn is not deduped against earlier identical code`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {

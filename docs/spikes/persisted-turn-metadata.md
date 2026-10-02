@@ -39,6 +39,28 @@ Android continues to refresh authoritative history; no Desktop replay mechanism
 was added. A retained inflight failure is omitted only when its tail user and
 error code already match the hydrated tail failure.
 
+## Retained-failure review blocker
+
+The reviewer identified two duplicate-replay cases now covered by repository
+regressions: a 120-row REST tail that omits the original user, and a persisted
+mid-turn correction whose text differs from `inflight.user`. Both currently
+restore two errors instead of one. The REST regression also exercises the
+actual older-page route and checks its raw-row offset of 120.
+
+At the pinned upstream revision, `tui_gateway/session_history.py:413-454`
+keeps the original `user`, appends separate `corrections`, and retains failure
+state until another turn starts. The inflight failure has no persisted boundary
+row ID or shared turn identity. A same-code tail error alone cannot distinguish
+an already-persisted failure from an older failure followed by a new failure
+before its user/boundary is committed. Missing user text is not authority.
+Do not broaden deduplication on code/text alone; resolving that ambiguity needs
+an explicit protocol identity or an agreed snapshot-ordering invariant. These
+regressions are intentionally RED pending that decision; production is unchanged.
+
+Historical RED was run in an isolated base worktree at `651d659b` with the
+original new tests transplanted: 462 tests, 8 failures, no compilation failure.
+The existing different-turn/same-code regression remains intact.
+
 ## Verification hand-off
 
 Tests were authored with Gradle execution explicitly deferred to the coordinating
