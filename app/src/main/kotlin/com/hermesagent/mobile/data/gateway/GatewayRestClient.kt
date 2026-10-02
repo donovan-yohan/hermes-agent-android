@@ -417,7 +417,9 @@ class GatewayRestClient(
 
     /**
      * Read-only exact-id detail, explicitly scoped to the owner, never a launch-profile alias.
-     * `sessions.py:524-544` @ e05b16348b1d06a3311237423b0a4fc30d9c5aa1.
+     * Exact upstream detail-route citation and its separate pin:
+     * docs/spikes/cron-session-admission-boundary.md (Upstream contract).
+     * Other REST citations in this file retain their original pin.
      * The server accepts prefixes; this client deliberately requires the exact echoed id and profile.
      */
     suspend fun sessionDetail(sessionId: String, profile: String): GatewayRestResult<GatewaySessionDetail> {

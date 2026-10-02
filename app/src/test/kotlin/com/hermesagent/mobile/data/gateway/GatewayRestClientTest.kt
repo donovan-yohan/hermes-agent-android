@@ -26,7 +26,9 @@ class GatewayRestClientTest {
 
     @Test
     fun `detail GET is exact owner scoped and preserves strict ownership`() = runTest {
-        // sessions.py::get_session_detail @ e05b16348b1d06a3311237423b0a4fc30d9c5aa1
+        // Detail-route fixture provenance uses its own pin and exact source span:
+        // docs/spikes/cron-session-admission-boundary.md (Upstream contract).
+        // The remaining REST fixtures retain the original file-header pin.
         val http = RecordingGatewayHttp(success("""{"id":"cron_job_20261002_120000","profile":"work","scheduler_owned":"false","is_active":true,"ended_at":null,"last_active":42}"""))
         val detail = GatewayRestClient { http }.sessionDetail("cron_job_20261002_120000", "work").valueOrFail()
         assertNull(detail.schedulerOwned)
