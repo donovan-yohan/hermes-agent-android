@@ -56,7 +56,6 @@ class CiWorkflowCheckerTest(unittest.TestCase):
 
     def test_rejects_prebuilt_gate_bypasses(self) -> None:
         for command in ('python3 scripts/ci_prebuilt.py record',
-                        'python3 scripts/ci_prebuilt.py preflight',
                         'python3 scripts/ci_prebuilt.py connected'):
             for replacement in ('# ' + command, command + ' || true', ''):
                 with self.subTest(command=command, replacement=replacement):

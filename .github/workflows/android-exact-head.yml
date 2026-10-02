@@ -231,7 +231,6 @@ jobs:
           ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
           python3 scripts/ci_prebuilt.py record
           python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
-          python3 scripts/ci_prebuilt.py preflight
       - name: Create the AVD snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
         # Pinned to a commit, for the reason given above the setup-android pin.

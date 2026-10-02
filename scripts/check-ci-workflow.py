@@ -240,13 +240,12 @@ def main() -> int:
             '          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache',
             '          python3 scripts/ci_prebuilt.py record',
             '          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v',
-            '          python3 scripts/ci_prebuilt.py preflight',
         ]
         if assembly.splitlines() != expected_assembly:
-            failures.append('the prebuilt assembly, identity and graph gates must run without bypass')
+            failures.append('the prebuilt assembly, identity gates must run without bypass')
         for boot in ('      - name: Create the AVD snapshot', '      - name: Run the instrumented lane'):
             if not assembly or boot not in instrumented_job or instrumented_job.index(assembly) > instrumented_job.index(boot):
-                failures.append('APK assembly and graph preflight must precede both emulator boots')
+                failures.append('APK assembly and identity recording must precede both emulator boots')
         for pin in INSTRUMENTED_DEVICE:
             if pin not in instrumented_job:
                 failures.append(f"the instrumented lane must pin its device: {pin}")

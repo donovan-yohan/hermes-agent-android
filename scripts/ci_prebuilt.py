@@ -4,6 +4,7 @@ import hashlib
 import json
 import argparse
 import subprocess
+import re
 from pathlib import Path
 
 APKS = ('app/build/outputs/apk/debug/app-debug.apk',
@@ -34,38 +35,45 @@ def verify(root):
         raise ValueError('prebuilt APK identity mismatch')
 
 
-def run(root, *, preflight):
-    # AGP 8.13.2 connected inputs: APK directories/listings, test classes and R.
-    # Exclude their canonical producers, not arbitrary graph tasks. The init
-    # guard rejects extra tasks or lifecycle actions (including a newly added
-    # verification dependency); it NEVER disables tasks or ignores failures.
-    producers = ('packageDebug', 'packageDebugAndroidTest',
-                 'createDebugApkListingFileRedirect',
-                 'createDebugAndroidTestApkListingFileRedirect',
-                 'compileDebugAndroidTestKotlin', 'compileDebugAndroidTestJavaWithJavac',
-                 'processDebugAndroidTestResources')
+def verify_outcomes(output):
+    # Gradle 9.1 plain/lifecycle emits explicit outcomes even with configuration
+    # cache. Bare headers mean execution, NOT reuse. No graph/cache callbacks.
+    tasks = re.findall(r'^> Task (:\S+?)(?: (.*))?$', output, re.M)
+    required = {':app:' + name for name in (
+        'compileDebugKotlin', 'compileDebugAndroidTestKotlin',
+        'packageDebug', 'packageDebugAndroidTest')}
+    reused = {name for name, outcome in tasks if outcome in ('UP-TO-DATE', 'FROM-CACHE')}
+    if not required <= reused or (':app:connectedDebugAndroidTest', '') not in tasks:
+        raise ValueError('missing explicit APK producer reuse or connected task evidence')
+    for name, outcome in tasks:
+        if name != ':app:connectedDebugAndroidTest' and outcome not in (
+                'UP-TO-DATE', 'FROM-CACHE', 'NO-SOURCE', 'SKIPPED'):
+            raise ValueError(f'connected stage executed build task: {name} {outcome}')
+
+
+def run(root):
+    # Keep the normal graph: AGP mapped providers require completed producers,
+    # including UP-TO-DATE tasks, not exclusions or disabled actions.
     command = ['./gradlew', ':app:connectedDebugAndroidTest', '--no-daemon',
-               '--no-build-cache', '--no-configuration-cache',
-               '--init-script', 'scripts/ci-prebuilt.gradle']
-    for task in producers:
-        command.extend(['--exclude-task', ':app:' + task])
-    if preflight:
-        command.append('--dry-run')
+               '--no-build-cache', '--console=plain']
     verify(root)
     try:
-        subprocess.run(command, cwd=root, check=True)
+        result = subprocess.run(command, cwd=root, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True)
+        print(result.stdout, end='', flush=True)
+        result.check_returncode()
+        verify_outcomes(result.stdout)
     finally:
         verify(root)
-    print('Prebuilt APK and metadata identity verified; ' +
-          ('graph preflight only' if preflight else 'connected tests completed'), flush=True)
+    print('Prebuilt APK/metadata identity and explicit task reuse verified', flush=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('phase', choices=('record', 'preflight', 'connected'))
+    parser.add_argument('phase', choices=('record', 'connected'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     if args.phase == 'record':
         record(root)
     else:
-        run(root, preflight=args.phase == 'preflight')
+        run(root)
