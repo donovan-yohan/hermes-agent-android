@@ -1,0 +1,42 @@
+[
+  {
+    "receipt": "android/dark-classic-picker.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "android/dark-classic-screen.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "android/light-classic-picker.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "android/light-classic-screen.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "desktop/dark-classic-picker.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "desktop/dark-classic-screen.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "desktop/light-classic-picker.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  },
+  {
+    "receipt": "desktop/light-classic-screen.json",
+    "exit_code": 1,
+    "output": "FAIL  receipt misses required common provenance"
+  }
+]

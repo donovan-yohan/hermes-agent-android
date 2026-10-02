@@ -129,6 +129,12 @@ slash-alias parity is not claimed. Choose Classic in Appearance on Android.
 See [the audit](../spikes/upstream-36922-2026-10-02.md) for source ownership and
 backend-only changes that require an updated Gateway.
 
-Fresh Classic light/dark phone/wide and backend-transition captures remain
-**pending: #292**. The existing e05 report is historical evidence, not evidence
-for Classic. Independent review is still required; ceiling remains **Concern**.
+The [fresh Classic manual-selection packet](../media/classic-36922/REPORT.md)
+adds eight observations: Android phone and pinned real Desktop wide, picker and
+screen in light/dark, after selecting Nous Alt. Four comparison pairs demonstrate
+manual Classic rendering; all eight receipts remain noncanonical with preserved
+validator rejection. Android disconnected and Desktop synthetic Gateway-ready
+screens are appearance references, not identical session states. Backend
+seed/apply/repeat and matched phone/wide viewport coverage remain **pending: #292**.
+The existing e05 report is unchanged historical evidence, not evidence for Classic.
+Independent review is still required; ceiling remains **Concern**.
