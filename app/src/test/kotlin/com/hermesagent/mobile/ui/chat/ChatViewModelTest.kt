@@ -2284,6 +2284,64 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `completed create cannot steal a later session selection or its draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.createSessionGate = CompletableDeferred()
+        viewModel.createSession()
+        runCurrent()
+        viewModel.selectSession("session-b")
+        runCurrent()
+        viewModel.setDraft("keep the later draft")
+        repository.createSessionGate!!.complete(Unit)
+        repository.createSessionJob!!.join()
+        runCurrent()
+        assertEquals("session-b", viewModel.uiState.value.activeSession?.id)
+        assertEquals("keep the later draft", viewModel.uiState.value.draft)
+        assertNotNull(cache.session("created-1"))
+    }
+
+    @Test
+    fun `completed create cannot steal a later project selection`() = runTest(dispatcher) {
+        cache.replaceProjectOverview(listOf(ProjectSummary("project-a", "A", "/synthetic/a", sessionCount = 0),
+            ProjectSummary("project-b", "B", "/synthetic/b", sessionCount = 0)), activeProjectId = "project-a")
+        collectState()
+        runCurrent()
+        viewModel.selectProject("project-a")
+        runCurrent()
+        repository.createSessionGate = CompletableDeferred()
+        viewModel.createSession()
+        runCurrent()
+        viewModel.selectProject("project-b")
+        runCurrent()
+        repository.createSessionGate!!.complete(Unit)
+        repository.createSessionJob!!.join()
+        runCurrent()
+        assertEquals("/synthetic/a", repository.createdWorkspace)
+        assertEquals("project-b", viewModel.uiState.value.selectedProject?.id)
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+    }
+
+    @Test
+    fun `completed create cannot adopt across an endpoint reset`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.createSessionGate = CompletableDeferred()
+        viewModel.createSession()
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(summary("replacement", CLOCK))
+        viewModel.selectSession("replacement")
+        runCurrent()
+        viewModel.setDraft("replacement draft")
+        repository.createSessionGate!!.complete(Unit)
+        repository.createSessionJob!!.join()
+        runCurrent()
+        assertEquals("replacement", viewModel.uiState.value.activeSession?.id)
+        assertEquals("replacement draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
     fun `project drill in filters authoritative membership without rerouting the active session`() = runTest(dispatcher) {
         cache.replaceProjectOverview(
             rows = listOf(
@@ -3683,6 +3741,7 @@ class ChatViewModelTest {
         val projectSessions = mutableMapOf<String, List<SessionSummary>>()
         var createProjectGate: CompletableDeferred<Unit>? = null
         var createSessionGate: CompletableDeferred<Unit>? = null
+        var createSessionJob: kotlinx.coroutines.Job? = null
         var catalogRefreshedAfterCreate = true
         var created = 0
         var createdWorkspace: String? = null
@@ -3883,6 +3942,7 @@ class ChatViewModelTest {
             workspacePath: String?,
             overrides: NewSessionComposerOverrides?,
         ): String {
+            createSessionJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             createSessionGate?.await()
             createdOverrides = overrides
             return createSession(workspacePath)

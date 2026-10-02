@@ -1,0 +1,13 @@
+{
+  "evidence_kind": "robolectric-native-window-draw-not-canonical-parity",
+  "source_sha": "f9e970e4059dd61e6c45d427579efb4ffb51cc8a",
+  "built_apk_sha256": "ec262dfa24b54085a009210825d9f32dfc49ebb7b196ec604300d00c483c39eb",
+  "installed_apk": null,
+  "files": {
+    "docs/parity/visual/project-push-off-native/handoff-before.png": "16f3357fdefee1173158f764fc15ea423f801717af827d4aa2df11e5ca001da6",
+    "docs/parity/visual/project-push-off-native/handoff-pushing.png": "a8776fea4bbca552a7ecd8b6d9d6d2d6f9e4bf1c513b73d26270747a13f2699b",
+    "docs/parity/visual/project-push-off-native/handoff-complete.png": "732671b8d85cd4fe2a2824e540c4d42e374026b883acfcc0943fadb50d12fd5e",
+    "docs/parity/visual/project-push-off-native/project-inline-plus.png": "c38d0b607f6e8e1aef3dcf2671c6904f369740e41f2f4d67b726b57fce543200",
+    "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/PromptPushOffRenderTest.kt": "9a825cfa09ca89c4a1305b66df946abe6a4cbc3b4a5c98a3e5ab0ded9949bb5d"
+  }
+}

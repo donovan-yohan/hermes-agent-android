@@ -6,6 +6,13 @@ running debug builds; the routine-inspector supplement also contains genuine
 Electron Desktop captures. Everything here is checked into the repository, so it
 is public the moment it is committed.
 
+## Project-row and prompt handoff native regression supplement
+
+[Native regression packet](../parity/visual/project-push-off-native/README.md):
+four synthetic Robolectric window draws of public production Compose surfaces,
+with source/image hashes. These are not emulator screenshots or canonical parity
+receipts; pinned-KVM and physical-device acceptance remain unverified.
+
 ## Capture rule
 
 Capture from a **clean profile**: a freshly installed app, a Gateway stood up

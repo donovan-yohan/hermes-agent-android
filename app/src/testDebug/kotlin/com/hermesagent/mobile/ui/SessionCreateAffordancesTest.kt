@@ -125,20 +125,16 @@ class SessionCreateAffordancesTest {
         assertEquals("the project-overview control never creates a session", 0, created)
     }
 
-    /**
-     * Desktop draws the project's own header cluster once a project is entered
-     * and the `+` leaves with it (`sidebar/index.tsx:1866-1899`). Restoring the
-     * flat door must not leak one back into the entered project.
-     */
+    /** Project-scoped creation is a direct mobile affordance, including drill-in. */
     @Test
-    fun `an entered project keeps Desktop's project header instead of an add control`() {
+    fun `an entered project offers its own scoped new session control`() {
         mountSidebar(
             grouping = SidebarGrouping.Project,
             selectedProject = ProjectSummary("p-one", "Synthetic project", "/synthetic", sessionCount = 1),
             projectsAvailable = true,
         )
 
-        compose.onAllNodesWithTag(SIDEBAR_HEADER_ADD_TAG).assertCountEquals(0)
+        compose.onNodeWithTag(SIDEBAR_HEADER_ADD_TAG).assertContentDescriptionEquals("New session in Synthetic project").assertIsDisplayed()
         compose.onNodeWithContentDescription("All projects").assertIsDisplayed()
     }
 
@@ -150,6 +146,24 @@ class SessionCreateAffordancesTest {
 
         compose.onNodeWithTag(SIDEBAR_HEADER_ADD_TAG).assertIsDisplayed().assertIsNotEnabled().performClick()
         assertEquals("a disconnected Gateway must not start a session", 0, created)
+    }
+
+    @Test
+    fun `each project row selects its own project before creating a session`() {
+        val events = mutableListOf<String>()
+        mountSidebar(
+            grouping = SidebarGrouping.Project,
+            projects = listOf(
+                ProjectSummary("home", "HOME", null, sessionCount = 0),
+                ProjectSummary("p-one", "Synthetic project", "/synthetic", sessionCount = 0),
+            ),
+            projectsAvailable = true,
+            onSelectProject = { events += it },
+            onCreate = { events += "create" },
+        )
+        compose.onNodeWithContentDescription("New session in HOME").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("New session in Synthetic project").assertIsDisplayed().performClick()
+        assertEquals(listOf("home", "create", "p-one", "create"), events)
     }
 
     // ── Chat header `+` ───────────────────────────────────────────────────────
@@ -223,6 +237,7 @@ class SessionCreateAffordancesTest {
         selectedProject: ProjectSummary? = null,
         canCreate: Boolean = true,
         onCreate: () -> Unit = {},
+        onSelectProject: (String) -> Unit = {},
     ) {
         compose.setContent {
             HermesTheme(AppearanceSelection("mono", HermesThemeMode.Dark)) {
@@ -238,7 +253,7 @@ class SessionCreateAffordancesTest {
                     canCreate = canCreate,
                     onQueryChange = {},
                     onSidebarGroupingChange = {},
-                    onSelectProject = {},
+                    onSelectProject = onSelectProject,
                     onExitProject = {},
                     onCreateProject = { _, _ -> },
                     onSelect = {},

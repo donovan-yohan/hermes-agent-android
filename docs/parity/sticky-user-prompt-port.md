@@ -1,5 +1,32 @@
 # Sticky current user prompt: Desktop-to-Android parity
 
+## Current push-off correction
+
+The historical collapse implementation described below was **not** user-visible
+acceptance. Main `bb1693abc2b6ce924b2f6ebfd8bfcb24ee3e6d36` fails the public
+Compose regressions for full-height retention and incoming-user push-off. Its
+owner lookup changed only when the incoming row crossed the viewport top;
+there was no next-user collision geometry, so incoming bubbles ran behind the
+opaque pin. A separate measured four-line copy produced the internal cut.
+
+The current overlay keeps one full-height, same-width bubble. Its top is bounded
+by the incoming user row's top minus the outgoing height and turn gap. Both
+bubbles therefore move together until the outgoing bubble leaves the viewport;
+only then does the incoming user acquire the pin. Source body paint and
+semantics are hidden in the same composition as overlay ownership, not through
+a delayed measurement callback. Attachments retain their inline slot.
+
+`PromptCollapseTest` now asserts full-height retention and measured paired
+movement forward and backward through the public `ChatScreen`, including single
+accessible ownership while reversing across handoff. `PromptPushOffRenderTest`
+mutates the streaming assistant row three times while parked in collision and
+asserts stable viewport geometry and owners after every update; successor,
+pagination, return, selection, touch-size and mask tests remain. Native synchronous window captures
+are explicitly Robolectric evidence, not emulator or physical-device acceptance.
+The paired Desktop/device report remains pending under #72. The older collapse
+narrative below is historical and is superseded by this section.
+
+
 Desktop authority is `3ca096de5f8183cb2e0ec23673f294d5978656a3`: `apps/desktop/src/components/assistant-ui/thread/list.tsx:194-232,350-372` groups each human turn, `user-message.tsx:28-52,321-367` makes its bubble sticky, `styles.css:1538-1569` supplies the opaque four-line fade, and `timeline.tsx:113-125` jumps by message id.
 
 Android derives the closest preceding authoritative `UserTurn` for the first visible assistant, tool, reasoning or timeline row; its viewport/follow state is local. As the source reaches the viewport top, Android preserves the inline slot and moves visible/accessibility ownership to an overlay whose height follows the source scroll distance in both directions. The full and four-line forms are measured at the same actual width, so short prompts and explicit wide lines keep the same right edge without rewrapping; prompts already within four lines use the turn-gap distance for a continuous inset transition. The `Show earlier messages` row stays in LazyColumn coordinates only and is removed before prompt-owner and source-position lookup. `PromptCollapseTest` covers width, intermediate/reverse geometry, one-pixel successor handoff, pagination-row indexing and single ownership. `PromptBubbleDecorationRenderTest` uses Robolectric native graphics for one-line/four-line continuity and compact border/corner pixels.
@@ -62,7 +89,6 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | `timeline.tsx:113-125` jumps by message id held from render | mobile-adaptation | The source id is re-resolved at tap time, and tail follow is disarmed | A phone transcript is re-composed under the finger far more often than a desktop one; resolving late is what keeps the jump landing on the prompt the reader can see |
-| Desktop's sticky source keeps its settled message height | mobile-adaptation | Android collapses the same-width source into the four-line pin from `LazyListState` scroll distance, with reversible intermediate geometry (`ChatScreen.kt:662-698,874-990`) | A long prompt otherwise replaces a full-height inline bubble with compact chrome at one item boundary on a phone; `PromptCollapseTest` and `PromptBubbleDecorationRenderTest` cover actual width, the pagination row, forward/reverse one-pixel movement, corners and border |
 | Sticky bubble is chrome the pointer scrolls past | mobile-adaptation | The bubble shares the transcript `LazyListState` | A drag or fling begun on the overlay keeps scrolling instead of creating a dead strip under the thumb |
 | Return-to-prompt is a pointer-sized affordance | mobile-adaptation | A 48 dp `Return to prompt` action whose accessibility label includes the prompt text | Touch floor, and the spoken label has to name which prompt it returns to |
 | The prompt excerpt renders `@image:` references as prose | mobile-adaptation | References are split out; an attachment-only prompt has no excerpt | One phone-width line of excerpt cannot spend itself on a wire-format path |
@@ -70,6 +96,11 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 | `user-message.tsx:45` declares `data-glass-opaque` so a glass window cannot thin the mask (`styles.css:676-680`) | mobile-adaptation | No glass field exists, and `chatSurface` is the chrome seed on every theme and mode (`HermesTokens.kt:252`) | An Android window has no translucent desktop field behind it to fall through, and the token already resolves to the value that rule forces |
 
 ## Visual report
+
+[Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
+contains synthetic production-Compose window draws and the main-vs-fixed test
+results. It supplements, and does not discharge, the paired/device obligation.
+
 
 - pending: #72
 

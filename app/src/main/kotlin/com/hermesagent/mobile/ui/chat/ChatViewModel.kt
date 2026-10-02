@@ -2186,11 +2186,21 @@ internal class ChatViewModel(
         val overrides = newSessionOverrides()
         val createdControls = composer.value.controls
         val createdCatalog = composer.value.catalog
+        val projectId = selectedProjectId.value
+        val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
+        val profile = profileScope.value.activeProfile
+        val endpoint = cache.endpointGeneration.value
+        val connection = connectionGeneration()
+        val generation = ++navigationGeneration
+        fun stillOwnsCreate() = generation == navigationGeneration &&
+            endpoint == cache.endpointGeneration.value && connection == connectionGeneration() &&
+            profile == profileScope.value.activeProfile && projectId == selectedProjectId.value
         viewModelScope.launch {
-            val projectId = selectedProjectId.value
-            val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
             try {
-                val id = repository.createSession(workspacePath, overrides)
+                val id = repository.createSessionAtEndpoint(workspacePath, overrides, profile, endpoint)
+                // Backend completion remains cached, but only the original
+                // navigation intent can adopt its result and composer snapshot.
+                if (!stillOwnsCreate()) return@launch
                 if (projectId != null) createdProjectBySession[id] = projectId
                 flushDraft()
                 rehome(id)
@@ -2209,7 +2219,9 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                noticeLine = "A new session could not be started. Check the Gateway and try again."
+                if (stillOwnsCreate()) {
+                    noticeLine = "A new session could not be started. Check the Gateway and try again."
+                }
             }
         }
     }

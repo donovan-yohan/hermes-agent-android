@@ -535,6 +535,7 @@ private data class PromptPin(
     val owner: UserTurn,
     val body: String,
     val distancePastTopPx: Int,
+    val nextPromptTopPx: Int?,
 )
 
 @Composable
@@ -574,7 +575,7 @@ private fun TranscriptPane(
     // viewport. Desktop: apps/desktop/src/components/assistant-ui/thread/list.tsx:194-232,350-372
     // @ 45fcaaa54aae2d03ab816fb61c6ba312d3ac67b8.
     var following by remember(state.activeSession?.id) { mutableStateOf(true) }
-    var activePromptId by remember(state.activeSession?.id) { mutableStateOf<String?>(null) }
+
 
 
     // Landing on a session jumps to the tail; growth after that only follows a
@@ -708,14 +709,18 @@ private fun TranscriptPane(
                 ownerIndex = (firstVisible - 1 downTo 0)
                     .firstOrNull { entries[it] is UserTurn }
                     ?: return@derivedStateOf null
-                // A source that has left composition already completed its
-                // bounded collapse while it was still the first visible item.
+                // An offscreen source owns the pin until the next user row
+                // pushes the complete bubble out of the viewport.
                 distancePastTopPx = Int.MAX_VALUE
             }
             val owner = entries[ownerIndex] as UserTurn
             val body = ImageRefLines.split(owner.text).first.takeIf(String::isNotBlank)
                 ?: return@derivedStateOf null
-            PromptPin(owner, body, distancePastTopPx)
+            val nextPrompt = listState.layoutInfo.visibleItemsInfo.firstOrNull {
+                it.index - leadingItems > ownerIndex &&
+                    entries.getOrNull(it.index - leadingItems) is UserTurn
+            }
+            PromptPin(owner, body, distancePastTopPx, nextPrompt?.offset)
         }
     }
 
@@ -747,7 +752,7 @@ private fun TranscriptPane(
             isWorking = state.activeSession?.status == SessionStatus.Working,
             activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
             progress = state.activeSession?.progress,
-            hiddenUserBubbleId = activePromptId.takeIf { it == promptPin?.owner?.id },
+            hiddenUserBubbleId = promptPin?.owner?.id,
             contentPadding = PaddingValues(
                 start = HermesTheme.spacing.pageInset,
                 end = HermesTheme.spacing.pageInset,
@@ -795,17 +800,10 @@ private fun TranscriptPane(
             StickyCurrentPrompt(
                 promptId = owner.id,
                 body = pin.body,
+                nextPromptTopPx = pin.nextPromptTopPx,
                 distancePastTopPx = pin.distancePastTopPx,
-                sourceHidden = activePromptId == owner.id,
                 listState = listState,
                 onClick = onReturn,
-                onTransitionActiveChange = { active ->
-                    if (active) {
-                        activePromptId = owner.id
-                    } else if (activePromptId == owner.id) {
-                        activePromptId = null
-                    }
-                },
                 modifier = Modifier.align(Alignment.TopCenter),
             )
         }
@@ -872,89 +870,19 @@ private fun grewAtHead(previous: List<TranscriptEntry>, current: List<Transcript
 private fun StickyCurrentPrompt(
     promptId: String,
     body: String,
+    nextPromptTopPx: Int?,
     distancePastTopPx: Int,
-    sourceHidden: Boolean,
     listState: LazyListState,
     onClick: () -> Unit,
-    onTransitionActiveChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tokens = HermesTheme.tokens
     val spacing = HermesTheme.spacing
-    var transitionActive by remember(promptId, body) {
-        mutableStateOf(distancePastTopPx == Int.MAX_VALUE)
-    }
-    LaunchedEffect(promptId, transitionActive) {
-        onTransitionActiveChange(transitionActive)
-    }
-    DisposableEffect(promptId) {
-        onDispose { onTransitionActiveChange(false) }
-    }
-    val fade = remember(tokens.userBubble) {
-        Brush.verticalGradient(0f to tokens.userBubble.copy(alpha = 0f), 1f to tokens.userBubble)
-    }
-    SubcomposeLayout(modifier.fillMaxWidth().background(tokens.chatSurface)) { constraints ->
-        val horizontalInsetPx = spacing.pageInset.roundToPx()
-        val turnGapPx = spacing.turnGap.roundToPx()
-        val touchTargetPx = spacing.touchTarget.roundToPx()
-        val maxBubbleWidthPx = 320.dp.roundToPx()
-        val availableWidth = (constraints.maxWidth - horizontalInsetPx * 2).coerceAtLeast(0)
-        val bubbleConstraints = Constraints(
-            minWidth = 0,
-            maxWidth = minOf(maxBubbleWidthPx, availableWidth),
-            minHeight = 0,
-            maxHeight = Constraints.Infinity,
-        )
-        val full = subcompose("full-measure") {
-            UserTurnBubble(body = body, contentDescription = null)
-        }.single().measure(bubbleConstraints)
-        val compact = subcompose("compact-measure") {
-            UserTurnBubble(
-                body = body,
-                contentDescription = null,
-                maxLines = 4,
-                overflow = TextOverflow.Clip,
-            )
-        }.single().measure(
-            Constraints(
-                minWidth = full.width,
-                maxWidth = full.width,
-                minHeight = 0,
-                maxHeight = Constraints.Infinity,
-            ),
-        )
-
-        // The inline source stays readable until its top reaches the viewport.
-        // From there the actual bubble height contracts with scroll. Very long
-        // prompts start from a bounded slice rather than covering the viewport;
-        // their complete text remains available by reversing the same scroll.
-        val maximumCollapsePx = (spacing.touchTarget * 2).roundToPx()
-        val expandedHeight = minOf(full.height, compact.height + maximumCollapsePx)
-        val hiddenPrefix = full.height - expandedHeight
-        val collapseRange = expandedHeight - compact.height
-        // Short prompts still settle into the inset even when no text collapses.
-        val transitionRange = maxOf(collapseRange, turnGapPx, 1)
-        val active = distancePastTopPx == Int.MAX_VALUE || distancePastTopPx > hiddenPrefix
-        if (transitionActive != active) transitionActive = active
-        if (!sourceHidden) {
-            return@SubcomposeLayout layout(constraints.maxWidth, 0) {}
-        }
-        val localDistance = if (distancePastTopPx == Int.MAX_VALUE) {
-            transitionRange
-        } else {
-            (distancePastTopPx - hiddenPrefix).coerceAtLeast(0)
-        }
-        val progress = (localDistance.toFloat() / transitionRange).coerceIn(0f, 1f)
-        val bubbleHeight = (expandedHeight + (compact.height - expandedHeight) * progress).roundToInt()
-        val sourceOffset = (-hiddenPrefix * (1f - progress)).roundToInt()
-        val topInset = (turnGapPx * progress).roundToInt()
-        val bottomInset = (turnGapPx * progress).roundToInt()
-        val actionWidth = maxOf(touchTargetPx, full.width)
-        val actionHeight = maxOf(touchTargetPx, bubbleHeight)
-
-        val action = subcompose("action") {
+    SubcomposeLayout(modifier.fillMaxWidth().background(HermesTheme.tokens.chatSurface)) { constraints ->
+        val inset = spacing.pageInset.roundToPx()
+        val gap = spacing.turnGap.roundToPx()
+        val bubble = subcompose(promptId) {
             Box(
-                modifier = Modifier
+                Modifier
                     .scrollable(
                         state = listState,
                         orientation = Orientation.Vertical,
@@ -965,50 +893,20 @@ private fun StickyCurrentPrompt(
                         ),
                     )
                     .clickable(role = Role.Button, onClickLabel = "Return to prompt", onClick = onClick)
+                    .heightIn(min = spacing.touchTarget)
+                    .widthIn(min = spacing.touchTarget)
                     .semantics(mergeDescendants = true) { contentDescription = "Current prompt: $body" },
                 contentAlignment = Alignment.TopEnd,
             ) {
-                Layout(
-                    modifier = Modifier
-                        .requiredWidth(full.width.toDp())
-                        .requiredHeight(bubbleHeight.toDp())
-                        .userTurnBubbleDecoration()
-                        .clipToBounds()
-                        .testTag("Current prompt bubble"),
-                    content = {
-                        UserTurnBubble(
-                            body = body,
-                            contentDescription = null,
-                            decorated = false,
-                        )
-                        if (full.height > compact.height) {
-                            Box(
-                                Modifier
-                                    .height(18.dp)
-                                    .background(fade)
-                                    .graphicsLayer { alpha = progress }
-                                    .testTag("Current prompt overflow fade"),
-                            )
-                        }
-                    },
-                ) { measurables, _ ->
-                    val bubble = measurables.first().measure(Constraints.fixed(full.width, full.height))
-                    val fadeLayer = measurables.getOrNull(1)?.measure(
-                        Constraints.fixed(full.width, 18.dp.roundToPx()),
-                    )
-                    layout(full.width, bubbleHeight) {
-                        bubble.place(0, sourceOffset)
-                        fadeLayer?.place(0, bubbleHeight - fadeLayer.height)
-                    }
-                }
+                UserTurnBubble(body = body, contentDescription = null, modifier = Modifier.testTag("Current prompt bubble"))
             }
-        }.single().measure(Constraints.fixed(actionWidth, actionHeight))
-
-        layout(constraints.maxWidth, topInset + action.height + bottomInset) {
-            action.place(
-                x = constraints.maxWidth - horizontalInsetPx - action.width,
-                y = topInset,
-            )
+        }.single().measure(Constraints(maxWidth = minOf(320.dp.roundToPx(), (constraints.maxWidth - inset * 2).coerceAtLeast(0))))
+        // One full bubble, not a separately clipped compact copy. The incoming
+        // inline bubble pushes this whole object offscreen before taking over.
+        val settledTop = minOf(gap, distancePastTopPx)
+        val top = minOf(settledTop, nextPromptTopPx?.minus(bubble.height + gap) ?: settledTop)
+        layout(constraints.maxWidth, maxOf(0, top + bubble.height + gap)) {
+            bubble.place(constraints.maxWidth - inset - bubble.width, top)
         }
     }
 }
