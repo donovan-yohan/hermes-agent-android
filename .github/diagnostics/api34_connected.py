@@ -24,19 +24,24 @@ EXPECTED = [
 ]
 
 
-def validate_xml(paths):
+SYNTHETIC = 'SyntheticFocusDenialTest#deliberateDenialCapturesOwnerBeforeTeardown'
+
+
+def validate_xml(paths, expected=None):
     cases = []
     for path in paths:
         for case in ET.parse(path).getroot().iter('testcase'):
             cases.append({'id': case.attrib['classname'].removeprefix('com.hermesagent.mobile.device.') + '#' + case.attrib['name'],
                           'failures': [(x.text or '') for x in case if x.tag in ('failure', 'error')],
                           'skipped': any(x.tag == 'skipped' for x in case)})
-    exact = Counter(c['id'] for c in cases) == Counter(EXPECTED)
+    exact = Counter(c['id'] for c in cases) == Counter(EXPECTED if expected is None else expected)
     return {'cases': cases, 'exact_identity_multiset': exact,
             'passed': exact and all(not c['failures'] and not c['skipped'] for c in cases)}
 
 
 def main():
+    synthetic = os.environ.get('FOCUS_EXPERIMENT') == 'synthetic-collector-only'
+    expected = [SYNTHETIC] if synthetic else EXPECTED
     assert os.environ.get('GITHUB_ACTIONS') == 'true'
     assert os.environ.get('FOCUS_SYNTHETIC_OPT_IN') == 'b291-failure-only'
     assert os.environ['ANDROID_SERIAL'] == 'emulator-5554'
@@ -65,6 +70,12 @@ def main():
         '-Pandroid.testInstrumentationRunnerArguments.focusSnapshotNonce=' + nonce,
         '-Pandroid.testInstrumentationRunnerArguments.focusSnapshotSerial=emulator-5554',
     ]
+    if synthetic:
+        manifest['command'] += [
+            '-Pandroid.testInstrumentationRunnerArguments.class=com.hermesagent.mobile.device.' + SYNTHETIC,
+            '-Pandroid.testInstrumentationRunnerArguments.syntheticFocusDenial=PR344_ONLY',
+        ]
+        manifest['classification'] = 'DELIBERATE_FAILURE_COLLECTOR_VALIDATION_NOT_RECURRENCE'
     (out / 'identity.json').write_text(json.dumps(manifest, indent=2))
     current: dict[str, str | None] = {'test': None}
     logcat = subprocess.Popen(adb + ['logcat', '-v', 'epoch', '-T', '1', 'TestRunner:I', 'FocusSnapshot:I', '*:S'],
@@ -111,9 +122,9 @@ def main():
             logcat.kill()
             logcat.wait()
         observer.join(timeout=5)
-    result = validate_xml(Path('app/build/outputs/androidTest-results/connected').glob('**/TEST-*.xml'))
+    result = validate_xml(Path('app/build/outputs/androidTest-results/connected').glob('**/TEST-*.xml'), expected)
     events_seen = [json.loads(line) for line in (out / 'test-events.jsonl').read_text().splitlines()]
-    expected_events = Counter('com.hermesagent.mobile.device.' + x for x in EXPECTED)
+    expected_events = Counter('com.hermesagent.mobile.device.' + x for x in expected)
     result['exact_start_finish'] = all(
         Counter(e['test'] for e in events_seen if e['status'] == status) == expected_events
         for status in ('started', 'finished'))
@@ -122,6 +133,12 @@ def main():
     result.update(raw_exit=rc, timed_out=timed_out, apks_after=hashes())
     result['same_apks'] = manifest['apks'] == result['apks_after']
     result['passed'] = result['passed'] and rc == 0 and not timed_out and result['same_apks']
+    if synthetic:
+        from synthetic_collector import verify
+        focus_path = out / 'focus.jsonl'
+        focus_lines = [json.loads(line)['line'] for line in focus_path.read_text().splitlines()] if focus_path.exists() else []
+        result['classification'] = 'DELIBERATE_FAILURE_COLLECTOR_VALIDATION_NOT_RECURRENCE'
+        result['collector_verified'] = verify(result, focus_lines)
     (out / 'result.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result, indent=2))
     return rc if rc > 0 else (0 if result['passed'] else 1)

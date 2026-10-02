@@ -1,4 +1,4 @@
-name: Disposable API34 focus recurrence
+name: Disposable API34 synthetic collector deliberate failure
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -16,6 +16,7 @@ jobs:
     env:
       ANDROID_SERIAL: emulator-5554
       FOCUS_SYNTHETIC_OPT_IN: b291-failure-only
+      FOCUS_EXPERIMENT: synthetic-collector-only
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,7 +60,7 @@ jobs:
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
           script: echo 'AVD created; no test preconditioning.'
-      - name: Full suite FIRST and ONCE with main build-prep-stop-connected timing
+      - name: Synthetic collector ONLY - deliberate readiness failure, not recurrence
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
           api-level: 34
@@ -71,7 +72,7 @@ jobs:
           emulator-port: 5554
           disable-animations: true
           script: |
-            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest :diagnosticResolvedVersions --init-script .github/diagnostics/resolved-versions.init.gradle --no-daemon --no-build-cache
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
             python3 .github/diagnostics/api34_connected.py
@@ -79,10 +80,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: disposable-api34-recurrence-${{ github.event.pull_request.head.sha }}
+          name: disposable-api34-synthetic-collector-${{ github.event.pull_request.head.sha }}
           retention-days: 2
           if-no-files-found: warn
           path: |
+            ${{ runner.temp }}/api34-resolved-versions.txt
             ${{ runner.temp }}/api34-focus/full/identity.json
             ${{ runner.temp }}/api34-focus/full/result.json
             ${{ runner.temp }}/api34-focus/full/focus.jsonl
