@@ -2186,9 +2186,9 @@ internal class ChatViewModel(
         val overrides = newSessionOverrides()
         val createdControls = composer.value.controls
         val createdCatalog = composer.value.catalog
+        val projectId = selectedProjectId.value
+        val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
         viewModelScope.launch {
-            val projectId = selectedProjectId.value
-            val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
             try {
                 val id = repository.createSession(workspacePath, overrides)
                 if (projectId != null) createdProjectBySession[id] = projectId

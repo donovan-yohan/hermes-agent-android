@@ -97,54 +97,54 @@ class PromptCollapseTest {
         val inline = inlinePrompt(prompt)
 
         val transition = scrollUntilCurrentPromptAppears(prompt)
-        assertTrue(transition.height > compact.height + geometryTolerance())
-        assertTrue(transition.height < inline.height - geometryTolerance())
+        assertEquals(compact.height, transition.height, geometryTolerance())
+        assertEquals(inline.height, transition.height, geometryTolerance())
         assertEquals(inline.width, transition.width, geometryTolerance())
         assertEquals(inline.right, transition.right, geometryTolerance())
     }
 
     @Test
-    fun `scroll changes bubble height from full source to compact pin and reverses`() {
+    fun `long prompt retains full bubble height without a four line cut`() {
         val prompt = (1..9).joinToString("\n") { "Prompt line $it with stable width" }
         launch(prompt)
-
-        val compact = currentPromptBubble()
-        compose.onNodeWithTag("Current prompt overflow fade", useUnmergedTree = true).fetchSemanticsNode()
+        val pinned = currentPromptBubble()
         compose.onNodeWithContentDescription("Current prompt: $prompt").performClick()
         compose.waitForIdle()
         val inline = inlinePrompt(prompt)
-        assertTrue("fixture must exceed the four-line pin", inline.height > compact.height + geometryTolerance())
-
+        assertEquals(inline.height, pinned.height, geometryTolerance())
         val transition = scrollUntilCurrentPromptAppears(prompt)
-        println("PROMPT_GEOMETRY collapse full=$inline intermediate=$transition compact=$compact")
-        assertTrue("transition must retain more than the compact height", transition.height > compact.height + geometryTolerance())
-        assertTrue("transition must shrink below the full source", transition.height < inline.height - geometryTolerance())
-        assertEquals(inline.width, transition.width, geometryTolerance())
-        assertEquals(inline.right, transition.right, geometryTolerance())
-
+        assertEquals(inline.height, transition.height, geometryTolerance())
         scrollBy(12f * compose.density.density)
-        val furtherCollapsed = currentPromptBubble()
-        assertTrue(furtherCollapsed.height < transition.height)
-
-        scrollBy(-12f * compose.density.density)
-        val restored = currentPromptBubble()
-        println("PROMPT_GEOMETRY collapse-reversed restored=$restored")
-        assertRectNear(transition, restored)
-        compose.waitForIdle()
-        assertRectNear(restored, currentPromptBubble())
+        assertEquals(inline.height, currentPromptBubble().height, geometryTolerance())
     }
 
     @Test
-    fun `long prompt stays inline until its remaining tail fits the bounded morph`() {
-        val prompt = (1..30).joinToString("\n") { "Readable line $it" }
-        launch(prompt)
-        compose.onNodeWithContentDescription("Current prompt: $prompt").performClick()
+    fun `incoming prompt pushes outgoing bubble instead of scrolling under it`() {
+        val first = "First synthetic prompt\nSecond line\nThird line\nFourth line\nFifth line"
+        val second = "Second synthetic prompt"
+        launch(transcript = listOf(
+            UserTurn("u1", first, NOW),
+            AssistantTurn("a1", longReply("First", 30), NOW),
+            UserTurn("u2", second, NOW),
+            AssistantTurn("a2", longReply("Second", 30), NOW, streaming = true),
+        ))
+        compose.onNodeWithContentDescription("Current prompt: $second").performClick()
         compose.waitForIdle()
-
-        scrollBy(120f * compose.density.density)
-
-        assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size)
-        assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: $prompt")).fetchSemanticsNodes().size)
+        scrollBy(-100f * compose.density.density)
+        val before = currentPromptBubble()
+        val incomingBefore = inlinePrompt(second)
+        assertTrue("outgoing must be above incoming, not cover its text", before.bottom <= incomingBefore.top)
+        scrollBy(12f * compose.density.density)
+        val after = currentPromptBubble()
+        val incomingAfter = inlinePrompt(second)
+        assertTrue(after.bottom <= incomingAfter.top)
+        assertEquals("both bubbles move together", incomingAfter.top - incomingBefore.top, after.bottom - before.bottom, geometryTolerance() + 1f)
+        assertTrue(after.bottom < before.bottom)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("You said: $first")).fetchSemanticsNodes().size)
+        scrollBy(110f * compose.density.density)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("Current prompt: $first")).fetchSemanticsNodes().size)
+        assertEquals(1, compose.onAllNodes(hasContentDescription("Current prompt: $second")).fetchSemanticsNodes().size)
+        assertEquals(0, compose.onAllNodes(hasContentDescription("You said: $second")).fetchSemanticsNodes().size)
     }
 
     @Test

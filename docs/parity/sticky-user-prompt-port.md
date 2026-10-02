@@ -1,5 +1,29 @@
 # Sticky current user prompt: Desktop-to-Android parity
 
+## Current push-off correction
+
+The historical collapse implementation described below was **not** user-visible
+acceptance. Main `bb1693abc2b6ce924b2f6ebfd8bfcb24ee3e6d36` fails the public
+Compose regressions for full-height retention and incoming-user push-off. Its
+owner lookup changed only when the incoming row crossed the viewport top;
+there was no next-user collision geometry, so incoming bubbles ran behind the
+opaque pin. A separate measured four-line copy produced the internal cut.
+
+The current overlay keeps one full-height, same-width bubble. Its top is bounded
+by the incoming user row's top minus the outgoing height and turn gap. Both
+bubbles therefore move together until the outgoing bubble leaves the viewport;
+only then does the incoming user acquire the pin. Source body paint and
+semantics are hidden in the same composition as overlay ownership, not through
+a delayed measurement callback. Attachments retain their inline slot.
+
+`PromptCollapseTest` now asserts full-height retention and measured paired
+movement through the public `ChatScreen`; successor, pagination, return,
+selection, touch-size and mask tests remain. Native synchronous window captures
+are explicitly Robolectric evidence, not emulator or physical-device acceptance.
+The paired Desktop/device report remains pending under #72. The older collapse
+narrative below is historical and is superseded by this section.
+
+
 Desktop authority is `3ca096de5f8183cb2e0ec23673f294d5978656a3`: `apps/desktop/src/components/assistant-ui/thread/list.tsx:194-232,350-372` groups each human turn, `user-message.tsx:28-52,321-367` makes its bubble sticky, `styles.css:1538-1569` supplies the opaque four-line fade, and `timeline.tsx:113-125` jumps by message id.
 
 Android derives the closest preceding authoritative `UserTurn` for the first visible assistant, tool, reasoning or timeline row; its viewport/follow state is local. As the source reaches the viewport top, Android preserves the inline slot and moves visible/accessibility ownership to an overlay whose height follows the source scroll distance in both directions. The full and four-line forms are measured at the same actual width, so short prompts and explicit wide lines keep the same right edge without rewrapping; prompts already within four lines use the turn-gap distance for a continuous inset transition. The `Show earlier messages` row stays in LazyColumn coordinates only and is removed before prompt-owner and source-position lookup. `PromptCollapseTest` covers width, intermediate/reverse geometry, one-pixel successor handoff, pagination-row indexing and single ownership. `PromptBubbleDecorationRenderTest` uses Robolectric native graphics for one-line/four-line continuity and compact border/corner pixels.

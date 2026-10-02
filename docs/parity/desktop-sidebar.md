@@ -30,6 +30,26 @@ route in this slice. The tab strip and profile/Gateway footer remain visible whi
 
 ## Regression coverage
 
+### Project-row creation correction
+
+PR #334 restored flat sidebar/chat header actions, not inline project-row
+creation. On main `bb1693abc2b6ce924b2f6ebfd8bfcb24ee3e6d36`, `ProjectRow` had
+no create callback or button and the selected-project header excluded the add
+control. The new public Compose project-row and entered-project regressions
+both fail against that production snapshot. "Already shipped" was therefore
+incorrect for this requested behavior.
+
+Each overview project row now exposes a separately accessible, 48dp
+`New session in <project>` plus; disconnected rows keep it visible but disabled.
+The row selects its catalog project before calling the existing session-create
+flow. That flow snapshots project/workspace before launching its coroutine.
+The entered project header also retains a scoped plus, including HOME.
+This is a mobile-adaptation for a direct touch action rather than relying on
+hover or the global header. `SessionCreateAffordancesTest` verifies action
+ordering through public `SessionList`; native synthetic captures document the
+visible HOME and example-project controls without using a real profile.
+
+
 Session-create controls also follow the source at
 `95f20517c25ee418da5337f4ead347008baaa2b3`, as cited in `ChatScreen.kt`
 and `SessionList.kt`. The flat sessions header offers its own `New session`
