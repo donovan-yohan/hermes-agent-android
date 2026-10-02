@@ -1,0 +1,5 @@
+{
+  "connections.v1.saved": "{\"version\":\"1\",\"connections\":[{\"id\":\"e05-synthetic\",\"label\":\"Synthetic offline\",\"kind\":\"Remote\",\"port\":22,\"authMethod\":\"TailscaleSsh\",\"theme\":\"default\"}]}",
+  "connections.v1.activeId": "e05-synthetic",
+  "appearance.mode": "Light"
+}

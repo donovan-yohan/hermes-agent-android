@@ -94,8 +94,16 @@ passed with one worker, no parallel execution, and in-process Kotlin compilation
 This does not replace the pending rendered comparison. See the
 [scoped refresh audit](../spikes/upstream-theme-refresh-e05b1634-2026-10-01.md).
 
-Visual comparison remains **pending: #292**, including the retired-default reset
-in light/dark, phone/wide. Verdict: **Concern**, not rendered parity approval.
+The [e05 narrow paired observation](../media/theme-refresh-e05/REPORT.md) adds
+four native Android phone captures from the approved APK and eight genuine e05
+Desktop wide references. Manual Mono is paired in light/dark. Android's offline
+persisted `default` resolves to a visibly checked Nous without rewriting the stored
+name; this is **not** Desktop's explicit backend-default action. Android backend
+seed/apply/repeat transitions, matched phone/wide coverage and historical #292
+Gateway states remain unverified. Both packets retain observational-schema
+rejections; native Android XML does not confirm the visible selected state.
+Visual comparison remains **pending: #292**. Verdict: **Concern**, not rendered
+parity approval.
 No palette literals, labels, descriptions, picker order or typography changed.
 Existing CSS/platform and per-connection adaptations in the divergence table
 still apply; remote CSS is not executed on Android.
