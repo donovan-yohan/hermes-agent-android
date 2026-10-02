@@ -14,6 +14,8 @@ existing-Bot model/provider delta at `587e673e2a2fae0616d8b750bb189217080f621a`
 is documented in [Bot model configuration](bot-model-config.md). The existing-Bot
 avatar import/clear delta uses that same new pin; see [avatar authoring](bot-avatar-editor.md).
 Pets, generation and new/duplicate-Bot avatar staging remain WIP.
+Existing-Bot installed Skills autosave is a separately bounded slice; see
+[installed Skills](bot-installed-skills.md) for its pending visual acceptance.
 See [the exact contract audit](bot-management-contract-audit.md); old screenshots
 do not certify these new forms.
 

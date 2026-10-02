@@ -1,0 +1,121 @@
+--- /dev/null
++++ b/apps/desktop/e2e/installedskills-reference.spec.ts
+@@ -0,0 +1,118 @@
++import fs from 'node:fs'
++import path from 'node:path'
++import { setupMockBackend, waitForAppReady } from './fixtures'
++import { allowErrorBanners, expect, test } from './test'
++
++for (const scenario of ['defaults','disabled','loading','error']) {
++ test(`current Skills ${scenario}`, async () => {
++  test.setTimeout(240_000); allowErrorBanners()
++  const fixture=await setupMockBackend(); const {page,app}=fixture
++  const out=process.env.PARITY_OUT!; fs.mkdirSync(out,{recursive:true})
++  try {
++   await waitForAppReady(fixture,120_000)
++   await page.context().tracing.start({screenshots:true,snapshots:true,sources:true})
++   const cdp=await page.context().newCDPSession(page)
++   await cdp.send('Emulation.setTimezoneOverride',{timezoneId:'UTC'})
++   await cdp.send('Emulation.setLocaleOverride',{locale:'en-US'})
++   await page.emulateMedia({colorScheme:'light',reducedMotion:'reduce'})
++   await page.evaluate(()=>{
++    localStorage.setItem('hermes-desktop-theme-v2','mono')
++    localStorage.setItem('hermes-desktop-mode-v1','system')
++    localStorage.setItem('hermes-desktop-profile-themes-v1','{}')
++    localStorage.setItem('hermes-desktop-profile-modes-v1','{}')
++    window.dispatchEvent(new StorageEvent('storage',{key:'hermes-desktop-theme-v2',newValue:'mono'}))
++   })
++   await page.getByRole('button',{name:'Bots',exact:true}).or(page.getByRole('tab',{name:'Bots',exact:true})).first().click()
++   await page.getByRole('button',{name:'New bot or group chat'}).click()
++   await page.getByRole('menuitem',{name:/^New bot$/i}).click()
++   const create=page.getByRole('dialog',{name:/^New bot$/i})
++   await create.getByPlaceholder('inbox-triage').fill('synthetic-installedskills')
++   await create.getByPlaceholder('Inbox Triage').fill('Synthetic Skills')
++   await create.getByRole('button',{name:/^Create bot$/i}).click()
++   await expect(create).toBeHidden({timeout:60_000})
++   // Same real main-process IPC interception seam as completed-reply-refresh.spec.ts.
++   await app.evaluate(({ipcMain},scenario)=>{
++    const original=(ipcMain as any)._invokeHandlers.get('hermes:api')
++    const probe=(globalThis as any).__installedskillsCapture={scenario,log:[],pendingReads:0,pendingWrites:0,selected:['web'],pinned:scenario==='pinned',release:null}
++    probe.enabled=scenario!=='disabled'
++    const rows=()=>[
++     {name:'synthetic-research',description:'Research synthetic public examples',category:'research',enabled:probe.enabled,usage:3,provenance:'bundled'},
++     {name:'synthetic-notes',description:'Organize synthetic notes',category:'productivity',enabled:true,usage:0,provenance:'agent'}
++    ]
++    ipcMain.removeHandler('hermes:api')
++    ipcMain.handle('hermes:api',async(event,request)=>{
++     if(request.profile!=='synthetic-installedskills'||!request.path.startsWith('/api/skills'))return original(event,request)
++     const log={request:JSON.parse(JSON.stringify(request)),phase:'admitted',at:Date.now(),result:null as any};probe.log.push(log)
++     if(request.path==='/api/skills/hub/official'){log.result={skills:[]};log.phase='read';return log.result}
++     if(request.path==='/api/skills'){
++      if(scenario==='loading'){probe.pendingReads++;return new Promise(()=>{})}
++      if(scenario==='error'){log.phase='refused';throw Error('Synthetic read failure')}
++      log.result=rows();log.phase='read';return log.result
++     }
++     if(request.method==='PUT'&&request.path==='/api/skills/toggle'){
++      if(JSON.stringify(request.body)!==JSON.stringify({name:'synthetic-research',enabled:true}))throw Error('Unexpected synthetic write')
++      probe.pendingWrites++
++      await new Promise(resolve=>{probe.release=resolve})
++      probe.enabled=true;probe.pendingWrites--
++      log.phase='committed';log.result={ok:true,name:'synthetic-research',enabled:true};return log.result
++     }
++     // Real configuration panels remain backed by this isolated sandbox.
++     log.phase='passthrough';return original(event,request)
++    })
++   },scenario)
++   await page.reload();await waitForAppReady(fixture,120_000)
++   await page.clock.setFixedTime(new Date('2026-09-17T16:00:00Z'))
++   await page.getByRole('button',{name:'Bots',exact:true}).or(page.getByRole('tab',{name:'Bots',exact:true})).first().click()
++   const editor=page.getByRole('dialog',{name:'Edit profile'})
++   async function open(){
++    await page.locator('[data-roster-key="local::synthetic-installedskills"]').click({button:'right'})
++    await page.getByRole('menuitem',{name:/^Edit/}).first().click()
++    await editor.getByRole('button',{name:/^Advanced/}).click()
++    await editor.getByRole('button',{name:/^Skills(?:\s|$)/}).first().click()
++    await editor.getByRole('button',{name:'Installed',exact:true}).click()
++    await editor.getByRole('button',{name:/^Advanced/}).evaluate(el=>el.scrollIntoView({block:'start'}))
++   }
++   async function capture(state:string){
++    for(const theme of ['light','dark'] as const){
++     await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'})
++     await expect(page.locator('html')).toHaveAttribute('data-hermes-mode',theme)
++     await expect(page.locator('html')).toHaveAttribute('data-hermes-theme','mono')
++     const normalization=await page.evaluate(()=>({skin:document.documentElement.dataset.hermesTheme,mode:document.documentElement.dataset.hermesMode,locale:Intl.DateTimeFormat().resolvedOptions().locale,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,clock:new Date().toISOString()}))
++     expect(normalization.locale).toBe('en-US');expect(normalization.timezone).toBe('UTC')
++     await editor.screenshot({path:path.join(out,`${state}-${theme}.png`),animations:'disabled'})
++     fs.writeFileSync(path.join(out,`${state}-${theme}.json`),JSON.stringify({state,theme,normalization,text:await editor.innerText(),nodes:await editor.ariaSnapshot(),probe:await app.evaluate(()=>{const p=(globalThis as any).__installedskillsCapture;return {...p,release:undefined}}),transport:'real renderer API requests intercepted at main hermes:api seam'},null,2))
++    }
++   }
++   await open()
++   if(scenario==='loading'){
++    await expect.poll(()=>app.evaluate(()=>(globalThis as any).__installedskillsCapture.pendingReads)).toBeGreaterThan(0)
++    await expect(editor.getByRole('switch')).toHaveCount(0)
++    await capture('loading')
++   }else if(scenario==='error'){
++    await expect(editor.getByRole('button',{name:'Refresh skills',exact:true})).toBeVisible({timeout:30_000})
++    await capture('error')
++   }else{
++    const target=editor.getByRole('switch',{name:'synthetic-research',exact:true})
++    await expect(target).toBeVisible()
++    if(scenario==='defaults')await expect(target).toBeChecked();else await expect(target).not.toBeChecked()
++    await capture(scenario==='defaults'?'loaded-default':'loaded-disabled')
++    if(scenario==='disabled'){
++     await target.click()
++     await expect.poll(()=>app.evaluate(()=>(globalThis as any).__installedskillsCapture.pendingWrites)).toBe(1)
++     await expect(target).toBeChecked();await expect(target).toBeDisabled()
++     await capture('changed-autosave-pending')
++     await app.evaluate(()=>(globalThis as any).__installedskillsCapture.release())
++     await expect.poll(()=>app.evaluate(()=>(globalThis as any).__installedskillsCapture.pendingWrites)).toBe(0)
++     await expect(target).toBeEnabled()
++     await capture('saved-autosave')
++     await editor.getByRole('button',{name:'Cancel',exact:true}).click()
++     await open()
++     await expect(target).toBeChecked()
++     await capture('saved-reopened')
++    }
++   }
++   await page.context().tracing.stop({path:path.join(out,`${scenario}.trace.zip`)})
++  }catch(error){fs.writeFileSync(path.join(out,`${scenario}-failure.txt`),await page.locator('body').innerText());await page.screenshot({path:path.join(out,`${scenario}-failure.png`)});throw error}
++  finally{await fixture.cleanup()}
++ })
++}

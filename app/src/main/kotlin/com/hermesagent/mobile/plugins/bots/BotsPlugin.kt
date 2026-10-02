@@ -80,6 +80,10 @@ class BotsPlugin(
             onDeleteSection = { management.fromSnapshot(snapshot, management::deleteSection) },
             onMoveSection = { value -> management.fromSnapshot(snapshot) { management.moveSection(value) } },
         )
+        fun skillsActions(snapshot: BotSkillsState) = BotSkillsActions(
+            onToggle = { management.skills.toggle(snapshot, it) },
+            onRefresh = { management.skills.refresh(snapshot) },
+        )
         fun toolsetsActions(snapshot: BotToolsetsState) = BotToolsetsActions(
             onToggle = { management.toolsets.toggle(snapshot, it) },
             onSave = { management.toolsets.save(snapshot) },
@@ -165,10 +169,12 @@ class BotsPlugin(
                         val managementState by management.state.collectAsStateWithLifecycle()
                         val modelState by management.model.state.collectAsStateWithLifecycle()
                         val toolsetsState by management.toolsets.state.collectAsStateWithLifecycle()
+                        val skillsState by management.skills.state.collectAsStateWithLifecycle()
                         val avatarState by management.avatar.state.collectAsStateWithLifecycle()
                         BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState),
                             toolsetsState = toolsetsState, toolsetsActions = toolsetsActions(toolsetsState),
-                            avatarState = avatarState, avatarActions = botAvatarActions(management.avatar, avatarState))
+                            avatarState = avatarState, avatarActions = botAvatarActions(management.avatar, avatarState),
+                            skillsState = skillsState, skillsActions = skillsActions(skillsState))
                         BotsRosterScreen(
                             state = state,
                             onBack = nav.onBack,
@@ -208,10 +214,12 @@ class BotsPlugin(
                             val managementState by management.state.collectAsStateWithLifecycle()
                             val modelState by management.model.state.collectAsStateWithLifecycle()
                             val toolsetsState by management.toolsets.state.collectAsStateWithLifecycle()
+                            val skillsState by management.skills.state.collectAsStateWithLifecycle()
                             val avatarState by management.avatar.state.collectAsStateWithLifecycle()
                             BotManagementSheet(managementState, managementActions(managementState), modelState, modelActions(modelState),
                                 toolsetsState = toolsetsState, toolsetsActions = toolsetsActions(toolsetsState),
-                                avatarState = avatarState, avatarActions = botAvatarActions(management.avatar, avatarState))
+                                avatarState = avatarState, avatarActions = botAvatarActions(management.avatar, avatarState),
+                                skillsState = skillsState, skillsActions = skillsActions(skillsState))
                             BotsRosterScreen(
                                 state = state,
                                 onBack = onBack,

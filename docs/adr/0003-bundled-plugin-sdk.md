@@ -17,6 +17,9 @@ However, full architectural compatibility with Desktop is essential so that any 
 
 ## Decision
 
+[ADR 0005](./0005-scoped-core-skills-http.md) adds a typed, revocable core Skills
+HTTP door on `PluginHost`. It does not broaden the plugin REST namespace.
+
 Adopt Desktop's **bundled delivery mode only**:
 
 ```text

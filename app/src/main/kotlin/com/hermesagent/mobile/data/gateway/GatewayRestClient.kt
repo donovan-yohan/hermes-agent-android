@@ -416,6 +416,29 @@ class GatewayRestClient(
     }
 
     /**
+     * Read-only exact-id detail, explicitly scoped to the owner, never a launch-profile alias.
+     * Exact upstream detail-route citation and its separate pin:
+     * docs/spikes/cron-session-admission-boundary.md (Upstream contract).
+     * Other REST citations in this file retain their original pin.
+     * The server accepts prefixes; this client deliberately requires the exact echoed id and profile.
+     */
+    suspend fun sessionDetail(sessionId: String, profile: String): GatewayRestResult<GatewaySessionDetail> {
+        if (sessionId.isBlank() || sessionId.length > MAX_ID_LENGTH ||
+            sessionId.any(Char::isISOControl) || sessionId in setOf(".", "..")) return malformed()
+        if (profile != profile.trim() || profile == "current" || safeProfile(profile) == null) return malformed()
+        val id = okhttp3.HttpUrl.Builder().scheme("https").host("localhost")
+            .addPathSegment(sessionId).build().encodedPath.removePrefix("/")
+        return send(
+            path = "$SESSIONS_PATH/$id",
+            verb = GatewayRestVerb.GET,
+            query = mapOf("profile" to profile),
+            timeoutMillis = LIST_TIMEOUT_MILLIS,
+            maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
+            parse = { bytes -> parseObject(bytes)?.let { GatewaySessionDetail.parse(it, sessionId, profile) } },
+        )
+    }
+
+    /**
      * One page of sessions from `GET /api/sessions` (`sessions.py:53` @ the
      * pin).
      *

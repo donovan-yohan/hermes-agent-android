@@ -4,6 +4,18 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Installed Skills supplement
+
+[Recovery report](../parity/captures/installed-skills-4df25613/REPORT.md),
+[pair map](../parity/captures/installed-skills-4df25613/pairs.json), and
+[hash manifest](../parity/captures/installed-skills-4df25613/manifest.json):
+24 original Android captures, 24 validated receipts and 48 XML brackets from
+approved APK source `4df256139b8d2bf03f903516152e299cd9949aa5`, paired with 14
+unchanged observational Desktop references at `587e673e2a2fae0616d8b750bb189217080f621a`.
+New disposable emulator only, now shut down. Desktop receipts remain noncanonical;
+five Android-only states have no supplied Desktop counterpart. Synthetic fixture
+staging is not human interaction or live-server evidence. No Gradle or push.
+
 ## e05 theme refresh supplement
 
 [Narrow paired report](theme-refresh-e05/REPORT.md): four actual API 37 Android
@@ -12,6 +24,7 @@ and implementation pins are retained. Manual Mono is paired; Android offline
 retired-default resolution is not Desktop backend-default activation. Both packets
 are noncanonical; Android event transitions and matched viewport coverage remain
 pending under #292. Publication review required; no rendered parity approval.
+
 
 ## Toolsets selection supplement
 

@@ -2,6 +2,63 @@
   "schema_version": 1,
   "purpose": "Dispatch catalog for real, synthetic visual-parity captures. A state is one explicit artifact, never a production session.",
   "surfaces": {
+    "bot-installed-skills": {
+      "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+      "fixture_id": "bot-installed-skills-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotSkillsParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "Installed source subset of actual Advanced Skills autosave UI. Desktop scratch installedskills-reference packet is observational, not canonical parity acceptance. No Android pixels captured yet. No install, bulk change, editor, pin or inheritance claims. Android waits for named readback rather than optimistic success; pending/loading keep the 20-second production request deadline.",
+      "states": {
+        "skills-loaded": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills"
+        },
+        "skills-disabled": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills"
+        },
+        "skills-loading": {
+          "interaction": [],
+          "post_interaction_accessibility": "Reading skills…"
+        },
+        "skills-pending": {
+          "interaction": [],
+          "post_interaction_accessibility": "Saving skill…"
+        },
+        "skills-saved": {
+          "interaction": [],
+          "post_interaction_accessibility": "Skill saved."
+        },
+        "skills-reopened": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills"
+        },
+        "skills-error": {
+          "interaction": [],
+          "post_interaction_accessibility": "This Gateway refused access to installed skills."
+        },
+        "skills-unavailable": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills are unavailable on this Gateway."
+        },
+        "skills-refused": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again."
+        },
+        "skills-essential": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again."
+        },
+        "skills-empty": {
+          "interaction": [],
+          "post_interaction_accessibility": "No installed skills."
+        },
+        "skills-unconfirmed": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again. Skills failed to load. Refresh skills to try again."
+        }
+      }
+    },
     "bot-toolsets": {
       "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
       "fixture_id": "bot-toolsets-synthetic-v1",

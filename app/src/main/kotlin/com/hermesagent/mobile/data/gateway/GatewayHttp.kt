@@ -105,12 +105,31 @@ interface GatewayHttp {
     suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult
 }
 
+/** Guarded admission is optional. A core caller must not fall back to execute. */
+internal interface EndpointDispatchingGatewayHttp : GatewayHttp {
+    suspend fun executeAtDispatch(
+        request: GatewayHttpRequest,
+        dispatch: (() -> Boolean) -> Boolean,
+    ): GatewayHttpResult
+}
+
 internal class OkHttpGatewayHttp(
     private val http: OkHttpClient,
     private val resolveEndpoint: () -> String?,
     private val resolveAuthorization: suspend () -> Pair<String, String>?,
-) : GatewayHttp {
-    override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+    private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+) : EndpointDispatchingGatewayHttp {
+    override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult = executeRequest(request, null)
+
+    override suspend fun executeAtDispatch(
+        request: GatewayHttpRequest,
+        dispatch: (() -> Boolean) -> Boolean,
+    ): GatewayHttpResult = executeRequest(request, dispatch)
+
+    private suspend fun executeRequest(
+        request: GatewayHttpRequest,
+        dispatch: ((() -> Boolean) -> Boolean)?,
+    ): GatewayHttpResult {
         if (!request.isCurrent()) return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
         val endpoint = resolveEndpoint()
             ?: return GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
@@ -124,6 +143,17 @@ internal class OkHttpGatewayHttp(
             ?.build()
             ?: return GatewayHttpResult.Rejected(0, MALFORMED_REQUEST_MESSAGE)
         val scoped = http.newBuilder()
+            // Connection-owned credentials may include custom token headers;
+            // OkHttp only strips Authorization on cross-origin redirects.
+            .followRedirects(false)
+            .followSslRedirects(false)
+            .apply {
+                if (dispatch != null) {
+                    retryOnConnectionFailure(false)
+                    authenticator(okhttp3.Authenticator.NONE)
+                    proxyAuthenticator(okhttp3.Authenticator.NONE)
+                }
+            }
             .callTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)
             .readTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)
             .build()
@@ -131,13 +161,15 @@ internal class OkHttpGatewayHttp(
             val builder = Request.Builder()
                 .url(url)
                 .header(authorization.first, authorization.second)
+            // No automatic mutation replay, including HTTP 408/503 follow-ups.
+            val body = request.body?.let { if (dispatch == null) it else OneShotBody(it) }
             when (request.method.uppercase()) {
-                "POST" -> request.body?.let(builder::post)
+                "POST" -> body?.let(builder::post)
                     ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
                 "GET" -> builder.get()
-                "PUT" -> request.body?.let(builder::put)
+                "PUT" -> body?.let(builder::put)
                     ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
-                "PATCH" -> request.body?.let(builder::patch)
+                "PATCH" -> body?.let(builder::patch)
                     ?: return GatewayHttpResult.Rejected(0, INCOMPLETE_MESSAGE)
                 // Destructive, and body-less like GET. The routes that delete
                 // scope themselves in the query (hermes-agent @
@@ -154,9 +186,12 @@ internal class OkHttpGatewayHttp(
                 }
                 else -> return GatewayHttpResult.Rejected(0, UNSUPPORTED_MESSAGE)
             }
-            withContext(Dispatchers.IO) {
+            withContext(ioDispatcher) {
                 if (!request.isCurrent()) return@withContext GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
-                scoped.newCall(builder.build()).execute().use { response ->
+                val call = scoped.newCall(builder.build())
+                val reply = if (dispatch == null) call.execute() else call.awaitAdmission(dispatch)
+                    ?: return@withContext GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
+                reply.use { response ->
                 if (response.isSuccessful) {
                     val body = response.body
                     if (body == null) {
@@ -201,6 +236,39 @@ internal class OkHttpGatewayHttp(
             GatewayHttpResult.Rejected(0, "The Gateway route could not be reached. Check the connection and try again.")
         }
     }
+}
+
+private class OneShotBody(private val delegate: RequestBody) : RequestBody() {
+    override fun contentType() = delegate.contentType()
+    override fun contentLength() = delegate.contentLength()
+    override fun isOneShot() = true
+    override fun writeTo(sink: okio.BufferedSink) = delegate.writeTo(sink)
+}
+
+/**
+ * The linearization point is OkHttp enqueue, like WebSocket.send's queue handoff.
+ * The fence protects that immediate admission, NOT DNS/socket IO or the response.
+ * Once admitted, revocation cannot retract the request or promise it did not run.
+ */
+private suspend fun okhttp3.Call.awaitAdmission(
+    dispatch: (() -> Boolean) -> Boolean,
+): okhttp3.Response? = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation { cancel() }
+    val callback = object : okhttp3.Callback {
+        override fun onFailure(call: okhttp3.Call, error: IOException) {
+            continuation.resumeWith(Result.failure(error))
+        }
+        override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
+            continuation.resume(response) { _, abandoned, _ -> abandoned?.close() }
+        }
+    }
+    val admitted = dispatch {
+        if (!continuation.isActive) false else {
+            enqueue(callback)
+            true
+        }
+    }
+    if (!admitted) continuation.resumeWith(Result.success(null))
 }
 
 private fun okhttp3.ResponseBody.readBounded(maxBytes: Long): ByteArray? {
