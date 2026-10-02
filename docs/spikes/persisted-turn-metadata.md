@@ -85,14 +85,34 @@ The existing different-turn/same-code regression remains intact.
 
 ## Verification hand-off
 
-Tests were authored with Gradle execution explicitly deferred to the coordinating
-worker (Skills owns Gradle). No JVM RED/GREEN result for this revision, Android
-build, device capture, or visual parity is claimed by this implementation commit.
-Independent review is required before integration; this is a local handoff only.
+Verified source head: `6a5792e0952cb84b1080bb44b05c47d066fe68ad`.
+The publication follow-up changes only this evidence document; it does not change
+the tested or independently reviewed source. The coordinating worker supplied
+bounded independent approval and completed the Gradle runs. Publication inspected
+the saved logs/count summaries and hashed the existing APK without running Gradle:
+
+- Focused run: 530 tests, zero failures/errors/skips; `BUILD SUCCESSFUL`.
+- Full run: 3,342 debug tests and 2,651 release tests, zero failures/errors;
+  one `LiveGatewaySmokeTest` skipped in each variant; `BUILD SUCCESSFUL`.
+- Debug APK SHA-256:
+  `d51ba8f26b31f52adc2e45693288b4c8f157e2465e0c42533f048912f0ef5f71`.
+- Local coordinating evidence: `metadata-6a5792e0-focused.log`,
+  `metadata-6a5792e0-focused-counts.json`, `metadata-6a5792e0-full.log`, and
+  `metadata-6a5792e0-full-counts.json` in the coordinating profile's scratch area.
+- Publication parity-evidence check: all 41 parity pages pass. No production
+  `app/src/main/kotlin/.../ui/` paths changed; the ViewModel change is test-only.
+  Existing surface pins/reports remain unchanged. No new device capture or
+  rendered visual-parity claim is made, and normal UI parity gates remain intact.
+
+Approval covers persisted interruption and validated failed-turn metadata only,
+not retained-overlay same-occurrence deduplication. Ambiguous duplicates remain
+visible because hiding a later unpersisted failure would be worse. GitHub checks
+and reviews are separate, exact-publication-head gates; approval is not a claim
+that hosted CI has passed. No merge is authorized by this publication.
 The existing commits are preserved without reset/rewrite, and the original WIP
 worktree is untouched.
 
-Requested focused checks:
+Focused-check command reference:
 
 ```sh
 ./gradlew :app:testDebugUnitTest \
