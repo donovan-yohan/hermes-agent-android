@@ -7,6 +7,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 
 /** Disposable PR344 only. No probe runs on the successful readiness path. */
 internal object FailureFocusSnapshot {
+    // Installed only by the disposable synthetic test; invoked only after nonce gating.
+    @Volatile var syntheticIdentityProbe: ((String) -> Unit)? = null
+
     fun capture(test: String) {
         // Diagnostics must never replace the original readiness failure.
         runCatching {
@@ -20,6 +23,7 @@ internal object FailureFocusSnapshot {
             emit("BEGIN test=$test uptime=${SystemClock.uptimeMillis()}")
             // Input FIRST, while the failing Activity is still alive. Only the
             // first FocusedWindows block is current; never retain focus history.
+            identity("before")
             probe("input") { text ->
                 val lines = text.lines()
                 val start = lines.indexOfFirst { it.trim() == "FocusedWindows:" }
@@ -28,6 +32,7 @@ internal object FailureFocusSnapshot {
                         it.startsWith("    ") || it.isBlank()
                     }.take(12)
             }
+            identity("after")
             probe("activity activities") { text -> text.lines().filter {
                 it.contains("topResumedActivity=") || it.contains("mResumedActivity:") ||
                     it.trimStart().startsWith("* Task{") || it.startsWith("Display #")
@@ -38,6 +43,11 @@ internal object FailureFocusSnapshot {
             } }
             emit("END test=$test uptime=${SystemClock.uptimeMillis()}")
         }.onFailure { runCatching { emit("CAPTURE_ERROR ${it.javaClass.simpleName}") } }
+    }
+
+    private fun identity(phase: String) {
+        runCatching { syntheticIdentityProbe?.invoke(phase) }
+            .onFailure { runCatching { emit("PROBE_ERROR identity $phase ${it.javaClass.simpleName}") } }
     }
 
     private fun probe(service: String, select: (String) -> List<String>) {

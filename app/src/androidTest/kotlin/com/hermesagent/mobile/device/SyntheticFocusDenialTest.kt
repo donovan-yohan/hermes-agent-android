@@ -49,10 +49,44 @@ class SyntheticFocusDenialTest {
                     Dialog(owner).apply {
                         setCancelable(false)
                         setContentView(TextView(owner).apply { text = "Synthetic focus denial" })
-                        // InputDispatcher names the input channel when the window is added.
-                        // A title changed after show() leaves that original channel name intact.
-                        checkNotNull(window).setTitle("PR344_SYNTHETIC_FOCUS_DENIAL")
+                        // Deliberately identical WM titles: titles cannot identify the owner.
+                        checkNotNull(window).attributes = checkNotNull(window).attributes.apply {
+                            title = owner.window.attributes.title
+                        }
                         show()
+                    }
+                }
+                // Run-scoped labels for actual client Binder objects, not hash values and
+                // never a join to system_server's BinderProxy or WindowState addresses.
+                val clientTokens = mutableListOf<android.os.IBinder>()
+                fun binding(token: android.os.IBinder?): String {
+                    if (token == null) return "null"
+                    val existing = clientTokens.indexOfFirst { it === token }
+                    if (existing >= 0) return "client-${existing + 1}"
+                    clientTokens.add(token)
+                    return "client-${clientTokens.size}"
+                }
+                FailureFocusSnapshot.syntheticIdentityProbe = { phase ->
+                    onMain {
+                        val activityDecor = compose.activity.window.decorView
+                        val dialogDecor = checkNotNull(dialog.window).decorView
+                        val activityToken = activityDecor.windowToken
+                        val dialogToken = dialogDecor.windowToken
+                        Log.i("FocusSnapshot", "WINDOW_IDENTITY phase=$phase " +
+                            "main=${android.os.Looper.myLooper() == android.os.Looper.getMainLooper()} " +
+                            "activityAttached=${activityDecor.isAttachedToWindow} " +
+                            "dialogAttached=${dialogDecor.isAttachedToWindow} " +
+                            "activityDisplay=${activityDecor.display?.displayId} " +
+                            "dialogDisplay=${dialogDecor.display?.displayId} " +
+                            "activityFocus=${activityDecor.hasWindowFocus()} " +
+                            "dialogFocus=${dialogDecor.hasWindowFocus()} " +
+                            "activityWindowIdFocus=${activityDecor.windowId?.isFocused} " +
+                            "dialogWindowIdFocus=${dialogDecor.windowId?.isFocused} " +
+                            "distinctTokens=${activityToken != null && dialogToken != null && activityToken !== dialogToken} " +
+                            "activityToken=${binding(activityToken)} dialogToken=${binding(dialogToken)} " +
+                            "sameWmTitles=${compose.activity.window.attributes.title.toString() == checkNotNull(dialog.window).attributes.title.toString()} " +
+                            "activityDestroyed=${compose.activity.isDestroyed} dialogShowing=${dialog.isShowing} " +
+                            "uptime=${SystemClock.uptimeMillis()}")
                     }
                 }
                 try {
@@ -71,6 +105,7 @@ class SyntheticFocusDenialTest {
                     }
                 } finally {
                     emit("BEFORE_DIALOG_DISMISS frames=${frames.get()} ${ownerState()}")
+                    FailureFocusSnapshot.syntheticIdentityProbe = null
                     onMain {
                         running = false
                         Choreographer.getInstance().removeFrameCallback(callback)

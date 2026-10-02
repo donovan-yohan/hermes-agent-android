@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   check:
+    # Disposable PR344: only the explicitly authorized synthetic lane may run.
+    if: github.head_ref != 'diagnostic/api34-focus-651d659'
     name: check and debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -161,6 +163,7 @@ jobs:
   # failure must not withhold the rolling artifact, and a broken build must not
   # be reported as a device failure. Its scope is stated in the job itself.
   instrumented:
+    if: github.head_ref != 'diagnostic/api34-focus-651d659'
     name: instrumented emulator lane
     runs-on: ubuntu-latest
     timeout-minutes: 40
