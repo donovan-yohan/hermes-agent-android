@@ -81,6 +81,36 @@ class RemoteGatewayTest {
     }
 
     @Test
+    fun `remote Tailnet HTTP preserves port and path for auth and websocket`() {
+        val base = "http://100.64.0.1:9119/hermes"
+        assertEquals(base, normalizeRemoteGatewayUrl(" $base/ "))
+        assertEquals("$base/auth/native/token", endpoint(base, "auth/native/token").toString())
+        assertEquals("$base/api/ws?ticket=fixture", remoteGatewayWebSocketUrl(base, "fixture").toString())
+    }
+
+    @Test
+    fun `private HTTP accepts LAN and Tailnet IPv6 and desktop scheme-less input`() {
+        for (raw in listOf("10.0.0.1:9119/hermes", "172.16.0.1:9119/hermes", "192.168.0.1:9119/hermes",
+            "100.127.255.254:9119/hermes", "[fd7a:115c:a1e0::1]:9119/hermes")) {
+            assertEquals("http://$raw", normalizeRemoteGatewayUrl(raw))
+            assertEquals("http://$raw", normalizeRemoteGatewayUrl("http://$raw/"))
+        }
+    }
+
+    @Test
+    fun `public HTTP and DNS names cannot receive remote credentials`() {
+        for (host in listOf("gateway.example", "gateway.ts.net", "gateway.local", "8.8.8.8", "100.63.255.255",
+            "100.128.0.1", "172.15.255.255", "172.32.0.1", "192.169.0.1", "169.254.169.254",
+            "[2001:db8::1]", "[::ffff:8.8.8.8]", "127.0.0.1", "localhost", "[::1]")) {
+            assertNull(host, normalizeRemoteGatewayUrl("http://$host:9119"))
+        }
+        for (suffix in listOf("?token=fixture", "#fragment")) {
+            assertNull(normalizeRemoteGatewayUrl("http://100.64.0.1:9119/$suffix"))
+        }
+        assertNull(normalizeRemoteGatewayUrl("http://user:fixture@100.64.0.1:9119"))
+    }
+
+    @Test
     fun `remote urls normalize prefixes but reject credentials query and fragments`() {
         assertEquals("https://gateway.example/hermes", normalizeRemoteGatewayUrl(" https://gateway.example/hermes/ "))
         assertEquals(null, normalizeRemoteGatewayUrl("http://127.0.0.1:9119"))

@@ -437,7 +437,7 @@ internal class GatewayConnectionException(message: String) : Exception(message)
 internal class GatewayConnectionManager(
     private val scope: CoroutineScope,
     private val installStore: GatewayInstallStore,
-    private val http: OkHttpClient = OkHttpClient(),
+    private val http: OkHttpClient = gatewayTransportClient(),
     private val sshOpen: suspend (HostProfile, SshCredential) -> SshOpenResult =
         { profile, credential -> SshSessionOpener().open(profile, credential) },
     private val lifecycleFactory: (RemoteCommandRunner) -> RemoteHermesLifecycle = ::RemoteHermesLifecycle,

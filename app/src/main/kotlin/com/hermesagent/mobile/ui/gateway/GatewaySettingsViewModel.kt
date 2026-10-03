@@ -43,7 +43,7 @@ data class GatewaySettingsUiState(
     val signInNotice: String? = null,
 ) {
     val remoteUrlError: String?
-        get() = if (remote.baseUrl.isBlank() || remote.isValid) null else "Enter an HTTPS Gateway URL."
+        get() = if (remote.baseUrl.isBlank() || remote.isValid) null else ConnectionsCopy.INVALID_URL
 
     val canConnectRemote: Boolean
         get() = remote.isValid && connection.status != GatewayConnectionStatus.Connecting
