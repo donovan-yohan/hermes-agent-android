@@ -26,7 +26,8 @@ limitations, and likely next slices behind that table.
 ### Connection and security
 
 - **Remote Gateway is the default and recommended route.** Mobile accepts an
-  HTTPS Gateway URL, requires gated native PKCE support, opens browser sign-in,
+  HTTP(S) hostname/IP Gateway URL (scheme-less uses HTTP; HTTP is unencrypted),
+  requires gated native PKCE support, opens browser sign-in,
   encrypts endpoint-scoped tokens with Android Keystore, obtains a fresh
   single-use WebSocket ticket, and proves JSON-RPC readiness before reporting a
   connection.

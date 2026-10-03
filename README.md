@@ -84,7 +84,7 @@ are in [Status and roadmap](status/ROADMAP.md).
 
 | Area | Hermes Desktop | Hermes Mobile |
 |---|---|---|
-| Connecting | Local and remote Gateway workflows | **Supported** — Remote Gateway over HTTPS with independent browser PKCE, Managed SSH as a private fallback, and Local over loopback to a Termux Hermes |
+| Connecting | Local and remote Gateway workflows | **Supported** — Remote Gateway over HTTP(S) hostnames/IPs with independent browser PKCE (HTTP is unencrypted), Managed SSH as a private fallback, and Local over loopback to a Termux Hermes |
 | Sessions and projects | Create, browse, search, group, rename, pin, archive, and project views | **Partial** — list, create, open, paged history, date and project grouping, unread and running state, rename, delete, pin, archive/restore, read-state, and backend session search; no branch, export, move-to-project or bulk selection |
 | Live chat and transcript | Streaming conversation, Markdown, tools, progress, and media | **Partial** — streamed messages, reasoning and tool rows, ANSI terminal output, Markdown tables and code, inline diffs, image thumbnails and a lightbox, paged backfill and per-reply copy; no syntax highlighting, and tool output, diffs and reasoning are not text-selectable |
 | Composer and model controls | Rich editor, references, completions, model, effort, and fast mode | **Partial** — multiline drafts, history and undo, a per-connection model shortlist, the full reasoning scale, fast mode, slash/path/session/emoji completion, a context meter, and the Manual/Smart/Off approval mode; adding a provider is disabled, and the YOLO bypass toggle is not ported |
