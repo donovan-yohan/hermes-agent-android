@@ -122,8 +122,6 @@ import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.data.session.displayStatus
-import com.hermesagent.mobile.data.session.matchesProjectQuery
-import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import com.hermesagent.mobile.data.composer.maskComposerReferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -824,6 +822,8 @@ internal class ChatViewModel(
     fun confirmSendDiagnostics(generation: Long) = diagnosticsController.confirm(generation)
     fun dismissSendDiagnostics() = diagnosticsController.dismiss()
 
+    private val sidebarCatalogProjection = SidebarCatalogProjection()
+
     val uiState: StateFlow<ChatUiState> = combine(
         combine(cache.state, cache.endpointGeneration) { state, endpoint -> state to endpoint },
         combine(query, searchPendingState, searchResults, ::SearchStateBundle),
@@ -902,36 +902,12 @@ internal class ChatViewModel(
         // belongs only to the profile it was read from.
         val profileScopeState = navigation.sidebarView.profileScope
         val projectScope = projectProfileScopeOf(profileScopeState)
-        val selectedProject = navigation.projectId
-            ?.takeIf { projectScope.showsCatalog }
-            ?.let(cacheState.projects.projects::get)
-        // The sidebar shows one profile at a time; the unified view shows every
-        // profile's rows (`apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`).
-        // The cache keeps every row it has ever been told about either way.
-        val scopedSessions = filterSessionsByProfileScope(
-            selectedProject?.id
-                ?.let { cacheState.projects.memberships[it].orEmpty() }
-                ?.mapNotNull(cacheState.sessions::get)
-                ?: cacheState.sessions.values.toList(),
-            navigation.sidebarView.profileScope.key,
+        val sidebarCatalog = sidebarCatalogProjection.derive(
+            cacheState, cacheAndEndpoint.second, profileScopeState, navigation.projectId, searchState.query,
         )
-        val projects = if (selectedProject == null && projectScope.showsCatalog) {
-            sortProjectsForOverview(
-                cacheState.projects.projects.values,
-                cacheState.projects.activeProjectId,
-            ).map { project ->
-                project.copy(
-                    previewSessions = filterSessionsByProfileScope(
-                        project.previewSessions
-                            .map { preview -> cacheState.sessions[preview.id] ?: preview }
-                            .filter { it.hidden != true },
-                        profileScopeState.key,
-                    ),
-                )
-            }.filter { it.matchesProjectQuery(searchState.query) }
-        } else {
-            emptyList()
-        }
+        val selectedProject = sidebarCatalog.selectedProject
+        val scopedSessions = sidebarCatalog.scopedSessions
+        val projects = sidebarCatalog.projects
         val busyKind = when {
             active?.status == SessionStatus.NeedsInput -> ComposerBusyKind.NeedsInput
             active?.status in STREAMING_STATUSES -> ComposerBusyKind.Streaming
