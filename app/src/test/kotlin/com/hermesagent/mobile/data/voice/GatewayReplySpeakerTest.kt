@@ -1,18 +1,15 @@
 package com.hermesagent.mobile.data.voice
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.atomic.AtomicBoolean
 
-import org.robolectric.annotation.Config
-
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [34])
 class GatewayReplySpeakerTest {
 
     class FakeRepository : SpeechSynthesizer {
@@ -121,5 +118,32 @@ class GatewayReplySpeakerTest {
 
         assertTrue(exception is VoiceTransportException)
         assertFalse(player.isPlaying)
+    }
+
+    @Test
+    fun `cancelling suspended playback wipes acquired audio`() = runTest {
+        val audio = SpeechAudio("audio/mpeg", ByteArray(10) { 1 })
+        val started = CompletableDeferred<Unit>()
+        val repository = object : SpeechSynthesizer {
+            override suspend fun speak(key: VoiceSessionKey, cleanText: String): SpeechAudio = audio
+        }
+        val player = object : SpeechPlayback {
+            override suspend fun play(audio: SpeechAudio): Boolean {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+
+            override fun stop() = Unit
+        }
+        val speaker = GatewayReplySpeaker(repository, player)
+        val job = launch { speaker.speak(VoiceSessionKey(1L, "session"), "hello") {} }
+        started.await()
+        assertTrue(audio.bytes.any { it != 0.toByte() })
+
+        job.cancel()
+        job.join()
+
+        assertTrue(job.isCancelled)
+        assertTrue(audio.bytes.all { it == 0.toByte() })
     }
 }
