@@ -127,7 +127,7 @@ internal object ConnectionRegistryCodec {
 
     private fun JsonObject.text(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
 
-    private fun isSafeStoredThemeName(value: String): Boolean =
+    internal fun isSafeStoredThemeName(value: String): Boolean =
         value.isNotBlank() && value.length <= MAX_THEME_NAME_LENGTH && value.none(Char::isISOControl)
 
     private const val MAX_THEME_NAME_LENGTH = 64
