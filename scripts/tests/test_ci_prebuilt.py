@@ -70,8 +70,11 @@ class PrebuiltTest(unittest.TestCase):
             (self.root / self.gate.APKS[0]).write_bytes(b'rebuilt')
             return result
         with patch.object(self.gate.subprocess, 'run', side_effect=mutate):
-            with self.assertRaisesRegex(ValueError, 'identity'):
+            with self.assertRaises(subprocess.CalledProcessError) as failure:
                 self.gate.run(self.root)
+            self.assertEqual(failure.exception.returncode, 7)
+        with self.assertRaisesRegex(ValueError, 'identity'):
+            self.gate.verify(self.root)
 
     def test_normal_graph_and_explicit_outcomes(self):
         self.assertTrue(hasattr(self.gate, 'verify_outcomes'))

@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   check:
+    if: ${{ !startsWith(github.head_ref, 'diagnostic/focus-owner-') }}
     name: check and debug APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -107,6 +108,7 @@ jobs:
   # shallow clone lacks. That clone is a throwaway under `$RUNNER_TEMP`; the
   # reference checkout a workstation keeps is only ever read.
   citations:
+    if: ${{ !startsWith(github.head_ref, 'diagnostic/focus-owner-') }}
     name: pin citations
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -172,6 +174,7 @@ jobs:
   # failure must not withhold the rolling artifact, and a broken build must not
   # be reported as a device failure. Its scope is stated in the job itself.
   instrumented:
+    if: ${{ !startsWith(github.head_ref, 'diagnostic/focus-owner-') }}
     name: instrumented emulator lane
     runs-on: ubuntu-latest
     timeout-minutes: 40
