@@ -42,7 +42,7 @@ You can also build it yourself — see
 
 | Route | Use it when | What it needs |
 |---|---|---|
-| **Remote gateway** (recommended) | Your Hermes runs on a machine you own — a server, a desktop, a VPS — and you want Desktop and phone to share it | An **HTTPS** URL for the Gateway, and the Gateway's auth gate switched on |
+| **Remote gateway** (recommended) | Your Hermes runs on a machine you own — a server, a desktop, a VPS — and you want Desktop and phone to share it | An HTTPS URL (or HTTP at a trusted private IP), and the Gateway's auth gate switched on |
 | **Connect via SSH** (fallback) | You want a *private* backend that belongs to this phone alone | SSH access to a host that has Hermes installed |
 | **Local gateway** | Your Hermes runs in Termux on this same phone | A `hermes serve` on loopback and its session token |
 
@@ -65,14 +65,20 @@ profile and one session database.
 The app is strict about two things, and both are worth knowing before you start
 so the error messages make sense.
 
-**The URL must be HTTPS.** `normalizeRemoteGatewayUrl`
-(`app/src/main/kotlin/com/hermesagent/mobile/data/gateway/RemoteGateway.kt:1341`)
-accepts only an `https` scheme, with no username or password in the URL, no
-query string and no fragment. Anything else is refused before a request is
-made, with `Enter a valid HTTPS Gateway URL.`
-(`RemoteGateway.kt:482`, `RemoteGateway.kt:1333`). There is no loopback
-exception on this route — a Hermes on the phone itself is the Local route
-instead.
+**Use HTTPS, or HTTP at a private IP address.** HTTPS is preferred. For a
+Gateway reached over a trusted LAN or Tailscale, you can also enter its numeric
+private IP, such as `http://100.64.0.1:9119` (a synthetic example), with an optional
+path prefix. Scheme-less private IPs use HTTP. HTTP supports RFC1918 IPv4,
+CGNAT/Tailnet IPv4 and IPv6 ULA; public IPs and DNS names require HTTPS. For a
+MagicDNS hostname, use the Tailscale Serve HTTPS recipe below or its numeric IP.
+Do not include a username, password, query or fragment in the Gateway URL.
+
+**HTTP is not encrypted by the app.** Tailscale encrypts traffic only when it
+actually uses the Tailnet route. An ordinary LAN can expose sign-in tokens and
+session traffic to network attackers. Prefer HTTPS unless you trust that network.
+The app does not follow Gateway redirects or use system HTTP proxies. Loopback
+on this phone is still the Local route, not a Remote exception. See
+[the transport decision](../adr/0005-private-network-http-gateway.md).
 
 **The Gateway must advertise native sign-in.** Before signing in, the app reads
 `GET /api/status` (`RemoteGateway.kt:694`) and checks two fields

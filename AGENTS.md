@@ -109,11 +109,15 @@ single-connection reader is a projection of that row, so a connection edit has
 one writer and no second copy. The pre-registry `host.single.*` /
 `gateway.single.*` keys were migrated into row one, not overloaded.
 
-**Cleartext is loopback-only, and Local owns no process.** The base network
-security config refuses cleartext and excuses exactly `127.0.0.1`, `localhost`
-and `::1`; `usesCleartextTraffic="true"` would grant the same to every host on
-the internet, so an invariant fails the build on it and on any other permitted
-domain. A Local row addresses a Hermes the person runs in Termux on this phone:
+**HTTP is private-IP/loopback-only, and Local owns no process.** Android XML
+cannot express private IP ranges, so platform cleartext permission is enabled
+and the shared `gatewayTransportClient` enforces the boundary before I/O. Remote
+HTTP accepts numeric RFC1918, CGNAT/Tailnet and IPv6 ULA addresses, never DNS
+names or public IPs. Every production HTTP/WS client derives from that factory;
+redirects and system proxies are disabled. The repo gate rejects independent
+clients. HTTP on a LAN is not encrypted; prefer HTTPS. See
+`docs/adr/0005-private-network-http-gateway.md`. A Local row addresses a Hermes
+the person runs in Termux on this phone:
 `normalizeLocalGatewayUrl` refuses rather than guesses, because which port a row
 names decides which process receives its token, and the app never starts, adopts,
 stops or reaps that runtime. See `docs/adr/0002-shared-remote-gateway.md`.
@@ -215,6 +219,6 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/parity/system-panel.md` | System panel and the backend updates sheet: pin, HTTP contract, adaptation, deviations |
 | `docs/parity/approval-mode.md` | The Manual/Smart/Off control: `approvals.mode` contract, profile scoping, optimistic write and rollback |
 | `docs/parity/model-visibility.md` | The model shortlist and the Models sheet: stored keys, sentinels, family collapse, picker filtering |
-| `docs/guides/getting-started.md` | The public setup path: installing the rolling APK, choosing a route, the Gateway's HTTPS and `native_pkce` requirements, and the Tailscale `serve` recipe |
+| `docs/guides/getting-started.md` | The public setup path: installing the rolling APK, choosing a route, the Gateway's transport and `native_pkce` requirements, and the Tailscale `serve` recipe |
 | `docs/guides/termux-local-gateway.md` | Standing up a Termux `hermes serve` on the phone and adding it as a Local connection |
 | `docs/media/README.md` | What the committed screenshots and demos are, and the clean-profile capture rule they are taken under |
