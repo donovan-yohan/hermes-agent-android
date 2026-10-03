@@ -4,8 +4,9 @@
 
 Desktop authority is `NousResearch/hermes-agent` at
 `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`, read through
-`git show <sha>:<path>` on a read-only checkout. Every line number below is at
-that SHA.
+`git show <sha>:<path>` on a read-only checkout. Unless a citation explicitly
+names another pin, every line number below is at that SHA. The private-network
+HTTP amendment has its own source pin; it does not govern the historic ledgers.
 
 | Contract | Desktop source | Android port |
 |---|---|---|
@@ -251,7 +252,7 @@ argument.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| Desktop permits HTTP(S) and describes both over LAN/Tailscale/internet | mobile-adaptation | HTTP only at numeric private IPs; error offers HTTPS or private IP; description omits the protocol clause | ADR 0005: avoid implying public HTTP protects credentials; source/copy checked at 36922ad064d65dcf25f8f48df81e1ccf9a55de67, new rendered evidence remains owed |
+| Desktop permits HTTP(S) and describes both over LAN/Tailscale/internet | mobile-adaptation | HTTP only at numeric private IPs; error offers HTTPS or private IP; description omits the protocol clause | ADR 0005: avoid implying public HTTP protects credentials; source/copy checked at the amendment's separate pin above, new rendered evidence remains owed |
 | `DropdownMenu` + `DropdownMenuRadioGroup` anchored to the rail trigger | mobile-adaptation | `ModalBottomSheet` with 48dp radio rows | Pointer menus are brittle on a phone; order, checkmark and search threshold are unchanged |
 | `ConfirmDialog` | mobile-adaptation | `ConfirmSheet` | Same touch reason; same title, description, destructive confirm and cancel |
 | Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | mobile-adaptation | Endpoint under the label in the sheet, and in the settings row description | Touch has no hover, so the information is shown rather than hidden |
