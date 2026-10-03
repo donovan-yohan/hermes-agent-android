@@ -179,9 +179,9 @@ internal object ConnectionsCopy {
      * Desktop's own placeholder (`connections-registry.tsx:803` @ `72a3277cd7`),
      * with its scheme narrowed.
      *
-     * Upstream writes `http://homelab.lan:9119`; this app refuses a plain-HTTP
-     * Gateway URL, so a placeholder in that scheme would demonstrate a value
-     * the form is about to reject. #85 asked for the HTTPS narrowing *and* the
+     * Upstream writes `http://homelab.lan:9119`; HTTP DNS names are refused
+     * here (private numeric IPs are supported), so that placeholder names a value
+     * the form is about to reject. #85 asked for URL validation *and* the
      * homelab vocabulary: a placeholder's job is to show the shape of the
      * answer, and "a machine on your LAN, on Hermes' port" is the shape, which
      * `hermes.example.com` — a hostname nobody's gateway has — did not teach.
@@ -197,7 +197,7 @@ internal object ConnectionsCopy {
      * row is one whose sign-in nothing can erase. Same sentence the route form
      * above the list already uses.
      */
-    const val INVALID_URL = "Enter an HTTPS Gateway URL."
+    const val INVALID_URL = "Use HTTPS or a private Gateway IP address."
 
     /**
      * `en.ts:827`, and the same words a Local row reports as its auth mode.
@@ -341,8 +341,8 @@ internal object ConnectionsCopy {
      */
     const val KIND_CLOUD = "Hermes Cloud"
 
-    /** `en.ts:738`, narrowed to HTTPS: this app refuses a plain-HTTP Gateway URL. */
-    const val KIND_REMOTE_DESC = "A Hermes gateway reachable over HTTPS — LAN, Tailscale, or the internet."
+    /** Desktop kindRemoteDesc, shortened without implying public HTTP is supported. */
+    const val KIND_REMOTE_DESC = "A Hermes gateway reachable over LAN, Tailscale, or the internet."
 
     /** `en.ts:740`. */
     const val KIND_SSH_DESC = "A Hermes install reached over SSH."
