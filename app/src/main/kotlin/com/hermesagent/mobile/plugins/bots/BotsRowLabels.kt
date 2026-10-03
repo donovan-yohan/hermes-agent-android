@@ -1,7 +1,7 @@
 package com.hermesagent.mobile.plugins.bots
 
-import com.hermesagent.mobile.data.session.RelativeAgeUnit
-import com.hermesagent.mobile.data.session.relativeAge
+import com.hermesagent.mobile.data.session.RelativeAgeLabels
+import com.hermesagent.mobile.data.session.relativeAgeLabel
 
 /**
  * The presentation leaves a roster row is assembled from: the compact age
@@ -41,15 +41,11 @@ fun rowAgeLabel(
     atMillis: Long,
     nowMillis: Long,
     labels: BotRowAgeLabels = BotRowAgeLabels(),
-): String {
-    val elapsed = relativeAge(nowMillis - atMillis)
-    return when (elapsed.unit) {
-        RelativeAgeUnit.Second -> labels.now
-        RelativeAgeUnit.Day -> "${elapsed.value}${labels.day}"
-        RelativeAgeUnit.Hour -> "${elapsed.value}${labels.hour}"
-        RelativeAgeUnit.Minute -> "${elapsed.value}${labels.minute}"
-    }
-}
+): String = relativeAgeLabel(
+    atMillis,
+    nowMillis,
+    RelativeAgeLabels(now = labels.now, day = labels.day, hour = labels.hour, minute = labels.minute),
+)
 
 /**
  * The @handle users tag a bot with.
