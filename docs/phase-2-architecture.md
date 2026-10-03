@@ -94,11 +94,24 @@ or exception text.
 | Search/project selection/navigation notice | `ChatViewModel` | Screen-lifetime UI state; never written into backend cache or the draft store. |
 | Connection configuration | `HermesPreferences` | Route, non-secret Remote URL/provider, or SSH host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. OAuth tokens are not DataStore values. |
 
-Rename and archive are absent from the product surface because this slice does
-not wire authoritative backend methods for them. Search is explicitly local
-filtering. Project overview and drill-in use authoritative Gateway membership;
-the selected project's backend path is used as the cwd for a new session.
-Create, open, history, send, and stop are live Gateway operations.
+Session actions are live backend operations, not local-only metadata. Rename
+uses a live runtime's `session.title` RPC when available, with persisted-row
+REST fallback. Pin, archive/restore and read/unread use profile-scoped REST
+updates with optimistic cache projection and rollback on refusal; archive is
+reversible and never a cache tombstone. Delete removes cached truth only after
+backend confirmation.
+
+Search combines immediate matching over loaded rows with scoped Gateway
+full-text results. A backend without the search route retains local matching;
+search stubs remain query-lifetime UI state rather than authoritative cache
+rows. See [the current session capability boundaries](../status/ROADMAP.md#sessions-and-projects)
+for archive-pool and unified-profile search limitations.
+
+Project overview and drill-in use authoritative Gateway membership; the
+selected project's backend path is used as the cwd for a new session. Create,
+open, history, send, and stop are live Gateway operations. These session paths
+extend the original vertical slice; the historical upstream citations above
+retain their original provenance rather than certifying every later feature.
 The user can switch sessions while a turn runs. The same target session remains
 busy, while another idle session can submit concurrently. Scoped events route
 per runtime; identifier-less events remain on the single safe local pin instead
