@@ -70,6 +70,13 @@ real Bot roster state rather than a placeholder row.
 
 ## Visual report
 
+The clock-independent sidebar catalog projection refactor owes new exact-head
+paired evidence: pending: #359. It changes derivation reuse, not layout, copy,
+glyphs or menu order. Live-collector tests retain clock/midnight, profile,
+endpoint and rehome behavior; they do not replace rendered parity review.
+Prior captures below retain their original provenance and do not certify this
+refactor. Its parity verdict remains Concern until that evidence is supplied.
+
 [Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
 contains synthetic production-Compose window draws and the main-vs-fixed test
 results. It supplements, and does not discharge, the paired/device obligation.

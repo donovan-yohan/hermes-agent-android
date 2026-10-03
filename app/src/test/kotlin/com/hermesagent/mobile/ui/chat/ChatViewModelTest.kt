@@ -2257,6 +2257,78 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `catalog reuse does not freeze emission clock or midnight grouping`() = runTest(dispatcher) {
+        val oldZone = java.util.TimeZone.getDefault()
+        val oldLocale = java.util.Locale.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+        java.util.Locale.setDefault(java.util.Locale.US)
+        try {
+            var now = java.time.Instant.parse("2027-01-02T23:59:59Z").toEpochMilli()
+            var reads = 0
+            val subject = ChatViewModel(cache, repository, sidebarStore, clock = { reads++; now }, bucketLabel = stubLabel)
+            cache.upsertSessions(listOf(summary("recent", now), summary("older", now - 86_400_000)))
+            cache.replaceProjectOverview(listOf(ProjectSummary("p", "P", "/synthetic/p", previewSessions = listOf(summary("recent", now)))), "p")
+            backgroundScope.launch { subject.uiState.collect {} }
+            runCurrent()
+            val projects = subject.uiState.value.projects
+            val previousReads = reads
+            now += 2_000
+            subject.setDraft("after midnight")
+            runCurrent()
+            assertTrue(reads > previousReads)
+            assertEquals(now, subject.uiState.value.nowMillis)
+            assertEquals(com.hermesagent.mobile.data.session.buildSessionRows(
+                cache.state.value.sessions.values, now, bucketLabel = stubLabel,
+            ), subject.uiState.value.sessionRows)
+            org.junit.Assert.assertSame(projects, subject.uiState.value.projects)
+        } finally {
+            java.util.TimeZone.setDefault(oldZone)
+            java.util.Locale.setDefault(oldLocale)
+        }
+    }
+
+    @Test
+    fun `draft edits reuse unchanged project overview allocations`() = runTest(dispatcher) {
+        val oldZone = java.util.TimeZone.getDefault()
+        val oldLocale = java.util.Locale.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+        java.util.Locale.setDefault(java.util.Locale.US)
+        try {
+            cache.replaceProjectOverview(listOf(ProjectSummary(
+                "project-a", "Project A", "/synthetic/a", sessionCount = 1,
+                previewSessions = listOf(summary("session-a", 2_000)),
+            )), activeProjectId = "project-a")
+            collectState()
+            runCurrent()
+            val overview = viewModel.uiState.value.projects
+            assertEquals(1, overview.size)
+            val overviews = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<List<ProjectSummary>, Boolean>())
+            val previews = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<List<SessionSummary>, Boolean>())
+            overviews.add(overview)
+            previews.add(overview.single().previewSessions)
+            repeat(20) { edit ->
+                viewModel.setDraft("draft $edit")
+                runCurrent()
+                assertEquals("draft $edit", viewModel.uiState.value.draft)
+                overviews.add(viewModel.uiState.value.projects)
+                previews.add(viewModel.uiState.value.projects.single().previewSessions)
+            }
+            println("20 draft edits: overview list identities=${overviews.size}, preview list identities=${previews.size}")
+            assertEquals("unchanged overview allocations", 1, overviews.size)
+            assertEquals("unchanged preview allocations", 1, previews.size)
+            repeat(20) { turn ->
+                cache.appendEntry("session-a", UserTurn("turn-$turn", "text", turn.toLong()))
+                runCurrent()
+                assertTrue(viewModel.uiState.value.transcript.any { it.id == "turn-$turn" })
+                org.junit.Assert.assertSame(overview, viewModel.uiState.value.projects)
+            }
+        } finally {
+            java.util.TimeZone.setDefault(oldZone)
+            java.util.Locale.setDefault(oldLocale)
+        }
+    }
+
+    @Test
     fun `project previews omit cached hidden chats without discarding their owner`() = runTest(dispatcher) {
         val visible = summary("session-a", 2_000)
         val hidden = summary("bot-chat", 1_000).copy(hidden = true)
