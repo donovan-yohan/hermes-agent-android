@@ -1,24 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Cleartext is off everywhere, and permitted for loopback only.
-
-  targetSdk 36 blocks cleartext by default, which is the right default and the
-  one the Remote route depends on: a host-owned Gateway is HTTPS, and the
-  normalizer refuses anything else. The Local route talks to a Hermes on this
-  same phone, where there is no TLS to have — the traffic never leaves the
-  device — so exactly the three loopback names are excused, by name, and
-  nothing else is. The Managed SSH route's forward is loopback too, so this is
-  also the config that keeps it working on a modern target.
-
-  `android:usesCleartextTraffic="true"` would do the same job for every host on
-  the internet. That is why it is not here, and why a repo invariant fails the
-  build if it appears.
--->
+<!-- Android domain-config cannot represent user-selected private IP ranges.
+     The shared OkHttp client enforces numeric private/loopback HTTP only,
+     before transmission, and refuses redirects (including WebSocket tickets).
+     Platform cleartext permission is necessary but is NOT the trust policy.
+     Never create an unguarded production HTTP client. See ADR 0005. -->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">::1</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

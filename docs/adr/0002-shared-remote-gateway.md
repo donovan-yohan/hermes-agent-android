@@ -8,6 +8,10 @@ host-owned boundary to a Termux Gateway on this device
 **Authority:** `NousResearch/hermes-agent` @
 `59795c40fff95b3029b8f2b02164da892429070f`
 
+Transport amendment: [ADR 0005](./0005-private-network-http-gateway.md) supersedes
+the HTTPS-only and loopback-only network rules below. The historical source pin
+remains recorded; process ownership and native authentication do not change.
+
 ## Context
 
 ADR 0001 deliberately gives one Android install positive ownership of one
