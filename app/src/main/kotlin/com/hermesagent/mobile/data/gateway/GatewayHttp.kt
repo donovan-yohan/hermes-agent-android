@@ -271,7 +271,7 @@ private suspend fun okhttp3.Call.awaitAdmission(
     if (!admitted) continuation.resumeWith(Result.success(null))
 }
 
-private fun okhttp3.ResponseBody.readBounded(maxBytes: Long): ByteArray? {
+internal fun okhttp3.ResponseBody.readBounded(maxBytes: Long): ByteArray? {
     val sink = Buffer()
     val source = source()
     var total = 0L
