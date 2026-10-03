@@ -297,15 +297,17 @@ class HermesPreferencesTest {
     @Test
     fun `an unsafe legacy theme is removed without changing row one`() = runBlocking {
         val row = SavedConnection("migration-row", "Gateway", ConnectionKind.Remote)
-        val stored = preferencesOf(
-            CONNECTIONS to ConnectionRegistryCodec.encode(listOf(row)),
-            stringPreferencesKey("appearance.theme") to " ",
-        )
+        listOf(" ", "a".repeat(65), "bad\u0001name").forEach { unsafe ->
+            val stored = preferencesOf(
+                CONNECTIONS to ConnectionRegistryCodec.encode(listOf(row)),
+                stringPreferencesKey("appearance.theme") to unsafe,
+            )
+            val migrated = AdoptPerConnectionTheme.migrate(stored)
 
-        val migrated = AdoptPerConnectionTheme.migrate(stored)
-
-        assertEquals(BuiltinThemes.DEFAULT_NAME, ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single().themeName)
-        assertNull(migrated[stringPreferencesKey("appearance.theme")])
+            assertEquals(stored[CONNECTIONS], migrated[CONNECTIONS])
+            assertEquals(BuiltinThemes.DEFAULT_NAME, ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single().themeName)
+            assertNull(migrated[stringPreferencesKey("appearance.theme")])
+        }
     }
 
     @Test
