@@ -5,6 +5,7 @@ import json
 import argparse
 import subprocess
 import re
+import focus_diagnostic
 from pathlib import Path
 
 APKS = ('app/build/outputs/apk/debug/app-debug.apk',
@@ -57,14 +58,29 @@ def run(root):
     command = ['./gradlew', ':app:connectedDebugAndroidTest', '--no-daemon',
                '--no-build-cache', '--console=plain']
     verify(root)
+    nonce = focus_diagnostic.arm()
+    command += focus_diagnostic.arguments(nonce)
+    original = None
     try:
         result = subprocess.run(command, cwd=root, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
         print(result.stdout, end='', flush=True)
         result.check_returncode()
         verify_outcomes(result.stdout)
+    except BaseException as error:
+        original = error
+        raise
     finally:
-        verify(root)
+        try:
+            verify(root)
+        except BaseException:
+            if original is None:
+                raise
+        finally:
+            try:
+                focus_diagnostic.collect(root, nonce)
+            except Exception:
+                pass
     print('Prebuilt APK/metadata identity and explicit task reuse verified', flush=True)
 
 
@@ -76,4 +92,7 @@ if __name__ == '__main__':
     if args.phase == 'record':
         record(root)
     else:
-        run(root)
+        try:
+            run(root)
+        except subprocess.CalledProcessError as failure:
+            raise SystemExit(failure.returncode)

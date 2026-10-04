@@ -6,7 +6,7 @@ import android.security.keystore.KeyProperties
 import java.io.File
 import java.io.FileOutputStream
 import java.security.KeyStore
-import java.security.MessageDigest
+import com.hermesagent.mobile.data.sha256Utf8Hex
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -351,9 +351,7 @@ internal class AndroidGatewayTokenStore(
         file.delete()
     }
 
-    private fun digest(value: String): String = MessageDigest.getInstance("SHA-256")
-        .digest(value.toByteArray(Charsets.UTF_8))
-        .joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    private fun digest(value: String): String = sha256Utf8Hex(value)
 
     private fun parseStoredCredential(raw: String): StoredCredential? {
         val body = runCatching { JSON.parseToJsonElement(raw) as JsonObject }.getOrNull() ?: return null

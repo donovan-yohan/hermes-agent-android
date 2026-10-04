@@ -13,12 +13,14 @@ internal class WindowReadinessRule(private val activity: () -> Activity) : TestR
     override fun apply(base: Statement, description: Description): Statement = object : Statement() {
         override fun evaluate() {
             val deadline = SystemClock.uptimeMillis() + DeviceLane.PLATFORM_TIMEOUT_MILLIS
-            while (!ready()) {
-                check(SystemClock.uptimeMillis() < deadline) {
-                    "Activity not awake, unlocked and input-focused within " +
-                        "${DeviceLane.PLATFORM_TIMEOUT_MILLIS} ms: ${state()}"
+            observeReadinessFailure({ FailureFocusSnapshot.capture(activity) }) {
+                while (!ready()) {
+                    check(SystemClock.uptimeMillis() < deadline) {
+                        "Activity not awake, unlocked and input-focused within " +
+                            "${DeviceLane.PLATFORM_TIMEOUT_MILLIS} ms: ${state()}"
+                    }
+                    SystemClock.sleep(50)
                 }
-                SystemClock.sleep(50)
             }
             // No catch/wrap: preserve the exact original throwable.
             base.evaluate()

@@ -48,8 +48,9 @@ internal class OkHttpGatewayImageLoader(
                     .get()
                     .build()
                 scoped.newCall(request).execute().use { response ->
-                    val body = response.body?.bytes()
-                    if (response.isSuccessful && body != null && body.isNotEmpty()) {
+                    if (!response.isSuccessful) return@use Result.failure(ImageUnavailable())
+                    val body = response.body?.readBounded(DEFAULT_MAX_RESPONSE_BYTES)
+                    if (body != null && body.isNotEmpty()) {
                         Result.success(body)
                     } else {
                         Result.failure(ImageUnavailable())

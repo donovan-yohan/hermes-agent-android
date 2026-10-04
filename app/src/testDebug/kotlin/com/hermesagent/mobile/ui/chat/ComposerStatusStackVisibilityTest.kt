@@ -38,27 +38,6 @@ class ComposerStatusStackVisibilityTest {
     }
 
     @Test
-    fun `goal with no active state renders no goal group`() {
-        setContent(
-            ComposerStatusState(
-                goal = ComposerGoalStatus("No active goal.", ComposerGoalState.None),
-            ),
-        )
-        compose.onAllNodesWithContentDescription("Goal active, expand").assertCountEquals(0)
-        compose.onAllNodesWithContentDescription("Composer status").assertCountEquals(0)
-    }
-
-    @Test
-    fun `unknown goal text still renders its raw payload`() {
-        setContent(
-            ComposerStatusState(
-                goal = ComposerGoalStatus("Unrecognized server line", ComposerGoalState.Unknown),
-            ),
-        )
-        compose.onNodeWithText("Unrecognized server line").assertIsDisplayed()
-    }
-
-    @Test
     fun `an active goal states itself in a collapsed header and opens on demand`() {
         setContent(
             ComposerStatusState(

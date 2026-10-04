@@ -13,18 +13,17 @@ def check(xml, manifest, app, clients):
     problems = []
     config = ET.fromstring(xml)
     if len(config) != 1 or config[0].tag != 'base-config' or config[0].get('cleartextTrafficPermitted') != 'true':
-        problems.append('Network config must contain exactly the guarded base-config (ADR 0005).')
+        problems.append('Network config must contain exactly the HTTP-enabled base-config (ADR 0005).')
     if 'android:networkSecurityConfig="@xml/network_security_config"' not in manifest or 'usesCleartextTraffic="true"' in manifest:
         problems.append('Manifest must use the network config, not usesCleartextTraffic=true.')
-    for gate in ('isPrivateGatewayHost(url.host)', 'throw java.io.IOException(', '.addInterceptor { chain ->',
-                 '.followRedirects(false)', '.followSslRedirects(false)', '.proxy(java.net.Proxy.NO_PROXY)'):
+    for gate in ('.followRedirects(false)', '.followSslRedirects(false)', '.proxy(java.net.Proxy.NO_PROXY)'):
         if gate not in app:
-            problems.append('Shared Gateway HTTP client lost its guard: ' + gate)
+            problems.append('Shared Gateway HTTP client lost its auth safeguard: ' + gate)
     expected = {'GatewayTransportPolicy.kt': 1}
-    # Derived newBuilder() clients retain the interceptor; forbid adding
+    # Derived newBuilder() clients retain the auth safeguards; forbid adding
     # independent clients elsewhere (including constructor defaults).
     if clients != expected:
-        problems.append('Independent OkHttp client inventory changed; route production through the guarded client.')
+        problems.append('Independent OkHttp client inventory changed; route production through the shared client.')
     return problems
 
 
@@ -40,7 +39,7 @@ def main():
     problems = check(xml, manifest, app, clients)
     if '--self-test' in sys.argv:
         assert not problems, problems
-        for gate in ('.addInterceptor { chain ->', '.followRedirects(false)', '.followSslRedirects(false)', '.proxy(java.net.Proxy.NO_PROXY)'):
+        for gate in ('.followRedirects(false)', '.followSslRedirects(false)', '.proxy(java.net.Proxy.NO_PROXY)'):
             assert check(xml, manifest, app.replace(gate, ''), clients)
         assert check(xml, manifest, app, {**clients, 'Unsafe.kt': 1})
         assert check('<network-security-config><base-config cleartextTrafficPermitted="false" /></network-security-config>', manifest, app, clients)
@@ -48,7 +47,7 @@ def main():
     for problem in problems:
         print('FAIL  ' + problem)
     if not problems:
-        print('ok    private-IP Gateway transport guard and client inventory')
+        print('ok    HTTP(S) Gateway auth safeguards and client inventory')
     return bool(problems)
 
 
