@@ -1,0 +1,16 @@
+[
+  {
+    "state": "projection-search-miss",
+    "image": "projection-search-miss-dark.png",
+    "sha256": "7c87391bf314bd7201de79fd5eaf3c61bea1911ceb499b4e3ba82874686e16e3",
+    "receipt": "projection-search-miss-receipt.json",
+    "fixture_sha256": "566043f497a6f4454a5e4eeb4eac6f3382fac3b87c2158fc6b2f431de931c785"
+  },
+  {
+    "state": "projection-draft-reuse",
+    "image": "projection-draft-reuse-dark.png",
+    "sha256": "5a31d93be817fd5f037aa9166f2271798655d2452a46c8c03dc278fa41090b3f",
+    "receipt": "projection-draft-reuse-receipt.json",
+    "fixture_sha256": "566043f497a6f4454a5e4eeb4eac6f3382fac3b87c2158fc6b2f431de931c785"
+  }
+]

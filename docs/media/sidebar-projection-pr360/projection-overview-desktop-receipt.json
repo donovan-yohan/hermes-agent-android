@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "surface": "sidebar-projection",
+  "state": "projection-overview",
+  "fixture_id": "sidebar-projection-synthetic-v1",
+  "theme": "dark",
+  "viewport": {
+    "pixel_width": 2440,
+    "pixel_height": 1600
+  },
+  "desktop_upstream_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "fixture_origin": "pinned-desktop-e2e-mock",
+  "screenshot_sha256": "bbffebe5e746d8c90ee9d65e3be2f3cb462d7f125ea0d5fdb42639e3456e46a2",
+  "fixture_implementation_sha256": "1c2e427b7a1522ce9d0ff87762d8f5da89cbc7615c72a7de6583f88b53a5f7d5",
+  "resolved_inputs": {
+    "skin": "mono",
+    "mode": "dark",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "now": 1789654800000,
+    "text": "PinnedShift-click a chat to pinProjectsSynthetic projectSynthetic design review12mSynthetic release checklist20m"
+  },
+  "observation_status": "partial-not-paired-acceptance"
+}

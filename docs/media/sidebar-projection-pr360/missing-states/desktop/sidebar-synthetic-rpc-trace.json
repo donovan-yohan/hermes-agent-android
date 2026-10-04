@@ -1,0 +1,152 @@
+[
+  {
+    "method": "model.options",
+    "params": {
+      "explicit_only": true,
+      "profile": "default"
+    }
+  },
+  {
+    "method": "setup.status",
+    "params": {}
+  },
+  {
+    "method": "setup.runtime_check",
+    "params": {}
+  },
+  {
+    "method": "free_tier.status",
+    "params": {}
+  },
+  {
+    "method": "shared_metrics.status",
+    "params": {}
+  },
+  {
+    "method": "pet.info",
+    "params": {
+      "profile": "default"
+    }
+  },
+  {
+    "method": "wake.status",
+    "params": {
+      "client_capture": true,
+      "surface": "gui"
+    }
+  },
+  {
+    "method": "session.active_list",
+    "params": {}
+  },
+  {
+    "method": "projects.list",
+    "params": {
+      "profile": "default"
+    }
+  },
+  {
+    "method": "projects.tree",
+    "params": {
+      "preview_limit": 3,
+      "profile": "default"
+    }
+  },
+  {
+    "method": "shared_metrics.status",
+    "params": {}
+  },
+  {
+    "method": "commands.catalog",
+    "params": {
+      "profile": "default"
+    }
+  },
+  {
+    "method": "profiles.list",
+    "params": {}
+  },
+  {
+    "method": "setup.status",
+    "params": {}
+  },
+  {
+    "method": "setup.runtime_check",
+    "params": {}
+  },
+  {
+    "method": "client.capabilities",
+    "params": {
+      "server_requests": true
+    }
+  },
+  {
+    "method": "pet.info",
+    "params": {
+      "profile": "default"
+    }
+  },
+  {
+    "method": "session.active_list",
+    "params": {}
+  },
+  {
+    "method": "profiles.list",
+    "params": {
+      "include_sessions": false
+    }
+  },
+  {
+    "method": "profiles.list",
+    "params": {}
+  },
+  {
+    "method": "projects.record_repos",
+    "params": {
+      "discovery_policy": {
+        "enabled": true,
+        "roots": [],
+        "exclude_paths": []
+      },
+      "repos": [],
+      "profile": "default"
+    }
+  },
+  {
+    "method": "free_tier.status",
+    "params": {}
+  },
+  {
+    "method": "projects.tree",
+    "params": {
+      "preview_limit": 3,
+      "profile": "default"
+    }
+  },
+  {
+    "method": "projects.project_sessions",
+    "params": {
+      "project_id": "synthetic-project",
+      "profile": "default"
+    }
+  },
+  {
+    "method": "pet.info",
+    "params": {
+      "profile": "default"
+    }
+  },
+  {
+    "method": "projects.list",
+    "params": {
+      "profile": "default"
+    }
+  },
+  {
+    "method": "projects.tree",
+    "params": {
+      "preview_limit": 3,
+      "profile": "default"
+    }
+  }
+]

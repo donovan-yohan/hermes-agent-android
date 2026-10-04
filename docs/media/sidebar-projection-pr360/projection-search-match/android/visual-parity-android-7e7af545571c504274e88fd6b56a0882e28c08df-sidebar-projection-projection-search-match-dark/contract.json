@@ -1,0 +1,3547 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-04T17:56:02.604763+00:00",
+  "surface": "sidebar-projection",
+  "state": "projection-search-match",
+  "fixture_id": "sidebar-projection-synthetic-v1",
+  "theme": "dark",
+  "android_git_sha": "7e7af545571c504274e88fd6b56a0882e28c08df",
+  "apk_sha256": "52df95e73cef91d42f5fd7acb3b25e7e4983ac612922fd15df6e14021665281e",
+  "installed_apk_sha256": "52df95e73cef91d42f5fd7acb3b25e7e4983ac612922fd15df6e14021665281e",
+  "apk_kind": "debug",
+  "interactions": [
+    "tap:Open sessions"
+  ],
+  "ordered_action_evidence": [
+    {
+      "action": "tap:Open sessions",
+      "pre_tap": {
+        "target": {
+          "text": "",
+          "content_description": "Open sessions",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[11,128][137,254]"
+        },
+        "clickable_ancestor": {
+          "text": "",
+          "content_description": "Open sessions",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[11,128][137,254]"
+        },
+        "ancestor_path": [
+          {
+            "text": "",
+            "content_description": "Open sessions",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[11,128][137,254]"
+          }
+        ]
+      },
+      "accessibility": {
+        "expected_description": null,
+        "nodes": [
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1080,2400]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1080,2400]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1080,2400]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1080,2400]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,0][1080,2400]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][1080,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "Close navigation menu",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[945,128][1080,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][945,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][945,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][945,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][945,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][945,254]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][307,254]"
+          },
+          {
+            "text": "",
+            "content_description": "SESSIONS",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][307,254]"
+          },
+          {
+            "text": "SESSIONS",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[70,199][238,233]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,189][307,254]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,128][307,254]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[318,128][626,254]"
+          },
+          {
+            "text": "",
+            "content_description": "BOTS",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[318,128][626,254]"
+          },
+          {
+            "text": "BOTS",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[428,199][517,233]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[318,189][626,254]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[318,128][626,254]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[637,128][945,254]"
+          },
+          {
+            "text": "",
+            "content_description": "TERMINAL. WIP",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[637,128][945,254]"
+          },
+          {
+            "text": "TERMINAL",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[703,153][879,187]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[752,187][830,230]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[637,128][945,254]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,254][945,380]"
+          },
+          {
+            "text": "",
+            "content_description": "New session",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,254][945,380]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[32,299][68,336]"
+          },
+          {
+            "text": "New session",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,299][913,336]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,254][945,380]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,380][945,506]"
+          },
+          {
+            "text": "",
+            "content_description": "Capabilities. WIP",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,380][945,506]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[32,425][68,462]"
+          },
+          {
+            "text": "Capabilities",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,425][809,462]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[835,422][913,465]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,380][945,506]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,506][945,632]"
+          },
+          {
+            "text": "",
+            "content_description": "Messaging. WIP",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,506][945,632]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[32,551][68,588]"
+          },
+          {
+            "text": "Messaging",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,551][809,588]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[835,548][913,591]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,506][945,632]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,632][945,758]"
+          },
+          {
+            "text": "",
+            "content_description": "Artifacts. WIP",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,632][945,758]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[32,677][68,714]"
+          },
+          {
+            "text": "Artifacts",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,677][809,714]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[835,674][913,717]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,632][945,758]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": false,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,758][945,884]"
+          },
+          {
+            "text": "",
+            "content_description": "Scheduled jobs. WIP",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,758][945,884]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[32,803][68,840]"
+          },
+          {
+            "text": "Scheduled jobs",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,803][809,840]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[835,800][913,843]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,758][945,884]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[21,942][42,963]"
+          },
+          {
+            "text": "PROJECTS",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[63,935][239,969]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[682,889][808,1015]"
+          },
+          {
+            "text": "",
+            "content_description": "New project",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[682,889][808,1015]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[727,934][763,971]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[682,889][808,1015]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[808,889][934,1015]"
+          },
+          {
+            "text": "",
+            "content_description": "Filters",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[808,889][934,1015]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[853,934][889,971]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[808,889][934,1015]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[42,1071][78,1108]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,1026][761,1152]"
+          },
+          {
+            "text": "design",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,1026][761,1152]"
+          },
+          {
+            "text": "",
+            "content_description": "Search projects",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,1026][761,1152]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,1069][761,1109]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[94,1026][334,1152]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[777,1026][903,1152]"
+          },
+          {
+            "text": "",
+            "content_description": "Clear search",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[777,1026][903,1152]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[822,1071][858,1108]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[777,1026][903,1152]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[42,1102][903,1177]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1177][945,2337]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1177][945,1345]"
+          },
+          {
+            "text": "",
+            "content_description": "Open project Synthetic project. 2 sessions",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1177][945,1345]"
+          },
+          {
+            "text": "Synthetic project",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[42,1238][719,1285]"
+          },
+          {
+            "text": "2",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[740,1244][756,1278]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[777,1198][903,1324]"
+          },
+          {
+            "text": "",
+            "content_description": "New session in Synthetic project",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[777,1198][903,1324]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[822,1243][858,1280]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[777,1198][903,1324]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1345][945,1475]"
+          },
+          {
+            "text": "",
+            "content_description": "Synthetic design review. Idle. Updated 12 minutes ago",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1345][945,1475]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1347][98,1473]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[58,1402][74,1418]"
+          },
+          {
+            "text": "Synthetic design review",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[95,1366][510,1413]"
+          },
+          {
+            "text": "Synthetic capture session",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[95,1416][463,1454]"
+          },
+          {
+            "text": "12m",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[755,1391][819,1429]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[819,1347][945,1473]"
+          },
+          {
+            "text": "",
+            "content_description": "Session actions",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[819,1347][945,1473]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[864,1392][900,1429]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[819,1347][945,1473]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1475][945,1605]"
+          },
+          {
+            "text": "",
+            "content_description": "Synthetic release checklist. Idle. Updated 20 minutes ago",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1475][945,1605]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[0,1477][98,1603]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[58,1532][74,1548]"
+          },
+          {
+            "text": "Synthetic release checklist",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[95,1496][563,1543]"
+          },
+          {
+            "text": "Synthetic capture session",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[95,1546][463,1584]"
+          },
+          {
+            "text": "20m",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[755,1521][819,1559]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": true,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[819,1477][945,1603]"
+          },
+          {
+            "text": "",
+            "content_description": "Session actions",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[819,1477][945,1603]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[864,1522][900,1559]"
+          },
+          {
+            "text": "",
+            "content_description": "",
+            "enabled": true,
+            "clickable": false,
+            "package": "com.hermesagent.mobile.debug",
+            "bounds": "[819,1477][945,1603]"
+          }
+        ]
+      }
+    }
+  ],
+  "viewport": {
+    "size": "Physical size: 1080x2400",
+    "density": "Physical density: 420"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SidebarProjectionParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.SidebarProjectionParityActivity",
+    "focused_window": "mCurrentFocus=Window{e95c6d7 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SidebarProjectionParityActivity}\nmFocusedApp=ActivityRecord{7d42c60 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.SidebarProjectionParityActivity t9}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "c821124612fb4fa2df1b4a0b765f0342e475d409498f5629d7f4a986a606ac03"
+  },
+  "accessibility": {
+    "expected_description": "Open project Synthetic project. 2 sessions",
+    "nodes": [
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2400]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2400]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2400]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2400]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2400]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][1080,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "Close navigation menu",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[945,128][1080,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][945,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][945,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][945,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][945,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][945,254]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][307,254]"
+      },
+      {
+        "text": "",
+        "content_description": "SESSIONS",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][307,254]"
+      },
+      {
+        "text": "SESSIONS",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[70,199][238,233]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,189][307,254]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][307,254]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[318,128][626,254]"
+      },
+      {
+        "text": "",
+        "content_description": "BOTS",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[318,128][626,254]"
+      },
+      {
+        "text": "BOTS",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[428,199][517,233]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[318,189][626,254]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[318,128][626,254]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[637,128][945,254]"
+      },
+      {
+        "text": "",
+        "content_description": "TERMINAL. WIP",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[637,128][945,254]"
+      },
+      {
+        "text": "TERMINAL",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[703,153][879,187]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[752,187][830,230]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[637,128][945,254]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,254][945,380]"
+      },
+      {
+        "text": "",
+        "content_description": "New session",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,254][945,380]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[32,299][68,336]"
+      },
+      {
+        "text": "New session",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,299][913,336]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,254][945,380]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,380][945,506]"
+      },
+      {
+        "text": "",
+        "content_description": "Capabilities. WIP",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,380][945,506]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[32,425][68,462]"
+      },
+      {
+        "text": "Capabilities",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,425][809,462]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[835,422][913,465]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,380][945,506]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,506][945,632]"
+      },
+      {
+        "text": "",
+        "content_description": "Messaging. WIP",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,506][945,632]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[32,551][68,588]"
+      },
+      {
+        "text": "Messaging",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,551][809,588]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[835,548][913,591]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,506][945,632]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,632][945,758]"
+      },
+      {
+        "text": "",
+        "content_description": "Artifacts. WIP",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,632][945,758]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[32,677][68,714]"
+      },
+      {
+        "text": "Artifacts",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,677][809,714]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[835,674][913,717]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,632][945,758]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,758][945,884]"
+      },
+      {
+        "text": "",
+        "content_description": "Scheduled jobs. WIP",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,758][945,884]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[32,803][68,840]"
+      },
+      {
+        "text": "Scheduled jobs",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,803][809,840]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[835,800][913,843]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,758][945,884]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[21,942][42,963]"
+      },
+      {
+        "text": "PROJECTS",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[63,935][239,969]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[682,889][808,1015]"
+      },
+      {
+        "text": "",
+        "content_description": "New project",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[682,889][808,1015]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[727,934][763,971]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[682,889][808,1015]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[808,889][934,1015]"
+      },
+      {
+        "text": "",
+        "content_description": "Filters",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[808,889][934,1015]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[853,934][889,971]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[808,889][934,1015]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1071][78,1108]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,1026][761,1152]"
+      },
+      {
+        "text": "design",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,1026][761,1152]"
+      },
+      {
+        "text": "",
+        "content_description": "Search projects",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,1026][761,1152]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,1069][761,1109]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[94,1026][334,1152]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[777,1026][903,1152]"
+      },
+      {
+        "text": "",
+        "content_description": "Clear search",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[777,1026][903,1152]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[822,1071][858,1108]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[777,1026][903,1152]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1102][903,1177]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1177][945,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1177][945,1345]"
+      },
+      {
+        "text": "",
+        "content_description": "Open project Synthetic project. 2 sessions",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1177][945,1345]"
+      },
+      {
+        "text": "Synthetic project",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1238][719,1285]"
+      },
+      {
+        "text": "2",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[740,1244][756,1278]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[777,1198][903,1324]"
+      },
+      {
+        "text": "",
+        "content_description": "New session in Synthetic project",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[777,1198][903,1324]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[822,1243][858,1280]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[777,1198][903,1324]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1345][945,1475]"
+      },
+      {
+        "text": "",
+        "content_description": "Synthetic design review. Idle. Updated 12 minutes ago",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1345][945,1475]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1347][98,1473]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[58,1402][74,1418]"
+      },
+      {
+        "text": "Synthetic design review",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[95,1366][510,1413]"
+      },
+      {
+        "text": "Synthetic capture session",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[95,1416][463,1454]"
+      },
+      {
+        "text": "12m",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[755,1391][819,1429]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[819,1347][945,1473]"
+      },
+      {
+        "text": "",
+        "content_description": "Session actions",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[819,1347][945,1473]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[864,1392][900,1429]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[819,1347][945,1473]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1475][945,1605]"
+      },
+      {
+        "text": "",
+        "content_description": "Synthetic release checklist. Idle. Updated 20 minutes ago",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1475][945,1605]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,1477][98,1603]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[58,1532][74,1548]"
+      },
+      {
+        "text": "Synthetic release checklist",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[95,1496][563,1543]"
+      },
+      {
+        "text": "Synthetic capture session",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[95,1546][463,1584]"
+      },
+      {
+        "text": "20m",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[755,1521][819,1559]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[819,1477][945,1603]"
+      },
+      {
+        "text": "",
+        "content_description": "Session actions",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[819,1477][945,1603]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[864,1522][900,1559]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[819,1477][945,1603]"
+      }
+    ]
+  },
+  "screenshot_bracket": {
+    "before": {
+      "expected_description": "Open project Synthetic project. 2 sessions",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "Close navigation menu",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[945,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][307,254]"
+        },
+        {
+          "text": "",
+          "content_description": "SESSIONS",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][307,254]"
+        },
+        {
+          "text": "SESSIONS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[70,199][238,233]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,189][307,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][307,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,128][626,254]"
+        },
+        {
+          "text": "",
+          "content_description": "BOTS",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,128][626,254]"
+        },
+        {
+          "text": "BOTS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[428,199][517,233]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,189][626,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,128][626,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[637,128][945,254]"
+        },
+        {
+          "text": "",
+          "content_description": "TERMINAL. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[637,128][945,254]"
+        },
+        {
+          "text": "TERMINAL",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[703,153][879,187]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[752,187][830,230]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[637,128][945,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,254][945,380]"
+        },
+        {
+          "text": "",
+          "content_description": "New session",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,254][945,380]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,299][68,336]"
+        },
+        {
+          "text": "New session",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,299][913,336]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,254][945,380]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,380][945,506]"
+        },
+        {
+          "text": "",
+          "content_description": "Capabilities. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,380][945,506]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,425][68,462]"
+        },
+        {
+          "text": "Capabilities",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,425][809,462]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,422][913,465]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,380][945,506]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,506][945,632]"
+        },
+        {
+          "text": "",
+          "content_description": "Messaging. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,506][945,632]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,551][68,588]"
+        },
+        {
+          "text": "Messaging",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,551][809,588]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,548][913,591]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,506][945,632]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,632][945,758]"
+        },
+        {
+          "text": "",
+          "content_description": "Artifacts. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,632][945,758]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,677][68,714]"
+        },
+        {
+          "text": "Artifacts",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,677][809,714]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,674][913,717]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,632][945,758]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,758][945,884]"
+        },
+        {
+          "text": "",
+          "content_description": "Scheduled jobs. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,758][945,884]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,803][68,840]"
+        },
+        {
+          "text": "Scheduled jobs",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,803][809,840]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,800][913,843]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,758][945,884]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[21,942][42,963]"
+        },
+        {
+          "text": "PROJECTS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[63,935][239,969]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[682,889][808,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "New project",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[682,889][808,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[727,934][763,971]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[682,889][808,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[808,889][934,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "Filters",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[808,889][934,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[853,934][889,971]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[808,889][934,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1071][78,1108]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][761,1152]"
+        },
+        {
+          "text": "design",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][761,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "Search projects",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][761,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1069][761,1109]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][334,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1026][903,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "Clear search",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1026][903,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[822,1071][858,1108]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1026][903,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1102][903,1177]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1177][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1177][945,1345]"
+        },
+        {
+          "text": "",
+          "content_description": "Open project Synthetic project. 2 sessions",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1177][945,1345]"
+        },
+        {
+          "text": "Synthetic project",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1238][719,1285]"
+        },
+        {
+          "text": "2",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[740,1244][756,1278]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1198][903,1324]"
+        },
+        {
+          "text": "",
+          "content_description": "New session in Synthetic project",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1198][903,1324]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[822,1243][858,1280]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1198][903,1324]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1345][945,1475]"
+        },
+        {
+          "text": "",
+          "content_description": "Synthetic design review. Idle. Updated 12 minutes ago",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1345][945,1475]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1347][98,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[58,1402][74,1418]"
+        },
+        {
+          "text": "Synthetic design review",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1366][510,1413]"
+        },
+        {
+          "text": "Synthetic capture session",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1416][463,1454]"
+        },
+        {
+          "text": "12m",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[755,1391][819,1429]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1347][945,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "Session actions",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1347][945,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[864,1392][900,1429]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1347][945,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1475][945,1605]"
+        },
+        {
+          "text": "",
+          "content_description": "Synthetic release checklist. Idle. Updated 20 minutes ago",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1475][945,1605]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1477][98,1603]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[58,1532][74,1548]"
+        },
+        {
+          "text": "Synthetic release checklist",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1496][563,1543]"
+        },
+        {
+          "text": "Synthetic capture session",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1546][463,1584]"
+        },
+        {
+          "text": "20m",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[755,1521][819,1559]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1477][945,1603]"
+        },
+        {
+          "text": "",
+          "content_description": "Session actions",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1477][945,1603]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[864,1522][900,1559]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1477][945,1603]"
+        }
+      ]
+    },
+    "after": {
+      "expected_description": "Open project Synthetic project. 2 sessions",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "Close navigation menu",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[945,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][945,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][307,254]"
+        },
+        {
+          "text": "",
+          "content_description": "SESSIONS",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][307,254]"
+        },
+        {
+          "text": "SESSIONS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[70,199][238,233]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,189][307,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][307,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,128][626,254]"
+        },
+        {
+          "text": "",
+          "content_description": "BOTS",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,128][626,254]"
+        },
+        {
+          "text": "BOTS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[428,199][517,233]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,189][626,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,128][626,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[637,128][945,254]"
+        },
+        {
+          "text": "",
+          "content_description": "TERMINAL. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[637,128][945,254]"
+        },
+        {
+          "text": "TERMINAL",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[703,153][879,187]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[752,187][830,230]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[637,128][945,254]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,254][945,380]"
+        },
+        {
+          "text": "",
+          "content_description": "New session",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,254][945,380]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,299][68,336]"
+        },
+        {
+          "text": "New session",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,299][913,336]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,254][945,380]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,380][945,506]"
+        },
+        {
+          "text": "",
+          "content_description": "Capabilities. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,380][945,506]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,425][68,462]"
+        },
+        {
+          "text": "Capabilities",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,425][809,462]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,422][913,465]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,380][945,506]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,506][945,632]"
+        },
+        {
+          "text": "",
+          "content_description": "Messaging. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,506][945,632]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,551][68,588]"
+        },
+        {
+          "text": "Messaging",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,551][809,588]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,548][913,591]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,506][945,632]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,632][945,758]"
+        },
+        {
+          "text": "",
+          "content_description": "Artifacts. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,632][945,758]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,677][68,714]"
+        },
+        {
+          "text": "Artifacts",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,677][809,714]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,674][913,717]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,632][945,758]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,758][945,884]"
+        },
+        {
+          "text": "",
+          "content_description": "Scheduled jobs. WIP",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,758][945,884]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[32,803][68,840]"
+        },
+        {
+          "text": "Scheduled jobs",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,803][809,840]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[835,800][913,843]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,758][945,884]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[21,942][42,963]"
+        },
+        {
+          "text": "PROJECTS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[63,935][239,969]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[682,889][808,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "New project",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[682,889][808,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[727,934][763,971]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[682,889][808,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[808,889][934,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "Filters",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[808,889][934,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[853,934][889,971]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[808,889][934,1015]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1071][78,1108]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][761,1152]"
+        },
+        {
+          "text": "design",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][761,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "Search projects",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][761,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1069][761,1109]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[94,1026][334,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1026][903,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "Clear search",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1026][903,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[822,1071][858,1108]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1026][903,1152]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1102][903,1177]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1177][945,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1177][945,1345]"
+        },
+        {
+          "text": "",
+          "content_description": "Open project Synthetic project. 2 sessions",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1177][945,1345]"
+        },
+        {
+          "text": "Synthetic project",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1238][719,1285]"
+        },
+        {
+          "text": "2",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[740,1244][756,1278]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1198][903,1324]"
+        },
+        {
+          "text": "",
+          "content_description": "New session in Synthetic project",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1198][903,1324]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[822,1243][858,1280]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[777,1198][903,1324]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1345][945,1475]"
+        },
+        {
+          "text": "",
+          "content_description": "Synthetic design review. Idle. Updated 12 minutes ago",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1345][945,1475]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1347][98,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[58,1402][74,1418]"
+        },
+        {
+          "text": "Synthetic design review",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1366][510,1413]"
+        },
+        {
+          "text": "Synthetic capture session",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1416][463,1454]"
+        },
+        {
+          "text": "12m",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[755,1391][819,1429]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1347][945,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "Session actions",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1347][945,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[864,1392][900,1429]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1347][945,1473]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1475][945,1605]"
+        },
+        {
+          "text": "",
+          "content_description": "Synthetic release checklist. Idle. Updated 20 minutes ago",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1475][945,1605]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,1477][98,1603]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[58,1532][74,1548]"
+        },
+        {
+          "text": "Synthetic release checklist",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1496][563,1543]"
+        },
+        {
+          "text": "Synthetic capture session",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[95,1546][463,1584]"
+        },
+        {
+          "text": "20m",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[755,1521][819,1559]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1477][945,1603]"
+        },
+        {
+          "text": "",
+          "content_description": "Session actions",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1477][945,1603]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[864,1522][900,1559]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[819,1477][945,1603]"
+        }
+      ]
+    },
+    "timing": {}
+  },
+  "device": {
+    "model": "sdk_gphone64_x86_64",
+    "manufacturer": "Google",
+    "android": "14",
+    "sdk": "34",
+    "font_scale": "null"
+  }
+}

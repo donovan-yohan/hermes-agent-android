@@ -28,8 +28,10 @@ fi
 # sheet. Those dialogs are an emulator artifact, not something this lane
 # measures: stop new ones being drawn, and stop the launcher the fixture never
 # needs so it cannot ANR in the first place.
-adb shell settings put global hide_error_dialogs 1
-adb shell am force-stop com.google.android.apps.nexuslauncher
+if [[ "$CAPTURE_SURFACE" != "sidebar-projection" ]]; then
+  adb shell settings put global hide_error_dialogs 1
+  adb shell am force-stop com.google.android.apps.nexuslauncher
+fi
 
 activity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["android_activity"])' "$request_json")"
 fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixture_id"])' "$request_json")"
@@ -40,13 +42,13 @@ fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixt
 # running the capture without it would publish pixels of a state that never
 # happened.
 ordered_args=()
-if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" || "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
   ordered_args=(--ordered-actions "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["state_spec"]["interaction"]))' "$request_json")")
 fi
 interaction_kinds="$(python3 -c '
 import json,sys
 request = json.load(open(sys.argv[1]))
-values = [] if request["surface"] in ("bot-model-config", "bot-avatar-editor") else request["state_spec"].get("interaction", [])
+values = [] if (request["surface"] in ("bot-model-config", "bot-avatar-editor") or request["surface"] == "sidebar-projection") else request["state_spec"].get("interaction", [])
 unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
 if unsupported:
     sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
@@ -140,6 +142,34 @@ if [[ -n "$expected_accessibility" && -z "$swipe_list_up" && ${#ordered_args[@]}
   fi
 fi
 
+capture_sidebar_runtime() {
+  local phase="$1"
+  mkdir -p "$out"
+  python3 - "$out/runtime-$phase.json" "$CAPTURE_STATE" <<'PY'
+import base64, json, re, sys, subprocess, time
+samples = []
+for attempt in range(21):
+    raw = subprocess.check_output(['adb', 'shell', 'content', 'call', '--uri', 'content://com.hermesagent.mobile.debug.sidebar-projection-runtime', '--method', 'snapshot'], text=True)
+    match = re.search(r'snapshot=([A-Za-z0-9+/=]+)', raw)
+    assert match, 'Synthetic runtime provider unavailable'
+    data = json.loads(base64.b64decode(match[1]))
+    samples.append(data)
+    json.dump(samples, open(sys.argv[1] + '.samples.json', 'w'), indent=2)
+    if data['ready']:
+        break
+    time.sleep(0.5)
+assert data['fixture_id'] == 'sidebar-projection-synthetic-v1' and data['ready'], 'Synthetic fixture did not settle'
+assert data['resolved_locale'] == 'en-US' and data['resolved_timezone'] == 'UTC'
+assert data['now_millis'] == 1789654800000
+if sys.argv[2] == 'projection-draft-reuse':
+    assert data['observed_draft_edits'] == 20 and data['overview_reused'] and data['previews_reused']
+json.dump(data, open(sys.argv[1], 'w'), indent=2)
+PY
+}
+if [[ "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
+  capture_sidebar_runtime before
+fi
+
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
   --name "${CAPTURE_SURFACE}--${CAPTURE_STATE}" \
   --state "$CAPTURE_STATE" \
@@ -155,6 +185,10 @@ python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-refere
   "${tap_args[@]}" \
   "${swipe_args[@]}" \
   "${accessibility_args[@]}"
+
+if [[ "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
+  capture_sidebar_runtime after
+fi
 
 python3 scripts/visual_parity_contract.py check-receipt \
   --platform android \

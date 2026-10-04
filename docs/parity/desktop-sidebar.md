@@ -70,6 +70,44 @@ real Bot roster state rather than a placeholder row.
 
 ## Visual report
 
+The cache-only review retains **Concern**, not a blank parity PASS. The durable
+[actual observation report](../media/sidebar-projection-pr360/REPORT.md) and
+[immutable artifact index](../media/sidebar-projection-pr360/retained-index.json)
+retain Android `7e7af545571c504274e88fd6b56a0882e28c08df` and Desktop
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67`; receipts and pixels are not restamped.
+Independent source attribution found the project-level `design` search behavior
+unchanged from uncached `b49627e274afb13337c84ba3746cf1ef108d2fc4`:
+**PASS for no demonstrated cache-introduced search regression**, not search
+parity. Search behavior is issue-owned by #367; remaining lane/pinning and
+expanded profile/archive/rehome rendered journeys remain pending: #359.
+
+Reviewer approval is limited to compact drawer/48dp touch density, two-line
+previews and the accessible icon-only All projects action: the actual overview
+and selected captures preserve project/session order and 12m/20m ages while
+making phone actions reachable. This does not approve loss of lane information,
+pinning controls or mismatched selected-chat context. Only sidebar content/order
+is compared; Android's selected design chat and Desktop's fresh chat region are
+excluded. JVM reuse proof is not draft pixels. The corrected single-token miss
+and real Desktop composer/draft capture are separately recorded when observed;
+previous multiword miss pixels remain failed-pair evidence. No CPU/frame-time
+speed claim, complete five-state acceptance or issue completion is made.
+
+A debug-only `SidebarProjectionParityActivity` mounts the actual production
+`ChatViewModel.uiState` and `ChatScreen` over transient synthetic authorities.
+The [missing-state completion report](../media/sidebar-projection-pr360/COMPLETION.md)
+records the corrected single-token empty-result pair and actual Desktop 20-edit
+composer journey, alongside installed Android 20-emission identity reuse and
+focused drawer pixels. Both new Android states retain capture source
+`7bfb2fac3a57d9ad559299f1a890927084117078`; earlier overview/selected/search-match
+observations retain their original `7e7af545` source and original Desktop fixture.
+Five states have actual paired observations, **not all-features parity PASS**.
+The historical multiword-query failed pair and prior focus-rejected draft
+artifacts remain distinct; new success does not diagnose their native owner.
+No masking, focus bypass, timeout extension or all-states rerun was used.
+Named/unified profile, archive and compression-rehome rendered journeys remain
+pending: #359. Expanded tests prove only their stated adjacent output contracts.
+
+
 [Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
 contains synthetic production-Compose window draws and the main-vs-fixed test
 results. It supplements, and does not discharge, the paired/device obligation.
@@ -95,6 +133,11 @@ parity remains pending; later changes need new exact-head evidence.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
+| Project/session search results and empty copy | drift | Matching project retains both previews; `Nothing matches` differs from Desktop query-specific Results copy | Inherited before the cache; actual match/multiword-miss pixels in [report](../media/sidebar-projection-pr360/REPORT.md); dedicated behavior owner #367, Concern. |
+| Selected project branch/lane label | omission | Flat session list lacks Desktop `main` lane information | deferred: #359; actual selected pair in [report](../media/sidebar-projection-pr360/REPORT.md). Not approved as touch-density adaptation. |
+| PINNED section and pin affordance | omission | Absent from this project capture | pill-owed: #359; actual overview pair in [report](../media/sidebar-projection-pr360/REPORT.md); not an all-elements pass. |
+| Project sidebar density and presentation | mobile-adaptation | Compact drawer, 48dp rows and two-line previews | Reviewer approved from actual overview/selected pixels in [report](../media/sidebar-projection-pr360/REPORT.md); same order and ages, readable/reachable phone targets. |
+| All projects text action | mobile-adaptation | Accessible icon-only back action | Reviewer approved from actual selected pair and Activity semantics test; conserves drawer header width while retaining the All projects action/name. |
 | Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; visual comparison pending #71. |
 | Compact navigation rows | mobile-adaptation | 48dp touch floor | `SessionSidebarNavigationBoundsTest` checks cramped layout and action reachability. |
 | Pane-strip new-session action | mobile-adaptation | Chat-header plus labelled `New session`, since Android has no session tabs; flat sidebar header has its own plus | `SessionCreateAffordancesTest` covers callback, disabled state, compact/wide and project-mode exclusivity; rendered comparison pending #71. |
