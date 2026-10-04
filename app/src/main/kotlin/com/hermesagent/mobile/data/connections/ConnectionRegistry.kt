@@ -309,46 +309,20 @@ fun localGatewayKey(url: String): String {
 fun findDuplicateConnection(
     candidate: SavedConnection,
     connections: List<SavedConnection>,
-): SavedConnection? = when (candidate.kind) {
-    ConnectionKind.Remote -> {
-        val key = normalizeGatewayUrl(candidate.remote.baseUrl)
-        if (key.isEmpty()) {
-            null
-        } else {
-            connections.firstOrNull {
-                it.kind == ConnectionKind.Remote &&
-                    it.id != candidate.id &&
-                    normalizeGatewayUrl(it.remote.baseUrl) == key
-            }
-        }
+): SavedConnection? {
+    fun endpointKey(row: SavedConnection): String = when (row.kind) {
+        ConnectionKind.Remote -> normalizeGatewayUrl(row.remote.baseUrl)
+        ConnectionKind.Local -> localGatewayKey(row.local.baseUrl)
+        ConnectionKind.Ssh -> sshCompositeKey(row.host.destination)
     }
-
-    ConnectionKind.Local -> {
-        val key = localGatewayKey(candidate.local.baseUrl)
-        if (key.isEmpty()) {
-            null
-        } else {
-            connections.firstOrNull {
-                it.kind == ConnectionKind.Local &&
-                    it.id != candidate.id &&
-                    localGatewayKey(it.local.baseUrl) == key
-            }
-        }
-    }
-
-    ConnectionKind.Ssh -> {
-        val key = sshCompositeKey(candidate.host.destination)
-        if (key.isEmpty()) {
-            null
-        } else {
-            val profile = candidate.host.remoteHermesProfile.trim()
-            connections.firstOrNull {
-                it.kind == ConnectionKind.Ssh &&
-                    it.id != candidate.id &&
-                    sshCompositeKey(it.host.destination) == key &&
-                    it.host.remoteHermesProfile.trim() == profile
-            }
-        }
+    val key = endpointKey(candidate)
+    if (key.isEmpty()) return null
+    val profile = candidate.host.remoteHermesProfile.trim()
+    return connections.firstOrNull {
+        it.kind == candidate.kind &&
+            it.id != candidate.id &&
+            endpointKey(it) == key &&
+            (candidate.kind != ConnectionKind.Ssh || it.host.remoteHermesProfile.trim() == profile)
     }
 }
 
