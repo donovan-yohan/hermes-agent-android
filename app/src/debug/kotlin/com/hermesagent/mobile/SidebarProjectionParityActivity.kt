@@ -38,12 +38,17 @@ import kotlinx.coroutines.withTimeout
  * connection, disk, network, or user data is read. The original sidebar fixture is unchanged.
  */
 class SidebarProjectionParityActivity : ComponentActivity() {
+    private val originalLocale = java.util.Locale.getDefault()
+    private val originalTimezone = java.util.TimeZone.getDefault()
     internal lateinit var fixture: SidebarProjectionParityFixture
         private set
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Process-local synthetic formatter inputs; never changes device settings.
+        java.util.Locale.setDefault(java.util.Locale.US)
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
         val state = requireNotNull(intent.getStringExtra("visual_parity_state"))
         require(state in SidebarProjectionParityFixture.states)
         val mode = when (intent.getStringExtra("visual_parity_theme")) {
@@ -83,6 +88,8 @@ class SidebarProjectionParityActivity : ComponentActivity() {
         if (::fixture.isInitialized && SidebarProjectionRuntimeProvider.active === fixture) {
             SidebarProjectionRuntimeProvider.active = null
         }
+        java.util.Locale.setDefault(originalLocale)
+        java.util.TimeZone.setDefault(originalTimezone)
         super.onDestroy()
     }
 }

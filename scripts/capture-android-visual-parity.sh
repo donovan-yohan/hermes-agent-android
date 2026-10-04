@@ -40,13 +40,13 @@ fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixt
 # running the capture without it would publish pixels of a state that never
 # happened.
 ordered_args=()
-if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" ]]; then
+if [[ "$CAPTURE_SURFACE" == "bot-model-config" || "$CAPTURE_SURFACE" == "bot-avatar-editor" || "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
   ordered_args=(--ordered-actions "$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1]))["state_spec"]["interaction"]))' "$request_json")")
 fi
 interaction_kinds="$(python3 -c '
 import json,sys
 request = json.load(open(sys.argv[1]))
-values = [] if request["surface"] in ("bot-model-config", "bot-avatar-editor") else request["state_spec"].get("interaction", [])
+values = [] if request["surface"] in ("bot-model-config", "bot-avatar-editor", "sidebar-projection") else request["state_spec"].get("interaction", [])
 unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
 if unsupported:
     sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
@@ -140,6 +140,28 @@ if [[ -n "$expected_accessibility" && -z "$swipe_list_up" && ${#ordered_args[@]}
   fi
 fi
 
+capture_sidebar_runtime() {
+  local phase="$1"
+  mkdir -p "$out"
+  adb shell content call --uri content://com.hermesagent.mobile.debug.sidebar-projection-runtime --method snapshot > "$RUNNER_TEMP/sidebar-runtime-$phase"
+  python3 - "$RUNNER_TEMP/sidebar-runtime-$phase" "$out/runtime-$phase.json" "$CAPTURE_STATE" <<'PY'
+import base64, json, re, sys
+raw = open(sys.argv[1]).read()
+match = re.search(r'snapshot=([A-Za-z0-9+/=]+)', raw)
+assert match, 'Synthetic runtime provider unavailable'
+data = json.loads(base64.b64decode(match[1]))
+assert data['fixture_id'] == 'sidebar-projection-synthetic-v1' and data['ready']
+assert data['resolved_locale'] == 'en-US' and data['resolved_timezone'] == 'UTC'
+assert data['now_millis'] == 1789654800000
+if sys.argv[3] == 'projection-draft-reuse':
+    assert data['observed_draft_edits'] == 20 and data['overview_reused'] and data['previews_reused']
+json.dump(data, open(sys.argv[2], 'w'), indent=2)
+PY
+}
+if [[ "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
+  capture_sidebar_runtime before
+fi
+
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
   --name "${CAPTURE_SURFACE}--${CAPTURE_STATE}" \
   --state "$CAPTURE_STATE" \
@@ -155,6 +177,10 @@ python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-refere
   "${tap_args[@]}" \
   "${swipe_args[@]}" \
   "${accessibility_args[@]}"
+
+if [[ "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
+  capture_sidebar_runtime after
+fi
 
 python3 scripts/visual_parity_contract.py check-receipt \
   --platform android \
