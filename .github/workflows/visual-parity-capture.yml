@@ -146,7 +146,6 @@ jobs:
         run: |
           nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
           echo "FOCUS_NONCE=$nonce" >> "$GITHUB_ENV"
-          echo "FOCUS_DIAGNOSTIC=true" >> "$GITHUB_ENV"
           echo "FOCUS_DISPOSABLE=api34-run-scoped-snapshot" >> "$GITHUB_ENV"
           echo "ANDROID_AVD_HOME=$RUNNER_TEMP/focus-avd-$nonce" >> "$GITHUB_ENV"
           mkdir -m 700 "$RUNNER_TEMP/focus-avd-$nonce"
@@ -188,6 +187,7 @@ jobs:
           ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
           python3 scripts/ci_prebuilt.py record
           python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
+          python3 -m unittest discover -s scripts/tests -p test_focus_environment_boundary.py -v
       - name: Create the AVD snapshot
         # Pinned to a commit, for the reason given above the setup-android pin.
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -226,13 +226,14 @@ jobs:
             adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$FOCUS_NONCE:$ANDROID_SERIAL:$FOCUS_DISPOSABLE"
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
-            python3 scripts/ci_prebuilt.py connected
+            FOCUS_DIAGNOSTIC=true python3 scripts/ci_prebuilt.py connected
       - name: Upload instrumented lane evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: instrumented-results-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
+            app/build/ci-prebuilt.json
             app/build/outputs/androidTest-results/connected/**
             app/build/reports/androidTests/connected/**
           if-no-files-found: warn
