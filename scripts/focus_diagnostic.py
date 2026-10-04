@@ -54,8 +54,14 @@ def sanitize(text):
             result[key] = value
         return result
     value = json.loads(text, object_pairs_hook=pairs)
-    if set(value) != {'schema', 'before', 'owner', 'after'} or type(value['schema']) is not int or value['schema'] != 1:
+    schema = value.get('schema')
+    fields = {'schema', 'before', 'owner', 'after'} | ({'ownerStatus'} if schema == 2 else set())
+    if set(value) != fields or type(schema) is not int or schema not in (1, 2):
         raise ValueError('schema rejected')
+    if schema == 2:
+        status = value['ownerStatus']
+        if status not in ('MISSING_CURRENT_SECTION', 'NO_FOCUSED_WINDOW', 'AMBIGUOUS', 'REJECTED', 'OVERFLOW', 'PROBE_FAILURE', 'MATCHED') or (status == 'MATCHED') != (value['owner'] is not None):
+            raise ValueError('status rejected')
     for name in ('before', 'after', 'owner'):
         part = value[name]
         if part is None:

@@ -26,5 +26,23 @@ fun main() {
     test(parse(dump().replace("  FocusedWindows:", "x".repeat(16385) + "\n  FocusedWindows:")) == null)
     test(parse(dump().replace("SECRET', id", "SECRET', ownerUid=1, id")) == null)
     test(FocusOwner.reduce(dump().lineSequence(), 1) == null)
+    val consumer = line.replace("abc SECRET", "recents_animation_input_consumer").replace("0: name", "1: name").replace("id=1", "id=2")
+    test(parse(dump().replace(line, "$line\n$consumer")) == FocusOwner.Record(0,123,10001))
+    fun status(text: String) = FocusOwner.inspect(text.lineSequence(), 0).status
+    test(status(dump()) == FocusOwner.Status.MATCHED)
+    test(status("  FocusedApplications: <none>\n") == FocusOwner.Status.MISSING_CURRENT_SECTION)
+    test(status("  FocusedWindows: <none>\n") == FocusOwner.Status.NO_FOCUSED_WINDOW)
+    test(status(dump().replace(line, "$line\n$line")) == FocusOwner.Status.AMBIGUOUS)
+    test(status(dump(title="SECRET', ownerPid=1")) == FocusOwner.Status.REJECTED)
+    test(status("x".repeat(16385)) == FocusOwner.Status.OVERFLOW)
+    test(FocusOwner.probe({ error("SECRET") }, 0) == FocusOwner.Result(FocusOwner.Status.PROBE_FAILURE))
+    // android-14.0.0_r1 InputDispatcher.cpp emits logicalSize/transform metadata
+    // and InputConsumerImpl assigns plain names (not WindowState hex prefixes).
+    val realistic = dump().replace("  Display: 0\n", "  Display: 0\n    logicalSize=1080x2400\n        transform (ROT_0) (IDENTITY)\n")
+        .replace(line, "$line\n        transform (ROT_0) (IDENTITY)\n$consumer\n        transform (ROT_0) (IDENTITY)")
+    test(parse(realistic) == FocusOwner.Record(0,123,10001))
+    test(status(dump(pid="2147483648")) == FocusOwner.Status.OVERFLOW)
+    test(FocusOwner.probe({ throw FocusOwner.Overflow() }, 0).status == FocusOwner.Status.OVERFLOW)
+    test(FocusOwner.probe({ throw java.util.concurrent.ExecutionException(FocusOwner.Overflow()) }, 0).status == FocusOwner.Status.OVERFLOW)
     println("$tests parser checks passed")
 }

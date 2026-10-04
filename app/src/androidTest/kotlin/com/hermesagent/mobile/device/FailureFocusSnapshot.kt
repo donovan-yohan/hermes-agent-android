@@ -26,7 +26,7 @@ internal object FailureFocusSnapshot {
                     while (true) {
                         val n = reader.read(buffer)
                         if (n < 0) break
-                        check(out.length + n <= 2 * 1024 * 1024)
+                        if (out.length + n > 2 * 1024 * 1024) throw FocusOwner.Overflow()
                         out.append(buffer, 0, n)
                         if (command == "dumpsys input") {
                             val end = Regex("\\n  Global [Mm]onitors[^\\n]*\\n").find(out)
@@ -81,12 +81,12 @@ internal object FailureFocusSnapshot {
     fun capture(activity: () -> Activity) {
         runCatching {
             val nonce = armedNonce ?: return
-            val record = JSONObject().put("schema", 1)
+            val record = JSONObject().put("schema", 2)
             val before = runCatching { bracket(activity) }.getOrNull()
             record.put("before", before ?: JSONObject.NULL)
-            val owner = runCatching {
-                FocusOwner.reduce(shell("dumpsys input").lineSequence(), before?.getInt("display") ?: -1)
-            }.getOrNull()
+            val reduction = FocusOwner.probe({ shell("dumpsys input").lineSequence() }, before?.getInt("display") ?: -1)
+            record.put("ownerStatus", reduction.status.name)
+            val owner = reduction.owner
             record.put("owner", owner?.let {
                 JSONObject().put("display", it.display).put("ownerPid", it.ownerPid).put("ownerUid", it.ownerUid)
             } ?: JSONObject.NULL)
