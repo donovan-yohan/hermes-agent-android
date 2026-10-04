@@ -1,10 +1,6 @@
 name: Disposable API34 focus diagnosis
 on:
   workflow_dispatch:
-  # Branch-only fallback: GitHub refuses dispatch of workflows absent on main.
-  pull_request:
-    types: [opened, synchronize, reopened]
-    paths: ['.github/workflows/api34-focus-diagnostic.yml', '.github/diagnostics/api34_focus.py']
 permissions:
   contents: read
 concurrency:
@@ -12,91 +8,222 @@ concurrency:
   cancel-in-progress: false
 jobs:
   focus:
-    if: github.ref == 'refs/heads/diagnostic/api34-focus' || (github.event_name == 'pull_request' && github.head_ref == 'diagnostic/api34-focus' && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.ref == 'refs/heads/diagnostic/api34-focus'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     env:
-      ANDROID_SERIAL: emulator-5580
+      ANDROID_SERIAL: emulator-5554
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - name: Verify diagnostic result parser against retained streams
-        run: python3 -m unittest discover -s .github/diagnostics -p 'test_*.py' -v
+      - name: Verify disposable launcher preparation contract
+        run: python3 -m unittest discover -s scripts/tests -p test_ci_launcher_focus.py -v
+      - name: State what this lane proves
+        shell: bash
+        run: |
+          echo 'This emulator lane does not substitute for physical acceptance.'
+          echo 'PKCE browser hand-off, real radio, network handoff, TalkBack and media stay on the device matrix.'
+          echo 'ActivityScenario.recreate() is a real destroy/recreate, not a system-initiated process kill.'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
+          cache: gradle
+      # Pinned to a commit: a moving tag on a third-party action is a write
+      # into a workflow whose sibling job holds the rolling keystore secret.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
         with:
-          packages: platform-tools platforms;android-36 build-tools;36.0.0
-      - name: Enable KVM and isolate disposable AVD storage
+          packages: >-
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+      # Without KVM the x86_64 image falls back to software emulation and the
+      # lane stops fitting in any sensible timeout.
+      - name: Enable KVM
+        shell: bash
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-          test -r /dev/kvm && test -w /dev/kvm
-          mkdir -p "$RUNNER_TEMP/focus-avds"
-          echo "ANDROID_AVD_HOME=$RUNNER_TEMP/focus-avds" >> "$GITHUB_ENV"
-      - name: Build matching APK pair once from exact head
-        timeout-minutes: 20
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
-      - name: Standalone Composer, fresh API34
-        timeout-minutes: 7
+      - name: Assemble instrumented APKs before emulator boot
+        id: build
+        run: |
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+          python3 scripts/ci_prebuilt.py record
+          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
+      - name: Clear only prior trial reports 1
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: rm -rf app/build/outputs/androidTest-results/connected app/build/reports/androidTests/connected
+      - name: Create independent snapshot 1
+        # Pinned to a commit, for the reason given above the setup-android pin.
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        id: snapshot1
+        continue-on-error: true
         with:
+          avd-name: focus-${{ github.run_id }}-${{ github.run_attempt }}-1
           api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          avd-name: focus-standalone
-          emulator-port: 5580
           force-avd-creation: true
-          emulator-boot-timeout: 180
-          emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          script: python3 .github/diagnostics/api34_focus.py standalone
-      - name: Same-invocation ActivityRecreate then Composer, fresh API34
-        timeout-minutes: 7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'AVD created; the snapshot is now cacheable.'
+      - name: First normal full suite trial 1
+        # Pinned to a commit, for the reason given above the setup-android pin.
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: ${{ !cancelled() && steps.snapshot1.outcome == 'success' }}
+        id: trial1
+        continue-on-error: true
         with:
+          avd-name: focus-${{ github.run_id }}-${{ github.run_attempt }}-1
           api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          avd-name: focus-predecessor
-          emulator-port: 5580
-          force-avd-creation: true
-          emulator-boot-timeout: 180
-          emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
           disable-animations: true
-          script: python3 .github/diagnostics/api34_focus.py predecessor
-      - name: Full seven-test suite after focused passes, same APK pair
-        timeout-minutes: 7
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          avd-name: focus-full
-          emulator-port: 5580
-          force-avd-creation: true
-          emulator-boot-timeout: 180
-          emulator-options: -no-snapshot -wipe-data -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: true
-          script: python3 .github/diagnostics/api34_focus.py full
-      - name: Retain only synthetic focus and raw instrumentation evidence
+          # CI-only mitigation for the API34 launcher ANR stealing input focus.
+          # Stop only this synthetic AVD's known launcher after normal preparation;
+          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
+          script: |
+            ./scripts/prepare-ci-emulator.sh
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            set +e; nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"; adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot" && FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected > "$RUNNER_TEMP/trial-1.log" 2>&1; status=$?; cat "$RUNNER_TEMP/trial-1.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/trial-1.exit"; sha256sum app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > "$RUNNER_TEMP/trial-1.sha256"; exit "$status"
+      - name: Retain all outcomes trial 1
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: disposable-api34-focus-${{ github.event.pull_request.head.sha || github.sha }}
+          name: controlled-normal-${{ github.run_id }}-trial-1
           retention-days: 2
           if-no-files-found: warn
           path: |
-            ${{ runner.temp }}/api34-focus/*/identity.json
-            ${{ runner.temp }}/api34-focus/*/result.json
-            ${{ runner.temp }}/api34-focus/*/focus.jsonl
-            ${{ runner.temp }}/api34-focus/*/preparation.json
-            ${{ runner.temp }}/api34-focus/*/instrumentation.txt
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+            app/build/ci-prebuilt.json
+            ${{ env.FOCUS_EVIDENCE || 'app/build/no-focus-evidence' }}/*.json
+            ${{ runner.temp }}/trial-1.log
+            ${{ runner.temp }}/trial-1.exit
+            ${{ runner.temp }}/trial-1.sha256
+      - name: Clear only prior trial reports 2
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: rm -rf app/build/outputs/androidTest-results/connected app/build/reports/androidTests/connected
+      - name: Create independent snapshot 2
+        # Pinned to a commit, for the reason given above the setup-android pin.
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        id: snapshot2
+        continue-on-error: true
+        with:
+          avd-name: focus-${{ github.run_id }}-${{ github.run_attempt }}-2
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'AVD created; the snapshot is now cacheable.'
+      - name: First normal full suite trial 2
+        # Pinned to a commit, for the reason given above the setup-android pin.
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: ${{ !cancelled() && steps.snapshot2.outcome == 'success' }}
+        id: trial2
+        continue-on-error: true
+        with:
+          avd-name: focus-${{ github.run_id }}-${{ github.run_attempt }}-2
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
+          disable-animations: true
+          # CI-only mitigation for the API34 launcher ANR stealing input focus.
+          # Stop only this synthetic AVD's known launcher after normal preparation;
+          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
+          script: |
+            ./scripts/prepare-ci-emulator.sh
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            set +e; nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"; adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot" && FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected > "$RUNNER_TEMP/trial-2.log" 2>&1; status=$?; cat "$RUNNER_TEMP/trial-2.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/trial-2.exit"; sha256sum app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > "$RUNNER_TEMP/trial-2.sha256"; exit "$status"
+      - name: Retain all outcomes trial 2
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-normal-${{ github.run_id }}-trial-2
+          retention-days: 2
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+            app/build/ci-prebuilt.json
+            ${{ env.FOCUS_EVIDENCE || 'app/build/no-focus-evidence' }}/*.json
+            ${{ runner.temp }}/trial-2.log
+            ${{ runner.temp }}/trial-2.exit
+            ${{ runner.temp }}/trial-2.sha256
+      - name: Clear only prior trial reports 3
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: rm -rf app/build/outputs/androidTest-results/connected app/build/reports/androidTests/connected
+      - name: Create independent snapshot 3
+        # Pinned to a commit, for the reason given above the setup-android pin.
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        id: snapshot3
+        continue-on-error: true
+        with:
+          avd-name: focus-${{ github.run_id }}-${{ github.run_attempt }}-3
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'AVD created; the snapshot is now cacheable.'
+      - name: First normal full suite trial 3
+        # Pinned to a commit, for the reason given above the setup-android pin.
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        if: ${{ !cancelled() && steps.snapshot3.outcome == 'success' }}
+        id: trial3
+        continue-on-error: true
+        with:
+          avd-name: focus-${{ github.run_id }}-${{ github.run_attempt }}-3
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
+          disable-animations: true
+          # CI-only mitigation for the API34 launcher ANR stealing input focus.
+          # Stop only this synthetic AVD's known launcher after normal preparation;
+          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
+          script: |
+            ./scripts/prepare-ci-emulator.sh
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            set +e; nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"; adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot" && FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected > "$RUNNER_TEMP/trial-3.log" 2>&1; status=$?; cat "$RUNNER_TEMP/trial-3.log"; printf '%s\n' "$status" > "$RUNNER_TEMP/trial-3.exit"; sha256sum app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk > "$RUNNER_TEMP/trial-3.sha256"; exit "$status"
+      - name: Retain all outcomes trial 3
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-normal-${{ github.run_id }}-trial-3
+          retention-days: 2
+          if-no-files-found: warn
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+            app/build/ci-prebuilt.json
+            ${{ env.FOCUS_EVIDENCE || 'app/build/no-focus-evidence' }}/*.json
+            ${{ runner.temp }}/trial-3.log
+            ${{ runner.temp }}/trial-3.exit
+            ${{ runner.temp }}/trial-3.sha256
+      - name: Preserve aggregate failure
+        if: always()
+        env:
+          OUTCOMES: ${{ steps.trial1.outcome }},${{ steps.trial2.outcome }},${{ steps.trial3.outcome }}
+        run: test "$OUTCOMES" = success,success,success
