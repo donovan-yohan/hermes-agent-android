@@ -299,6 +299,58 @@ class ConnectionRegistryTest {
         assertFalse(first == newConnectionId())
     }
 
+    @Test
+    fun `duplicate traversal keeps the first matching object after route and id exclusions`() {
+        val rows = listOf(
+            remote("remote", "Remote", "http://127.0.0.1:9119"),
+            local("local", "Local", "http://127.0.0.1:9119"),
+            ssh("ssh", "SSH", "demo-user", "demo-host"),
+        )
+        rows.forEach { first ->
+            val candidate = first.copy(id = "edited")
+            val missing = when (first.kind) {
+                ConnectionKind.Remote -> first.copy(id = "missing", remote = RemoteGatewayProfile())
+                ConnectionKind.Local -> first.copy(id = "missing", local = LocalGatewayProfile())
+                ConnectionKind.Ssh -> first.copy(id = "missing", host = HostProfile())
+            }
+            val later = first.copy(id = "later")
+            val others = rows.filter { it.kind != first.kind }
+            assertNull(findDuplicateConnection(candidate, others + missing))
+            org.junit.Assert.assertSame(first, findDuplicateConnection(candidate, others + candidate + missing + first + later))
+            assertNull(findDuplicateConnection(missing.copy(id = "blank"), listOf(missing)))
+        }
+    }
+
+    @Test
+    fun `local duplicate keys preserve loopback aliases paths and invalid address refusal`() {
+        val first = local("one", "Local", "http://localhost:9119/hermes/")
+        assertEquals(first, findDuplicateConnection(local("two", "Alias", "http://[::1]:9119/hermes"), listOf(first)))
+        listOf("http://127.0.0.1:9119/other", "http://example.test:9119", "not a URL", "   ").forEach { url ->
+            assertNull(findDuplicateConnection(local("two", "Other", url), listOf(first)))
+        }
+        listOf(ConnectionKind.Remote, ConnectionKind.Local).forEach { kind ->
+            val row = if (kind == ConnectionKind.Remote) remote("one", "Remote", "not a URL") else first
+            val candidate = row.copy(id = "two", host = HostProfile(remoteHermesProfile = "irrelevant"))
+            assertEquals(row, findDuplicateConnection(candidate, listOf(row)))
+        }
+    }
+
+    @Test
+    fun `SSH duplicate identity excludes auth and trust but retains account port and profile`() {
+        val first = ssh("one", "SSH", "Demo-User", "Demo-Host", profile = " review ")
+        val candidate = ssh("two", "SSH", "demo-user", "demo-host", profile = "review")
+        AuthMethod.entries.forEach { method ->
+            assertEquals(first, findDuplicateConnection(candidate.copy(host = candidate.host.copy(
+                authMethod = method, acceptedFingerprint = FINGERPRINT,
+            )), listOf(first)))
+        }
+        listOf(
+            candidate.host.copy(username = "other-user"),
+            candidate.host.copy(port = 2222),
+            candidate.host.copy(remoteHermesProfile = "Review"),
+        ).forEach { host -> assertNull(findDuplicateConnection(candidate.copy(host = host), listOf(first))) }
+    }
+
     private companion object {
         /** Not a real fingerprint, and not from a real host. */
         const val FINGERPRINT = "SHA256:0pXQ0M2fEXAMPLEfingerprintDEMOonlyNOTreal01"

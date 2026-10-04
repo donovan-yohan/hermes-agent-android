@@ -1641,6 +1641,28 @@ class RemoteGatewayTest {
         }
     }
 
+    @Test
+    fun `raw callback fixture accepts a complete framed response before a reset`() {
+        val response = LoopbackGatewayNativeLogin.NOT_A_CALLBACK_RESPONSE
+        val resetAfterResponse = object : java.io.ByteArrayInputStream(response) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                if (available() == 0) throw java.net.SocketException("Connection reset")
+                return super.read(bytes, offset, length)
+            }
+        }
+        assertEquals(response.toString(Charsets.UTF_8), readRawCallbackResponse(resetAfterResponse))
+    }
+
+    @Test
+    fun `raw callback fixture rejects a truncated framed response`() {
+        val response = LoopbackGatewayNativeLogin.NOT_A_CALLBACK_RESPONSE
+        val failure = runCatching {
+            readRawCallbackResponse(java.io.ByteArrayInputStream(response.copyOf(response.size - 1)))
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertEquals("callback response ended before Content-Length", failure?.message)
+    }
+
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
     private fun rawRequest(port: Int, requestLine: String): String =
         Socket("127.0.0.1", port).use { socket ->
@@ -1649,8 +1671,36 @@ class RemoteGatewayTest {
                 write("$requestLine\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
                 flush()
             }
-            socket.getInputStream().bufferedReader().readText()
+            // The listener reads only the request line, then half-closes its
+            // response. Closing with unread request headers may reset the socket
+            // after the complete page arrives. Like a browser, respect HTTP's
+            // Content-Length instead of reading past the response until EOF.
+            readRawCallbackResponse(socket.getInputStream())
         }
+
+    /** Reads exactly the framed bytes, never requiring a graceful peer close. */
+    private fun readRawCallbackResponse(stream: java.io.InputStream): String {
+        // One character per wire byte; decode the body as UTF-8 afterwards.
+        val input = stream.bufferedReader(Charsets.ISO_8859_1)
+        val status = requireNotNull(input.readLine())
+        val headers = mutableListOf<String>()
+        while (true) {
+            val header = requireNotNull(input.readLine())
+            if (header.isEmpty()) break
+            headers += header
+        }
+        val length = headers.single { it.startsWith("Content-Length:", ignoreCase = true) }
+            .substringAfter(':').trim().toInt()
+        val body = CharArray(length)
+        var received = 0
+        while (received < length) {
+            val count = input.read(body, received, length - received)
+            check(count > 0) { "callback response ended before Content-Length" }
+            received += count
+        }
+        return status + "\r\n" + headers.joinToString("\r\n") + "\r\n\r\n" +
+            body.concatToString().toByteArray(Charsets.ISO_8859_1).toString(Charsets.UTF_8)
+    }
 
     /**
      * Reads a callback page including the body of a refusal, which
