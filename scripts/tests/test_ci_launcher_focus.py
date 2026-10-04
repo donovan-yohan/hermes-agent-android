@@ -26,7 +26,7 @@ class CiLauncherFocusTest(unittest.TestCase):
             './scripts/prepare-ci-emulator.sh',
             f'adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 {LAUNCHER}',
         ])
-        self.assertTrue(commands[-1].startswith('FOCUS_DIAGNOSTIC=true FOCUS_NONCE='))
+        self.assertIn('&& FOCUS_DIAGNOSTIC=true FOCUS_NONCE=', commands[-1])
         self.assertTrue(commands[-1].endswith('python3 scripts/ci_prebuilt.py connected'))
         self.assertEqual(text.count(' shell am force-stop '), 1)
         self.assertNotIn('hide_error_dialogs', text)

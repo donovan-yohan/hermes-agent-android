@@ -117,6 +117,17 @@ class PrebuiltTest(unittest.TestCase):
                                 'scripts.tests.test_ci_prebuilt.PrebuiltTest.test_normal_graph_and_explicit_outcomes'],
                                cwd=ROOT, env=env, capture_output=True, text=True)
         self.assertEqual(child.returncode, 0, child.stdout + child.stderr)
+        # emulator-runner executes each script line in a separate /usr/bin/sh.
+        command = next(line.strip() for line in connected.splitlines() if 'FOCUS_DIAGNOSTIC=true' in line)
+        with tempfile.TemporaryDirectory() as folder:
+            adb = Path(folder) / 'adb'
+            adb.write_text('#!/bin/sh\nexit 0\n')
+            adb.chmod(0o755)
+            replacement = "python3 -c 'import os,re; assert os.environ[\"FOCUS_DIAGNOSTIC\"] == \"true\"; assert re.fullmatch(\"[a-f0-9]{32}\", os.environ[\"FOCUS_NONCE\"])'"
+            probe = subprocess.run(['sh', '-ec', command.replace('python3 scripts/ci_prebuilt.py connected', replacement)],
+                                   env=dict(env, PATH=folder + ':' + env['PATH'], GITHUB_ENV=str(Path(folder) / 'env')),
+                                   capture_output=True, text=True)
+            self.assertEqual(probe.returncode, 0, probe.stderr)
         with patch.dict(os.environ, {}, clear=True), patch.object(focus, 'adb') as adb:
             focus.collect(self.root, focus.arm())
             adb.assert_not_called()

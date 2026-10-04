@@ -235,7 +235,7 @@ def main() -> int:
             failures.append('the connected step must run unconditionally and propagate failure')
         invocation = ('            FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" '
                       'FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected')
-        if invocation not in connected.splitlines():
+        if not any(line.endswith(invocation.strip()) for line in connected.splitlines()):
             failures.append("the instrumented lane must run the guarded connected androidTest task")
         assembly = _indented_block(instrumented_job,
                                   '      - name: Assemble instrumented APKs before emulator boot')
