@@ -83,7 +83,7 @@ internal object FailureFocusSnapshot {
         runCatching {
             arm()
             val nonce = armedNonce ?: return
-            val record = JSONObject().put("schema", 2)
+            val record = JSONObject().put("schema", 3)
             val before = runCatching { bracket(activity) }.getOrNull()
             record.put("before", before ?: JSONObject.NULL)
             val input = runCatching { shell("dumpsys input") }
@@ -101,6 +101,15 @@ internal object FailureFocusSnapshot {
             val owner = reduction.owner
             record.put("owner", owner?.let {
                 JSONObject().put("display", it.display).put("ownerPid", it.ownerPid).put("ownerUid", it.ownerUid)
+            } ?: JSONObject.NULL)
+            val metadata = owner?.let {
+                val ps = runCatching { shell("ps -p ${it.ownerPid} -o PID,UID,NAME") }.getOrDefault("")
+                val windows = runCatching { shell("dumpsys window windows") }.getOrDefault("")
+                runCatching { OwnerMetadata.reduce(input.getOrDefault(""), it, ps, windows) }.getOrNull()
+            }
+            record.put("ownerMetadata", metadata?.let {
+                JSONObject().put("processRole", it.processRole).put("windowType", it.windowType)
+                    .put("inputConfig", it.inputConfig?.let { flags -> org.json.JSONArray(flags) } ?: JSONObject.NULL)
             } ?: JSONObject.NULL)
             // Even failed input capture must not suppress the after bracket.
             record.put("after", runCatching { bracket(activity) }.getOrNull() ?: JSONObject.NULL)

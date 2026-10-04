@@ -55,10 +55,12 @@ def sanitize(text):
         return result
     value = json.loads(text, object_pairs_hook=pairs)
     schema = value.get('schema')
-    fields = {'schema', 'before', 'owner', 'after'} | ({'ownerStatus', 'parserShape'} if schema == 2 else set())
-    if set(value) != fields or type(schema) is not int or schema != 2:
+    fields = {'schema', 'before', 'owner', 'after', 'ownerStatus', 'parserShape'}
+    if schema == 3:
+        fields.add('ownerMetadata')
+    if set(value) != fields or type(schema) is not int or schema not in (2, 3):
         raise ValueError('schema rejected')
-    if schema == 2:
+    if schema in (2, 3):
         status = value['ownerStatus']
         shape = value['parserShape']
         if shape is not None and (status != 'REJECTED' or not isinstance(shape, dict) or
@@ -67,11 +69,24 @@ def sanitize(text):
             raise ValueError('shape rejected')
         if status not in ('MISSING_CURRENT_SECTION', 'NO_FOCUSED_WINDOW', 'AMBIGUOUS', 'REJECTED', 'OVERFLOW', 'PROBE_FAILURE', 'MATCHED') or (status == 'MATCHED') != (value['owner'] is not None):
             raise ValueError('status rejected')
+    if schema == 3 and value['ownerMetadata'] is not None:
+        metadata = value['ownerMetadata']
+        types = {'UNKNOWN', 'BASE_APPLICATION', 'APPLICATION', 'APPLICATION_STARTING', 'APPLICATION_ATTACHED_DIALOG', 'SYSTEM_ALERT', 'KEYGUARD', 'KEYGUARD_DIALOG', 'SYSTEM_DIALOG', 'STATUS_BAR', 'NOTIFICATION_SHADE', 'INPUT_METHOD', 'INPUT_METHOD_DIALOG', 'NAVIGATION_BAR', 'ACCESSIBILITY_OVERLAY', 'APPLICATION_OVERLAY', 'SECURE_SYSTEM_OVERLAY', 'TOAST', 'SYSTEM_ERROR', 'DREAM', 'DISPLAY_OVERLAY', 'POINTER', 'DRAG', 'DOCK_DIVIDER'}
+        configs = {'NO_INPUT_CHANNEL', 'NOT_VISIBLE', 'NOT_FOCUSABLE', 'NOT_TOUCHABLE', 'PREVENT_SPLITTING', 'DUPLICATE_TOUCH_TO_WALLPAPER', 'IS_WALLPAPER', 'PAUSE_DISPATCHING', 'TRUSTED_OVERLAY', 'WATCH_OUTSIDE_TOUCH', 'SLIPPERY', 'DISABLE_USER_ACTIVITY', 'DROP_INPUT', 'DROP_INPUT_IF_OBSCURED', 'SPY', 'INTERCEPTS_STYLUS', 'NOT_TOUCH_MODAL'}
+        if (value['owner'] is None or not isinstance(metadata, dict) or
+                set(metadata) != {'processRole', 'windowType', 'inputConfig'} or
+                metadata['processRole'] not in ('UNKNOWN', 'SYSTEM_SERVER', 'SYSTEM_UI') or
+                not isinstance(metadata['windowType'], str) or metadata['windowType'] not in types):
+            raise ValueError('metadata rejected')
+        flags = metadata['inputConfig']
+        if flags is not None and (not isinstance(flags, list) or len(flags) > len(configs) or
+                any(not isinstance(flag, str) or flag not in configs for flag in flags) or len(set(flags)) != len(flags)):
+            raise ValueError('input config rejected')
     for name in ('before', 'after', 'owner'):
         part = value[name]
         if part is None:
             continue
-        numbers = {'display', 'ownerPid', 'ownerUid'} if name == 'owner' else ({'display', 'appPid', 'appUid'} if schema == 2 else {'display'})
+        numbers = {'display', 'ownerPid', 'ownerUid'} if name == 'owner' else {'display', 'appPid', 'appUid'}
         flags = set() if name == 'owner' else {'attached', 'destroyed', 'activityFocus', 'decorFocus', 'windowIdFocus'}
         if not isinstance(part, dict) or set(part) != numbers | flags:
             raise ValueError('fields rejected')

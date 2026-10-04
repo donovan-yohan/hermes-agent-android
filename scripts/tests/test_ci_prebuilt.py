@@ -142,10 +142,11 @@ class PrebuiltTest(unittest.TestCase):
                 self.gate.run(self.root)
             self.assertIs(raised.exception, original)
 
-    def test_retention_after_target_uninstall_is_nonce_bound_unique_schema2(self):
+    def test_retention_after_target_uninstall_is_nonce_bound_unique_schema3(self):
         nonce = 'a' * 32
-        value = dict(schema=2, before=None, after=None, parserShape=None,
-                     ownerStatus='MATCHED', owner=dict(display=0, ownerPid=123, ownerUid=1000))
+        value = dict(schema=3, before=None, after=None, parserShape=None,
+                     ownerStatus='MATCHED', owner=dict(display=0, ownerPid=123, ownerUid=1000),
+                     ownerMetadata=dict(processRole='UNKNOWN', windowType='UNKNOWN', inputConfig=None))
         for mode in ('valid', 'stale', 'duplicate', 'secret'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
@@ -182,6 +183,22 @@ with patch('focus_diagnostic.arm', return_value=None), patch('focus_diagnostic.c
 """
         child = subprocess.run([sys.executable, '-c', code], cwd=self.root, capture_output=True, text=True)
         self.assertEqual(child.returncode, 23, child.stderr)
+
+    def test_exact_owner_metadata_schema3_is_fixed_enum_only(self):
+        metadata = dict(processRole='SYSTEM_SERVER', windowType='SYSTEM_DIALOG',
+                        inputConfig=['NOT_TOUCH_MODAL', 'TRUSTED_OVERLAY'])
+        value = dict(schema=3, before=None, after=None, parserShape=None,
+                     ownerStatus='MATCHED', owner=dict(display=0, ownerPid=514, ownerUid=1000),
+                     ownerMetadata=metadata)
+        self.assertEqual(json.loads(focus.sanitize(json.dumps(value))), value)
+        for key in ('processRole', 'windowType', 'inputConfig'):
+            modified = dict(value, ownerMetadata=dict(metadata, **{key: 'PRIVATE'}))
+            with self.assertRaises(ValueError): focus.sanitize(json.dumps(modified))
+        for flags in (['PRIVATE'], ['SPY', 'SPY'], 'SPY'):
+            modified = dict(value, ownerMetadata=dict(metadata, inputConfig=flags))
+            with self.assertRaises(ValueError): focus.sanitize(json.dumps(modified))
+        with self.assertRaises(ValueError):
+            focus.sanitize(json.dumps(dict(value, ownerMetadata=dict(metadata, title='PRIVATE'))))
 
     def test_binding_and_safe_schema(self):
         env = dict(FOCUS_DIAGNOSTIC='true', FOCUS_NONCE='a' * 32,
