@@ -262,16 +262,17 @@ class ConnectionRegistryTest {
     }
 
     @Test
-    fun `a build without the Local route reads a Local row as an unusable Remote one`() {
-        // What an older build's decoder does with a kind it has never heard of:
-        // it falls back to Remote and finds an address its own normalizer
-        // refuses, so the row is inert rather than dialled wrongly.
+    fun `an unknown stored route becomes Remote with native auth rather than Local token auth`() {
+        // Decoder fallback is Remote. HTTP loopback is now a valid Remote URL,
+        // but the route still requires gated native auth, never a Local token.
         val stored = """{"version":"1","connections":[{"id":"one","label":"Phone","kind":"Cloud","url":"http://127.0.0.1:9119"}]}"""
 
         val row = ConnectionRegistryCodec.decode(stored).single()
 
         assertEquals(ConnectionKind.Remote, row.kind)
-        assertFalse("an http address is not a usable Remote gateway", row.remote.isValid)
+        assertTrue("HTTP is supported for Remote regardless of host", row.remote.isValid)
+        assertEquals("http://127.0.0.1:9119", row.remote.normalizedBaseUrl)
+        assertFalse("Remote never reports Local token authentication", row.authModeLabel == SavedConnection.SESSION_TOKEN)
     }
 
     @Test
