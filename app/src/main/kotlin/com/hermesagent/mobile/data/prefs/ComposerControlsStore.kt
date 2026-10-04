@@ -3,7 +3,7 @@ package com.hermesagent.mobile.data.prefs
 import com.hermesagent.mobile.data.composer.ComposerModelSelection
 import com.hermesagent.mobile.data.composer.FastMode
 import com.hermesagent.mobile.data.composer.ReasoningEffort
-import java.security.MessageDigest
+import com.hermesagent.mobile.data.sha256Utf8Hex
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -21,9 +21,7 @@ data class ComposerControlsScope(
         require(connectionIdentity.isNotBlank())
     }
 
-    internal fun storageKey(): String = MessageDigest.getInstance("SHA-256")
-        .digest("$connectionIdentity\u0000$profileIdentity".toByteArray(Charsets.UTF_8))
-        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    internal fun storageKey(): String = sha256Utf8Hex("$connectionIdentity\u0000$profileIdentity")
 }
 
 /** Only a deliberate new-draft choice is durable; Gateway defaults are not cached here. */

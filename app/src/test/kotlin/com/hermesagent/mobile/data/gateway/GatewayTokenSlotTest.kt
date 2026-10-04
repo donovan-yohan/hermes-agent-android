@@ -44,6 +44,21 @@ class GatewayTokenSlotTest {
     }
 
     @Test
+    fun `HTTP hostname credentials remain bound to hostname scheme port and prefix`() = runBlocking {
+        val store = AndroidGatewayTokenStore(context, ReversibleCipher())
+        val base = requireNotNull(normalizeRemoteGatewayUrl("http://gateway.synthetic-tailnet.ts.net:9120/hermes"))
+        val slot = GatewaySecretSlot("hostname-fixture", base)
+        store.save(slot, tokens("alpha"))
+        for (other in listOf("http://100.64.0.1:9120/hermes", "http://other.example:9120/hermes",
+            "https://gateway.synthetic-tailnet.ts.net:9120/hermes",
+            "http://gateway.synthetic-tailnet.ts.net:9121/hermes",
+            "http://gateway.synthetic-tailnet.ts.net:9120/other")) {
+            assertNull(other, store.load(GatewaySecretSlot(slot.connectionId, other)))
+        }
+        assertEquals("a mistyped URL does not erase the original credential", "alpha-access", store.load(slot)?.accessToken)
+    }
+
+    @Test
     fun `two connections to different gateways keep separate slots`() = runBlocking {
         val store = AndroidGatewayTokenStore(context, ReversibleCipher())
 

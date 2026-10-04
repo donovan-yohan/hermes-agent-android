@@ -1,6 +1,5 @@
 package com.hermesagent.mobile.data.profiles
 
-import android.graphics.Bitmap
 import com.hermesagent.mobile.data.gateway.EndpointDispatchFence
 import com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient
 import com.hermesagent.mobile.data.gateway.GatewayEvent
@@ -14,7 +13,6 @@ import com.hermesagent.mobile.plugins.bots.BotsViewModel
 import com.hermesagent.mobile.plugins.bots.parseBotsRoster
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -27,7 +25,6 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -37,10 +34,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.*
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
-import org.robolectric.annotation.GraphicsMode
 
 internal fun avatarRosterWire(flag: Boolean = true, name: String = " Fixture-Alpha ") = buildJsonObject {
     put("profiles", buildJsonArray { add(buildJsonObject { put("name", name); put("has_avatar", flag); put("display_name", "Fixture label") }) })
@@ -61,36 +54,34 @@ internal class AvatarRosterRpc : EndpointDispatchingGatewayRpcClient {
     override fun close() = Unit
 }
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
-@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+internal class AvatarRosterHarness(scope: TestScope, decoder: AvatarDecoder = AvatarDecoder { null }) {
+    val rpc = AvatarRosterRpc()
+    val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
+    val endpoint = MutableStateFlow(0L)
+    val fence = EndpointDispatchFence()
+    val pluginScope = CoroutineScope(SupervisorJob(scope.backgroundScope.coroutineContext[kotlinx.coroutines.Job]) + StandardTestDispatcher(scope.testScheduler))
+    val appHost = GatewayPluginHost(scope.backgroundScope, clients, endpoint, fence)
+    val pluginHost = GatewayPluginHost(pluginScope, clients, endpoint, fence)
+    val avatars = ProfileAvatarRepository(scope.backgroundScope, decoder, StandardTestDispatcher(scope.testScheduler), { scope.testScheduler.currentTime })
+    val coordinator = AvatarRosterCoordinator(appHost, avatars)
+    val coreProducer = coordinator.open(AvatarRosterCoordinator.Kind.Core)
+    val botsProducer = coordinator.open(AvatarRosterCoordinator.Kind.Bots, pluginHost)
+    val core = GatewayProfileRepository({ error("live slot fallback") }, avatarProducer = coreProducer)
+    val bots = BotsPluginRepository(pluginHost, botsProducer)
+    suspend fun coreRef(): ProfileAvatarRef {
+        assertTrue(core.refreshProfiles())
+        return checkNotNull(core.roster.value.profiles.single().avatarRef)
+    }
+    suspend fun botsRef(): ProfileAvatarRef = checkNotNull((bots.loadRoster() as BotsRosterLoad.Loaded).rows.single().avatarRef)
+    fun assetCalls() = rpc.calls.filter { it.first == "profiles.get_asset" }
+    fun close() { botsProducer.close(); pluginScope.cancel(); coordinator.close() }
+}
+
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class AvatarRosterCoordinatorTest {
-    private inner class Harness(scope: TestScope, decoder: AvatarDecoder = AvatarDecoder { null }) {
-        val rpc = AvatarRosterRpc()
-        val clients = MutableStateFlow<GatewayRpcClient?>(rpc)
-        val endpoint = MutableStateFlow(0L)
-        val fence = EndpointDispatchFence()
-        val pluginScope = CoroutineScope(SupervisorJob(scope.backgroundScope.coroutineContext[kotlinx.coroutines.Job]) + StandardTestDispatcher(scope.testScheduler))
-        val appHost = GatewayPluginHost(scope.backgroundScope, clients, endpoint, fence)
-        val pluginHost = GatewayPluginHost(pluginScope, clients, endpoint, fence)
-        val avatars = ProfileAvatarRepository(scope.backgroundScope, decoder, StandardTestDispatcher(scope.testScheduler), { scope.testScheduler.currentTime })
-        val coordinator = AvatarRosterCoordinator(appHost, avatars)
-        val coreProducer = coordinator.open(AvatarRosterCoordinator.Kind.Core)
-        val botsProducer = coordinator.open(AvatarRosterCoordinator.Kind.Bots, pluginHost)
-        val core = GatewayProfileRepository({ error("live slot fallback") }, avatarProducer = coreProducer)
-        val bots = BotsPluginRepository(pluginHost, botsProducer)
-        suspend fun coreRef(): ProfileAvatarRef {
-            assertTrue(core.refreshProfiles())
-            return checkNotNull(core.roster.value.profiles.single().avatarRef)
-        }
-        suspend fun botsRef(): ProfileAvatarRef = checkNotNull((bots.loadRoster() as BotsRosterLoad.Loaded).rows.single().avatarRef)
-        fun assetCalls() = rpc.calls.filter { it.first == "profiles.get_asset" }
-        fun close() { botsProducer.close(); pluginScope.cancel(); coordinator.close() }
-    }
-
     @Test fun realRepositoriesPreserveRoutingNamesAndCaptureLiteralAssetName() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val coreRef = h.coreRef()
         val coreRow = h.core.roster.value.profiles.single()
         val botsRef = h.botsRef()
@@ -110,7 +101,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun rawRosterParsingAndProcessDeathReconstructionCannotMintPermissions() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         assertNull(parseProfileList(avatarRosterWire())!!.single().avatarRef)
         assertNull(parseBotsRoster(avatarRosterWire())!!.single().avatarRef)
         assertNull(HermesProfile("Fixture-Alpha", hasAvatar = true).avatarRef)
@@ -125,7 +116,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun falseAndRemovalRevokeAllOldTrueRowsBeforeNewSubscriptions() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val oldCore = h.coreRef()
         val oldBots = h.botsRef()
         val binding = checkNotNull(h.coordinator.subscribe(oldCore))
@@ -152,7 +143,7 @@ class AvatarRosterCoordinatorTest {
 
     @Test fun olderCoreRosterStillPublishesAfterNewerBotsFalseOrRemoval() = runTest {
         for (remove in listOf(false, true)) {
-            val h = Harness(this)
+            val h = AvatarRosterHarness(this)
             val oldCore = h.coreRef()
             val oldBots = h.botsRef()
             val held = CompletableDeferred<JsonElement>()
@@ -179,7 +170,7 @@ class AvatarRosterCoordinatorTest {
 
     @Test fun olderBotsRosterStillPublishesAfterNewerCoreFalseOrRemoval() = runTest {
         for (remove in listOf(false, true)) {
-            val h = Harness(this)
+            val h = AvatarRosterHarness(this)
             val oldCore = h.coreRef()
             val oldBots = h.botsRef()
             val vm = BotsViewModel(h.bots, backgroundScope, connected = MutableStateFlow(false), endpointGeneration = h.endpoint)
@@ -207,7 +198,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun initialCoreRosterCannotBeStarvedByNewerBotsDecoration() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val held = CompletableDeferred<JsonElement>()
         h.rpc.answer = { held.await() }
         val older = async { h.core.refreshProfiles() }
@@ -225,7 +216,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun oldEndpointReplyStillCannotPublishPrimaryRoster() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val held = CompletableDeferred<JsonElement>()
         h.rpc.answer = { held.await() }
         val older = async { h.core.refreshProfiles() }
@@ -239,7 +230,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun identicalAvatarEnabledRosterPreservesStateRowsAndCurrentPermits() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val ref = h.coreRef()
         val state = h.core.roster.value
         val row = state.profiles.single()
@@ -263,7 +254,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun stablePermitsNeverReviveAfterFlagsRevocationOrReconnect() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val old = h.coreRef()
         val originalState = h.core.roster.value
         h.rpc.roster = avatarRosterWire(false)
@@ -287,7 +278,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun olderIdenticalCoreReplyMayReuseStillAuthorizedCurrentPermit() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val original = h.coreRef()
         val state = h.core.roster.value
         val held = CompletableDeferred<JsonElement>()
@@ -305,7 +296,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun onlyCurrentReadAndCurrentActivationMayAccept() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val oldRead = checkNotNull(h.coreProducer.begin())
         val newer = checkNotNull(h.coreProducer.begin())
         assertNull(h.coreProducer.accept(oldRead, avatarRosterWire()))
@@ -320,7 +311,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun changedCacheEpochPreventsPermissionAcceptanceAndKeepsOldRosterText() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val old = h.coreRef()
         val held = CompletableDeferred<JsonElement>()
         h.rpc.answer = { held.await() }
@@ -336,7 +327,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun ownerLossWithoutAnyAvatarEventIsReadOnlyAndOldRowsNeverRetarget() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val ref = h.coreRef()
         val binding = checkNotNull(h.coordinator.subscribe(ref))
         runCurrent()
@@ -356,7 +347,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun pairCaptureAndAcceptanceRefuseEitherHostsLostLeg() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val separateClients = MutableStateFlow<GatewayRpcClient?>(h.rpc)
         val separateHost = GatewayPluginHost(backgroundScope, separateClients, h.endpoint, h.fence)
         val producer = h.coordinator.open(AvatarRosterCoordinator.Kind.Bots, separateHost)
@@ -372,7 +363,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun boundedMetadataSubscribersAndDuplicateOrNonStringNamesFailClosed() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         h.rpc.roster = buildJsonObject { put("profiles", buildJsonArray {
             repeat(100) { add(buildJsonObject { put("name", "fixture-$it"); put("has_avatar", true) }) }
         }) }
@@ -393,7 +384,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun closingBotsWaiterPreservesCoreAssetWhileDisablingPluginCancelsRoster() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val coreRef = h.coreRef()
         val botsRef = h.botsRef()
         val answer = CompletableDeferred<JsonElement>()
@@ -416,7 +407,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun lastWaiterDisposalCancelsActualHostExchange() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val ref = h.coreRef()
         var cancelled = false
         h.rpc.answer = { try { awaitCancellation() } finally { cancelled = true } }
@@ -428,30 +419,8 @@ class AvatarRosterCoordinatorTest {
         h.close()
     }
 
-    @Test fun staleDecodeCannotPublishAfterNewAcceptedFalse() = runTest {
-        val entered = CompletableDeferred<Unit>()
-        val release = CompletableDeferred<Unit>()
-        val h = Harness(this, AvatarDecoder {
-            entered.complete(Unit)
-            withContext(NonCancellable) { release.await() }
-            Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
-        })
-        val ref = h.coreRef()
-        h.rpc.answer = { if (it == "profiles.list") avatarRosterWire(false) else avatarWire(byteArrayOf(137.toByte(),80,78,71,13,10,26,10)) }
-        val binding = h.coordinator.subscribe(ref)!!
-        runCurrent()
-        assertTrue(entered.isCompleted)
-        val cleared = h.botsRef()
-        release.complete(Unit)
-        runCurrent()
-        assertSame(ProfileAvatar.Unavailable, binding.current())
-        assertSame(ProfileAvatar.Missing, h.coordinator.subscribe(cleared)!!.current())
-        assertNull(h.coordinator.subscribe(ref))
-        h.close()
-    }
-
     @Test fun sameFlagRefreshInvalidatesMissingAndErrorsDoNotChangeRosterPhase() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val vm = BotsViewModel(h.bots, backgroundScope, connected = MutableStateFlow(false), endpointGeneration = h.endpoint)
         vm.refreshNow()
         val ref = checkNotNull(vm.uiState.value.sections.single().rows.single().avatarRef)
@@ -479,7 +448,7 @@ class AvatarRosterCoordinatorTest {
     }
 
     @Test fun endpointResetAndCloseRevokeReceiptsWithoutRevivingOnNextLeg() = runTest {
-        val h = Harness(this)
+        val h = AvatarRosterHarness(this)
         val ref = h.coreRef()
         val binding = h.coordinator.subscribe(ref)!!
         runCurrent()
