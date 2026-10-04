@@ -144,6 +144,138 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `cron refusal does not restore a draft the user cleared during admission`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        repository.submitGate = CompletableDeferred()
+        repository.failSubmit = true
+        viewModel.setDraft("discard me")
+        viewModel.submit()
+        runCurrent()
+        viewModel.setDraft("")
+        runCurrent()
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+        assertEquals("", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cron duplicate tap cannot claim an attachment added while admission waits`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        repository.submitGate = CompletableDeferred()
+        viewModel.setDraft("pending text")
+        viewModel.submit()
+        runCurrent()
+        viewModel.attachmentReadDispatcher = dispatcher
+        viewModel.openAttachmentStream = { "synthetic file".toByteArray().inputStream() }
+        viewModel.addAttachmentFromGrant("content://fixture/cron-note", "notes.txt", "text/plain")
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.runtime.attachments.single().stage is AttachmentStage.Ready)
+        assertEquals(1, repository.submitAttempts)
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `cron acceptance never clears a replacement profiles same id draft`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        repository.submitGate = CompletableDeferred()
+        viewModel.setDraft("same draft")
+        viewModel.submit()
+        runCurrent()
+        val submission = requireNotNull(repository.lastSubmitJob)
+        assertFalse(submission.isCompleted)
+        assertTrue(repository.submitted.isEmpty())
+        viewModel.selectSession("session-b")
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "other"))
+        viewModel.selectSession(id)
+        runCurrent()
+        viewModel.setDraft("same draft")
+        runCurrent()
+        assertEquals(id, viewModel.uiState.value.activeSessionId)
+        assertEquals("other", cache.session(id)?.remoteProfile)
+        assertEquals("same draft", viewModel.uiState.value.draft)
+        repository.submitGate!!.complete(Unit)
+        submission.join()
+        runCurrent()
+        assertFalse(submission.isCancelled)
+        assertEquals(listOf(id to "same draft"), repository.submitted)
+        assertEquals("same draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cron view only open explains admission instead of loading a writable composer`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        repository.readOnlyReason = "This scheduled run is view-only. Start a new chat to continue."
+        viewModel.selectSession(id)
+        runCurrent()
+        assertEquals(repository.readOnlyReason, viewModel.uiState.value.notice?.text)
+    }
+
+    @Test
+    fun `cron UI selection carries leases revoked by ABA navigation`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        val open = repository.lastOpenLease
+        assertNotNull(open)
+        assertTrue(open!!.dispatch { true })
+        repository.submitGate = CompletableDeferred()
+        viewModel.setDraft("keep draft")
+        viewModel.submit()
+        runCurrent()
+        val send = repository.lastSubmitLease
+        assertNotNull(send)
+        viewModel.selectSession("session-b")
+        viewModel.selectSession(id)
+        assertFalse(open.dispatch { true })
+        assertFalse(send!!.dispatch { true })
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `cron admission keeps draft visible while pending and after refusal`() = runTest(dispatcher) {
+        val id = "cron_job_20261002_120000"
+        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+        collectState()
+        runCurrent()
+        viewModel.selectSession(id)
+        runCurrent()
+        viewModel.setDraft("keep this exact draft")
+        repository.submitGate = CompletableDeferred()
+        repository.failSubmit = true
+        viewModel.submit()
+        runCurrent()
+        assertEquals("keep this exact draft", viewModel.uiState.value.draft)
+        repository.submitGate!!.complete(Unit)
+        runCurrent()
+        assertEquals("keep this exact draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
     fun `gateway logs missing live transport reports failure instead of ignoring action`() = runTest(dispatcher) {
         val vm = ChatViewModel(cache, repository, clock = { CLOCK }, gatewayHttp = { null })
         cache.setTranscript("session-a", listOf(AssistantTurn("failed", "", CLOCK, error = "failed")))
@@ -1537,6 +1669,32 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `bot completion while correction waits preserves draft on terminal rejection`() = runTest(dispatcher) {
+        cache.upsertSession(summary("bot-chat", 3_000))
+        collectState()
+        runCurrent()
+        viewModel.openBotChat("researcher", "bot-chat") { }
+        runCurrent()
+        for (action in listOf(viewModel::redirectDraftFromUi, viewModel::steerDraftFromUi)) {
+            cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Working))
+            runCurrent()
+            val release = CompletableDeferred<Unit>()
+            repository.botRedirectGate = release
+            repository.redirectOutcome = GatewayRedirectOutcome.Rejected
+            repository.steerOutcome = com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected
+            viewModel.setDraft("keep unsent correction")
+            action()
+            runCurrent()
+            cache.upsertSession(requireNotNull(cache.session("bot-chat")).copy(status = SessionStatus.Idle))
+            release.complete(Unit)
+            runCurrent()
+            assertEquals("keep unsent correction", viewModel.uiState.value.draft)
+            assertTrue(repository.submitted.isEmpty())
+            assertTrue(cache.transcript("bot-chat").isEmpty())
+        }
+    }
+
+    @Test
     fun `held steer acknowledgement preserves replacement draft`() = runTest(dispatcher) {
         cache.upsertSession(summary("bot-chat", 3_000))
         collectState()
@@ -2099,6 +2257,78 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `catalog reuse does not freeze emission clock or midnight grouping`() = runTest(dispatcher) {
+        val oldZone = java.util.TimeZone.getDefault()
+        val oldLocale = java.util.Locale.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+        java.util.Locale.setDefault(java.util.Locale.US)
+        try {
+            var now = java.time.Instant.parse("2027-01-02T23:59:59Z").toEpochMilli()
+            var reads = 0
+            val subject = ChatViewModel(cache, repository, sidebarStore, clock = { reads++; now }, bucketLabel = stubLabel)
+            cache.upsertSessions(listOf(summary("recent", now), summary("older", now - 86_400_000)))
+            cache.replaceProjectOverview(listOf(ProjectSummary("p", "P", "/synthetic/p", previewSessions = listOf(summary("recent", now)))), "p")
+            backgroundScope.launch { subject.uiState.collect {} }
+            runCurrent()
+            val projects = subject.uiState.value.projects
+            val previousReads = reads
+            now += 2_000
+            subject.setDraft("after midnight")
+            runCurrent()
+            assertTrue(reads > previousReads)
+            assertEquals(now, subject.uiState.value.nowMillis)
+            assertEquals(com.hermesagent.mobile.data.session.buildSessionRows(
+                cache.state.value.sessions.values, now, bucketLabel = stubLabel,
+            ), subject.uiState.value.sessionRows)
+            org.junit.Assert.assertSame(projects, subject.uiState.value.projects)
+        } finally {
+            java.util.TimeZone.setDefault(oldZone)
+            java.util.Locale.setDefault(oldLocale)
+        }
+    }
+
+    @Test
+    fun `draft edits reuse unchanged project overview allocations`() = runTest(dispatcher) {
+        val oldZone = java.util.TimeZone.getDefault()
+        val oldLocale = java.util.Locale.getDefault()
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"))
+        java.util.Locale.setDefault(java.util.Locale.US)
+        try {
+            cache.replaceProjectOverview(listOf(ProjectSummary(
+                "project-a", "Project A", "/synthetic/a", sessionCount = 1,
+                previewSessions = listOf(summary("session-a", 2_000)),
+            )), activeProjectId = "project-a")
+            collectState()
+            runCurrent()
+            val overview = viewModel.uiState.value.projects
+            assertEquals(1, overview.size)
+            val overviews = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<List<ProjectSummary>, Boolean>())
+            val previews = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<List<SessionSummary>, Boolean>())
+            overviews.add(overview)
+            previews.add(overview.single().previewSessions)
+            repeat(20) { edit ->
+                viewModel.setDraft("draft $edit")
+                runCurrent()
+                assertEquals("draft $edit", viewModel.uiState.value.draft)
+                overviews.add(viewModel.uiState.value.projects)
+                previews.add(viewModel.uiState.value.projects.single().previewSessions)
+            }
+            println("20 draft edits: overview list identities=${overviews.size}, preview list identities=${previews.size}")
+            assertEquals("unchanged overview allocations", 1, overviews.size)
+            assertEquals("unchanged preview allocations", 1, previews.size)
+            repeat(20) { turn ->
+                cache.appendEntry("session-a", UserTurn("turn-$turn", "text", turn.toLong()))
+                runCurrent()
+                assertTrue(viewModel.uiState.value.transcript.any { it.id == "turn-$turn" })
+                org.junit.Assert.assertSame(overview, viewModel.uiState.value.projects)
+            }
+        } finally {
+            java.util.TimeZone.setDefault(oldZone)
+            java.util.Locale.setDefault(oldLocale)
+        }
+    }
+
+    @Test
     fun `project previews omit cached hidden chats without discarding their owner`() = runTest(dispatcher) {
         val visible = summary("session-a", 2_000)
         val hidden = summary("bot-chat", 1_000).copy(hidden = true)
@@ -2123,6 +2353,64 @@ class ChatViewModelTest {
         cache.upsertSession(hidden.copy(hidden = false))
         runCurrent()
         assertEquals(listOf("session-a", "bot-chat"), viewModel.uiState.value.projects.single().previewSessions.map { it.id })
+    }
+
+    @Test
+    fun `completed create cannot steal a later session selection or its draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.createSessionGate = CompletableDeferred()
+        viewModel.createSession()
+        runCurrent()
+        viewModel.selectSession("session-b")
+        runCurrent()
+        viewModel.setDraft("keep the later draft")
+        repository.createSessionGate!!.complete(Unit)
+        repository.createSessionJob!!.join()
+        runCurrent()
+        assertEquals("session-b", viewModel.uiState.value.activeSession?.id)
+        assertEquals("keep the later draft", viewModel.uiState.value.draft)
+        assertNotNull(cache.session("created-1"))
+    }
+
+    @Test
+    fun `completed create cannot steal a later project selection`() = runTest(dispatcher) {
+        cache.replaceProjectOverview(listOf(ProjectSummary("project-a", "A", "/synthetic/a", sessionCount = 0),
+            ProjectSummary("project-b", "B", "/synthetic/b", sessionCount = 0)), activeProjectId = "project-a")
+        collectState()
+        runCurrent()
+        viewModel.selectProject("project-a")
+        runCurrent()
+        repository.createSessionGate = CompletableDeferred()
+        viewModel.createSession()
+        runCurrent()
+        viewModel.selectProject("project-b")
+        runCurrent()
+        repository.createSessionGate!!.complete(Unit)
+        repository.createSessionJob!!.join()
+        runCurrent()
+        assertEquals("/synthetic/a", repository.createdWorkspace)
+        assertEquals("project-b", viewModel.uiState.value.selectedProject?.id)
+        assertEquals("session-a", viewModel.uiState.value.activeSession?.id)
+    }
+
+    @Test
+    fun `completed create cannot adopt across an endpoint reset`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.createSessionGate = CompletableDeferred()
+        viewModel.createSession()
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(summary("replacement", CLOCK))
+        viewModel.selectSession("replacement")
+        runCurrent()
+        viewModel.setDraft("replacement draft")
+        repository.createSessionGate!!.complete(Unit)
+        repository.createSessionJob!!.join()
+        runCurrent()
+        assertEquals("replacement", viewModel.uiState.value.activeSession?.id)
+        assertEquals("replacement draft", viewModel.uiState.value.draft)
     }
 
     @Test
@@ -3525,6 +3813,7 @@ class ChatViewModelTest {
         val projectSessions = mutableMapOf<String, List<SessionSummary>>()
         var createProjectGate: CompletableDeferred<Unit>? = null
         var createSessionGate: CompletableDeferred<Unit>? = null
+        var createSessionJob: kotlinx.coroutines.Job? = null
         var catalogRefreshedAfterCreate = true
         var created = 0
         var createdWorkspace: String? = null
@@ -3532,6 +3821,7 @@ class ChatViewModelTest {
         /** A specific refusal, for the failures whose *kind* is what is under test. */
         var submitFailure: Throwable? = null
         var submitGate: CompletableDeferred<Unit>? = null
+        var lastSubmitJob: kotlinx.coroutines.Job? = null
         var submitAttempts = 0
         var submitOutcome: GatewaySubmitOutcome = GatewaySubmitOutcome.Accepted
         var redirectOutcome: GatewayRedirectOutcome = GatewayRedirectOutcome.Unsupported
@@ -3675,8 +3965,13 @@ class ChatViewModelTest {
          * make one session's `session.resume` land after another selection.
          */
         val openGates = mutableMapOf<String, CompletableDeferred<Unit>>()
+        var readOnlyReason: String? = null
+        override fun sessionReadOnlyReason(durableId: String): String? = readOnlyReason
+        var lastOpenLease: com.hermesagent.mobile.data.gateway.SessionSelectionLease? = null
+        var lastSubmitLease: com.hermesagent.mobile.data.gateway.SessionSelectionLease? = null
 
         override suspend fun openSession(durableId: String): String {
+            lastOpenLease = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.SessionSelectionLease]
             opened += durableId
             openGates[durableId]?.await()
             transcriptOnOpen?.let { cache.setTranscript(durableId, it) }
@@ -3719,6 +4014,7 @@ class ChatViewModelTest {
             workspacePath: String?,
             overrides: NewSessionComposerOverrides?,
         ): String {
+            createSessionJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             createSessionGate?.await()
             createdOverrides = overrides
             return createSession(workspacePath)
@@ -3778,6 +4074,8 @@ class ChatViewModelTest {
             queued: Boolean,
             attachments: List<OutgoingAttachment>,
         ): GatewaySubmitOutcome {
+            lastSubmitLease = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.SessionSelectionLease]
+            lastSubmitJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             submitAttempts += 1
             submitGate?.await()
             submitFailure?.let { throw it }

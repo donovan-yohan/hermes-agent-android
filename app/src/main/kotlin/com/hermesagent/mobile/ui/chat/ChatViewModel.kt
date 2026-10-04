@@ -122,8 +122,6 @@ import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.data.session.displayStatus
-import com.hermesagent.mobile.data.session.matchesProjectQuery
-import com.hermesagent.mobile.data.session.sortProjectsForOverview
 import com.hermesagent.mobile.data.composer.maskComposerReferences
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -696,10 +694,12 @@ internal class ChatViewModel(
      * this number and proves the screen still belongs to it before adopting or
      * repainting anything.
      */
+    private val sessionSelectionFence = com.hermesagent.mobile.data.gateway.SessionSelectionFence()
+    private val pendingCronSends = mutableSetOf<Triple<Long, String?, String>>()
     private var sessionOpenGeneration = 0L
     private var sidebarGroupingGeneration = 0L
     @Volatile private var profileScopeGeneration = 0L
-        set(value) { field = value; gatewayLogsController.dismiss() }
+        set(value) { sessionSelectionFence.invalidate(); field = value; gatewayLogsController.dismiss() }
     private var choseInitialSession = false
     private var previousStatuses = emptyMap<String, SessionStatus>()
     private var draftSnapshot = linkedMapOf<String, String>()
@@ -822,6 +822,8 @@ internal class ChatViewModel(
     fun confirmSendDiagnostics(generation: Long) = diagnosticsController.confirm(generation)
     fun dismissSendDiagnostics() = diagnosticsController.dismiss()
 
+    private val sidebarCatalogProjection = SidebarCatalogProjection()
+
     val uiState: StateFlow<ChatUiState> = combine(
         combine(cache.state, cache.endpointGeneration) { state, endpoint -> state to endpoint },
         combine(query, searchPendingState, searchResults, ::SearchStateBundle),
@@ -900,36 +902,12 @@ internal class ChatViewModel(
         // belongs only to the profile it was read from.
         val profileScopeState = navigation.sidebarView.profileScope
         val projectScope = projectProfileScopeOf(profileScopeState)
-        val selectedProject = navigation.projectId
-            ?.takeIf { projectScope.showsCatalog }
-            ?.let(cacheState.projects.projects::get)
-        // The sidebar shows one profile at a time; the unified view shows every
-        // profile's rows (`apps/desktop/src/app/chat/sidebar/profile-scope.ts:5-13`).
-        // The cache keeps every row it has ever been told about either way.
-        val scopedSessions = filterSessionsByProfileScope(
-            selectedProject?.id
-                ?.let { cacheState.projects.memberships[it].orEmpty() }
-                ?.mapNotNull(cacheState.sessions::get)
-                ?: cacheState.sessions.values.toList(),
-            navigation.sidebarView.profileScope.key,
+        val sidebarCatalog = sidebarCatalogProjection.derive(
+            cacheState, cacheAndEndpoint.second, profileScopeState, navigation.projectId, searchState.query,
         )
-        val projects = if (selectedProject == null && projectScope.showsCatalog) {
-            sortProjectsForOverview(
-                cacheState.projects.projects.values,
-                cacheState.projects.activeProjectId,
-            ).map { project ->
-                project.copy(
-                    previewSessions = filterSessionsByProfileScope(
-                        project.previewSessions
-                            .map { preview -> cacheState.sessions[preview.id] ?: preview }
-                            .filter { it.hidden != true },
-                        profileScopeState.key,
-                    ),
-                )
-            }.filter { it.matchesProjectQuery(searchState.query) }
-        } else {
-            emptyList()
-        }
+        val selectedProject = sidebarCatalog.selectedProject
+        val scopedSessions = sidebarCatalog.scopedSessions
+        val projects = sidebarCatalog.projects
         val busyKind = when {
             active?.status == SessionStatus.NeedsInput -> ComposerBusyKind.NeedsInput
             active?.status in STREAMING_STATUSES -> ComposerBusyKind.Streaming
@@ -2085,7 +2063,7 @@ internal class ChatViewModel(
         // screen, and the open is what makes its history authoritative. Only
         // navigation runs when the selection actually changes: rehoming an
         // unchanged id would disturb its draft and composer state instead.
-        viewModelScope.launch {
+        viewModelScope.launch(captureSessionSelection(id)) {
             openAndAdopt(id)
         }
     }
@@ -2184,11 +2162,21 @@ internal class ChatViewModel(
         val overrides = newSessionOverrides()
         val createdControls = composer.value.controls
         val createdCatalog = composer.value.catalog
+        val projectId = selectedProjectId.value
+        val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
+        val profile = profileScope.value.activeProfile
+        val endpoint = cache.endpointGeneration.value
+        val connection = connectionGeneration()
+        val generation = ++navigationGeneration
+        fun stillOwnsCreate() = generation == navigationGeneration &&
+            endpoint == cache.endpointGeneration.value && connection == connectionGeneration() &&
+            profile == profileScope.value.activeProfile && projectId == selectedProjectId.value
         viewModelScope.launch {
-            val projectId = selectedProjectId.value
-            val workspacePath = projectId?.let { cache.state.value.projects.projects[it]?.path }
             try {
-                val id = repository.createSession(workspacePath, overrides)
+                val id = repository.createSessionAtEndpoint(workspacePath, overrides, profile, endpoint)
+                // Backend completion remains cached, but only the original
+                // navigation intent can adopt its result and composer snapshot.
+                if (!stillOwnsCreate()) return@launch
                 if (projectId != null) createdProjectBySession[id] = projectId
                 flushDraft()
                 rehome(id)
@@ -2207,7 +2195,9 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                noticeLine = "A new session could not be started. Check the Gateway and try again."
+                if (stillOwnsCreate()) {
+                    noticeLine = "A new session could not be started. Check the Gateway and try again."
+                }
             }
         }
     }
@@ -2601,6 +2591,7 @@ internal class ChatViewModel(
     }
 
     private fun rehome(id: String?, applyOpenSideEffects: Boolean = true) {
+        sessionSelectionFence.invalidate()
         invalidateRecentImagesScope()
         activeSessionId.value?.let(composerHistoryController::reset)
         id?.let(composerHistoryController::reset)
@@ -2788,6 +2779,10 @@ internal class ChatViewModel(
         val originalSubmittedDraft = draft.value
         val compactBotChat = botChatSessionId == sessionId && prompt in setOf("/new", "/reset")
         val submittedPrompt = if (compactBotChat) "/compact" else prompt
+        val cronSendKey = if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(sessionId)) {
+            Triple(cache.endpointGeneration.value, cache.session(sessionId)?.remoteProfile, sessionId)
+        } else null
+        if (cronSendKey != null && !pendingCronSends.add(cronSendKey)) return
         val claimedIds = outgoing.mapTo(mutableSetOf()) { it.draft.occurrenceId }
         // Claim before launching the first RPC. This single-owner fence turns
         // a second Queue tap into a status notice instead of a duplicate
@@ -2807,11 +2802,12 @@ internal class ChatViewModel(
         val botPromptEndpoint = botChatEndpoint
             ?.takeIf { botChatSessionId == sessionId }
             ?.cacheGeneration
-        clearDraftAfterDelivery(sessionId)
+        val selection = captureSessionSelection(sessionId)
+        if (cronSendKey == null) clearDraftAfterDelivery(sessionId)
         noticeLine = if (compactBotChat) {
             "Bot chats are one continuous conversation — compacting instead. For a throwaway session with this bot, use Sessions mode."
         } else refusalWarning
-        viewModelScope.launch {
+        viewModelScope.launch(selection) {
             try {
                 val result = if (botPromptEndpoint != null) {
                     repository.submitAtEndpoint(sessionId, submittedPrompt, queued, botPromptEndpoint)
@@ -2825,6 +2821,16 @@ internal class ChatViewModel(
                 }
                 when (result) {
                     GatewaySubmitOutcome.Accepted -> {
+                        if (cronSendKey != null && cache.endpointGeneration.value == cronSendKey.first &&
+                            cache.session(sessionId)?.remoteProfile == cronSendKey.second &&
+                            draftSnapshot[sessionId] == originalSubmittedDraft) {
+                            if (activeSessionId.value == sessionId && draft.value == originalSubmittedDraft) {
+                                clearDraftAfterDelivery(sessionId)
+                            } else {
+                                rememberDraft(sessionId, "")
+                                viewModelScope.launch { persistDraft(sessionId, "") }
+                            }
+                        }
                         claimedIds.forEach { occurrenceId ->
                             attachmentPayloads.remove(occurrenceId)?.fill(0)
                             attachmentMimes.remove(occurrenceId)
@@ -2886,7 +2892,11 @@ internal class ChatViewModel(
                         ChatNotice(safe ?: "This message may have been sent. Check this session before trying again.")
                     else -> ChatNotice(safe ?: "The message was not sent. Reconnect to the Gateway and try again.")
                 }
-                if (!ambiguous) restoreSubmittedDraft(sessionId, originalSubmittedDraft)
+                // Cron admission never cleared the draft; restoring it here would undo
+                // a deliberate newer edit or inject it into a replacement owner.
+                if (!ambiguous && cronSendKey == null) restoreSubmittedDraft(sessionId, originalSubmittedDraft)
+            } finally {
+                cronSendKey?.let(pendingCronSends::remove)
             }
         }
     }
@@ -4042,6 +4052,11 @@ internal class ChatViewModel(
         return revision
     }
 
+    private fun captureSessionSelection(id: String): kotlin.coroutines.CoroutineContext =
+        if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(id)) {
+            sessionSelectionFence.capture(cache.endpointGeneration.value, id, cache.session(id)?.remoteProfile)
+        } else kotlin.coroutines.EmptyCoroutineContext
+
     private suspend fun openAndAdopt(id: String) {
         val generation = ++sessionOpenGeneration
         // The open waits on the Gateway and adoption waits on the draft store,
@@ -4059,7 +4074,9 @@ internal class ChatViewModel(
             sessionOpen.value = SessionOpenState.Opening(id)
         }
         try {
-            val canonicalId = repository.openSession(id)
+            val selection = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.SessionSelectionLease]
+                ?: captureSessionSelection(id)
+            val canonicalId = kotlinx.coroutines.withContext(selection) { repository.openSession(id) }
             if (!stillOwns(id)) return
             adoptCanonicalSession(id, canonicalId)
             // This fence is the half adoption cannot cover: for an equal id it
@@ -4069,6 +4086,10 @@ internal class ChatViewModel(
             // composer read starts, so a slow catalog cannot look like a failure.
             if (sessionOpenGeneration == generation && activeSessionId.value == canonicalId) {
                 sessionOpen.value = SessionOpenState.Idle
+            }
+            repository.sessionReadOnlyReason(canonicalId)?.let { reason ->
+                noticeLine = reason
+                return
             }
             refreshComposer(canonicalId)
         } catch (cancelled: CancellationException) {

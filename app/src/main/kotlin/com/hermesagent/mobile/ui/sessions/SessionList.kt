@@ -300,10 +300,10 @@ fun SessionList(
                 // (`sidebar/index.tsx:1876` @ `95f20517`) — so the project branch
                 // above is the same button wearing the other word, and the flat
                 // list is the case it was being denied.
-                if (!showingProjectOverview && selectedProject == null) {
+                if (!showingProjectOverview) {
                     HermesIconButton(
                         icon = HermesIcon.Add,
-                        contentDescription = "New session",
+                        contentDescription = selectedProject?.let { "New session in ${it.label}" } ?: "New session",
                         onClick = onCreate,
                         enabled = canCreate,
                         modifier = Modifier.testTag(SIDEBAR_HEADER_ADD_TAG),
@@ -419,6 +419,8 @@ fun SessionList(
                             nowMillis = nowMillis,
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelect,
+                            canCreate = canCreate,
+                            onCreate = { onSelectProject(project.id); onCreate() },
                         )
                     }
                 }
@@ -914,6 +916,8 @@ private fun ProjectRow(
     nowMillis: Long,
     onOpen: () -> Unit,
     onSelectSession: (String) -> Unit,
+    canCreate: Boolean,
+    onCreate: () -> Unit,
 ) {
     val tokens = HermesTheme.tokens
     val countLabel = if (project.sessionCount == 1) "1 session" else "${project.sessionCount} sessions"
@@ -968,6 +972,12 @@ private fun ProjectRow(
                 text = project.sessionCount.toString(),
                 style = HermesTheme.type.scaffoldMeta,
                 color = tokens.textTertiary,
+            )
+            HermesIconButton(
+                icon = HermesIcon.Add,
+                contentDescription = "New session in ${project.label}",
+                enabled = canCreate,
+                onClick = onCreate,
             )
         }
         project.previewSessions.forEach { session ->

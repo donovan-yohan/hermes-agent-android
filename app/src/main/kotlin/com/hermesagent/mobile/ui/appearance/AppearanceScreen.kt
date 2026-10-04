@@ -45,6 +45,7 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import com.hermesagent.mobile.ui.theme.HermesThemePreset
 import com.hermesagent.mobile.ui.theme.HermesTokens
 import com.hermesagent.mobile.ui.theme.paletteFor
+import com.hermesagent.mobile.ui.theme.resolveAppearancePreset
 
 /**
  * Appearance.
@@ -64,6 +65,7 @@ fun AppearanceScreen(
     introSplash: Boolean = true,
 ) {
     val tokens = HermesTheme.tokens
+    val selectedName = resolveAppearancePreset(selection.themeName, gatewayThemes.themes.map { it.preset }).name
 
     Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
         LazyColumn(
@@ -113,7 +115,7 @@ fun AppearanceScreen(
             items(items = BuiltinThemes.ALL, key = { it.name }) { preset ->
                 ThemeRow(
                     preset = preset,
-                    isSelected = preset.name == selection.themeName,
+                    isSelected = preset.name == selectedName,
                     dark = HermesTheme.isDark,
                     onClick = { actions.onSelectTheme(preset.name) },
                 )
@@ -138,7 +140,7 @@ fun AppearanceScreen(
             items(gatewayThemes.themes, key = { it.name }) { theme ->
                 ThemeRow(
                     preset = theme.preset,
-                    isSelected = theme.name == selection.themeName,
+                    isSelected = theme.name == selectedName,
                     dark = HermesTheme.isDark,
                     onClick = { actions.onSelectTheme(theme.name) },
                 )

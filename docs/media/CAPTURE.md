@@ -4,6 +4,69 @@ The README media below was recorded from the app running on an emulator,
 not mocked up. This page records what each file shows, how it was produced, and
 — just as important — which frames this pass could **not** produce and why.
 
+## Configured MCP historical candidate supplement
+
+[Report](bot-configured-mcp-aac3177b/REPORT.md), [paired gallery](bot-configured-mcp-aac3177b/pairs.md),
+[per-file hashes](bot-configured-mcp-aac3177b/files.json) and [runtime audit](bot-configured-mcp-aac3177b/runtime-audit.json):
+26 original API 37 Android captures (13 discovered catalog states × light/dark),
+26 passing canonical-schema receipts and 14 genuine Desktop observations at
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67`. Android candidate
+`aac3177b0cb4b73482d1802d5b407a7bb8f40cfe`, existing/installed APK
+`ffdd9460d1a5236979fb2b0644da0747e6e86d63a3d4bb77e3da37d4ba43766c`.
+No rebuild or source integration. Actual production VM methods over synthetic
+transport are not touch gestures. Desktop uses current Connectors, not the
+fallback checklist; all 14 observational receipts retain canonical rejection.
+Task-owned emulator/display stopped and absence checked; existing devices and
+shared packages untouched. Review pending; no push or parity acceptance claim.
+
+## Installed Skills supplement
+
+[Recovery report](../parity/captures/installed-skills-4df25613/REPORT.md),
+[pair map](../parity/captures/installed-skills-4df25613/pairs.json), and
+[hash manifest](../parity/captures/installed-skills-4df25613/manifest.json):
+24 original Android captures, 24 validated receipts and 48 XML brackets from
+approved APK source `4df256139b8d2bf03f903516152e299cd9949aa5`, paired with 14
+unchanged observational Desktop references at `587e673e2a2fae0616d8b750bb189217080f621a`.
+New disposable emulator only, now shut down. Desktop receipts remain noncanonical;
+five Android-only states have no supplied Desktop counterpart. Synthetic fixture
+staging is not human interaction or live-server evidence. No Gradle or push.
+
+## Classic 36922 manual-selection supplement
+
+[Fresh narrow paired report](classic-36922/REPORT.md): four approved-APK Android
+phone PNG/XML observations and four actual pinned Desktop wide observations,
+Classic picker and screen in light/dark after Nous Alt selection. Eight unique
+observations, four comparison pairs, zero canonical validator acceptances.
+Android used a new task-owned AVD, now verified stopped; existing emulator and
+physical-device package code were not replaced. Immutable-source manifests and
+reconstructible Desktop fixture are included. Screen connection contexts differ;
+backend transitions and matched viewport coverage remain pending under #292.
+Historical packets below retain their original pins and bytes.
+
+## e05 theme refresh supplement
+
+[Narrow paired report](theme-refresh-e05/REPORT.md): four actual API 37 Android
+phone PNG/XML pairs and eight e05 Desktop wide observations. Exact approved APK
+and implementation pins are retained. Manual Mono is paired; Android offline
+retired-default resolution is not Desktop backend-default activation. Both packets
+are noncanonical; Android event transitions and matched viewport coverage remain
+pending under #292. Publication review required; no rendered parity approval.
+
+
+## Toolsets selection supplement
+
+[Side-by-side report](bot-toolsets-v1/report.html), [limits](bot-toolsets-v1/REPORT.md),
+[per-file manifest](bot-toolsets-v1/provenance.json) and [platform map](bot-toolsets-v1/platform-map.json):
+24 API 37 Android originals (12 catalog states × light/dark) and 14 actual Electron
+Desktop originals (seven native states × light/dark). Clean Android capture source
+`0d08856c6dcd720b62fa2aa97e6bf3ac82503902`, installed APK
+`52b931f852cf6f88f6e9d38ebea1983d634fa48c433e8e5a3aecbd6141111f96`.
+Desktop pin `587e673e2a2fae0616d8b750bb189217080f621a`; its original observations
+are not canonical parity receipts. No fake reset/restored counterpart. Android
+fixture-staged actions, native checkable View rows and explicit Save are distinct
+from current Desktop's live switches. Synthetic-only; no phone or live-Gateway claim.
+All paths and image hashes are enumerated in the manifest. Fresh review pending.
+
 ## Avatar fallback follow-up
 
 [Report](bot-avatar-fallback-v2/REPORT.md) and [per-image verification](bot-avatar-fallback-v2/verification.json):

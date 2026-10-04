@@ -1,0 +1,87 @@
+{
+  "classification": "supplemental comparison; not full parity approval",
+  "android": {
+    "locator": {
+      "activity": "com.hermesagent.mobile.BotToolsetsParityActivity",
+      "section": "Toolsets"
+    },
+    "presentation": "full emulator viewport of focused production section fixture, not complete sheet",
+    "action_origin": "fixture-stage production view-model actions",
+    "interactions": []
+  },
+  "desktop": {
+    "locator": {
+      "role": "dialog",
+      "name": "Edit profile",
+      "tab": "Tools"
+    },
+    "presentation": "real Electron editor scrolled to Advanced, inspector naturally clipped",
+    "action_origin": "native rendered switch and reopen; synthetic main IPC store",
+    "canonical_receipt_status": "rejected; observational schema preserved"
+  },
+  "states": {
+    "loading": {
+      "android_state": "loading",
+      "desktop_state": "loading",
+      "boundary": "Different request seams; both genuinely pending. Android pre/post screenshot UI checks within 20 seconds; no exported Android RPC telemetry."
+    },
+    "defaults": {
+      "android_state": "defaults",
+      "desktop_state": "loaded-defaults",
+      "boundary": "Same initial selection; no Desktop default-pin badge."
+    },
+    "pinned": {
+      "android_state": "pinned",
+      "desktop_state": "loaded-pinned",
+      "boundary": "Same initial selection; no Desktop custom-pin badge."
+    },
+    "changed": {
+      "android_state": "changed",
+      "desktop_state": "changed-autosave-pending",
+      "boundary": "Android unsaved staged draft; Desktop real switch has already dispatched a held immediate PUT."
+    },
+    "all-selected": {
+      "android_state": "all-selected",
+      "desktop_state": null,
+      "boundary": "Android explicit all-selected draft. Desktop saved images incidentally show both on; not a separate captured all-selected transition."
+    },
+    "empty-selection": {
+      "android_state": "empty-selection",
+      "desktop_state": null,
+      "boundary": "Android Save disabled; no corresponding Desktop journey captured."
+    },
+    "reset-confirmation": {
+      "android_state": "reset-confirmation",
+      "desktop_state": null,
+      "boundary": "Android-only safety adaptation; current Desktop Tools has no restore-defaults control."
+    },
+    "saved": {
+      "android_state": "saved",
+      "desktop_state": "saved-autosave",
+      "boundary": "Android fixture invokes Save and shows inline result; Desktop real switch committed silently. Desktop separate saved-reopened evidence proves a new GET."
+    },
+    "restored": {
+      "android_state": "restored",
+      "desktop_state": null,
+      "boundary": "Android confirmed default inheritance; no current Desktop counterpart. Initial defaults are not restoration."
+    },
+    "error": {
+      "android_state": "error",
+      "desktop_state": "error",
+      "boundary": "Both actual read refusal branches. Desktop says Skills failed to load / Refresh skills even on Tools; preserved unchanged."
+    },
+    "empty": {
+      "android_state": "empty",
+      "desktop_state": null,
+      "boundary": "Android empty catalog result; no corresponding Desktop journey captured."
+    },
+    "unconfirmed": {
+      "android_state": "unconfirmed",
+      "desktop_state": null,
+      "boundary": "Android fixture mutates synthetic store then refuses receipt; visible unconfirmed result, not a pre-write rejection. No Desktop write refusal captured."
+    }
+  },
+  "desktop_supplemental_states": [
+    "saved-reopened"
+  ]
+}

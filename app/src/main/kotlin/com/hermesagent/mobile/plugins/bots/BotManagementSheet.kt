@@ -36,7 +36,10 @@ class BotManagementActions(
 fun BotManagementSheet(
     state: BotManagementState, actions: BotManagementActions,
     modelState: BotModelState = BotModelState(), modelActions: BotModelActions = BotModelActions(),
+    toolsetsState: BotToolsetsState = BotToolsetsState(), toolsetsActions: BotToolsetsActions = BotToolsetsActions(),
     avatarState: BotAvatarState = BotAvatarState(), avatarActions: BotAvatarActions = BotAvatarActions(),
+    skillsState: BotSkillsState = BotSkillsState(), skillsActions: BotSkillsActions = BotSkillsActions(),
+    mcpState: BotMcpState = BotMcpState(), mcpActions: BotMcpActions = BotMcpActions(),
 ) {
     val dialog = state.dialog ?: return
     val tokens = HermesTheme.tokens
@@ -89,7 +92,15 @@ fun BotManagementSheet(
                     if (dialog == BotManagementDialog.Edit && modelState.ticket?.target == state.target)
                         BotModelEditor(modelState, modelActions)
                     else ComingSoonAction("Model")
-                    ComingSoonAction("Skills and toolsets")
+                    if (dialog == BotManagementDialog.Edit && toolsetsState.ticket?.target == state.target)
+                        BotToolsetsEditor(toolsetsState, toolsetsActions)
+                    else ComingSoonAction("Toolsets")
+                    if (dialog == BotManagementDialog.Edit && skillsState.ticket?.target == state.target)
+                        BotSkillsEditor(skillsState, skillsActions)
+                    else ComingSoonAction("Skills")
+                    if (dialog == BotManagementDialog.Edit && mcpState.ticket?.target == state.target)
+                        BotMcpEditor(mcpState, mcpActions)
+                    else ComingSoonAction("MCP servers")
                 }
                 BotManagementDialog.Delete -> {
                     Text("Permanently delete ${state.target?.name.orEmpty()} and its profile data? This cannot be undone.",

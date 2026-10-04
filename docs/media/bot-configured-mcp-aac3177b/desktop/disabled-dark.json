@@ -1,0 +1,137 @@
+{
+  "state": "disabled",
+  "theme": "dark",
+  "selector": "[role=dialog][aria-labelledby] Edit profile",
+  "normalization": {
+    "skin": "mono",
+    "mode": "dark",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clock": "2026-09-17T16:00:00.000Z"
+  },
+  "text": "Edit profile\n\nAppearance and role for Synthetic Mcp (synthetic-mcp).\n\nBot\nGenerate\nUpload\nPet\nAuto\nRandomize\nLock face\nFace follows the name.\nClassic shapes\nTitle\nDescription\nAdvanced — model, skills, toolsets, SOUL.md\nProvider\ncustom (custom)\nModel\nmock-model\nCapabilities (applies immediately — skills, tools, MCP)\nSkills\n53\nTools\n25\nConnectors\nPlugins\nConnectors\nAdd your own\n\nManaged apps are not available for this account yet.\n\nOn this device\n2\nS\nSynthetic Notes\n— Open Synthetic Notes\nMCP · Custom\nOff\nS\nSynthetic Research\n— Open Synthetic Research\nMCP · Custom\nOff\nSOUL.md (persona + agent-messaging protocol)\nCancel\nSave\nClose",
+  "nodes": "- dialog \"Edit profile\":\n  - heading \"Edit profile\" [level=2]\n  - paragraph: Appearance and role for Synthetic Mcp (synthetic-mcp).\n  - button \"Bot\" [pressed]\n  - button \"Generate\"\n  - button \"Upload\"\n  - button \"Pet\"\n  - button \"Auto — the name decides\": Auto\n  - button \"round\"\n  - button \"organic\"\n  - button \"boxy\"\n  - button \"capsule\"\n  - button \"nub\"\n  - button \"cloud\"\n  - button \"droplet\"\n  - button \"hexagon\"\n  - button \"sun\"\n  - button \"triangle\"\n  - button \"Randomize\"\n  - button \"Lock face\"\n  - text: Face follows the name.\n  - button \"Classic shapes\"\n  - text: Title\n  - textbox \"Synthetic Mcp\": Synthetic MCP\n  - text: Description\n  - textbox \"What should this bot help with?\": Synthetic MCP\n  - button \"Advanced — model, skills, toolsets, SOUL.md\"\n  - text: Provider\n  - combobox: custom (custom)\n  - text: Model\n  - combobox: mock-model\n  - text: Capabilities (applies immediately — skills, tools, MCP)\n  - button \"Skills 53\"\n  - button \"Tools 25\"\n  - button \"Connectors\"\n  - button \"Plugins\"\n  - heading \"Connectors\" [level=2]\n  - button \"Add your own\"\n  - img\n  - textbox \"Search 2 apps\"\n  - paragraph: Managed apps are not available for this account yet.\n  - heading \"On this device\" [level=3]\n  - text: 2 S\n  - button \"Synthetic Notes — Open Synthetic Notes\"\n  - text: MCP · Custom Off\n  - switch \"Turn Synthetic Notes on\"\n  - text: S\n  - button \"Synthetic Research — Open Synthetic Research\"\n  - text: MCP · Custom Off\n  - switch \"Turn Synthetic Research on\"\n  - text: SOUL.md (persona + agent-messaging protocol)\n  - textbox: \"# Synthetic MCP **Role:** Synthetic MCP You are Synthetic MCP, a persistent named agent (profile `synthetic-mcp`) on this machine. You keep your own memory, skills, and conversation history across sessions.\"\n  - button \"Cancel\"\n  - button \"Save\"\n  - button \"Close\":\n    - img\n    - text: Close",
+  "before": {
+    "probe": {
+      "scenario": "disabled",
+      "log": [
+        {
+          "request": {
+            "profile": "synthetic-mcp",
+            "connectionId": "local",
+            "priority": "foreground",
+            "path": "/api/config"
+          },
+          "phase": "read",
+          "at": 1790931288375,
+          "result": {
+            "mcp_servers": {
+              "synthetic-research": {
+                "command": "synthetic-mcp-command",
+                "args": [
+                  "--synthetic"
+                ],
+                "enabled": false
+              },
+              "synthetic-notes": {
+                "url": "https://example.invalid/mcp",
+                "enabled": false
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "profile": "synthetic-mcp",
+            "connectionId": "local",
+            "priority": "foreground",
+            "path": "/api/mcp/catalog"
+          },
+          "phase": "read",
+          "at": 1790931288376,
+          "result": {
+            "entries": []
+          }
+        }
+      ],
+      "pendingReads": 0,
+      "pendingWrites": 0,
+      "servers": {
+        "synthetic-research": {
+          "command": "synthetic-mcp-command",
+          "args": [
+            "--synthetic"
+          ],
+          "enabled": false
+        },
+        "synthetic-notes": {
+          "url": "https://example.invalid/mcp",
+          "enabled": false
+        }
+      }
+    },
+    "rpc": []
+  },
+  "after": {
+    "probe": {
+      "scenario": "disabled",
+      "log": [
+        {
+          "request": {
+            "profile": "synthetic-mcp",
+            "connectionId": "local",
+            "priority": "foreground",
+            "path": "/api/config"
+          },
+          "phase": "read",
+          "at": 1790931288375,
+          "result": {
+            "mcp_servers": {
+              "synthetic-research": {
+                "command": "synthetic-mcp-command",
+                "args": [
+                  "--synthetic"
+                ],
+                "enabled": false
+              },
+              "synthetic-notes": {
+                "url": "https://example.invalid/mcp",
+                "enabled": false
+              }
+            }
+          }
+        },
+        {
+          "request": {
+            "profile": "synthetic-mcp",
+            "connectionId": "local",
+            "priority": "foreground",
+            "path": "/api/mcp/catalog"
+          },
+          "phase": "read",
+          "at": 1790931288376,
+          "result": {
+            "entries": []
+          }
+        }
+      ],
+      "pendingReads": 0,
+      "pendingWrites": 0,
+      "servers": {
+        "synthetic-research": {
+          "command": "synthetic-mcp-command",
+          "args": [
+            "--synthetic"
+          ],
+          "enabled": false
+        },
+        "synthetic-notes": {
+          "url": "https://example.invalid/mcp",
+          "enabled": false
+        }
+      }
+    },
+    "rpc": []
+  },
+  "transport": "actual renderer API through isolated main hermes:api synthetic interception; actual websocket send observation"
+}

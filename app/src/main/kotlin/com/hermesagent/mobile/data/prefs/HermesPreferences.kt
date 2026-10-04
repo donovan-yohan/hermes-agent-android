@@ -187,7 +187,7 @@ internal object AdoptPerConnectionTheme : DataMigration<Preferences> {
     override suspend fun migrate(currentData: Preferences): Preferences {
         val requested = currentData[LEGACY_THEME_NAME]
             ?.trim()
-            ?.takeIf(::isSafeLegacyThemeName)
+            ?.takeIf(ConnectionRegistryCodec::isSafeStoredThemeName)
         val rows = currentData[CONNECTIONS]
             ?.takeIf(ConnectionRegistryCodec::isWritable)
             ?.let(ConnectionRegistryCodec::decode)
@@ -207,8 +207,6 @@ internal object AdoptPerConnectionTheme : DataMigration<Preferences> {
     override suspend fun cleanUp() = Unit
 }
 
-private fun isSafeLegacyThemeName(value: String): Boolean =
-    value.isNotBlank() && value.length <= 64 && value.none(Char::isISOControl)
 
 /**
  * Everything this connection/appearance preference store puts on disk.

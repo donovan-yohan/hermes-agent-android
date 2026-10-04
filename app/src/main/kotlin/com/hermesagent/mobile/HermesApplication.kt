@@ -88,14 +88,13 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /** Process-scoped live Gateway graph and backend-authoritative session cache. */
 class HermesApplication : Application() {
     internal val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http by lazy {
-        OkHttpClient.Builder()
+        com.hermesagent.mobile.data.gateway.gatewayTransportClient().newBuilder()
             // Keep this below the Gateway's default 20-second ws_orphan_reap grace.
             .pingInterval(10, TimeUnit.SECONDS)
             .build()
@@ -293,6 +292,7 @@ class HermesApplication : Application() {
                     gatewayConnection.client,
                     cache.endpointGeneration,
                     endpointDispatchFence,
+                    http = { gatewayConnection.gatewayHttp.value },
                 )
             },
         )

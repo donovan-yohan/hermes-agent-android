@@ -134,12 +134,18 @@ jobs:
           # still passes a byte-true move even when this range moves no pin at
           # all — including when the base is missing and the range check cannot
           # run.
+          python3 scripts/test_pin_citation_bounds.py
           python3 scripts/verify-pin-citations.py --self-test
-          # A force-push to a rewritten root, or a branch's first push, leaves a
-          # `before` this checkout does not have; there is no range to check.
-          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            echo "::notice::base ${BASE_SHA} is not in this checkout; no range to check."
-            exit 0
+          # A missing base or a stalled probe cannot prove the range. Fail closed.
+          status=0
+          GIT_ALLOW_PROTOCOL= GIT_NO_LAZY_FETCH=1 timeout --kill-after=1s 30s git -c protocol.allow=never \
+            cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || status=$?
+          if [[ "$status" == 124 || "$status" == 137 ]]; then
+            echo "::error::git stage=base-probe timed out; citation check incomplete"
+            exit 3
+          elif [[ "$status" != 0 ]]; then
+            echo "::error::base revision unavailable; citation check incomplete"
+            exit 3
           fi
           # On a pull request the base is the tip of the target branch, which may
           # have advanced past this branch's fork point. Two-dot against that tip
@@ -152,7 +158,12 @@ jobs:
             range="${BASE_SHA}..${HEAD_SHA}"
           fi
           upstream="$RUNNER_TEMP/hermes-agent-upstream"
-          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream"
+          echo "git stage=upstream-clone started (limit 60s)"
+          GIT_TERMINAL_PROMPT=0 timeout --kill-after=1s 60s git clone --quiet \
+            --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {
+              echo "::error::git stage=upstream-clone failed or timed out (60s); citation check incomplete"
+              exit 3
+            }
           python3 scripts/verify-pin-citations.py \
             --check-range "$range" \
             --upstream "$upstream" --fetch
@@ -164,8 +175,12 @@ jobs:
     name: instrumented emulator lane
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      ANDROID_SERIAL: emulator-5554
     steps:
       - uses: actions/checkout@v4
+      - name: Verify disposable launcher preparation contract
+        run: python3 -m unittest discover -s scripts/tests -p test_ci_launcher_focus.py -v
       - name: State what this lane proves
         shell: bash
         run: |
@@ -209,6 +224,13 @@ jobs:
           # attempt pays the cold-boot cost again.
           restore-keys: |
             avd-api34-google_apis-x86_64-pixel_6-
+      # Finish CPU/memory-heavy APK assembly before either cold or warm boot.
+      # Resource isolation only; this is not a proven SystemUI ANR fix.
+      - name: Assemble instrumented APKs before emulator boot
+        run: |
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+          python3 scripts/ci_prebuilt.py record
+          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
       - name: Create the AVD snapshot
         if: steps.avd-cache.outputs.cache-hit != 'true'
         # Pinned to a commit, for the reason given above the setup-android pin.
@@ -235,11 +257,15 @@ jobs:
           profile: pixel_6
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
           disable-animations: true
+          # CI-only mitigation for the API34 launcher ANR stealing input focus.
+          # Stop only this synthetic AVD's known launcher after normal preparation;
+          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
           script: |
-            ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
             ./scripts/prepare-ci-emulator.sh
-            ./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"; adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot" && FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected
       - name: Upload instrumented lane evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -250,6 +276,14 @@ jobs:
             app/build/reports/androidTests/connected/**
           if-no-files-found: warn
           retention-days: 14
+      - name: Upload reduced failure-only focus evidence
+        if: failure() && env.FOCUS_EVIDENCE != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: passive-focus-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.FOCUS_EVIDENCE }}/*.json
+          if-no-files-found: ignore
+          retention-days: 1
 
   # Separate job so only this one holds `actions: write`, and it runs after the
   # upload so the replacement artifact exists before any older one is deleted.

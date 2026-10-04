@@ -2,6 +2,145 @@
   "schema_version": 1,
   "purpose": "Dispatch catalog for real, synthetic visual-parity captures. A state is one explicit artifact, never a production session.",
   "surfaces": {
+    "bot-configured-mcp": {
+      "desktop_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+      "fixture_id": "bot-configured-mcp-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotMcpParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "Bounded safety adaptation of actual Connectors autosave at the pin: named config delta with readback, no whole-map replace, reload or probe. Desktop mapping remains source-only until independent capture. Android states are production actions over a synthetic typed HTTP host, not gesture receipts. Loading and pending retain 20-second deadlines.",
+      "states": {
+        "mcp-loaded": {
+          "interaction": [],
+          "post_interaction_accessibility": "Configured MCP servers"
+        },
+        "mcp-disabled": {
+          "interaction": [],
+          "post_interaction_accessibility": "Configured MCP servers"
+        },
+        "mcp-plugin": {
+          "interaction": [],
+          "post_interaction_accessibility": "Plugin-managed · Read-only"
+        },
+        "mcp-unknown": {
+          "interaction": [],
+          "post_interaction_accessibility": "Unknown source · Read-only"
+        },
+        "mcp-loading": {
+          "interaction": [],
+          "post_interaction_accessibility": "Reading MCP servers…"
+        },
+        "mcp-pending": {
+          "interaction": [],
+          "post_interaction_accessibility": "Saving MCP selection…"
+        },
+        "mcp-saved": {
+          "interaction": [],
+          "post_interaction_accessibility": "MCP selection saved. Applies to future sessions or Gateway starts."
+        },
+        "mcp-reopened": {
+          "interaction": [],
+          "post_interaction_accessibility": "Configured MCP servers"
+        },
+        "mcp-error": {
+          "interaction": [],
+          "post_interaction_accessibility": "This Gateway refused access to configured MCP servers."
+        },
+        "mcp-unavailable": {
+          "interaction": [],
+          "post_interaction_accessibility": "Configured MCP servers are unavailable on this Gateway."
+        },
+        "mcp-refused": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again."
+        },
+        "mcp-empty": {
+          "interaction": [],
+          "post_interaction_accessibility": "No configured MCP servers."
+        },
+        "mcp-unconfirmed": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again. MCP servers failed to load. Refresh to try again."
+        }
+      }
+    },
+    "bot-installed-skills": {
+      "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+      "fixture_id": "bot-installed-skills-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotSkillsParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "Installed source subset of actual Advanced Skills autosave UI. Desktop scratch installedskills-reference packet is observational, not canonical parity acceptance. No Android pixels captured yet. No install, bulk change, editor, pin or inheritance claims. Android waits for named readback rather than optimistic success; pending/loading keep the 20-second production request deadline.",
+      "states": {
+        "skills-loaded": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills"
+        },
+        "skills-disabled": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills"
+        },
+        "skills-loading": {
+          "interaction": [],
+          "post_interaction_accessibility": "Reading skills…"
+        },
+        "skills-pending": {
+          "interaction": [],
+          "post_interaction_accessibility": "Saving skill…"
+        },
+        "skills-saved": {
+          "interaction": [],
+          "post_interaction_accessibility": "Skill saved."
+        },
+        "skills-reopened": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills"
+        },
+        "skills-error": {
+          "interaction": [],
+          "post_interaction_accessibility": "This Gateway refused access to installed skills."
+        },
+        "skills-unavailable": {
+          "interaction": [],
+          "post_interaction_accessibility": "Installed skills are unavailable on this Gateway."
+        },
+        "skills-refused": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again."
+        },
+        "skills-essential": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again."
+        },
+        "skills-empty": {
+          "interaction": [],
+          "post_interaction_accessibility": "No installed skills."
+        },
+        "skills-unconfirmed": {
+          "interaction": [],
+          "post_interaction_accessibility": "Change not confirmed. Review the current selection before trying again. Skills failed to load. Refresh skills to try again."
+        }
+      }
+    },
+    "bot-toolsets": {
+      "desktop_sha": "587e673e2a2fae0616d8b750bb189217080f621a",
+      "fixture_id": "bot-toolsets-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotToolsetsParityActivity",
+      "desktop_selector": "[role=dialog]",
+      "desktop_selector_note": "Existing profile Toolsets editor only. Android uses independent Save toolsets and confirmed Restore defaults. Browser Desktop capture does not certify native Android Checkbox accessibility; capture platform node checkable/checked/enabled plus production Compose semantics. Pin is platform_toolsets.cli, not all runtime/platform tools.",
+      "states": {
+        "loading": { "interaction": [], "post_interaction_accessibility": "Reading toolsets…" },
+        "defaults": { "interaction": [], "post_interaction_accessibility": "Using defaults" },
+        "pinned": { "interaction": [], "post_interaction_accessibility": "Custom selection" },
+        "changed": { "interaction": [], "post_interaction_accessibility": "Save toolsets" },
+        "all-selected": { "interaction": [], "post_interaction_accessibility": "2 of 2 enabled" },
+        "empty-selection": { "interaction": [], "post_interaction_accessibility": "Select at least one toolset. Restore defaults does not disable all tools." },
+        "reset-confirmation": { "interaction": [], "post_interaction_accessibility": "Confirm restore defaults" },
+        "saved": { "interaction": [], "post_interaction_accessibility": "Toolsets saved." },
+        "restored": { "interaction": [], "post_interaction_accessibility": "Defaults restored." },
+        "error": { "interaction": [], "post_interaction_accessibility": "Toolsets could not be read. Close and try again." },
+        "empty": { "interaction": [], "post_interaction_accessibility": "No toolsets available." },
+        "unconfirmed": { "interaction": [], "post_interaction_accessibility": "The toolset change could not be confirmed. Close and read it again before retrying." }
+      }
+    },
     "desktop-sidebar": {
       "desktop_sha": "e2f8a0731bf26e95b31e35d73e71e183a1045b81",
       "fixture_id": "desktop-sidebar-synthetic-v1",
@@ -19,6 +158,20 @@
           "post_interaction_accessibility": "Group Chats",
           "fixture_note": "Same Sessions-mode sidebar, seeded currentRoute groups:route. Only the real Group Chats launcher is selected; no chat row is selected. Tests also exercise the actual launcher callbacks. This is selection-chrome evidence, not navigation destination or hosted-room evidence; the Desktop reference does not certify this additional selected state."
         }
+      }
+    },
+    "sidebar-projection": {
+      "desktop_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+      "fixture_id": "sidebar-projection-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.SidebarProjectionParityActivity",
+      "desktop_selector": "[data-sessions-mode]",
+      "desktop_selector_note": "New ViewModel-path observations only; the bootstrap empty Desktop sandbox is not a matching project journey. Requires paired synthetic project/session inputs before acceptance. Historical desktop-sidebar captures keep their original fixture and pin.",
+      "states": {
+        "projection-overview": { "interaction": ["tap:Open sessions"], "post_interaction_accessibility": "Open project Synthetic project. 2 sessions" },
+        "projection-selected": { "interaction": ["tap:Open sessions"], "post_interaction_accessibility": "All projects" },
+        "projection-search-match": { "interaction": ["tap:Open sessions"], "post_interaction_accessibility": "Open project Synthetic project. 2 sessions" },
+        "projection-search-miss": { "interaction": ["tap:Open sessions"], "post_interaction_accessibility": "Nothing matches" },
+        "projection-draft-reuse": { "interaction": ["tap:Open sessions"], "post_interaction_accessibility": "Open project Synthetic project. 2 sessions" }
       }
     },
     "composer-status-stack": {

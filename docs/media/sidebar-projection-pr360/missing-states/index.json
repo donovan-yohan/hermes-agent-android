@@ -1,0 +1,94 @@
+[
+  {
+    "path": "desktop/projection-search-miss.png",
+    "sha256": "7c87391bf314bd7201de79fd5eaf3c61bea1911ceb499b4e3ba82874686e16e3"
+  },
+  {
+    "path": "desktop/sidebar-draft-observed.json",
+    "sha256": "21b5541db919e221f3f0fa3d8f1c51887f6049e9d4b75d18ce0043a333be2132"
+  },
+  {
+    "path": "desktop/sidebar-synthetic-rpc-trace.json",
+    "sha256": "7046d1fc5ffb6cfbfda8a3fe8a4663c25d39a7c8f612603be0615dcd2cf87ab7"
+  },
+  {
+    "path": "desktop/fixture.spec.ts",
+    "sha256": "566043f497a6f4454a5e4eeb4eac6f3382fac3b87c2158fc6b2f431de931c785"
+  },
+  {
+    "path": "desktop/projection-search-miss-receipt.json",
+    "sha256": "6d3e99ac4cb60b8d777b6a4410f7e776d8c5d008d54df32880bf4517cb8a7243"
+  },
+  {
+    "path": "desktop/projection-draft-reuse-receipt.json",
+    "sha256": "3d401645a57f8984e692c54e784ae078a1820c6a4cff5c494873d7172a0c33d0"
+  },
+  {
+    "path": "desktop/index.json",
+    "sha256": "140d3fb1c25c4c8668d736ff332724d2939edab1283199d2368e940d27840d17"
+  },
+  {
+    "path": "desktop/projection-draft-reuse.png",
+    "sha256": "5a31d93be817fd5f037aa9166f2271798655d2452a46c8c03dc278fa41090b3f"
+  },
+  {
+    "path": "android/verified-index.json",
+    "sha256": "1ce3adb1d6319509db310dbe6e3e4171068d9948a6ad645b72a01c326cc97eba"
+  },
+  {
+    "path": "android/draft/visual-parity-desktop-boundary-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/request.json",
+    "sha256": "b44f8ae106543d3ca114934eeada957de58b96b3ab38d9deb9f1d78a9c895815"
+  },
+  {
+    "path": "android/draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-before.json.samples.json",
+    "sha256": "1873354bbbff93334c62215ed5e349ba6acc5065aab62f7bda4bf35696520f3c"
+  },
+  {
+    "path": "android/draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-before.json",
+    "sha256": "11dc75361185c6dd738f66bacdb3ff069aaf0708bce4ad6c14d57fce7088c5ee"
+  },
+  {
+    "path": "android/draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/reference.png",
+    "sha256": "c0a26fe272c8c5d3cae7c36798743f5b7c9379cb2ab814356feee2d9f371dbe8"
+  },
+  {
+    "path": "android/draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-after.json",
+    "sha256": "11dc75361185c6dd738f66bacdb3ff069aaf0708bce4ad6c14d57fce7088c5ee"
+  },
+  {
+    "path": "android/draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-after.json.samples.json",
+    "sha256": "0dbd7b72b2ff8f106f06bd81b6f1fee1eb7917c969d3fb5f6ef49cf44cf38bb8"
+  },
+  {
+    "path": "android/draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/contract.json",
+    "sha256": "837b2765580a44f749985626e5e99a202e75340d626dc1855efbaca247d4d72d"
+  },
+  {
+    "path": "android/miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-before.json.samples.json",
+    "sha256": "219a3c15e67d98ac9e631447dbfd00672f7f862ea1ba5e9b66b1867cddc674c7"
+  },
+  {
+    "path": "android/miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-before.json",
+    "sha256": "f38d54a8d6fdab0dd0e20e99d0794bd58550fc869965e5fa2cfa1ddab6606f89"
+  },
+  {
+    "path": "android/miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/reference.png",
+    "sha256": "b8bd4b50415615c816b719232c14da775ca0fad324a2f3b6d09c213badbb4de2"
+  },
+  {
+    "path": "android/miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-after.json",
+    "sha256": "f38d54a8d6fdab0dd0e20e99d0794bd58550fc869965e5fa2cfa1ddab6606f89"
+  },
+  {
+    "path": "android/miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-after.json.samples.json",
+    "sha256": "219a3c15e67d98ac9e631447dbfd00672f7f862ea1ba5e9b66b1867cddc674c7"
+  },
+  {
+    "path": "android/miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/contract.json",
+    "sha256": "bb3abc2e493f5c586f52cb674c4ed644d5fe55a0d725b6da11f03702b851fc6f"
+  },
+  {
+    "path": "android/miss/visual-parity-desktop-boundary-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/request.json",
+    "sha256": "54f93ed4a34b0ef95c12f07378f36c573995fe447f8ebfce20d106bbbb049f80"
+  }
+]

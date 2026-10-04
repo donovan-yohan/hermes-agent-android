@@ -53,6 +53,12 @@ class PluginConnectionToken internal constructor()
  * exactly as Desktop's lazy `host.request` does.
  */
 interface PluginHost {
+    /** Exact core Skills routes; generic plugin REST stays namespaced. Unsupported hosts fail closed. */
+    val skills: PluginSkills get() = UnavailablePluginSkills
+
+    /** Typed MCP inventory and named enabled delta; no generic config or transport details. */
+    val mcp: PluginMcp get() = UnavailablePluginMcp
+
     /**
      * One gateway JSON-RPC call (`session.list`, `bot_relay.deliver`, …).
      *
@@ -342,7 +348,10 @@ internal class GatewayPluginHost(
     override val endpointGeneration: StateFlow<Long> = ENDPOINT_NEVER_MOVES,
     /** Shared with endpoint teardown; see [EndpointDispatchFence]. */
     private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
+    http: () -> com.hermesagent.mobile.data.gateway.GatewayHttp? = { null },
 ) : PluginHost {
+    override val skills: PluginSkills = GatewayPluginSkills(scope, http, endpointGeneration, endpointDispatchFence)
+    override val mcp: PluginMcp = GatewayPluginMcp(scope, http, endpointGeneration, endpointDispatchFence)
     private val tokenLock = Any()
     private var tokenClient: GatewayRpcClient? = null
     private var readyToken: PluginConnectionToken? = null

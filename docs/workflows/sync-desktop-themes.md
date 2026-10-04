@@ -54,17 +54,18 @@ without 1 fails it too. That is the point.
 
 ## 4. Colour expressions
 
-Ported maths lives in `ui/theme/ColorMath.kt`:
+Ported maths lives in `ui/theme/ColorMath.kt`. The historical expressions below
+refer to `3ca096de5f8183cb2e0ec23673f294d5978656a3`, not the current target:
 
 | Desktop | Android | Note |
 |---|---|---|
 | `color-mix(in srgb, X n%, Y)` | `mixPremultiplied(X, n, Y)` | Premultiplied — this is why mixing with `transparent` only lowers alpha |
-| `mix(a, b, amount)` (`color.ts:29`) | `mix(a, b, amount)` | Opaque lerp, alpha untouched. **Not** interchangeable with the above |
-| `readableOn(hex)` (`color.ts:63`) | `readableOn(color)` | 0.58 luminance split |
+| `mix(a, b, amount)` (`apps/desktop/src/themes/color.ts:29` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) | `mix(a, b, amount)` | Opaque lerp, alpha untouched. **Not** interchangeable with the above |
+| `readableOn(hex)` (`apps/desktop/src/themes/color.ts:63` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) | `readableOn(color)` | 0.58 luminance split |
 | `relativeLuminance` / `contrastRatio` | same names | WCAG, gamma-corrected |
 
 `nousTint(pct)` / `nousTintTransparent(pct)` stay as functions in
-`BuiltinThemes.kt`, mirroring `presets.ts:26-27`. Resolving them to hex forks
+`BuiltinThemes.kt`, mirroring `apps/desktop/src/themes/presets.ts:26-27` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`. Resolving them to hex forks
 the palette the next time `NOUS_BLUE` moves.
 
 ## 5. Fonts
@@ -129,3 +130,14 @@ registry-only repins: [the 587e673e follow-up](../spikes/upstream-bot-refresh-58
 found unchanged built-ins but changed Classic Hermes `default` selection. Keep
 that backend-derived palette separate from the built-in inventory; record native
 selection drift instead of adding a guessed built-in or claiming full parity.
+
+At target `36922ad064d65dcf25f8f48df81e1ccf9a55de67`, Classic Hermes becomes a
+real built-in after Nous Alt. Its light/dark seeds are in Desktop `presets.ts`,
+not the shared palette table. Execute the pinned converter for independent
+all-field goldens; preserve its rounded mixes and stepped contrast ladder.
+The inventory parser must accept both quote styles (Classic's description has
+an apostrophe). Test raw legacy cache files, disk readback and a fresh cache
+instance: filtering only in memory is not a boot migration. Keep reserved
+persisted/backend names separate from command-only aliases, and trace Android's
+actual command transport before proposing local interception. See the
+[36922 audit](../spikes/upstream-36922-2026-10-02.md).

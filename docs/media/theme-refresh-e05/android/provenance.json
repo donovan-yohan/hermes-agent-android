@@ -1,0 +1,30 @@
+{
+  "source_sha": "9bbdca7b3700c1109a83b2934fc8a6f819d10efb",
+  "documentation_head": "9c32b0257c096b0ef4fe2ee5fa258c7dd2952f5e",
+  "apk_sha256": "5e8584f1d2398931e7c5bd7b5aa4f9629cd70415b75169959967aaa61bad8758",
+  "installed_apk_sha256": "5e8584f1d2398931e7c5bd7b5aa4f9629cd70415b75169959967aaa61bad8758",
+  "captures": [
+    {
+      "state": "manual-mono-light",
+      "image_sha256": "40d0e876d26a3732a00398fbeef6cf9311ce72d59cc4b613fd7a0afc19442ecf"
+    },
+    {
+      "state": "manual-mono-dark",
+      "image_sha256": "9ee606fb8589eb3c6548fc8967cbd8d73e11328f9f37e6a8f83c6953a3ddbbdb"
+    },
+    {
+      "state": "retired-default-offline-light",
+      "image_sha256": "7059de7f65b019d6b58df7a00db78718c2def949f870204e7fe1e6af3b91e20d"
+    },
+    {
+      "state": "retired-default-offline-dark",
+      "image_sha256": "bffc330612a59725711ae86bb3cd169e9a08a3c5db38ccbdc8b57716451b6782"
+    }
+  ],
+  "source_diff_to_head": "only appearance ledger and refresh audit documentation",
+  "source_changes": false,
+  "gradle_invoked": false,
+  "espresso_invoked": false,
+  "desktop_source": "e05b16348b1d06a3311237423b0a4fc30d9c5aa1",
+  "canonical_acceptance": false
+}

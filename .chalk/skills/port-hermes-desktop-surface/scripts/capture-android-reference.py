@@ -418,6 +418,22 @@ def read_model_runtime(serial, package):
     return json.loads(base64.b64decode(match[1], validate=True))
 
 
+def read_mcp_runtime(serial, package, state, theme):
+    raw = shell(serial, "content", "call", "--uri", f"content://{package}.mcp-runtime", "--method", "snapshot")
+    match = re.search(r"snapshot=([A-Za-z0-9+/=]+)", raw)
+    if not match:
+        raise SystemExit("debug synthetic MCP runtime export is unavailable")
+    sample = json.loads(base64.b64decode(match[1], validate=True))
+    if (sample.get("fixture") != "bot-configured-mcp-synthetic-v1" or
+            sample.get("scenario") != state or sample.get("theme") != theme or not sample.get("requests")):
+        raise SystemExit("MCP runtime export belongs to another fixture/state/theme or has no requests")
+    if state in ("mcp-loading", "mcp-pending"):
+        method = "GET" if state == "mcp-loading" else "PUT"
+        if not any(r.get("method") == method and r.get("outcome") == "pending" for r in sample["requests"]):
+            raise SystemExit("MCP runtime no longer has the requested pending operation")
+    return sample
+
+
 def accessibility_boundary_matches(nodes, label):
     """Resolve Android's explicit accessible name before a visual text caption.
 
@@ -561,7 +577,7 @@ def main() -> None:
             or interactions != spec["state_spec"].get("interaction", [])
             or (args.expected_accessibility or None) != spec["state_spec"].get("post_interaction_accessibility")):
         raise SystemExit("capture arguments do not match the catalogued fixture/actions/state")
-    loading = args.state in ("bot-model-inventory-loading", "bot-avatar-loading")
+    loading = args.state in ("bot-model-inventory-loading", "bot-avatar-loading", "skills-loading", "skills-pending", "mcp-loading", "mcp-pending")
     if loading and not args.launch_fixture:
         raise SystemExit("loading capture requires a measured fresh fixture launch")
     provenance = installed_apk_provenance(args.serial, args.package, args.apk)
@@ -584,7 +600,8 @@ def main() -> None:
     identity = verify_app_identity(args.serial, args.package, args.activity)
     screenshot, bracket = bracketed_screenshot(args.serial, args.package, args.activity,
                                                args.expected_accessibility, launch_started if loading else None,
-                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else None,
+                                               runtime_reader=(lambda: read_model_runtime(args.serial, args.package)) if args.fixture_id == "bot-model-config-synthetic-v2" else
+                                               (lambda: read_mcp_runtime(args.serial, args.package, args.state, args.theme)) if args.fixture_id == "bot-configured-mcp-synthetic-v1" else None,
                                                deadline_seconds=60 if args.state == "bot-avatar-loading" else 20)
     accessibility = bracket["after"]
     output = Path(args.out or f"build/visual-parity/{args.name}/android").resolve()

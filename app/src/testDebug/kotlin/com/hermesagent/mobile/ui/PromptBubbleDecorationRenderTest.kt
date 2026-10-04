@@ -25,6 +25,7 @@ import java.io.FileOutputStream
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,12 +56,12 @@ class PromptBubbleDecorationRenderTest {
 
         val intermediate = scrollUntilCurrentPromptAppears()
         capture("intermediate.png")
-        assertTrue(intermediate.height < full.height)
-        assertTrue(intermediate.height > compact.height)
+        assertEquals(full.height, intermediate.height, 1f)
+        assertEquals(compact.height, intermediate.height, 1f)
 
         scrollBy(12f * compose.density.density)
         val furtherCollapsed = currentPromptBubble()
-        assertTrue(furtherCollapsed.height < intermediate.height)
+        assertEquals(intermediate.height, furtherCollapsed.height, 1f)
 
         scrollBy(-12f * compose.density.density)
         val reversed = currentPromptBubble()

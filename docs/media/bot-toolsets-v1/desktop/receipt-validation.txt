@@ -1,0 +1,3 @@
+Observational JSON deliberately NOT promoted to a catalog receipt.
+Exit: 1
+FAIL  receipt misses required common provenance

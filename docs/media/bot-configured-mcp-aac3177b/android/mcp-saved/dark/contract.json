@@ -1,0 +1,1466 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-02T08:47:41.855593+00:00",
+  "surface": "bot-configured-mcp",
+  "state": "mcp-saved",
+  "fixture_id": "bot-configured-mcp-synthetic-v1",
+  "theme": "dark",
+  "android_git_sha": "aac3177b0cb4b73482d1802d5b407a7bb8f40cfe",
+  "apk_sha256": "ffdd9460d1a5236979fb2b0644da0747e6e86d63a3d4bb77e3da37d4ba43766c",
+  "installed_apk_sha256": "ffdd9460d1a5236979fb2b0644da0747e6e86d63a3d4bb77e3da37d4ba43766c",
+  "apk_kind": "debug",
+  "interactions": [],
+  "ordered_action_evidence": [],
+  "viewport": {
+    "size": "Physical size: 320x640\nOverride size: 1080x1920",
+    "density": "Physical density: 160\nOverride density: 420"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.BotMcpParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.BotMcpParityActivity",
+    "focused_window": "mCurrentFocus=Window{9781b0b u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotMcpParityActivity}\nmFocusedApp=ActivityRecord{135824900 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.BotMcpParityActivity t22}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "f7e20557700cff87b8fad0aa1e737a31f6c4578e2ce4c2a8a0ff940bc0c0713c"
+  },
+  "accessibility": {
+    "expected_description": "MCP selection saved. Applies to future sessions or Gateway starts.",
+    "nodes": [
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,1920]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,1920]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,1920]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,1920]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,1920]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,63][1080,1920]"
+      },
+      {
+        "text": "Edit profile",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,105][255,157]"
+      },
+      {
+        "text": "MCP servers",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,189][225,223]"
+      },
+      {
+        "text": "Configured MCP servers",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,255][464,302]"
+      },
+      {
+        "text": "Changes save immediately. Cancel does not undo MCP changes.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,334][1018,374]"
+      },
+      {
+        "text": "Selection applies to future sessions or Gateway starts, not live server health.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,406][1038,494]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,526][1038,652]"
+      },
+      {
+        "text": "",
+        "content_description": "MCP server synthetic-research",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,526][1038,652]"
+      },
+      {
+        "text": "synthetic-research",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,558][880,605]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[901,505][1038,631]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[933,506][1059,632]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,526][1038,652]"
+      },
+      {
+        "text": "MCP selection saved. Applies to future sessions or Gateway starts.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,684][1038,772]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,804][383,930]"
+      },
+      {
+        "text": "Refresh MCP servers",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,847][372,887]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,962][463,1088]"
+      },
+      {
+        "text": "",
+        "content_description": "Browse MCP catalog. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,962][463,1088]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,962][380,1088]"
+      },
+      {
+        "text": "Browse MCP catalog",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,1005][369,1045]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[385,1004][463,1047]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1120][391,1246]"
+      },
+      {
+        "text": "",
+        "content_description": "Add MCP server. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1120][391,1246]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1120][308,1246]"
+      },
+      {
+        "text": "Add MCP server",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,1163][297,1203]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[313,1162][391,1205]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1278][482,1404]"
+      },
+      {
+        "text": "",
+        "content_description": "OAuth and credentials. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1278][482,1404]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1278][399,1404]"
+      },
+      {
+        "text": "OAuth and credentials",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,1321][388,1361]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[404,1320][482,1363]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1436][452,1562]"
+      },
+      {
+        "text": "",
+        "content_description": "Remove MCP server. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1436][452,1562]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1436][369,1562]"
+      },
+      {
+        "text": "Remove MCP server",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,1479][358,1519]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[374,1478][452,1521]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1594][419,1720]"
+      },
+      {
+        "text": "",
+        "content_description": "Probe MCP server. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1594][419,1720]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1594][336,1720]"
+      },
+      {
+        "text": "Probe MCP server",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,1637][325,1677]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[341,1636][419,1679]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1752][396,1878]"
+      },
+      {
+        "text": "",
+        "content_description": "Per-tool controls. Work in progress.",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1752][396,1878]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": false,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1752][313,1878]"
+      },
+      {
+        "text": "Per-tool controls",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[53,1795][302,1835]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[318,1794][396,1837]"
+      }
+    ]
+  },
+  "screenshot_bracket": {
+    "before": {
+      "expected_description": "MCP selection saved. Applies to future sessions or Gateway starts.",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,63][1080,1920]"
+        },
+        {
+          "text": "Edit profile",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,105][255,157]"
+        },
+        {
+          "text": "MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,189][225,223]"
+        },
+        {
+          "text": "Configured MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,255][464,302]"
+        },
+        {
+          "text": "Changes save immediately. Cancel does not undo MCP changes.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,334][1018,374]"
+        },
+        {
+          "text": "Selection applies to future sessions or Gateway starts, not live server health.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,406][1038,494]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,526][1038,652]"
+        },
+        {
+          "text": "",
+          "content_description": "MCP server synthetic-research",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,526][1038,652]"
+        },
+        {
+          "text": "synthetic-research",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,558][880,605]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[901,505][1038,631]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[933,506][1059,632]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,526][1038,652]"
+        },
+        {
+          "text": "MCP selection saved. Applies to future sessions or Gateway starts.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,684][1038,772]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,804][383,930]"
+        },
+        {
+          "text": "Refresh MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,847][372,887]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,962][463,1088]"
+        },
+        {
+          "text": "",
+          "content_description": "Browse MCP catalog. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,962][463,1088]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,962][380,1088]"
+        },
+        {
+          "text": "Browse MCP catalog",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1005][369,1045]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[385,1004][463,1047]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1120][391,1246]"
+        },
+        {
+          "text": "",
+          "content_description": "Add MCP server. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1120][391,1246]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1120][308,1246]"
+        },
+        {
+          "text": "Add MCP server",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1163][297,1203]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[313,1162][391,1205]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1278][482,1404]"
+        },
+        {
+          "text": "",
+          "content_description": "OAuth and credentials. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1278][482,1404]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1278][399,1404]"
+        },
+        {
+          "text": "OAuth and credentials",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1321][388,1361]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[404,1320][482,1363]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1436][452,1562]"
+        },
+        {
+          "text": "",
+          "content_description": "Remove MCP server. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1436][452,1562]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1436][369,1562]"
+        },
+        {
+          "text": "Remove MCP server",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1479][358,1519]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[374,1478][452,1521]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1594][419,1720]"
+        },
+        {
+          "text": "",
+          "content_description": "Probe MCP server. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1594][419,1720]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1594][336,1720]"
+        },
+        {
+          "text": "Probe MCP server",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1637][325,1677]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[341,1636][419,1679]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1752][396,1878]"
+        },
+        {
+          "text": "",
+          "content_description": "Per-tool controls. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1752][396,1878]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1752][313,1878]"
+        },
+        {
+          "text": "Per-tool controls",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1795][302,1835]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,1794][396,1837]"
+        }
+      ]
+    },
+    "after": {
+      "expected_description": "MCP selection saved. Applies to future sessions or Gateway starts.",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,1920]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,63][1080,1920]"
+        },
+        {
+          "text": "Edit profile",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,105][255,157]"
+        },
+        {
+          "text": "MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,189][225,223]"
+        },
+        {
+          "text": "Configured MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,255][464,302]"
+        },
+        {
+          "text": "Changes save immediately. Cancel does not undo MCP changes.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,334][1018,374]"
+        },
+        {
+          "text": "Selection applies to future sessions or Gateway starts, not live server health.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,406][1038,494]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,526][1038,652]"
+        },
+        {
+          "text": "",
+          "content_description": "MCP server synthetic-research",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,526][1038,652]"
+        },
+        {
+          "text": "synthetic-research",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,558][880,605]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[901,505][1038,631]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[933,506][1059,632]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,526][1038,652]"
+        },
+        {
+          "text": "MCP selection saved. Applies to future sessions or Gateway starts.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,684][1038,772]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,804][383,930]"
+        },
+        {
+          "text": "Refresh MCP servers",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,847][372,887]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,962][463,1088]"
+        },
+        {
+          "text": "",
+          "content_description": "Browse MCP catalog. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,962][463,1088]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,962][380,1088]"
+        },
+        {
+          "text": "Browse MCP catalog",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1005][369,1045]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[385,1004][463,1047]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1120][391,1246]"
+        },
+        {
+          "text": "",
+          "content_description": "Add MCP server. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1120][391,1246]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1120][308,1246]"
+        },
+        {
+          "text": "Add MCP server",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1163][297,1203]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[313,1162][391,1205]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1278][482,1404]"
+        },
+        {
+          "text": "",
+          "content_description": "OAuth and credentials. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1278][482,1404]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1278][399,1404]"
+        },
+        {
+          "text": "OAuth and credentials",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1321][388,1361]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[404,1320][482,1363]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1436][452,1562]"
+        },
+        {
+          "text": "",
+          "content_description": "Remove MCP server. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1436][452,1562]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1436][369,1562]"
+        },
+        {
+          "text": "Remove MCP server",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1479][358,1519]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[374,1478][452,1521]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1594][419,1720]"
+        },
+        {
+          "text": "",
+          "content_description": "Probe MCP server. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1594][419,1720]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1594][336,1720]"
+        },
+        {
+          "text": "Probe MCP server",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1637][325,1677]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[341,1636][419,1679]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1752][396,1878]"
+        },
+        {
+          "text": "",
+          "content_description": "Per-tool controls. Work in progress.",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1752][396,1878]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": false,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1752][313,1878]"
+        },
+        {
+          "text": "Per-tool controls",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[53,1795][302,1835]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[318,1794][396,1837]"
+        }
+      ]
+    },
+    "timing": {},
+    "runtime": {
+      "before": {
+        "fixture": "bot-configured-mcp-synthetic-v1",
+        "scenario": "mcp-saved",
+        "theme": "dark",
+        "observedNanos": 203259153762,
+        "requests": [
+          {
+            "sequence": 1,
+            "method": "GET",
+            "path": "/api/mcp/servers",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": null,
+            "startedNanos": 200952689720,
+            "observedNanos": 200952881428,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "servers": [
+                {
+                  "name": "synthetic-research",
+                  "enabled": false,
+                  "source": "config"
+                }
+              ]
+            }
+          },
+          {
+            "sequence": 2,
+            "method": "GET",
+            "path": "/api/mcp/servers",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": null,
+            "startedNanos": 200956397053,
+            "observedNanos": 200956457886,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "servers": [
+                {
+                  "name": "synthetic-research",
+                  "enabled": false,
+                  "source": "config"
+                }
+              ]
+            }
+          },
+          {
+            "sequence": 3,
+            "method": "PUT",
+            "path": "/api/mcp/servers/synthetic-research/enabled",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": {
+              "enabled": true,
+              "profile": "synthetic-mcp"
+            },
+            "startedNanos": 200957923220,
+            "observedNanos": 200957968803,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "ok": true,
+              "name": "synthetic-research",
+              "enabled": true
+            }
+          },
+          {
+            "sequence": 4,
+            "method": "GET",
+            "path": "/api/mcp/servers",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": null,
+            "startedNanos": 200958006053,
+            "observedNanos": 200958042136,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "servers": [
+                {
+                  "name": "synthetic-research",
+                  "enabled": true,
+                  "source": "config"
+                }
+              ]
+            }
+          }
+        ],
+        "authoritativeEnabled": true,
+        "loading": false,
+        "busy": false,
+        "message": "MCP selection saved. Applies to future sessions or Gateway starts.",
+        "rows": [
+          {
+            "name": "synthetic-research",
+            "enabled": true,
+            "source": "Config"
+          }
+        ]
+      },
+      "after": {
+        "fixture": "bot-configured-mcp-synthetic-v1",
+        "scenario": "mcp-saved",
+        "theme": "dark",
+        "observedNanos": 204321133388,
+        "requests": [
+          {
+            "sequence": 1,
+            "method": "GET",
+            "path": "/api/mcp/servers",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": null,
+            "startedNanos": 200952689720,
+            "observedNanos": 200952881428,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "servers": [
+                {
+                  "name": "synthetic-research",
+                  "enabled": false,
+                  "source": "config"
+                }
+              ]
+            }
+          },
+          {
+            "sequence": 2,
+            "method": "GET",
+            "path": "/api/mcp/servers",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": null,
+            "startedNanos": 200956397053,
+            "observedNanos": 200956457886,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "servers": [
+                {
+                  "name": "synthetic-research",
+                  "enabled": false,
+                  "source": "config"
+                }
+              ]
+            }
+          },
+          {
+            "sequence": 3,
+            "method": "PUT",
+            "path": "/api/mcp/servers/synthetic-research/enabled",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": {
+              "enabled": true,
+              "profile": "synthetic-mcp"
+            },
+            "startedNanos": 200957923220,
+            "observedNanos": 200957968803,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "ok": true,
+              "name": "synthetic-research",
+              "enabled": true
+            }
+          },
+          {
+            "sequence": 4,
+            "method": "GET",
+            "path": "/api/mcp/servers",
+            "query": {
+              "profile": "synthetic-mcp"
+            },
+            "body": null,
+            "startedNanos": 200958006053,
+            "observedNanos": 200958042136,
+            "outcome": "completed",
+            "status": 200,
+            "response": {
+              "servers": [
+                {
+                  "name": "synthetic-research",
+                  "enabled": true,
+                  "source": "config"
+                }
+              ]
+            }
+          }
+        ],
+        "authoritativeEnabled": true,
+        "loading": false,
+        "busy": false,
+        "message": "MCP selection saved. Applies to future sessions or Gateway starts.",
+        "rows": [
+          {
+            "name": "synthetic-research",
+            "enabled": true,
+            "source": "Config"
+          }
+        ]
+      }
+    }
+  },
+  "device": {
+    "model": "sdk_gphone16k_arm64",
+    "manufacturer": "Google",
+    "android": "17",
+    "sdk": "37",
+    "font_scale": "1.0"
+  }
+}

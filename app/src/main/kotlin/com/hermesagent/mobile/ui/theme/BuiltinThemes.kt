@@ -452,14 +452,59 @@ object BuiltinThemes {
         fonts = HermesFontChoice(),
     )
 
-    /** Registry order matches `BUILTIN_THEMES` at `presets.ts:848-860`. */
-    val ALL: List<HermesThemePreset> = listOf(
-        Nous, Github, Catppuccin, Everforest, Solarized, NousAlt,
-        Midnight, Ember, Mono, Slate, Cyberpunk,
+    /**
+     * `apps/desktop/src/themes/presets.ts:342-384` @
+     * `36922ad064d65dcf25f8f48df81e1ccf9a55de67`: converter inputs, NOT shared palettes.
+     * No typography override: Desktop and Android both inherit their system fonts.
+     */
+    val Classic = HermesThemePreset(
+        name = "classic",
+        label = "Classic Hermes",
+        description = "Gold on navy, the CLI's original look",
+        colors = classicPalette(Color(0xFFF5F5F5), Color(0xFF2B2109), Color(0xFFD89B04), Color(0xFFC62828), dark = false),
+        darkColors = classicPalette(Color(0xFF1A1A2E), Color(0xFFFFF8DC), Color(0xFFFFBF00), Color(0xFFEF5350), dark = true),
     )
 
-    /** `presets.ts:864-865` — the skin used when nothing is persisted. */
+    /** `apps/desktop/src/themes/skin.ts:69-106` and `apps/shared/src/color.ts:145-173`
+     * @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67`. */
+    private fun classicPalette(background: Color, foreground: Color, seed: Color, destructive: Color, dark: Boolean): HermesPalette {
+        val sidebar = mix(background, foreground, if (dark) .02f else .012f)
+        // Desktop uses a five-rung ladder toward pure black/white, not the older
+        // continuous backend importer contrast search. Preserve each rounded mix.
+        val pole = if (relativeLuminance(sidebar) < .5f) Color.White else Color.Black
+        val accent = if (contrastRatio(seed, sidebar) >= 4.5f) seed else
+            (1..5).asSequence().map { mix(seed, pole, it * .2f) }
+                .firstOrNull { contrastRatio(it, sidebar) >= 4.5f } ?: pole
+        val border = Color(0xFFCD7F32)
+        return HermesPalette(
+            background = background, foreground = foreground,
+            card = mix(background, foreground, if (dark) .04f else .025f), cardForeground = foreground,
+            muted = mix(background, foreground, if (dark) .06f else .04f), mutedForeground = Color(0xFFB8860B),
+            popover = mix(background, foreground, if (dark) .08f else .05f), popoverForeground = foreground,
+            primary = accent, primaryForeground = readableOn(accent),
+            secondary = mix(accent, background, if (dark) .72f else .86f), secondaryForeground = foreground,
+            accent = mix(accent, background, if (dark) .82f else .88f), accentForeground = foreground,
+            border = border, input = background, ring = accent,
+            midground = accent, midgroundForeground = readableOn(accent), composerRing = accent,
+            destructive = destructive, destructiveForeground = readableOn(destructive),
+            sidebarBackground = sidebar, sidebarBorder = border,
+            userBubble = mix(background, accent, if (dark) .18f else .12f), userBubbleBorder = border,
+        )
+    }
+
+    /** Registry order: presets.ts:444-456 @ 36922ad064d65dcf25f8f48df81e1ccf9a55de67. */
+    val ALL: List<HermesThemePreset> = listOf(
+        Nous, Github, Catppuccin, Everforest, Solarized, NousAlt,
+        Classic, Midnight, Ember, Mono, Slate, Cyberpunk,
+    )
+
+    /** `presets.ts:461-462` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` — default. */
     const val DEFAULT_NAME: String = "nous"
+
+    /** Persisted/backend identities, not command aliases (hermes and ares stay custom names). */
+    val RETIRED_NAMES: Set<String> = setOf("nous-light", "default", "gold")
+
+    fun isReserved(name: String): Boolean = name in RETIRED_NAMES || name in byName
 
     private val byName: Map<String, HermesThemePreset> = ALL.associateBy { it.name }
 

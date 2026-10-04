@@ -56,7 +56,7 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Non-obvious rules
 
 **Upstream is read-only.** The current Desktop implementation target is
-`587e673e2a2fae0616d8b750bb189217080f621a` (upstream main verified 2026-10-01).
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67` (audited target source, 2026-10-02).
 Use a disposable checkout at that SHA for new ports. `~/.hermes/hermes-agent`
 remains a read-only reference: never write, fetch or check out inside it.
 Cite `path:line` **with** the inspected SHA or the citation means nothing.
@@ -109,11 +109,21 @@ single-connection reader is a projection of that row, so a connection edit has
 one writer and no second copy. The pre-registry `host.single.*` /
 `gateway.single.*` keys were migrated into row one, not overloaded.
 
-**Cleartext is loopback-only, and Local owns no process.** The base network
-security config refuses cleartext and excuses exactly `127.0.0.1`, `localhost`
-and `::1`; `usesCleartextTraffic="true"` would grant the same to every host on
-the internet, so an invariant fails the build on it and on any other permitted
-domain. A Local row addresses a Hermes the person runs in Termux on this phone:
+**Desktop is the behavioral source of truth.** Copy supported upstream input
+and transport semantics at an inspected, scoped pin. Do not invent narrower
+security/product policies or platform divergences without raising the tradeoff
+and obtaining user approval. Regression tests must exercise the reported input
+shape through the real application path and assert Desktop behavior, not a
+restriction introduced by this client. Preserve older evidence pins.
+
+**Remote accepts HTTP(S) hostnames/IPs, and Local owns no process.** Scheme-less
+Remote URLs use HTTP, matching Desktop. Preserve port/path and URL-bound tokens;
+reject URL userinfo/query/fragment. Every production HTTP/WS client derives from
+`gatewayTransportClient`; existing redirects and system proxies remain disabled
+as auth safeguards. The repo gate rejects independent clients, not public hosts.
+HTTP is unencrypted regardless of hostname or IP; HTTPS verification is unchanged. See
+`docs/adr/0005-private-network-http-gateway.md`. A Local row addresses a Hermes
+the person runs in Termux on this phone:
 `normalizeLocalGatewayUrl` refuses rather than guesses, because which port a row
 names decides which process receives its token, and the app never starts, adopts,
 stops or reaps that runtime. See `docs/adr/0002-shared-remote-gateway.md`.
@@ -215,6 +225,6 @@ and neither the workflow nor the ROADMAP may imply it is.
 | `docs/parity/system-panel.md` | System panel and the backend updates sheet: pin, HTTP contract, adaptation, deviations |
 | `docs/parity/approval-mode.md` | The Manual/Smart/Off control: `approvals.mode` contract, profile scoping, optimistic write and rollback |
 | `docs/parity/model-visibility.md` | The model shortlist and the Models sheet: stored keys, sentinels, family collapse, picker filtering |
-| `docs/guides/getting-started.md` | The public setup path: installing the rolling APK, choosing a route, the Gateway's HTTPS and `native_pkce` requirements, and the Tailscale `serve` recipe |
+| `docs/guides/getting-started.md` | The public setup path: installing the rolling APK, choosing a route, the Gateway's transport and `native_pkce` requirements, and the Tailscale `serve` recipe |
 | `docs/guides/termux-local-gateway.md` | Standing up a Termux `hermes serve` on the phone and adding it as a Local connection |
 | `docs/media/README.md` | What the committed screenshots and demos are, and the clean-profile capture rule they are taken under |

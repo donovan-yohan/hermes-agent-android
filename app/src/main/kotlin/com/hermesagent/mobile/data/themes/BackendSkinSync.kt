@@ -46,7 +46,11 @@ internal class BackendSkinSync(
         } catch (_: IOException) {
             false
         }
-        if (saved) repository.acknowledgeBackendSkinApply(target, expectedGeneration)
+        // Desktop's duplicate guard tracks the announcement, not its resolved palette:
+        // default -> nous and nous -> default are genuine backend name changes.
+        if (saved) repository.acknowledgeBackendSkinApply(
+            (payload["name"] as JsonPrimitive).content.trim(), expectedGeneration,
+        )
         saved
     }
 
@@ -56,9 +60,10 @@ internal class BackendSkinSync(
         if (scope != expectedScope) return null
         if (!restoreLocked(scope, expectedGeneration)) return null
         val name = (payload["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
-        if (BuiltinThemes.ALL.any { it.name == name }) {
-            val target = requireNotNull(name)
-            return target.takeIf { repository.requestBackendSkinApply(target, apply, expectedGeneration) }
+        if (name != null && BuiltinThemes.isReserved(name)) {
+            val announcedName = name
+            val target = if (announcedName in BuiltinThemes.RETIRED_NAMES) BuiltinThemes.DEFAULT_NAME else announcedName
+            return target.takeIf { repository.requestBackendSkinApply(announcedName, apply, expectedGeneration) }
         }
         val theme = parseBackendSkin(payload) ?: return null
         val snapshot = (payloads.filterNot { it["name"] == payload["name"] } + payload)

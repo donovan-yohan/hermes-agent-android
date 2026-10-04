@@ -81,9 +81,43 @@ class RemoteGatewayTest {
     }
 
     @Test
+    fun `remote Tailnet HTTP preserves port and path for auth and websocket`() {
+        for (base in listOf("http://100.64.0.1:9119/hermes", "http://gateway.synthetic-tailnet.ts.net:9120/hermes",
+            "http://gateway.example:9120/hermes", "https://gateway.example:9120/hermes")) {
+            assertEquals(base, normalizeRemoteGatewayUrl(" $base/ "))
+            assertEquals("$base/auth/native/token", endpoint(base, "auth/native/token").toString())
+            assertEquals("$base/api/ws?ticket=fixture", remoteGatewayWebSocketUrl(base, "fixture").toString())
+        }
+    }
+
+    @Test
+    fun `private HTTP accepts LAN and Tailnet IPv6 and desktop scheme-less input`() {
+        for (raw in listOf("10.0.0.1:9119/hermes", "172.16.0.1:9119/hermes", "192.168.0.1:9119/hermes",
+            "100.127.255.254:9119/hermes", "[fd7a:115c:a1e0::1]:9119/hermes")) {
+            assertEquals("http://$raw", normalizeRemoteGatewayUrl(raw))
+            assertEquals("http://$raw", normalizeRemoteGatewayUrl("http://$raw/"))
+        }
+    }
+
+    @Test
+    fun `Desktop HTTP hostname and IP inputs preserve their origin`() {
+        for (host in listOf("gateway.example", "gateway.ts.net", "gateway.local", "8.8.8.8", "100.63.255.255",
+            "100.128.0.1", "172.15.255.255", "172.32.0.1", "192.169.0.1", "169.254.169.254",
+            "[2001:db8::1]", "127.0.0.1", "localhost", "[::1]")) {
+            val base = "http://$host:9119"
+            assertEquals(host, base, normalizeRemoteGatewayUrl(" $base/ "))
+            assertEquals(host, base, normalizeRemoteGatewayUrl("$host:9119"))
+        }
+        for (suffix in listOf("?token=fixture", "#fragment")) {
+            assertNull(normalizeRemoteGatewayUrl("http://100.64.0.1:9119/$suffix"))
+        }
+        assertNull(normalizeRemoteGatewayUrl("http://user:fixture@100.64.0.1:9119"))
+    }
+
+    @Test
     fun `remote urls normalize prefixes but reject credentials query and fragments`() {
         assertEquals("https://gateway.example/hermes", normalizeRemoteGatewayUrl(" https://gateway.example/hermes/ "))
-        assertEquals(null, normalizeRemoteGatewayUrl("http://127.0.0.1:9119"))
+        assertEquals("http://127.0.0.1:9119", normalizeRemoteGatewayUrl("http://127.0.0.1:9119"))
         assertEquals(null, normalizeRemoteGatewayUrl("https://user:secret@gateway.example"))
         assertEquals(null, normalizeRemoteGatewayUrl("https://gateway.example?token=secret"))
         assertEquals(null, normalizeRemoteGatewayUrl("https://gateway.example/#fragment"))
@@ -1607,6 +1641,28 @@ class RemoteGatewayTest {
         }
     }
 
+    @Test
+    fun `raw callback fixture accepts a complete framed response before a reset`() {
+        val response = LoopbackGatewayNativeLogin.NOT_A_CALLBACK_RESPONSE
+        val resetAfterResponse = object : java.io.ByteArrayInputStream(response) {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                if (available() == 0) throw java.net.SocketException("Connection reset")
+                return super.read(bytes, offset, length)
+            }
+        }
+        assertEquals(response.toString(Charsets.UTF_8), readRawCallbackResponse(resetAfterResponse))
+    }
+
+    @Test
+    fun `raw callback fixture rejects a truncated framed response`() {
+        val response = LoopbackGatewayNativeLogin.NOT_A_CALLBACK_RESPONSE
+        val failure = runCatching {
+            readRawCallbackResponse(java.io.ByteArrayInputStream(response.copyOf(response.size - 1)))
+        }.exceptionOrNull()
+        assertTrue(failure is IllegalStateException)
+        assertEquals("callback response ended before Content-Length", failure?.message)
+    }
+
     /** Sends one hand-written request line, for the shapes no HTTP client will send. */
     private fun rawRequest(port: Int, requestLine: String): String =
         Socket("127.0.0.1", port).use { socket ->
@@ -1615,8 +1671,36 @@ class RemoteGatewayTest {
                 write("$requestLine\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII))
                 flush()
             }
-            socket.getInputStream().bufferedReader().readText()
+            // The listener reads only the request line, then half-closes its
+            // response. Closing with unread request headers may reset the socket
+            // after the complete page arrives. Like a browser, respect HTTP's
+            // Content-Length instead of reading past the response until EOF.
+            readRawCallbackResponse(socket.getInputStream())
         }
+
+    /** Reads exactly the framed bytes, never requiring a graceful peer close. */
+    private fun readRawCallbackResponse(stream: java.io.InputStream): String {
+        // One character per wire byte; decode the body as UTF-8 afterwards.
+        val input = stream.bufferedReader(Charsets.ISO_8859_1)
+        val status = requireNotNull(input.readLine())
+        val headers = mutableListOf<String>()
+        while (true) {
+            val header = requireNotNull(input.readLine())
+            if (header.isEmpty()) break
+            headers += header
+        }
+        val length = headers.single { it.startsWith("Content-Length:", ignoreCase = true) }
+            .substringAfter(':').trim().toInt()
+        val body = CharArray(length)
+        var received = 0
+        while (received < length) {
+            val count = input.read(body, received, length - received)
+            check(count > 0) { "callback response ended before Content-Length" }
+            received += count
+        }
+        return status + "\r\n" + headers.joinToString("\r\n") + "\r\n\r\n" +
+            body.concatToString().toByteArray(Charsets.ISO_8859_1).toString(Charsets.UTF_8)
+    }
 
     /**
      * Reads a callback page including the body of a refusal, which

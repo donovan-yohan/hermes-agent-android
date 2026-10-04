@@ -1,0 +1,126 @@
+[
+  {
+    "state": "projection-overview",
+    "head": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37221998887",
+    "conclusion": "success",
+    "headSha": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "status": "completed",
+    "apk_sha256": "05d5316480d91131bd2b83015c00823535f843d83512774c93866562edc7c80a",
+    "receipt": "projection-overview/android/visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/contract.json",
+    "files": {
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/runtime-before.json.samples.json": "62189e65971116c8a7fe5ace36e68d457811aeda37230a62987cffb302751ba7",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/runtime-before.json": "c4883eb303ff4ee6e6df32db52897a22cecb08a7d89cd8abb0b59f588b023bb1",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/reference.png": "e3936a8171484e53ddd21843fe684e48346f4a86a425f803e1bdde388f07e353",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/runtime-after.json": "c4883eb303ff4ee6e6df32db52897a22cecb08a7d89cd8abb0b59f588b023bb1",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/runtime-after.json.samples.json": "62189e65971116c8a7fe5ace36e68d457811aeda37230a62987cffb302751ba7",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark/contract.json": "88354aaed61c487d5f51ae3d692c209260be02f8e1f42a2c8df79db9e8ea2156"
+    },
+    "remote_artifacts": [
+      {
+        "id": 11310517177,
+        "name": "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-overview-dark",
+        "digest": "sha256:de3d9becb7e0736ad1efd401fc1288a6d4c0645da5dedc62ce08860fc61f5b55",
+        "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37221998887/artifacts/11310517177"
+      }
+    ]
+  },
+  {
+    "state": "projection-selected",
+    "head": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222000765",
+    "conclusion": "success",
+    "headSha": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "status": "completed",
+    "apk_sha256": "c992bc31436452b948c164a96d8770e4e14aebe0c1502bd94f775a0560c0f9e7",
+    "receipt": "projection-selected/android/visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/contract.json",
+    "files": {
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/runtime-before.json.samples.json": "6800567764c5bbeb3cc06ea33576394f139064b3d712f845255927d8ef72faf9",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/runtime-before.json": "7773159efb43f9b8d4ad768fa4088a368de944a3ee8ca532a56bfcd8be600d2c",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/reference.png": "0d8ac8e2efa0f8e726363f5050d81b7fe123b070d09350a5962a6f92ae7a720b",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/runtime-after.json": "7773159efb43f9b8d4ad768fa4088a368de944a3ee8ca532a56bfcd8be600d2c",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/runtime-after.json.samples.json": "6800567764c5bbeb3cc06ea33576394f139064b3d712f845255927d8ef72faf9",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark/contract.json": "46388fb66a13e9b09540e46acfc3eb0d9aa8e6fa1e89d676625baf077fd2ba62"
+    },
+    "remote_artifacts": [
+      {
+        "id": 11310751706,
+        "name": "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-selected-dark",
+        "digest": "sha256:3e6cf11b1824d5d48ab44f6c023615f4836fa9ae3ae6e1058d1743a6d8b75adf",
+        "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222000765/artifacts/11310751706"
+      }
+    ]
+  },
+  {
+    "state": "projection-search-match",
+    "head": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222002781",
+    "conclusion": "success",
+    "headSha": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "status": "completed",
+    "apk_sha256": "52df95e73cef91d42f5fd7acb3b25e7e4983ac612922fd15df6e14021665281e",
+    "receipt": "projection-search-match/android/visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/contract.json",
+    "files": {
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/runtime-before.json.samples.json": "33ebdf8531a7bb64d2d3f6cf9b853a711a5910e73d12560e53ee4e2bd5d071e3",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/runtime-before.json": "b9ab3993a6aa2850495fc2e3c770c77fe19b456a34eb915471ec43cb34b00465",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/reference.png": "ee10b363cf58f361a5a4f721b9879713c1f58aaf57af8ca63fd41baf06f74c03",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/runtime-after.json": "b9ab3993a6aa2850495fc2e3c770c77fe19b456a34eb915471ec43cb34b00465",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/runtime-after.json.samples.json": "33ebdf8531a7bb64d2d3f6cf9b853a711a5910e73d12560e53ee4e2bd5d071e3",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark/contract.json": "ce4faeabc16e1fe8911e7a2bb815455b09516d65f9bee7c792ba7fcf696bfb87"
+    },
+    "remote_artifacts": [
+      {
+        "id": 11311115779,
+        "name": "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-match-dark",
+        "digest": "sha256:26e0dc0d124c4ff74a67ca41cf997ab0843f20139fd09f914755c7391bafcce2",
+        "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222002781/artifacts/11311115779"
+      }
+    ]
+  },
+  {
+    "state": "projection-search-miss",
+    "head": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222004629",
+    "conclusion": "success",
+    "headSha": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "status": "completed",
+    "apk_sha256": "2944f0cf7480cb0b73a3cf66caaaa4e32bb965d2eadd022985f679e617ca0ffd",
+    "receipt": "projection-search-miss/android/visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/contract.json",
+    "files": {
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/runtime-before.json.samples.json": "468e9e812553ef3c29573d6ab4cff131aabe1aabf647efe10c4e825ba970611c",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/runtime-before.json": "70c5b381a17e492093057366f198ee950bb93715a2e901e20ed02b1870c1deeb",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/reference.png": "ef138013302cd744eabdd0778d5c4bc526bd0a52d872247196c28eba43d5c0da",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/runtime-after.json": "70c5b381a17e492093057366f198ee950bb93715a2e901e20ed02b1870c1deeb",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/runtime-after.json.samples.json": "468e9e812553ef3c29573d6ab4cff131aabe1aabf647efe10c4e825ba970611c",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark/contract.json": "75b1740ec2830431d1928505284c6b5cf4a1333bedc7ff8f8bbb3f0a0403108a"
+    },
+    "remote_artifacts": [
+      {
+        "id": 11310966103,
+        "name": "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-search-miss-dark",
+        "digest": "sha256:31320bea286b94303c966fbc7e1f8e75f6624b186bbd43a3fa1650884dc42bb3",
+        "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222004629/artifacts/11310966103"
+      }
+    ]
+  },
+  {
+    "state": "projection-draft-reuse",
+    "head": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222006777",
+    "conclusion": "failure",
+    "headSha": "7e7af545571c504274e88fd6b56a0882e28c08df",
+    "status": "completed",
+    "files": {
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-draft-reuse-dark/runtime-before.json.samples.json": "a9bba14d92c756924441e1c7dd0394046f0ad4d9111269a97d223f71d40069ec",
+      "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-draft-reuse-dark/runtime-before.json": "11dc75361185c6dd738f66bacdb3ff069aaf0708bce4ad6c14d57fce7088c5ee"
+    },
+    "remote_artifacts": [
+      {
+        "id": 11311075793,
+        "name": "visual-parity-android-7e7af545571c504274e88fd6b56a0882e28c08df-sidebar-projection-projection-draft-reuse-dark",
+        "digest": "sha256:90f4e3d56cfb6a3c093021c85d234b53c62441293f48532d6e730d68c25d76f5",
+        "url": "https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37222006777/artifacts/11311075793"
+      }
+    ]
+  }
+]

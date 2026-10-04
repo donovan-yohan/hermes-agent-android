@@ -11,12 +11,37 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, bot-management, bot-model-config, bot-avatar-editor, bot-steer, notification-latest]
+        options: [bot-configured-mcp, bot-installed-skills, composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, sidebar-projection, bot-management, bot-model-config, bot-avatar-editor, bot-steer, notification-latest]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true
         type: choice
         options:
+          - mcp-loaded
+          - mcp-disabled
+          - mcp-plugin
+          - mcp-unknown
+          - mcp-loading
+          - mcp-pending
+          - mcp-saved
+          - mcp-reopened
+          - mcp-error
+          - mcp-unavailable
+          - mcp-refused
+          - mcp-empty
+          - mcp-unconfirmed
+          - skills-loaded
+          - skills-disabled
+          - skills-loading
+          - skills-pending
+          - skills-saved
+          - skills-reopened
+          - skills-error
+          - skills-unavailable
+          - skills-refused
+          - skills-essential
+          - skills-empty
+          - skills-unconfirmed
           - full-stack-task-list
           - goal-active
           - goal-waiting
@@ -56,6 +81,11 @@ on:
           - bots-fallback
           - sessions-navigation
           - sessions-navigation-group-selected
+          - projection-overview
+          - projection-selected
+          - projection-search-match
+          - projection-search-miss
+          - projection-draft-reuse
           - bot-avatar-loaded
           - bot-avatar-loading
           - bot-avatar-picking

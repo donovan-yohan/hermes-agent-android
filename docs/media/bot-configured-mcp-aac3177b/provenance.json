@@ -1,0 +1,34 @@
+{
+  "android_source": "aac3177b0cb4b73482d1802d5b407a7bb8f40cfe",
+  "desktop_source": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "apk_sha256": "ffdd9460d1a5236979fb2b0644da0747e6e86d63a3d4bb77e3da37d4ba43766c",
+  "android_source_patch": "none; clean pinned source; existing APK, no Gradle run in capture task",
+  "desktop_spec_sha256": "028458023e15770dc27189fc6da5674b62be2e3d757abeccf8a38da39db9d43b",
+  "desktop_patch_sha256": "4dbd3589ffd724d56e9039b90d766aef580ecf9525da2cb87c0492e433100254",
+  "desktop_fixture_reconstruction": "independent initialized directory git apply, matching bytes",
+  "counts": {
+    "android": 26,
+    "desktop_observations": 14
+  },
+  "desktop_build": "fresh npm run build --workspace apps/desktop, immutable export plus additive E2E spec",
+  "device_cleanup": {
+    "task_owned_emulator_stopped": true,
+    "owned_process_absent": true,
+    "owned_serial_absent": true,
+    "existing_emulator_remained": true,
+    "shared_package_changed": false
+  },
+  "capture_identity_limit": "Existing APK hashed and installed bytes verified; source identity is clean candidate attribution, not a reproducible rebuild or embedded APK source attestation.",
+  "raw_policy": "Raw originals and private diagnostic logs retained outside publication; PNGs and published observations copied unchanged.",
+  "desktop_tests": {
+    "count": 4,
+    "exit_code": 0
+  },
+  "desktop_dependency_install": {
+    "audit_vulnerabilities": 28,
+    "low": 3,
+    "moderate": 8,
+    "high": 17,
+    "remediation": "not applied; immutable historical source"
+  }
+}

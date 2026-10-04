@@ -273,6 +273,22 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+Core HTTP mutations need a typed host capability rather than an escape from
+plugin REST namespaces. Bind transport and explicit profile before suspension;
+make dialog close and immediate transport admission share a real revocation
+lock. Name the admission boundary (OkHttp enqueue), not a promise about when
+socket bytes arrive. Disable redirects and replay for guarded mutation calls,
+and test with the production transport plus a held dispatcher/response, not
+only a host fake. A scoped 404 needs a read-only unscoped capability probe;
+never publish its inventory or probe a mutation unscoped. Echoed receipts still
+need a fresh named readback, especially for essential Skills silently kept on.
+See [ADR 0005](../adr/0005-scoped-core-skills-http.md).
+For configured MCP, current Desktop Connectors persists a whole map and reloads;
+the bounded Android named toggle is an explicit safety adaptation, not transport
+parity. Preserve config/plugin/unknown provenance at readback, and separate exact
+wire identifiers from redacted display names. See [ADR 0006](../adr/0006-scoped-core-mcp-http.md)
+and [the MCP ledger](../parity/bot-configured-mcp.md).
+
 Hosted read surfaces need two identities: endpoint generation for cache ownership,
 and an opaque ready-leg token for capability-check/use fencing. A Boolean flow
 can conflate a fast reconnect; observing a new token is not enough unless each

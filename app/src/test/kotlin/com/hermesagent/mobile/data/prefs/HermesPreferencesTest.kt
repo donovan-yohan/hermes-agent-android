@@ -134,6 +134,28 @@ class HermesPreferencesTest {
     }
 
     @Test
+    fun `legacy default pick paints Nous without rewriting another connections custom choice`() = runBlocking {
+        val legacy = SavedConnection("legacy-skin", "Legacy", ConnectionKind.Remote, themeName = "default")
+        val custom = SavedConnection("custom-skin", "Custom", ConnectionKind.Remote, themeName = "saved-skin")
+        try {
+            preferences.saveConnection(legacy)
+            preferences.saveConnection(custom)
+            preferences.setActiveConnection(legacy.id)
+            val stored = preferences.appearance.first()
+            assertEquals("default", stored.themeName)
+            assertEquals("nous", com.hermesagent.mobile.ui.theme.resolveAppearancePreset(stored.themeName, emptyList()).name)
+            preferences.setActiveConnection(custom.id)
+            assertEquals("saved-skin", preferences.appearance.first().themeName)
+            val rows = preferences.connectionRegistry.first().connections.associateBy(SavedConnection::id)
+            assertEquals("default", rows[legacy.id]?.themeName)
+            assertEquals("saved-skin", rows[custom.id]?.themeName)
+        } finally {
+            preferences.removeConnection(custom.id)
+            preferences.removeConnection(legacy.id)
+        }
+    }
+
+    @Test
     fun `appearance is stored on each row and a stale stamped theme write is dropped`() = runBlocking {
         val first = SavedConnection("theme-a", "Alpha", ConnectionKind.Remote)
         val second = SavedConnection("theme-b", "Beta", ConnectionKind.Remote)
@@ -275,15 +297,17 @@ class HermesPreferencesTest {
     @Test
     fun `an unsafe legacy theme is removed without changing row one`() = runBlocking {
         val row = SavedConnection("migration-row", "Gateway", ConnectionKind.Remote)
-        val stored = preferencesOf(
-            CONNECTIONS to ConnectionRegistryCodec.encode(listOf(row)),
-            stringPreferencesKey("appearance.theme") to " ",
-        )
+        listOf(" ", "a".repeat(65), "bad\u0001name").forEach { unsafe ->
+            val stored = preferencesOf(
+                CONNECTIONS to ConnectionRegistryCodec.encode(listOf(row)),
+                stringPreferencesKey("appearance.theme") to unsafe,
+            )
+            val migrated = AdoptPerConnectionTheme.migrate(stored)
 
-        val migrated = AdoptPerConnectionTheme.migrate(stored)
-
-        assertEquals(BuiltinThemes.DEFAULT_NAME, ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single().themeName)
-        assertNull(migrated[stringPreferencesKey("appearance.theme")])
+            assertEquals(stored[CONNECTIONS], migrated[CONNECTIONS])
+            assertEquals(BuiltinThemes.DEFAULT_NAME, ConnectionRegistryCodec.decode(migrated[CONNECTIONS]).single().themeName)
+            assertNull(migrated[stringPreferencesKey("appearance.theme")])
+        }
     }
 
     @Test

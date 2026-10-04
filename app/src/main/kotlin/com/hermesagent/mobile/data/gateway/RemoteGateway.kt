@@ -480,7 +480,7 @@ internal class NativeGatewayAuthenticator(
 
     suspend fun ticket(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): String {
         val baseUrl = profile.normalizedBaseUrl
-            ?: throw GatewayAuthException("Enter a valid HTTPS Gateway URL.")
+            ?: throw GatewayAuthException("Use an HTTP or HTTPS Gateway URL.")
         // A readable/writable slot always has this URL; `secretSlot` is null
         // only when `normalizedBaseUrl` is, which the line above already threw
         // on.
@@ -1332,7 +1332,7 @@ internal class RemoteGatewayConnector(
 
     suspend fun open(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): GatewayRpcClient {
         val baseUrl = profile.normalizedBaseUrl
-            ?: throw GatewayAuthException("Enter a valid HTTPS Gateway URL.")
+            ?: throw GatewayAuthException("Use an HTTP or HTTPS Gateway URL.")
         val ticket = authenticator.ticket(profile.copy(baseUrl = baseUrl), browser)
         return rpcOpen(baseUrl, ticket)
     }
@@ -1341,8 +1341,9 @@ internal class RemoteGatewayConnector(
 }
 
 internal fun normalizeRemoteGatewayUrl(raw: String): String? {
-    val parsed = raw.trim().toHttpUrlOrNull() ?: return null
-    if (parsed.scheme != "https") return null
+    val value = raw.trim()
+    val explicitScheme = Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE).containsMatchIn(value)
+    val parsed = (if (explicitScheme) value else "http://$value").toHttpUrlOrNull() ?: return null
     if (parsed.host.isBlank() || parsed.username.isNotEmpty() || parsed.password.isNotEmpty()) return null
     if (parsed.querySize > 0 || parsed.fragment != null) return null
     return parsed.newBuilder()

@@ -93,7 +93,7 @@ REQUIRED = (
     "Enable KVM",
     "~/.android/avd/*",
     "~/.android/adb*",
-    "./gradlew :app:connectedDebugAndroidTest --no-daemon --no-build-cache",
+    "python3 scripts/ci_prebuilt.py connected",
     "app/build/outputs/androidTest-results/connected/**",
     # The pin-citation job. Its contract is the range it checks and the fact that
     # it obtains an upstream checkout of its own: without one it would either pass
@@ -102,7 +102,6 @@ REQUIRED = (
     "name: pin citations",
     "fetch-depth: 0",
     "scripts/verify-pin-citations.py",
-    'git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL"',
     "--upstream \"$upstream\" --fetch",
 )
 # A gate that runs on the wrong range is worse than no gate: it either blames a
@@ -231,8 +230,27 @@ def main() -> int:
                 "the instrumented lane must not depend on another job; "
                 "an emulator failure must not withhold the rolling APK"
             )
-        if "connectedDebugAndroidTest" not in instrumented_job:
-            failures.append("the instrumented lane must run the connected androidTest task")
+        connected = _indented_block(instrumented_job, '      - name: Run the instrumented lane')
+        if re.search(r'^        (if|continue-on-error):', connected, re.M):
+            failures.append('the connected step must run unconditionally and propagate failure')
+        invocation = ('            FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" '
+                      'FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected')
+        if not any(line.endswith(invocation.strip()) for line in connected.splitlines()):
+            failures.append("the instrumented lane must run the guarded connected androidTest task")
+        assembly = _indented_block(instrumented_job,
+                                  '      - name: Assemble instrumented APKs before emulator boot')
+        expected_assembly = [
+            '      - name: Assemble instrumented APKs before emulator boot',
+            '        run: |',
+            '          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache',
+            '          python3 scripts/ci_prebuilt.py record',
+            '          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v',
+        ]
+        if assembly.splitlines() != expected_assembly:
+            failures.append('the prebuilt assembly, identity gates must run without bypass')
+        for boot in ('      - name: Create the AVD snapshot', '      - name: Run the instrumented lane'):
+            if not assembly or boot not in instrumented_job or instrumented_job.index(assembly) > instrumented_job.index(boot):
+                failures.append('APK assembly and identity recording must precede both emulator boots')
         for pin in INSTRUMENTED_DEVICE:
             if pin not in instrumented_job:
                 failures.append(f"the instrumented lane must pin its device: {pin}")
@@ -300,6 +318,20 @@ def main() -> int:
         # The job exists because it needs an upstream checkout and nothing else
         # provides one. Pointed at a workstation's checkout it would pass by
         # finding nothing, which is the failure mode a gate must never have.
+        # Check shell logical lines, not their YAML wrapping. Keep the clone's
+        # source/destination and safety contract in this job, including its own
+        # failure branch (an unrelated exit elsewhere must not satisfy it).
+        logical_job = re.sub(r"\\\n[ \t]*", " ", citations_job)
+        clone_contract = (
+            r'^\s*GIT_TERMINAL_PROMPT=0\s+timeout\s+--kill-after=1s\s+60s\s+'
+            r'git clone --quiet\s+--filter=blob:none\s+--no-checkout\s+'
+            r'"\$UPSTREAM_URL"\s+"\$upstream"\s+2>/dev/null\s+\|\|\s*\{\n'
+            r'\s*echo "::error::[^"\n]*"\n\s*exit 3\n\s*\}'
+        )
+        if not re.search(clone_contract, logical_job, re.M):
+            failures.append(
+                "the pin-citation job must use a bounded, noninteractive, fail-closed upstream clone"
+            )
         if "git clone" not in citations_job:
             failures.append(
                 "the pin-citation job must obtain its own upstream checkout; without "

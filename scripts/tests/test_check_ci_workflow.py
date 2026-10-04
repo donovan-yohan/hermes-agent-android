@@ -54,6 +54,29 @@ class CiWorkflowCheckerTest(unittest.TestCase):
     def test_accepts_repository_workflow(self) -> None:
         self.assertEqual(0, self._run(self.valid_text))
 
+    def test_rejects_prebuilt_gate_bypasses(self) -> None:
+        for command in ('python3 scripts/ci_prebuilt.py record',
+                        'python3 scripts/ci_prebuilt.py connected'):
+            for replacement in ('# ' + command, command + ' || true', ''):
+                with self.subTest(command=command, replacement=replacement):
+                    broken = self.valid_text.replace(command, replacement)
+                    self.assertNotEqual(self.valid_text, broken)
+                    self.assertEqual(1, self._run(broken))
+
+    def test_rejects_connected_step_execution_overrides(self) -> None:
+        marker = '      - name: Run the instrumented lane'
+        for field in ('if: false', 'continue-on-error: true'):
+            with self.subTest(field=field):
+                broken = self.valid_text.replace(marker, marker + '\n        ' + field)
+                self.assertEqual(1, self._run(broken))
+
+    def test_rejects_assembly_after_snapshot_boot(self) -> None:
+        block, without = self._remove_step(self.valid_text,
+            '      - name: Assemble instrumented APKs before emulator boot',
+            '      - name: Create the AVD snapshot')
+        broken = self._insert_before(without, block, '      - name: Run the instrumented lane')
+        self.assertEqual(1, self._run(broken))
+
     def test_rejects_commented_out_gradle_gate(self) -> None:
         broken = self.valid_text.replace(
             "        run: ./gradlew check assembleDebug --no-daemon --no-build-cache",
@@ -351,12 +374,37 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         )
         self._assert_reports(broken, "must run --self-test")
 
+    def test_accepts_single_line_bounded_upstream_clone(self) -> None:
+        joined = self.valid_text.replace('git clone --quiet \\\n            ', 'git clone --quiet ')
+        self.assertNotEqual(self.valid_text, joined)
+        code, output = self._run_captured(joined)
+        self.assertEqual(0, code, output)
+
+    def test_rejects_unsafe_upstream_clone_contract(self) -> None:
+        for old, new in (
+            ('GIT_TERMINAL_PROMPT=0 ', ''),
+            ('timeout --kill-after=1s 60s git clone', 'git clone'),
+            ('--filter=blob:none ', ''),
+            ('--no-checkout ', ''),
+            ('"$UPSTREAM_URL" "$upstream"', '"$OTHER_URL" "$upstream"'),
+            ('"$UPSTREAM_URL" "$upstream"', '"$UPSTREAM_URL" "$other"'),
+            ('"$upstream" 2>/dev/null || {', '"$upstream" || {'),
+            ('"$upstream" 2>/dev/null || {', '"$upstream" 2>/dev/null && {'),
+            ('              exit 3\n', '              exit 0\n'),
+        ):
+            with self.subTest(removed=old):
+                self._assert_reports(
+                    self.valid_text.replace(old, new, 1),
+                    'bounded, noninteractive, fail-closed upstream clone',
+                )
+
     def test_rejects_pin_citation_job_without_its_own_upstream(self) -> None:
         # The job's whole reason for being separate: it obtains the upstream
         # checkout itself. Left to a workstation's checkout it proves nothing in
         # CI, which is the only place it runs unattended.
         broken = self.valid_text.replace(
-            '          git clone --quiet --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream"\n',
+            '          GIT_TERMINAL_PROMPT=0 timeout --kill-after=1s 60s git clone --quiet \\\n'
+            '            --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {\n',
             "",
             1,
         )

@@ -49,14 +49,18 @@ if sys.argv[1:] == ["shell", "ime", "list", "-s", "-a"]:
         workflow = (ROOT / ".github/workflows/android-exact-head.yml").read_text()
         compile_at = workflow.index("./gradlew :app:assembleDebug :app:assembleDebugAndroidTest")
         prepare_at = workflow.index("./scripts/prepare-ci-emulator.sh", compile_at)
-        run_at = workflow.index("./gradlew :app:connectedDebugAndroidTest", prepare_at)
+        run_at = workflow.index("python3 scripts/ci_prebuilt.py connected", prepare_at)
         self.assertLess(compile_at, prepare_at)
         self.assertLess(prepare_at, run_at)
 
-    def test_ci_preserves_only_original_test_report_upload(self):
+    def test_ci_preserves_reports_and_narrow_failure_only_upload(self):
         workflow = (ROOT / ".github/workflows/android-exact-head.yml").read_text()
         lane = workflow.split("  instrumented:", 1)[1].split("  prune:", 1)[0]
-        self.assertEqual(1, lane.count("uses: actions/upload-artifact@v4"))
+        self.assertEqual(2, lane.count("uses: actions/upload-artifact@v4"))
+        reduced = lane.split("- name: Upload reduced failure-only focus evidence", 1)[1]
+        self.assertIn("if: failure()", reduced)
+        self.assertIn("path: ${{ env.FOCUS_EVIDENCE }}/*.json", reduced)
+        self.assertIn("retention-days: 1", reduced)
         upload = lane.split("      - name: Upload instrumented lane evidence", 1)[1]
         self.assertIn("if: always()", upload)
         paths = upload.split("          path: |\n", 1)[1].split("          if-no-files-found:", 1)[0]

@@ -1,0 +1,162 @@
+{
+  "state": "saved-reopened",
+  "theme": "light",
+  "normalization": {
+    "skin": "mono",
+    "mode": "light",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clock": "2026-09-17T16:00:00.000Z"
+  },
+  "text": "Edit profile\n\nAppearance and role for Synthetic Toolsets (synthetic-toolsets).\n\nBot\nGenerate\nUpload\nPet\nAuto\nRandomize\nLock face\nFace follows the name.\nClassic shapes\nTitle\nDescription\nAdvanced — model, skills, toolsets, SOUL.md\nProvider (Custom)\nModel (Custom)\n← Back to dropdowns\nCapabilities (applies immediately — skills, tools, MCP)\nSkills\n53\nTools\n2\nConnectors\nPlugins\n↓ Most used\nTerminal\nRun shell commands\n1 tools\nWeb\nSearch and read web pages\n2 tools\nTerminal\n\nRun shell commands\n\nterminal\nExecution backend\nLocal\nReady\nIn use\nRun commands directly on this machine. No isolation.\nDocker / Podman\nReady\nRun commands in an isolated Docker or Podman container with a persistent workspace.\nSingularity / Apptainer\nNeeds setup\nRun commands in a Singularity/Apptainer container (HPC-friendly, rootless).\nNeither singularity nor apptainer found on PATH.\nModal\nNeeds setup\nRun commands in a Modal cloud sandbox.\nModal credentials not found — set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (or run `modal setup`).\nDaytona\nNeeds setup\nRun commands in a Daytona cloud sandbox.\nSet DAYTONA_API_KEY to use the Daytona backend.\nSSH\nNeeds setup\nRun commands on a remote host over SSH.\nSet terminal.ssh_host and terminal.ssh_user in config.yaml (or the matching TERMINAL_SSH_* env vars).\nChanges apply to new sessions.\nSOUL.md (persona + agent-messaging protocol)\nCancel\nSave\nClose",
+  "nodes": "- dialog \"Edit profile\":\n  - heading \"Edit profile\" [level=2]\n  - paragraph: Appearance and role for Synthetic Toolsets (synthetic-toolsets).\n  - button \"Bot\" [pressed]\n  - button \"Generate\"\n  - button \"Upload\"\n  - button \"Pet\"\n  - button \"Auto — the name decides\": Auto\n  - button \"round\"\n  - button \"organic\"\n  - button \"boxy\"\n  - button \"capsule\"\n  - button \"nub\"\n  - button \"cloud\"\n  - button \"droplet\"\n  - button \"hexagon\"\n  - button \"sun\"\n  - button \"triangle\"\n  - button \"Randomize\"\n  - button \"Lock face\"\n  - text: Face follows the name.\n  - button \"Classic shapes\"\n  - text: Title\n  - textbox \"Synthetic Toolsets\"\n  - text: Description\n  - textbox \"What should this bot help with?\": Synthetic Toolsets\n  - button \"Advanced — model, skills, toolsets, SOUL.md\"\n  - text: Provider (Custom)\n  - textbox \"omnirouter / inferx / 9router\": fixture\n  - text: Model (Custom)\n  - textbox \"antigravity/gemini-3.6-flash-high\": model-alpha\n  - button \"← Back to dropdowns\"\n  - text: Capabilities (applies immediately — skills, tools, MCP)\n  - img\n  - textbox \"Search tools...\":\n    - /placeholder: Try “web_search”\n  - button \"Skills 53\"\n  - button \"Tools 2\"\n  - button \"Connectors\"\n  - button \"Plugins\"\n  - complementary:\n    - button \"↓ Most used\"\n    - button \"Tools\"\n    - button \"Terminal Run shell commands 1 tools\"\n    - switch \"Turn Terminal toolset off\" [checked]\n    - button \"Web Search and read web pages 2 tools\"\n    - switch \"Turn Web toolset off\" [checked]\n  - main:\n    - heading \"Terminal\" [level=3]\n    - paragraph: Run shell commands\n    - text: terminal Execution backend\n    - button:\n      - img\n    - button \"Local Ready In use Run commands directly on this machine. No isolation.\" [pressed]:\n      - text: Local\n      - img\n      - text: Ready\n      - img\n      - text: In use Run commands directly on this machine. No isolation.\n    - button \"Docker / Podman Ready Run commands in an isolated Docker or Podman container with a persistent workspace.\":\n      - text: Docker / Podman\n      - img\n      - text: Ready Run commands in an isolated Docker or Podman container with a persistent workspace.\n    - button \"Singularity / Apptainer Needs setup Run commands in a Singularity/Apptainer container (HPC-friendly, rootless). Neither singularity nor apptainer found on PATH.\":\n      - text: Singularity / Apptainer\n      - img\n      - text: Needs setup Run commands in a Singularity/Apptainer container (HPC-friendly, rootless).\n      - img\n      - text: Neither singularity nor apptainer found on PATH.\n    - 'button \"Modal Needs setup Run commands in a Modal cloud sandbox. Modal credentials not found — set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (or run `modal setup`).\"':\n      - text: Modal\n      - img\n      - text: Needs setup Run commands in a Modal cloud sandbox.\n      - img\n      - text: \"Modal credentials not found — set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET (or run `modal setup`).\"\n    - button \"Daytona Needs setup Run commands in a Daytona cloud sandbox. Set DAYTONA_API_KEY to use the Daytona backend.\":\n      - text: Daytona\n      - img\n      - text: Needs setup Run commands in a Daytona cloud sandbox.\n      - img\n      - text: Set DAYTONA_API_KEY to use the Daytona backend.\n    - button \"SSH Needs setup Run commands on a remote host over SSH. Set terminal.ssh_host and terminal.ssh_user in config.yaml (or the matching TERMINAL_SSH_* env vars).\":\n      - text: SSH\n      - img\n      - text: Needs setup Run commands on a remote host over SSH.\n      - img\n      - text: Set terminal.ssh_host and terminal.ssh_user in config.yaml (or the matching TERMINAL_SSH_* env vars).\n    - text: Changes apply to new sessions.\n  - text: SOUL.md (persona + agent-messaging protocol)\n  - textbox: Synthetic toolsets reference.\n  - button \"Cancel\"\n  - button \"Save\"\n  - button \"Close\":\n    - img\n    - text: Close",
+  "probe": {
+    "scenario": "pinned",
+    "log": [
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets"
+        },
+        "phase": "read",
+        "at": 1790890607982,
+        "result": [
+          {
+            "name": "web",
+            "label": "Web",
+            "description": "Search and read web pages",
+            "tools": [
+              "web_search",
+              "web_extract"
+            ],
+            "enabled": true,
+            "available": true,
+            "configured": true,
+            "platform": "cli",
+            "platform_label": "CLI"
+          },
+          {
+            "name": "terminal",
+            "label": "Terminal",
+            "description": "Run shell commands",
+            "tools": [
+              "terminal"
+            ],
+            "enabled": false,
+            "available": false,
+            "configured": true,
+            "platform": "cli",
+            "platform_label": "CLI"
+          }
+        ]
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets/terminal/config"
+        },
+        "phase": "passthrough",
+        "at": 1790890609603,
+        "result": null
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets/terminal",
+          "method": "PUT",
+          "body": {
+            "enabled": true
+          }
+        },
+        "phase": "committed",
+        "at": 1790890611841,
+        "result": {
+          "ok": true,
+          "name": "terminal",
+          "enabled": true
+        }
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets"
+        },
+        "phase": "read",
+        "at": 1790890618610,
+        "result": [
+          {
+            "name": "web",
+            "label": "Web",
+            "description": "Search and read web pages",
+            "tools": [
+              "web_search",
+              "web_extract"
+            ],
+            "enabled": true,
+            "available": true,
+            "configured": true,
+            "platform": "cli",
+            "platform_label": "CLI"
+          },
+          {
+            "name": "terminal",
+            "label": "Terminal",
+            "description": "Run shell commands",
+            "tools": [
+              "terminal"
+            ],
+            "enabled": true,
+            "available": true,
+            "configured": true,
+            "platform": "cli",
+            "platform_label": "CLI"
+          }
+        ]
+      },
+      {
+        "request": {
+          "profile": "synthetic-toolsets",
+          "connectionId": "local",
+          "priority": "foreground",
+          "path": "/api/tools/toolsets/terminal/config"
+        },
+        "phase": "passthrough",
+        "at": 1790890618920,
+        "result": null
+      }
+    ],
+    "pendingReads": 0,
+    "pendingWrites": 0,
+    "selected": [
+      "web",
+      "terminal"
+    ],
+    "pinned": true
+  },
+  "rpc": [
+    {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "profiles.describe",
+      "params": {
+        "name": "synthetic-toolsets"
+      }
+    },
+    {
+      "jsonrpc": "2.0",
+      "id": 7,
+      "method": "profiles.describe",
+      "params": {
+        "name": "synthetic-toolsets"
+      }
+    }
+  ]
+}
