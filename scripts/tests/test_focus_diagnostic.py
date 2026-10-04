@@ -99,17 +99,14 @@ class FocusDiagnosticTests(unittest.TestCase):
         self.assertLess(rule.index('FailureFocusSnapshot.capture(activity)'), rule.index('base.evaluate()'))
         self.assertIn('throw failure', rule)
         workflow = (root / '.github/workflows/visual-parity-capture.yml').read_text()
-        self.assertLess(workflow.index(':app:assembleDebugAndroidTest'), workflow.index('Create the AVD snapshot'))
-        self.assertEqual(workflow.count('am force-stop'), 2)
+        self.assertLess(workflow.index(':app:assembleDebugAndroidTest'), workflow.index('Run the instrumented lane'))
+        self.assertEqual(workflow.count('am force-stop'), 1)
         self.assertEqual(workflow.count('./gradlew :app:assembleDebug :app:assembleDebugAndroidTest'), 1)
         self.assertEqual(workflow.count('python3 scripts/ci_prebuilt.py record'), 1)
-        snapshot = workflow.split('- name: Run snapshot comparison on the prebuilt APK pair', 1)[1].split('- name:', 1)[0]
-        cold = workflow.split('- name: Run the instrumented lane', 1)[1].split('- name:', 1)[0]
-        self.assertIn('emulator-options: -no-snapshot-save ', snapshot)
-        self.assertIn('emulator-options: -no-snapshot-load -no-snapshot-save ', cold)
-        fresh = workflow.split('- name: Preserve snapshot result and bind separately fresh cold AVD', 1)[1].split('- name:', 1)[0]
-        self.assertIn('ANDROID_AVD_HOME=$RUNNER_TEMP/focus-avd-$nonce', fresh)
-        self.assertIn('cp app/build/ci-prebuilt.json', fresh)
+        self.assertEqual(workflow.count('uses: reactivecircus/android-emulator-runner@'), 1)
+        self.assertIn('force-avd-creation: true', workflow)
+        self.assertIn('avd-name: focus-cold-${{ github.run_id }}-${{ github.run_attempt }}', workflow)
+        self.assertIn('emulator-options: -wipe-data -no-snapshot-load -no-snapshot-save ', workflow)
         self.assertNotIn('actions/cache', workflow)
         self.assertNotIn('am instrument', workflow)
         self.assertNotIn('hide_error_dialogs', workflow)

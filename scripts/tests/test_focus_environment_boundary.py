@@ -23,9 +23,7 @@ class EnvironmentBoundaryTest(unittest.TestCase):
         self.assertNotIn('FOCUS_DIAGNOSTIC', env)
         connected = workflow.split('- name: Run the instrumented lane', 1)[1].split('- name:', 1)[0]
         self.assertIn('FOCUS_DIAGNOSTIC=true python3 scripts/ci_prebuilt.py connected', connected)
-        snapshot = workflow.split('- name: Run snapshot comparison on the prebuilt APK pair', 1)[1].split('- name:', 1)[0]
-        self.assertIn('FOCUS_DIAGNOSTIC=true python3 scripts/ci_prebuilt.py connected', snapshot)
-        self.assertEqual(workflow.count('FOCUS_DIAGNOSTIC=true'), 2)
+        self.assertEqual(workflow.count('FOCUS_DIAGNOSTIC=true'), 1)
 
 if __name__ == '__main__':
     unittest.main()

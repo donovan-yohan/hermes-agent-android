@@ -147,8 +147,7 @@ jobs:
           nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
           echo "FOCUS_NONCE=$nonce" >> "$GITHUB_ENV"
           echo "FOCUS_DISPOSABLE=api34-run-scoped-snapshot" >> "$GITHUB_ENV"
-          echo "ANDROID_AVD_HOME=$RUNNER_TEMP/focus-avd-$nonce" >> "$GITHUB_ENV"
-          mkdir -m 700 "$RUNNER_TEMP/focus-avd-$nonce"
+          # Action overrides AVD home; isolate with its actual avd-name input.
 
       - name: Verify disposable launcher preparation contract
         run: python3 -m unittest discover -s scripts/tests -p test_ci_launcher_focus.py -v
@@ -188,70 +187,7 @@ jobs:
           python3 scripts/ci_prebuilt.py record
           python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
           python3 -m unittest discover -s scripts/tests -p test_focus_environment_boundary.py -v
-      - name: Create the AVD snapshot
-        # Pinned to a commit, for the reason given above the setup-android pin.
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          emulator-port: 5554
-          script: echo 'Fresh run-scoped synthetic snapshot created; never cached or imported.'
-      # pixel_6 is pinned, not incidental: the chat surface switches to its wide
-      # layout above 720 dp, and OrientationTest asserts the rotated window
-      # really crosses that breakpoint rather than passing vacuously.
-      - name: Run snapshot comparison on the prebuilt APK pair
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          emulator-port: 5554
-          disable-animations: true
-          script: |
-            test "$(adb -s "$ANDROID_SERIAL" get-serialno)" = "$ANDROID_SERIAL"
-            test "$(adb -s "$ANDROID_SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" = 34
-            test "$(adb -s "$ANDROID_SERIAL" shell getprop ro.boot.qemu | tr -d '\r')" = 1
-            adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$FOCUS_NONCE:$ANDROID_SERIAL:$FOCUS_DISPOSABLE"
-            ./scripts/prepare-ci-emulator.sh
-            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
-            FOCUS_DIAGNOSTIC=true python3 scripts/ci_prebuilt.py connected
-      - name: Preserve snapshot result and bind separately fresh cold AVD
-        if: always()
-        shell: bash
-        run: |
-          mkdir -p app/build/focus-comparison/snapshot
-          cp app/build/ci-prebuilt.json app/build/focus-comparison/snapshot/
-          cp -R app/build/outputs/androidTest-results app/build/focus-comparison/snapshot/ || true
-          cp -R app/build/reports/androidTests app/build/focus-comparison/snapshot/ || true
-          cp -R "app/build/focus-$FOCUS_NONCE" app/build/focus-comparison/snapshot/ || true
-          rm -rf app/build/outputs/androidTest-results/connected app/build/reports/androidTests/connected
-          nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
-          echo "FOCUS_NONCE=$nonce" >> "$GITHUB_ENV"
-          echo "ANDROID_AVD_HOME=$RUNNER_TEMP/focus-avd-$nonce" >> "$GITHUB_ENV"
-          mkdir -m 700 "$RUNNER_TEMP/focus-avd-$nonce"
-      - name: Create separately fresh cold AVD snapshot
-        if: always()
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
-        with:
-          api-level: 34
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          disable-animations: false
-          emulator-port: 5554
-          script: echo 'Separately fresh synthetic AVD; APK pair is not rebuilt.'
       - name: Run the instrumented lane
-        if: always()
         # Pinned to a commit, for the reason given above the setup-android pin.
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -259,8 +195,9 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          force-avd-creation: false
-          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          avd-name: focus-cold-${{ github.run_id }}-${{ github.run_attempt }}
+          force-avd-creation: true
+          emulator-options: -wipe-data -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           emulator-port: 5554
           disable-animations: true
           # CI-only mitigation for the API34 launcher ANR stealing input focus.
@@ -281,7 +218,6 @@ jobs:
           name: instrumented-results-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             app/build/ci-prebuilt.json
-            app/build/focus-comparison/**
             app/build/outputs/androidTest-results/connected/**
             app/build/reports/androidTests/connected/**
           if-no-files-found: warn
