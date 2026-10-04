@@ -53,7 +53,7 @@ class SidebarProjectionParityActivityTest {
     fun queryMissInvalidatesProductionProjection() {
         launch("projection-search-miss") { activity ->
             compose.waitUntil(10_000) { activity.fixture.ready }
-            assertEquals("no synthetic match", activity.fixture.viewModel.uiState.value.query)
+            assertEquals("zqxvparitynomatch", activity.fixture.viewModel.uiState.value.query)
             assertTrue(activity.fixture.viewModel.uiState.value.projects.isEmpty())
             compose.onNodeWithContentDescription("Open sessions").performClick()
             compose.onNodeWithText("Nothing matches").assertIsDisplayed()

@@ -1,0 +1,9 @@
+# Scoped review of retained sidebar observations
+
+Verdict: **Concern**. `REPORT.md` is the unchanged original observation report; its unapproved/subject-to-parent statements describe that capture review, not a restamped verdict. This review approves only compact drawer/48dp density, two-line preview presentation and accessible icon-only All projects action based on the genuine retained overview/selected pixels. Order and 12m/20m ages are preserved; phone reachability/readability justify these adaptations.
+
+The lane label is omitted detail, deferred under #359; PINNED/pin controls owe a pill under #359. Neither is approved as density adaptation. Exclude the unnormalized Android selected-design versus Desktop fresh-chat region. Search retains Concern and is owned by #367; independent source attribution is PASS for inherited behavior, not behavioral parity. Original source pin, APK hashes, receipt hashes, PNGs and failed multiword-query observation remain unchanged.
+
+Adjacent warmed-cache tests were added only for demonstrated gaps: default→named→unified profile scope, archive-only preview update without hidden mutation, and rehome-only selected membership/title replacement. Existing combined mutations can rebuild for another reason; these tests compare adjacent observations and real outputs. Production cache/ChatViewModel paths are unchanged. No frame-time/CPU benchmark or broad invalidator coverage claim.
+
+Negative fixture input changes only `no synthetic match` to `zqxvparitynomatch`, identically on Android/Desktop. Future missing-state captures use the new immutable source; overview/selected/search-match originals retain `7e7af545571c504274e88fd6b56a0882e28c08df`. Previous search miss is retained as historical input, not the corrected negative pair. New evidence is separately indexed; no historical restamping or all-states rerun is intended.

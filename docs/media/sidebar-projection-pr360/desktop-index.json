@@ -1,0 +1,26 @@
+{
+  "pin": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "fixture_sha256": "1c2e427b7a1522ce9d0ff87762d8f5da89cbc7615c72a7de6583f88b53a5f7d5",
+  "states": [
+    {
+      "state": "projection-overview",
+      "screenshot": "projection-overview-desktop.png",
+      "sha256": "bbffebe5e746d8c90ee9d65e3be2f3cb462d7f125ea0d5fdb42639e3456e46a2",
+      "receipt": "projection-overview-desktop-receipt.json"
+    },
+    {
+      "state": "projection-selected",
+      "screenshot": "projection-selected-desktop.png",
+      "sha256": "59521eec9913d9635ce70a98cdb00f5615a63d4120e48b07552d4a9c2028f4ed",
+      "receipt": "projection-selected-desktop-receipt.json"
+    },
+    {
+      "state": "projection-search-match",
+      "screenshot": "projection-search-match-desktop.png",
+      "sha256": "7423d877e735aac7755d7be83cc5a57fa71dffeae3801e2a326195f6b70b72d7",
+      "receipt": "projection-search-match-desktop-receipt.json"
+    }
+  ],
+  "journey_passed": false,
+  "draft_not_reached": true
+}

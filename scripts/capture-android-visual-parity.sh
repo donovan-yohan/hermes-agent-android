@@ -28,8 +28,10 @@ fi
 # sheet. Those dialogs are an emulator artifact, not something this lane
 # measures: stop new ones being drawn, and stop the launcher the fixture never
 # needs so it cannot ANR in the first place.
-adb shell settings put global hide_error_dialogs 1
-adb shell am force-stop com.google.android.apps.nexuslauncher
+if [[ "$CAPTURE_SURFACE" != "sidebar-projection" ]]; then
+  adb shell settings put global hide_error_dialogs 1
+  adb shell am force-stop com.google.android.apps.nexuslauncher
+fi
 
 activity="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["android_activity"])' "$request_json")"
 fixture="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fixture_id"])' "$request_json")"

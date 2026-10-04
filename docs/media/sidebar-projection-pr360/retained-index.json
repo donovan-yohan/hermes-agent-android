@@ -1,0 +1,66 @@
+[
+  {
+    "path": "projection-selected-desktop.png",
+    "sha256": "59521eec9913d9635ce70a98cdb00f5615a63d4120e48b07552d4a9c2028f4ed"
+  },
+  {
+    "path": "projection-selected-android.png",
+    "sha256": "0d8ac8e2efa0f8e726363f5050d81b7fe123b070d09350a5962a6f92ae7a720b"
+  },
+  {
+    "path": "desktop-query-miss-observed-results-failed.png",
+    "sha256": "6503d73bfdad0b1b5423a7fc02283bbc1d82a258767dcba96ee3ed009b0e3ccc"
+  },
+  {
+    "path": "projection-search-miss-android.png",
+    "sha256": "ef138013302cd744eabdd0778d5c4bc526bd0a52d872247196c28eba43d5c0da"
+  },
+  {
+    "path": "projection-search-match-android.png",
+    "sha256": "ee10b363cf58f361a5a4f721b9879713c1f58aaf57af8ca63fd41baf06f74c03"
+  },
+  {
+    "path": "projection-overview-desktop.png",
+    "sha256": "bbffebe5e746d8c90ee9d65e3be2f3cb462d7f125ea0d5fdb42639e3456e46a2"
+  },
+  {
+    "path": "projection-overview-android.png",
+    "sha256": "e3936a8171484e53ddd21843fe684e48346f4a86a425f803e1bdde388f07e353"
+  },
+  {
+    "path": "projection-search-match-desktop.png",
+    "sha256": "7423d877e735aac7755d7be83cc5a57fa71dffeae3801e2a326195f6b70b72d7"
+  },
+  {
+    "path": "projection-overview-desktop-receipt.json",
+    "sha256": "2c3671e2f724476c5817d42374240d23dae94c58d217b1b84f32ce5d77f67d39"
+  },
+  {
+    "path": "projection-search-match-desktop-receipt.json",
+    "sha256": "93606f83c66f2c5c17c02bf252e7063660256c4e36449786ddeae0be957fe307"
+  },
+  {
+    "path": "projection-selected-desktop-receipt.json",
+    "sha256": "58523846df227738d1ddda99391902d365ce9da4f2503a2fcca5ae06375d5f19"
+  },
+  {
+    "path": "android-index.json",
+    "sha256": "8bac3a3eac75babb14ef18905b272f60e5871bec55b40bfcd8bc594a4d4f28a4"
+  },
+  {
+    "path": "desktop-index.json",
+    "sha256": "c5c602d259cfa31fd35bb6a33e167a1faf8e7912e3e331ca82c7f9354d1d1935"
+  },
+  {
+    "path": "desktop-fixture.spec.ts",
+    "sha256": "1c2e427b7a1522ce9d0ff87762d8f5da89cbc7615c72a7de6583f88b53a5f7d5"
+  },
+  {
+    "path": "desktop-rpc-trace.json",
+    "sha256": "bd0da9bb5232ad2ad894231f22f59225c689074895d61dccd4efff29bb439bff"
+  },
+  {
+    "path": "REPORT.md",
+    "sha256": "5a1d138416442217b5bfa7254ddcb962bcbe7e3be42a389357ca89055865fa5a"
+  }
+]

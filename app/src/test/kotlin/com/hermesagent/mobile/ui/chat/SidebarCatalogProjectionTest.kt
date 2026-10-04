@@ -51,6 +51,49 @@ class SidebarCatalogProjectionTest {
     }
 
     @Test
+    fun `warmed profile scope changes alone expose the correct sessions`() {
+        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val projection = SidebarCatalogProjection()
+        fun derive(scope: ProfileScope) = projection.derive(cache.state.value, 0, scope, null, "", Locale.US)
+        val default = derive(ProfileScope())
+        assertEquals(listOf("a"), default.scopedSessions.map { it.id })
+        assertSame(default, derive(ProfileScope()))
+        val named = derive(ProfileScope("work"))
+        assertEquals(listOf("b"), named.scopedSessions.map { it.id })
+        assertSame(named, derive(ProfileScope("work")))
+        val unified = derive(ProfileScope(showAllProfiles = true))
+        assertEquals(listOf("a", "b"), unified.scopedSessions.map { it.id })
+    }
+
+    @Test
+    fun `archive alone updates a warmed preview without hiding it`() {
+        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val projection = SidebarCatalogProjection()
+        fun derive() = projection.derive(cache.state.value, 0, ProfileScope(), null, "", Locale.US)
+        val before = derive()
+        assertSame(before, derive())
+        assertNotEquals(true, before.projects.single().previewSessions.single().archived)
+        cache.upsertSession(a.copy(archived = true))
+        val after = derive().projects.single().previewSessions.single()
+        assertEquals("a", after.id)
+        assertEquals(true, after.archived)
+        assertNotEquals(true, after.hidden)
+    }
+
+    @Test
+    fun `rehome alone replaces a warmed selected membership`() {
+        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val projection = SidebarCatalogProjection()
+        fun derive() = projection.derive(cache.state.value, 0, ProfileScope(), "p", "", Locale.US)
+        val before = derive()
+        assertEquals(listOf("a"), before.scopedSessions.map { it.id })
+        assertSame(before, derive())
+        cache.rehomeSession("a", a.copy(id = "tip", title = "Compressed tip"), emptyList())
+        assertEquals(listOf("tip"), derive().scopedSessions.map { it.id })
+        assertEquals("Compressed tip", derive().scopedSessions.single().title)
+    }
+
+    @Test
     fun `locale alone invalidates matching and ordering`() {
         val cache = SessionCache().apply {
             replaceProjectOverview(listOf(

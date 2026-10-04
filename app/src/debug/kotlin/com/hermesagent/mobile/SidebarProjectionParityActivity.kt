@@ -143,8 +143,8 @@ internal class SidebarProjectionParityFixture {
                 model.uiState.first { it.query == "design" }
             }
             "projection-search-miss" -> {
-                model.setQuery("no synthetic match")
-                model.uiState.first { it.query == "no synthetic match" && it.projects.isEmpty() }
+                model.setQuery("zqxvparitynomatch")
+                model.uiState.first { it.query == "zqxvparitynomatch" && it.projects.isEmpty() }
             }
             "projection-draft-reuse" -> {
                 val before = model.uiState.value.projects
