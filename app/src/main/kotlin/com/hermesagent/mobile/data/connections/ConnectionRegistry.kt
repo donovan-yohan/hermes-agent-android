@@ -254,7 +254,7 @@ const val CONNECTION_SEARCH_THRESHOLD: Int = 8
  * (`connections-registry.tsx:106-108` @ `72a3277cd7`): trim, drop trailing
  * slashes, lowercase. Deliberately looser than
  * `normalizeRemoteGatewayUrl`, which additionally refuses anything that is not
- * a usable HTTPS origin: two rows still collide before either is valid.
+ * a usable HTTP(S) base URL: two rows still collide before either is valid.
  */
 fun normalizeGatewayUrl(url: String): String = url.trim().trimEnd('/').lowercase()
 
