@@ -46,7 +46,7 @@ fi
 interaction_kinds="$(python3 -c '
 import json,sys
 request = json.load(open(sys.argv[1]))
-values = [] if request["surface"] in ("bot-model-config", "bot-avatar-editor", "sidebar-projection") else request["state_spec"].get("interaction", [])
+values = [] if (request["surface"] in ("bot-model-config", "bot-avatar-editor") or request["surface"] == "sidebar-projection") else request["state_spec"].get("interaction", [])
 unsupported = [value for value in values if not (value.startswith("tap:") or value == "swipe:list-up")]
 if unsupported:
     sys.stderr.write(f"unsupported catalogued interaction: {unsupported}\n")
