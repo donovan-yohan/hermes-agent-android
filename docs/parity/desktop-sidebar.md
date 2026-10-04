@@ -77,6 +77,19 @@ endpoint and rehome behavior; they do not replace rendered parity review.
 Prior captures below retain their original provenance and do not certify this
 refactor. Its parity verdict remains Concern until that evidence is supplied.
 
+A new debug-only `SidebarProjectionParityActivity` mounts the actual production
+`ChatViewModel.uiState` and `ChatScreen` over transient synthetic authorities.
+Activity-launch regressions cover selected project, query miss and 20 observed
+draft edits retaining the overview/preview identities. It is catalogued separately
+as `sidebar-projection-synthetic-v1`; it does not restamp the historical fixture.
+A disposable Desktop build and real E2E sandbox launch at
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67` succeeded, but its inspected empty
+sidebar bootstrap PNG is **not** the matching synthetic project journey.
+No installed Android capture, paired report or canonical receipt acceptance has
+been obtained for this fixture. Named/unified profile, archived and compression
+rehome rendered journeys remain owed under #359; behavioral tests are not their
+rendered acceptance. No CPU/allocation/frame-time improvement is claimed.
+
 [Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
 contains synthetic production-Compose window draws and the main-vs-fixed test
 results. It supplements, and does not discharge, the paired/device obligation.
