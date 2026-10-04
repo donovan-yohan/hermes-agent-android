@@ -91,5 +91,5 @@ and copy failures. `assembleDebug`, debug/release lint and repo invariants passe
 skip; release ran 2756 with one failure and one skip. The unchanged callback
 attack test timed out in both variants, and the debug routines capture formatting
 test failed. Both failures were reproduced individually at unchanged
-`origin/main` (`71fd1ad`) in an isolated baseline worktree; they are not silently
+`45aafe670a943b760747ac064bc19bf929c12f97` in an isolated baseline worktree; they are not silently
 skipped or rewritten by this fix.
