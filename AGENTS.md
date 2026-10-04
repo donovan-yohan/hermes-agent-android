@@ -109,13 +109,19 @@ single-connection reader is a projection of that row, so a connection edit has
 one writer and no second copy. The pre-registry `host.single.*` /
 `gateway.single.*` keys were migrated into row one, not overloaded.
 
-**HTTP is private-IP/loopback-only, and Local owns no process.** Android XML
-cannot express private IP ranges, so platform cleartext permission is enabled
-and the shared `gatewayTransportClient` enforces the boundary before I/O. Remote
-HTTP accepts numeric RFC1918, CGNAT/Tailnet and IPv6 ULA addresses, never DNS
-names or public IPs. Every production HTTP/WS client derives from that factory;
-redirects and system proxies are disabled. The repo gate rejects independent
-clients. HTTP on a LAN is not encrypted; prefer HTTPS. See
+**Desktop is the behavioral source of truth.** Copy supported upstream input
+and transport semantics at an inspected, scoped pin. Do not invent narrower
+security/product policies or platform divergences without raising the tradeoff
+and obtaining user approval. Regression tests must exercise the reported input
+shape through the real application path and assert Desktop behavior, not a
+restriction introduced by this client. Preserve older evidence pins.
+
+**Remote accepts HTTP(S) hostnames/IPs, and Local owns no process.** Scheme-less
+Remote URLs use HTTP, matching Desktop. Preserve port/path and URL-bound tokens;
+reject URL userinfo/query/fragment. Every production HTTP/WS client derives from
+`gatewayTransportClient`; existing redirects and system proxies remain disabled
+as auth safeguards. The repo gate rejects independent clients, not public hosts.
+HTTP is unencrypted regardless of hostname or IP; HTTPS verification is unchanged. See
 `docs/adr/0005-private-network-http-gateway.md`. A Local row addresses a Hermes
 the person runs in Termux on this phone:
 `normalizeLocalGatewayUrl` refuses rather than guesses, because which port a row

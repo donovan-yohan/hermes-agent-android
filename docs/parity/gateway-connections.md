@@ -37,18 +37,19 @@ HTTP amendment has its own source pin; it does not govern the historic ledgers.
 | Switch is re-entrant-safe | `store/connections.ts:159-161` — a repeat `selectConnection` for the target already in flight returns before it touches anything | `ConnectionsViewModel.select` drops the tap while `switchJob` is active, and `ConnectionSwitchController.select` serialises on one mutex |
 | Copy | `i18n/en.ts:703-764`, `:1770`, `:1772` | `ui/gateway/ConnectionsCopy.kt`, one constant per line, cited |
 
-## Private-network HTTP amendment
+## HTTP(S) Desktop transport amendment
 
 Transport source and copy inspected at `36922ad064d65dcf25f8f48df81e1ccf9a55de67`:
 `apps/desktop/electron/connection-config.ts:47-80,91-96` and
 `apps/desktop/src/i18n/en.ts:1559`. This amendment does not restamp the older
 surface pin or its visual evidence. See [ADR 0005](../adr/0005-private-network-http-gateway.md).
-Only the Remote description and invalid-address guidance change; order, controls,
-glyphs and theme tokens are untouched. Desktop says “A Hermes gateway reachable
-over HTTP(S) — LAN, Tailscale, or the internet.” Android shortens this to “A Hermes
-gateway reachable over LAN, Tailscale, or the internet.” The error offers HTTPS
-or a private Gateway IP instead of claiming HTTPS is mandatory. Both differences
-are deliberate mobile security adaptations: public/DNS HTTP remains refused.
+Remote now accepts HTTP(S) hostnames and IPs, including scheme-less input,
+matching the inspected Desktop normalizer rather than the earlier private-IP
+restriction. The Remote description copies Desktop verbatim; the URL placeholder
+returns to `http://homelab.lan:9119` at its unchanged historical pin. Invalid-address
+guidance offers HTTP or HTTPS. Existing rejection of URL userinfo/query/fragment
+and native-only auth are retained, not claimed as identical Desktop validation.
+Order, controls, glyphs and theme tokens are untouched.
 The updated words have source and JVM evidence only, not a new rendered report;
 the existing pending visual review remains owed (Concern ceiling).
 
@@ -252,7 +253,7 @@ argument.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| Desktop permits HTTP(S) and describes both over LAN/Tailscale/internet | mobile-adaptation | HTTP only at numeric private IPs; error offers HTTPS or private IP; description omits the protocol clause | ADR 0005: avoid implying public HTTP protects credentials; source/copy checked at the amendment's separate pin above, new rendered evidence remains owed |
+| Desktop permits HTTP(S) and describes both over LAN/Tailscale/internet | mobile-adaptation | HTTP(S) hostnames/IPs accepted; description verbatim; existing URL userinfo/query/fragment refusal and native-only auth retained | ADR 0005: HTTP is unencrypted, not restricted to private hosts; inspected at the amendment's scoped pin above, new rendered evidence remains owed |
 | `DropdownMenu` + `DropdownMenuRadioGroup` anchored to the rail trigger | mobile-adaptation | `ModalBottomSheet` with 48dp radio rows | Pointer menus are brittle on a phone; order, checkmark and search threshold are unchanged |
 | `ConfirmDialog` | mobile-adaptation | `ConfirmSheet` | Same touch reason; same title, description, destructive confirm and cancel |
 | Hover `title` tooltip carrying label + endpoint (`connection-display.ts:78-82`) | mobile-adaptation | Endpoint under the label in the sheet, and in the settings row description | Touch has no hover, so the information is shown rather than hidden |

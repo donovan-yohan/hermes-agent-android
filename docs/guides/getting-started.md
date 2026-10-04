@@ -42,7 +42,7 @@ You can also build it yourself — see
 
 | Route | Use it when | What it needs |
 |---|---|---|
-| **Remote gateway** (recommended) | Your Hermes runs on a machine you own — a server, a desktop, a VPS — and you want Desktop and phone to share it | An HTTPS URL (or HTTP at a trusted private IP), and the Gateway's auth gate switched on |
+| **Remote gateway** (recommended) | Your Hermes runs on a machine you own — a server, a desktop, a VPS — and you want Desktop and phone to share it | An HTTP or HTTPS URL, and the Gateway's auth gate switched on |
 | **Connect via SSH** (fallback) | You want a *private* backend that belongs to this phone alone | SSH access to a host that has Hermes installed |
 | **Local gateway** | Your Hermes runs in Termux on this same phone | A `hermes serve` on loopback and its session token |
 
@@ -65,19 +65,18 @@ profile and one session database.
 The app is strict about two things, and both are worth knowing before you start
 so the error messages make sense.
 
-**Use HTTPS, or HTTP at a private IP address.** HTTPS is preferred. For a
-Gateway reached over a trusted LAN or Tailscale, you can also enter its numeric
-private IP, such as `http://100.64.0.1:9119` (a synthetic example), with an optional
-path prefix. Scheme-less private IPs use HTTP. HTTP supports RFC1918 IPv4,
-CGNAT/Tailnet IPv4 and IPv6 ULA; public IPs and DNS names require HTTPS. For a
-MagicDNS hostname, use the Tailscale Serve HTTPS recipe below or its numeric IP.
+**Use an HTTP or HTTPS URL.** Hostnames (including MagicDNS) and IPv4/IPv6
+addresses are supported, with an optional port and path prefix. Scheme-less
+addresses use HTTP, matching Desktop. For example,
+`http://gateway.synthetic-tailnet.ts.net:9120` is a synthetic example of the
+supported hostname/port shape; no Tailnet-specific allowlist is applied.
 Do not include a username, password, query or fragment in the Gateway URL.
 
 **HTTP is not encrypted by the app.** Tailscale encrypts traffic only when it
 actually uses the Tailnet route. An ordinary LAN can expose sign-in tokens and
 session traffic to network attackers. Prefer HTTPS unless you trust that network.
-The app does not follow Gateway redirects or use system HTTP proxies. Loopback
-on this phone is still the Local route, not a Remote exception. See
+The app does not follow Gateway redirects or use system HTTP proxies. For a Termux
+Gateway with a static session token on this phone, use the Local route. See
 [the transport decision](../adr/0005-private-network-http-gateway.md).
 
 **The Gateway must advertise native sign-in.** Before signing in, the app reads

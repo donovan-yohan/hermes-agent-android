@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android domain-config cannot represent user-selected private IP ranges.
-     The shared OkHttp client enforces numeric private/loopback HTTP only,
-     before transmission, and refuses redirects (including WebSocket tickets).
-     Platform cleartext permission is necessary but is NOT the trust policy.
-     Never create an unguarded production HTTP client. See ADR 0005. -->
+<!-- Remote supports HTTP(S) hostnames and IPs, matching Desktop.
+     HTTP/WS is unencrypted: this is platform permission, not a host trust policy.
+     All production HTTP clients share existing redirect/proxy auth safeguards;
+     HTTPS certificate verification is unchanged. See ADR 0005. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
