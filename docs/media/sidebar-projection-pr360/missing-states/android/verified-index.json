@@ -1,0 +1,30 @@
+[
+  {
+    "state": "projection-draft-reuse",
+    "receipt": "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/contract.json",
+    "files": {
+      "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-before.json.samples.json": "1873354bbbff93334c62215ed5e349ba6acc5065aab62f7bda4bf35696520f3c",
+      "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-before.json": "11dc75361185c6dd738f66bacdb3ff069aaf0708bce4ad6c14d57fce7088c5ee",
+      "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/reference.png": "c0a26fe272c8c5d3cae7c36798743f5b7c9379cb2ab814356feee2d9f371dbe8",
+      "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-after.json": "11dc75361185c6dd738f66bacdb3ff069aaf0708bce4ad6c14d57fce7088c5ee",
+      "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/runtime-after.json.samples.json": "0dbd7b72b2ff8f106f06bd81b6f1fee1eb7917c969d3fb5f6ef49cf44cf38bb8",
+      "draft/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-draft-reuse-dark/contract.json": "837b2765580a44f749985626e5e99a202e75340d626dc1855efbaca247d4d72d"
+    },
+    "apk_sha256": "b4e183bf9db15ce63ecbd013f2d613fcedcfb7f083693faeec2f518df41b94c2",
+    "source_sha": "7bfb2fac3a57d9ad559299f1a890927084117078"
+  },
+  {
+    "state": "projection-search-miss",
+    "receipt": "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/contract.json",
+    "files": {
+      "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-before.json.samples.json": "219a3c15e67d98ac9e631447dbfd00672f7f862ea1ba5e9b66b1867cddc674c7",
+      "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-before.json": "f38d54a8d6fdab0dd0e20e99d0794bd58550fc869965e5fa2cfa1ddab6606f89",
+      "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/reference.png": "b8bd4b50415615c816b719232c14da775ca0fad324a2f3b6d09c213badbb4de2",
+      "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-after.json": "f38d54a8d6fdab0dd0e20e99d0794bd58550fc869965e5fa2cfa1ddab6606f89",
+      "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/runtime-after.json.samples.json": "219a3c15e67d98ac9e631447dbfd00672f7f862ea1ba5e9b66b1867cddc674c7",
+      "miss/visual-parity-android-7bfb2fac3a57d9ad559299f1a890927084117078-sidebar-projection-projection-search-miss-dark/contract.json": "bb3abc2e493f5c586f52cb674c4ed644d5fe55a0d725b6da11f03702b851fc6f"
+    },
+    "apk_sha256": "ab6778ad5c49aad42c867a29e02c54db362b746c51aa779c8663d2157d3b4ac5",
+    "source_sha": "7bfb2fac3a57d9ad559299f1a890927084117078"
+  }
+]

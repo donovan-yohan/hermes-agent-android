@@ -92,28 +92,21 @@ and real Desktop composer/draft capture are separately recorded when observed;
 previous multiword miss pixels remain failed-pair evidence. No CPU/frame-time
 speed claim, complete five-state acceptance or issue completion is made.
 
-A new debug-only `SidebarProjectionParityActivity` mounts the actual production
+A debug-only `SidebarProjectionParityActivity` mounts the actual production
 `ChatViewModel.uiState` and `ChatScreen` over transient synthetic authorities.
-Activity-launch regressions cover selected project, query miss and 20 observed
-draft edits retaining the overview/preview identities. It is catalogued separately
-as `sidebar-projection-synthetic-v1`; it does not restamp the historical fixture.
-At the current immutable Desktop pin, the genuine disposable E2E fixture now
-renders the matching synthetic project and two sessions through real project
-RPCs and an isolated synthetic session database. Inspected mono/dark captures
-cover overview, selected project and search match, rather than the earlier empty
-bootstrap. Android installed captures for these states and query miss passed
-canonical receipt validation at `d358d3c9085848fb5db89c7ef580ca19901fe06c`:
-[overview run](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37221274173),
-[selected run](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/37221275685).
-This is partial observation, **not paired acceptance**. The same multiword query
-`no synthetic match` yields Android's `Nothing matches`, but Desktop's genuine
-full-text search can relax to any-term matching and returns both synthetic
-sessions. Its global absence assertion also wrongly includes the retained
-statusbar project label. Desktop draft edits were not reached. Named/unified
-profile, archive and compression rehome rendered journeys remain owed under
-#359. The installed draft-reuse worker is being checked against observed
-readiness; source/unit proof alone is not acceptance. No CPU/allocation/frame-time
-improvement is claimed.
+The [missing-state completion report](../media/sidebar-projection-pr360/COMPLETION.md)
+records the corrected single-token empty-result pair and actual Desktop 20-edit
+composer journey, alongside installed Android 20-emission identity reuse and
+focused drawer pixels. Both new Android states retain capture source
+`7bfb2fac3a57d9ad559299f1a890927084117078`; earlier overview/selected/search-match
+observations retain their original `7e7af545` source and original Desktop fixture.
+Five states have actual paired observations, **not all-features parity PASS**.
+The historical multiword-query failed pair and prior focus-rejected draft
+artifacts remain distinct; new success does not diagnose their native owner.
+No masking, focus bypass, timeout extension or all-states rerun was used.
+Named/unified profile, archive and compression-rehome rendered journeys remain
+pending: #359. Expanded tests prove only their stated adjacent output contracts.
+
 
 [Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
 contains synthetic production-Compose window draws and the main-vs-fixed test
