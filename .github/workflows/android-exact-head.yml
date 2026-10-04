@@ -265,7 +265,10 @@ jobs:
           script: |
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
-            python3 scripts/ci_prebuilt.py connected
+            nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+            echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"
+            adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot"
+            FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected
       - name: Upload instrumented lane evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -276,6 +279,14 @@ jobs:
             app/build/reports/androidTests/connected/**
           if-no-files-found: warn
           retention-days: 14
+      - name: Upload reduced failure-only focus evidence
+        if: failure() && env.FOCUS_EVIDENCE != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: passive-focus-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ env.FOCUS_EVIDENCE }}/*.json
+          if-no-files-found: ignore
+          retention-days: 1
 
   # Separate job so only this one holds `actions: write`, and it runs after the
   # upload so the replacement artifact exists before any older one is deleted.
