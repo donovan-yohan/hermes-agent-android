@@ -22,11 +22,12 @@ class CiLauncherFocusTest(unittest.TestCase):
                       text.split('  instrumented:\n', 1)[1].split('    steps:', 1)[0])
         commands = [line.strip() for line in lane.split('          script: |\n', 1)[1].splitlines()
                     if line.strip() and not line.lstrip().startswith('#')]
-        self.assertEqual(commands, [
+        self.assertEqual(commands[:2], [
             './scripts/prepare-ci-emulator.sh',
             f'adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 {LAUNCHER}',
-            'python3 scripts/ci_prebuilt.py connected',
         ])
+        self.assertIn('&& FOCUS_DIAGNOSTIC=true FOCUS_NONCE=', commands[-1])
+        self.assertTrue(commands[-1].endswith('python3 scripts/ci_prebuilt.py connected'))
         self.assertEqual(text.count(' shell am force-stop '), 1)
         self.assertNotIn('hide_error_dialogs', text)
         # Execute the actual intervention through a fake adb, preserving argv.
