@@ -112,119 +112,147 @@ on:
         type: choice
         options: [dark, light]
 
-# This workflow is evidence-only: it cannot commit, comment, or mutate issues.
 permissions:
   contents: read
-
-concurrency:
-  group: visual-parity-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
-  cancel-in-progress: false
-
 jobs:
-  android:
-    name: Android pixels (${{ inputs.surface }} / ${{ inputs.state }})
+  instrumented:
+    if: github.event.inputs.surface == 'bot-configured-mcp' && github.event.inputs.state == 'mcp-loaded' && github.event.inputs.theme == 'dark' && github.run_attempt == 1 && startsWith(github.ref_name, 'diagnostic/focus-owner-')
+    name: disposable failure-only focus diagnostic
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 40
+    env:
+      ANDROID_SERIAL: emulator-5554
     steps:
-      # Checkout necessarily precedes the repository validator. This shell gate is
-      # intentionally inline and does not execute checked-out repository code.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Catalog inputs are approval placeholders only; no visual capture runs.
+      - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
-      - name: Verify immutable requested checkout
+      - name: Verify immutable diagnostic head
         shell: bash
         env:
           REQUESTED_REF: ${{ inputs.ref }}
+          EVENT_SHA: ${{ github.sha }}
+          DIAGNOSTIC_BRANCH: ${{ github.ref_name }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          if [[ ! "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "ref must be a lowercase 40-character commit SHA" >&2
-            exit 1
-          fi
-          CHECKED_OUT_REF="$(git rev-parse HEAD)"
-          if [[ "$CHECKED_OUT_REF" != "$REQUESTED_REF" ]]; then
-            echo "checkout mismatch: requested $REQUESTED_REF, got $CHECKED_OUT_REF" >&2
-            exit 1
-          fi
-          printf '%s\n' "$CHECKED_OUT_REF" > "$RUNNER_TEMP/android-git-sha"
-      - name: Resolve explicit capture request
+          [[ "$DIAGNOSTIC_BRANCH" == diagnostic/focus-owner-* ]] || exit 1
+          [[ "$RUN_ATTEMPT" == 1 ]] || exit 1
+          [[ "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$REQUESTED_REF" == "$EVENT_SHA" ]] || exit 1
+          [[ "$(git rev-parse HEAD)" == "$REQUESTED_REF" ]] || exit 1
+      - name: Bind fresh synthetic run paths
         shell: bash
         run: |
-          set -euo pipefail
-          python3 scripts/visual_parity_contract.py describe \
-            --surface '${{ inputs.surface }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' > "$RUNNER_TEMP/request.json"
-      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+          nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"
+          echo "FOCUS_NONCE=$nonce" >> "$GITHUB_ENV"
+          echo "FOCUS_DISPOSABLE=api34-run-scoped-snapshot" >> "$GITHUB_ENV"
+          # Action overrides AVD home; isolate with its actual avd-name input.
+
+      - name: Verify disposable launcher preparation contract
+        run: python3 -m unittest discover -s scripts/tests -p test_ci_launcher_focus.py -v
+      - name: State what this lane proves
+        shell: bash
+        run: |
+          echo 'This emulator lane does not substitute for physical acceptance.'
+          echo 'PKCE browser hand-off, real radio, network handoff, TalkBack and media stay on the device matrix.'
+          echo 'ActivityScenario.recreate() is a real destroy/recreate, not a system-initiated process kill.'
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: gradle
+      # Pinned to a commit: a moving tag on a third-party action is a write
+      # into a workflow whose sibling job holds the rolling keystore secret.
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
         with:
           packages: >-
             platform-tools
             platforms;android-36
             build-tools;36.0.0
+      # Without KVM the x86_64 image falls back to software emulation and the
+      # lane stops fitting in any sensible timeout.
       - name: Enable KVM
         shell: bash
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' |
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Capture real emulator pixels
+      - name: Cache the emulator image and AVD
+        id: avd-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-google_apis-x86_64-pixel_6-v2
+          # Without these a run that ends red saves nothing, so a lane that is
+          # red on the first attempt never warms its own cache and every later
+          # attempt pays the cold-boot cost again.
+          restore-keys: |
+            avd-api34-google_apis-x86_64-pixel_6-
+      # Finish CPU/memory-heavy APK assembly before either cold or warm boot.
+      # Resource isolation only; this is not a proven SystemUI ANR fix.
+      - name: Assemble instrumented APKs before emulator boot
+        run: |
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --no-daemon --no-build-cache
+          python3 scripts/ci_prebuilt.py record
+          python3 -m unittest discover -s scripts/tests -p test_ci_prebuilt.py -v
+          python3 -m unittest discover -s scripts/tests -p test_focus_environment_boundary.py -v
+      - name: Create the AVD snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        # Pinned to a commit, for the reason given above the setup-android pin.
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 34
           target: google_apis
           arch: x86_64
           profile: pixel_6
+          force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo 'AVD created; the snapshot is now cacheable.'
+      - name: Run the instrumented lane
+        # Pinned to a commit, for the reason given above the setup-android pin.
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-port: 5554
           disable-animations: true
-          script: CAPTURE_SURFACE='${{ inputs.surface }}' CAPTURE_STATE='${{ inputs.state }}' CAPTURE_THEME='${{ inputs.theme }}' bash scripts/capture-android-visual-parity.sh
-      - name: Upload Android packet only
+          # CI-only mitigation for the API34 launcher ANR stealing input focus.
+          # Stop only this synthetic AVD's known launcher after normal preparation;
+          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
+          script: |
+            test "$(adb -s "$ANDROID_SERIAL" get-serialno)" = "$ANDROID_SERIAL"
+            test "$(adb -s "$ANDROID_SERIAL" shell getprop ro.build.version.sdk | tr -d '\r')" = 34
+            test "$(adb -s "$ANDROID_SERIAL" shell getprop ro.boot.qemu | tr -d '\r')" = 1
+            adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$FOCUS_NONCE:$ANDROID_SERIAL:$FOCUS_DISPOSABLE"
+            ./scripts/prepare-ci-emulator.sh
+            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            FOCUS_DIAGNOSTIC=true python3 scripts/ci_prebuilt.py connected
+      - name: Upload instrumented lane evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v4
         with:
-          name: visual-parity-android-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
-          path: build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/android/**
+          name: instrumented-results-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            app/build/ci-prebuilt.json
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 1
 
-  desktop-blocker:
-    name: Desktop fixture boundary
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      # This same inline gate runs before any checked-out repository command.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Upload only fresh reduced owner records
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          ref: ${{ inputs.ref }}
-      - name: Verify immutable requested checkout
-        shell: bash
-        env:
-          REQUESTED_REF: ${{ inputs.ref }}
-        run: |
-          set -euo pipefail
-          if [[ ! "$REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "ref must be a lowercase 40-character commit SHA" >&2
-            exit 1
-          fi
-          CHECKED_OUT_REF="$(git rev-parse HEAD)"
-          if [[ "$CHECKED_OUT_REF" != "$REQUESTED_REF" ]]; then
-            echo "checkout mismatch: requested $REQUESTED_REF, got $CHECKED_OUT_REF" >&2
-            exit 1
-          fi
-      - name: Record the pinned-renderer blocker
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/visual_parity_contract.py describe --surface '${{ inputs.surface }}' --state '${{ inputs.state }}' --theme '${{ inputs.theme }}' > request.json
-          mkdir -p build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop
-          cp docs/workflows/visual-parity-capture.md build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/BLOCKED.md
-          cp request.json build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/request.json
-      - name: Upload Desktop boundary packet only
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: visual-parity-desktop-boundary-${{ inputs.ref }}-${{ inputs.surface }}-${{ inputs.state }}-${{ inputs.theme }}
-          path: build/visual-parity/${{ inputs.surface }}--${{ inputs.state }}/desktop/**
-          if-no-files-found: error
-          retention-days: 30
+          name: reduced-focus-${{ github.run_id }}
+          path: app/build/focus-${{ env.FOCUS_NONCE }}/readiness-*.json
+          if-no-files-found: ignore
+          retention-days: 1

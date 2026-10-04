@@ -12,11 +12,23 @@ import org.junit.runners.model.Statement
 internal class WindowReadinessRule(private val activity: () -> Activity) : TestRule {
     override fun apply(base: Statement, description: Description): Statement = object : Statement() {
         override fun evaluate() {
+            runCatching { FailureFocusSnapshot.arm() }
             val deadline = SystemClock.uptimeMillis() + DeviceLane.PLATFORM_TIMEOUT_MILLIS
+            var captured = false
             while (!ready()) {
-                check(SystemClock.uptimeMillis() < deadline) {
-                    "Activity not awake, unlocked and input-focused within " +
-                        "${DeviceLane.PLATFORM_TIMEOUT_MILLIS} ms: ${state()}"
+                // Bounded failure-only observation inside the original deadline; no progress intervention.
+                if (!captured && SystemClock.uptimeMillis() >= deadline - 3500) {
+                    captured = true
+                    runCatching { FailureFocusSnapshot.capture(activity) }
+                }
+                try {
+                    check(SystemClock.uptimeMillis() < deadline) {
+                        "Activity not awake, unlocked and input-focused within " +
+                            "${DeviceLane.PLATFORM_TIMEOUT_MILLIS} ms: ${state()}"
+                    }
+                } catch (failure: IllegalStateException) {
+                    if (!captured) runCatching { FailureFocusSnapshot.capture(activity) }
+                    throw failure
                 }
                 SystemClock.sleep(50)
             }
