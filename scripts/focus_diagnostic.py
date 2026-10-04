@@ -94,5 +94,16 @@ def collect(root, nonce):
             if writable:
                 (destination / ('readiness-' + str(index) + '.json')).write_text(reduced)
         except Exception:
-            # Missing file is normal on success; no raw exception or subprocess output exported.
-            continue
+            # AGP normally uninstalls the target before this host finalizer.
+            # Recover only exact nonce/index reduced records from retained logs.
+            try:
+                records = []
+                for path in (root / 'app/build/outputs/androidTest-results/connected').rglob('logcat-*.txt'):
+                    for line in path.read_text(errors='replace').splitlines():
+                        match = re.search(r'HermesFocusReduced\s*:\s*' + re.escape(nonce) + ':' + str(index) + r':(\{.*\})$', line)
+                        if match:
+                            records.append(sanitize(match.group(1)))
+                if writable and len(records) == 1:
+                    (destination / ('readiness-' + str(index) + '.json')).write_text(records[0])
+            except Exception:
+                pass

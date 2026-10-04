@@ -92,6 +92,9 @@ internal object FailureFocusSnapshot {
             } ?: JSONObject.NULL)
             // Even failed input capture must not suppress the after bracket.
             record.put("after", runCatching { bracket(activity) }.getOrNull() ?: JSONObject.NULL)
+            // AGP uninstalls the target after the suite, deleting internal files.
+            // Emit only this reduced numeric/boolean schema into retained test logcat.
+            android.util.Log.i("HermesFocusReduced", "$nonce:${index + 1}:$record")
             val directory = File(instrumentation.targetContext.filesDir, "focus-$nonce")
             check(directory.mkdir() || directory.isDirectory)
             check(index < 2)
