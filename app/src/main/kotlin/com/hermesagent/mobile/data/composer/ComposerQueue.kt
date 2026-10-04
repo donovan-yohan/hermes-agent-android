@@ -11,7 +11,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import java.io.File
 import java.io.IOException
-import java.security.MessageDigest
+import com.hermesagent.mobile.data.sha256Utf8Hex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -563,6 +563,4 @@ private fun String.isQueueEntryId(): Boolean = isNotBlank() && trim() == this &&
 private fun String.isPersistableQueueText(): Boolean = isNotBlank() && toByteArray(Charsets.UTF_8).size <= MAX_QUEUE_TEXT_BYTES
 private fun String.isPersistableQueueDisplay(): Boolean = isNotBlank() && toByteArray(Charsets.UTF_8).size <= MAX_QUEUE_DISPLAY_BYTES
 
-private fun String.sha256(): String = MessageDigest.getInstance("SHA-256")
-    .digest(toByteArray(Charsets.UTF_8))
-    .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+private fun String.sha256(): String = sha256Utf8Hex(this)

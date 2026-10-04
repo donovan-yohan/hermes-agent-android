@@ -5,7 +5,7 @@ import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostResult
 import com.hermesagent.mobile.plugins.PluginRefusalReason
 import kotlinx.serialization.json.*
-import java.security.MessageDigest
+import com.hermesagent.mobile.data.sha256Utf8Hex
 
 /** Supplied by the connection owner, never inferred from the selected row or a display label. */
 internal data class GroupSendIdentity(val savedRow: String, val endpointBinding: String, val gateway: String) {
@@ -33,8 +33,7 @@ internal data class GroupSendPayload(val text: String, val thread: String) {
     }
 }
 
-internal fun storedUserEventId(raw: String): String = "user:" + MessageDigest.getInstance("SHA-256")
-    .digest(sendIdentifier(raw).toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+internal fun storedUserEventId(raw: String): String = "user:" + sha256Utf8Hex(sendIdentifier(raw))
 
 internal enum class GroupSendProblem { TransportUncertain, ServerRefused, WorkerUnavailable, AuthorityBlocked, Expired, Unsupported, InvalidResponse }
 internal class GroupSendFailure(val problem: GroupSendProblem) : Exception()
