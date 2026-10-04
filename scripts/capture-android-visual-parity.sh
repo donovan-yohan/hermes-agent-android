@@ -143,19 +143,25 @@ fi
 capture_sidebar_runtime() {
   local phase="$1"
   mkdir -p "$out"
-  adb shell content call --uri content://com.hermesagent.mobile.debug.sidebar-projection-runtime --method snapshot > "$RUNNER_TEMP/sidebar-runtime-$phase"
-  python3 - "$RUNNER_TEMP/sidebar-runtime-$phase" "$out/runtime-$phase.json" "$CAPTURE_STATE" <<'PY'
-import base64, json, re, sys
-raw = open(sys.argv[1]).read()
-match = re.search(r'snapshot=([A-Za-z0-9+/=]+)', raw)
-assert match, 'Synthetic runtime provider unavailable'
-data = json.loads(base64.b64decode(match[1]))
-assert data['fixture_id'] == 'sidebar-projection-synthetic-v1' and data['ready']
+  python3 - "$out/runtime-$phase.json" "$CAPTURE_STATE" <<'PY'
+import base64, json, re, sys, subprocess, time
+samples = []
+for attempt in range(21):
+    raw = subprocess.check_output(['adb', 'shell', 'content', 'call', '--uri', 'content://com.hermesagent.mobile.debug.sidebar-projection-runtime', '--method', 'snapshot'], text=True)
+    match = re.search(r'snapshot=([A-Za-z0-9+/=]+)', raw)
+    assert match, 'Synthetic runtime provider unavailable'
+    data = json.loads(base64.b64decode(match[1]))
+    samples.append(data)
+    json.dump(samples, open(sys.argv[1] + '.samples.json', 'w'), indent=2)
+    if data['ready']:
+        break
+    time.sleep(0.5)
+assert data['fixture_id'] == 'sidebar-projection-synthetic-v1' and data['ready'], 'Synthetic fixture did not settle'
 assert data['resolved_locale'] == 'en-US' and data['resolved_timezone'] == 'UTC'
 assert data['now_millis'] == 1789654800000
-if sys.argv[3] == 'projection-draft-reuse':
+if sys.argv[2] == 'projection-draft-reuse':
     assert data['observed_draft_edits'] == 20 and data['overview_reused'] and data['previews_reused']
-json.dump(data, open(sys.argv[2], 'w'), indent=2)
+json.dump(data, open(sys.argv[1], 'w'), indent=2)
 PY
 }
 if [[ "$CAPTURE_SURFACE" == "sidebar-projection" ]]; then
