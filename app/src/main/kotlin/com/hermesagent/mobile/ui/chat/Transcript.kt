@@ -194,6 +194,7 @@ fun Transcript(
     /** What the splash may say about the homed session; empty on a fresh draft. */
     introSplashContext: IntroSplashContext = IntroSplashContext(),
     hiddenUserBubbleId: String? = null,
+    promptViewportHeight: androidx.compose.ui.unit.Dp = androidx.compose.ui.unit.Dp.Infinity,
 ) {
     val spacing = HermesTheme.spacing
     // Progress has exactly one owner: the live transcript tail. A running tool
@@ -315,7 +316,7 @@ fun Transcript(
         items(items = entries, key = { it.id }) { entry ->
             Box(Modifier.fillMaxWidth().testTag("Transcript item ${entry.id}")) {
                 when (entry) {
-                    is UserTurn -> UserBubble(entry, imageLoader, hiddenUserBubbleId == entry.id)
+                    is UserTurn -> UserBubble(entry, imageLoader, hiddenUserBubbleId == entry.id, promptViewportHeight)
                     is AssistantTurn -> AssistantProse(
                         turn = entry,
                         isWorking = isWorking,
@@ -501,6 +502,7 @@ internal fun UserTurnBubble(
     onClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
     onTextLayout: (TextLayoutResult) -> Unit = {},
+    textModifier: Modifier = Modifier,
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
@@ -538,7 +540,7 @@ internal fun UserTurnBubble(
                 maxLines = maxLines,
                 overflow = overflow,
                 onTextLayout = onTextLayout,
-                modifier = Modifier.clearAndSetSemantics {},
+                modifier = textModifier.clearAndSetSemantics {},
             )
         }
         // Desktop selects the user bubble too, and tests it there
@@ -551,7 +553,7 @@ internal fun UserTurnBubble(
 }
 
 @Composable
-private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?, hideBody: Boolean) {
+private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?, hideBody: Boolean, viewportHeight: androidx.compose.ui.unit.Dp) {
     // Persisted user turns carry trailing `@image:<path>` lines (the
     // gateway's persist-time rewrite); render them as thumbnails instead of
     // placeholder prose, exactly like Desktop's extractImageRefs.
@@ -564,6 +566,16 @@ private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?, hideBod
         // Desktop parity: no body text, no bubble — the thumbnail stands alone.
         if (bodyText.isNotBlank()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (LocalFinalPromptDisclosure.current?.messageId == turn.id) {
+                    FinalUserPromptBubble(
+                        body = bodyText,
+                        viewportHeight = viewportHeight,
+                        hidden = hideBody,
+                        modifier = Modifier.widthIn(max = 320.dp).then(
+                            if (hideBody) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
+                        ),
+                    )
+                } else {
                 // Selectable here, never in the pinned copy of the same
                 // prompt: the pin is chrome that owns a drag and a return tap.
                 UserTurnBubble(
@@ -580,6 +592,7 @@ private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?, hideBod
                         ),
                     selectable = !hideBody,
                 )
+                }
             }
         }
         imageRefs.forEach { ref ->

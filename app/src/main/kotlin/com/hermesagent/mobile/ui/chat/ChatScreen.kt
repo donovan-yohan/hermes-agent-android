@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -184,12 +185,18 @@ fun ChatScreen(
     }
     var contextUsageOpen by rememberSaveable { mutableStateOf(false) }
     val onOpenContextUsage = { contextUsageOpen = true }
-    BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface)) {
+    val finalPromptId = state.transcript.findLast { it is UserTurn }?.id
+    val promptSessionId = state.activeSessionId ?: state.activeSession?.id
+    val promptExpanded = rememberSaveable(promptSessionId, finalPromptId) { mutableStateOf(false) }
+    val promptDisclosure = remember(promptSessionId, finalPromptId) { FinalPromptDisclosure(finalPromptId, promptExpanded) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalFinalPromptDisclosure provides promptDisclosure) {
+    BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).collapsePromptOnOutsideTap(promptDisclosure)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
             WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute)
         } else {
             CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute)
         }
+    }
     }
     // The meter disappears whenever its session does — a switch, a reconnect, an
     // endpoint change. Without this the sheet would vanish with it and then
@@ -288,6 +295,7 @@ private fun CompactLayout(
                     // it filters runs to the bottom edge, so without this the
                     // matches the search just produced are the part covered.
                     modifier = Modifier.statusBarsPadding().windowInsetsPadding(imeInsets),
+                    compactActions = true,
                     onSelectSession = { id ->
                         onLeaveRoute()
                         actions.onSelectSession(id)
@@ -482,6 +490,7 @@ private fun SessionsPane(
     onSelectSession: (String) -> Unit = actions.onSelectSession,
     onCreateSession: () -> Unit = actions.onCreateSession,
     onManageProfiles: () -> Unit = {},
+    compactActions: Boolean = false,
 ) {
     SessionList(
         rows = state.sessionRows,
@@ -505,6 +514,7 @@ private fun SessionsPane(
         onCreateProject = actions.onCreateProject,
         onSelect = onSelectSession,
         onCreate = onCreateSession,
+        compactActions = compactActions,
         modifier = modifier,
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,
@@ -725,7 +735,7 @@ private fun TranscriptPane(
     }
 
     Column(modifier.fillMaxSize()) {
-        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
             Transcript(
                 entries = state.transcript,
                 imageLoader = state.imageLoader,
@@ -753,6 +763,7 @@ private fun TranscriptPane(
             activityStartedAtMillis = state.activeSession?.activityStartedAtMillis,
             progress = state.activeSession?.progress,
             hiddenUserBubbleId = promptPin?.owner?.id,
+            promptViewportHeight = maxHeight,
             contentPadding = PaddingValues(
                 start = HermesTheme.spacing.pageInset,
                 end = HermesTheme.spacing.pageInset,
@@ -804,6 +815,7 @@ private fun TranscriptPane(
                 distancePastTopPx = pin.distancePastTopPx,
                 listState = listState,
                 onClick = onReturn,
+                viewportHeight = maxHeight,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
         }
@@ -874,9 +886,11 @@ private fun StickyCurrentPrompt(
     distancePastTopPx: Int,
     listState: LazyListState,
     onClick: () -> Unit,
+    viewportHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val spacing = HermesTheme.spacing
+    val scope = rememberCoroutineScope()
     SubcomposeLayout(modifier.fillMaxWidth().background(HermesTheme.tokens.chatSurface)) { constraints ->
         val inset = spacing.pageInset.roundToPx()
         val gap = spacing.turnGap.roundToPx()
@@ -892,13 +906,20 @@ private fun StickyCurrentPrompt(
                             reverseScrolling = false,
                         ),
                     )
-                    .clickable(role = Role.Button, onClickLabel = "Return to prompt", onClick = onClick)
+                    .then(if (LocalFinalPromptDisclosure.current?.messageId == promptId) Modifier else
+                        Modifier.clickable(role = Role.Button, onClickLabel = "Return to prompt", onClick = onClick))
                     .heightIn(min = spacing.touchTarget)
                     .widthIn(min = spacing.touchTarget)
-                    .semantics(mergeDescendants = true) { contentDescription = "Current prompt: $body" },
+                    .then(if (LocalFinalPromptDisclosure.current?.messageId == promptId) Modifier else
+                        Modifier.semantics(mergeDescendants = true) { contentDescription = "Current prompt: $body" }),
                 contentAlignment = Alignment.TopEnd,
             ) {
-                UserTurnBubble(body = body, contentDescription = null, modifier = Modifier.testTag("Current prompt bubble"))
+                if (LocalFinalPromptDisclosure.current?.messageId == promptId) {
+                    FinalUserPromptBubble(body, viewportHeight, Modifier.testTag("Current prompt bubble"), onReturn = onClick,
+                        onScrollTranscript = { y -> scope.launch { listState.scrollBy(y) } })
+                } else {
+                    UserTurnBubble(body = body, contentDescription = null, modifier = Modifier.testTag("Current prompt bubble"))
+                }
             }
         }.single().measure(Constraints(maxWidth = minOf(320.dp.roundToPx(), (constraints.maxWidth - inset * 2).coerceAtLeast(0))))
         // One full bubble, not a separately clipped compact copy. The incoming
