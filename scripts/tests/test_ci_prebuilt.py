@@ -142,11 +142,11 @@ class PrebuiltTest(unittest.TestCase):
                 self.gate.run(self.root)
             self.assertIs(raised.exception, original)
 
-    def test_retention_after_target_uninstall_is_nonce_bound_unique_schema3(self):
+    def test_retention_after_target_uninstall_is_nonce_bound_unique_schema4(self):
         nonce = 'a' * 32
-        value = dict(schema=3, before=None, after=None, parserShape=None,
+        value = dict(schema=4, before=None, after=None, parserShape=None,
                      ownerStatus='MATCHED', owner=dict(display=0, ownerPid=123, ownerUid=1000),
-                     ownerMetadata=dict(processRole='UNKNOWN', windowType='UNKNOWN', inputConfig=None))
+                     ownerMetadata=dict(processRole='UNKNOWN', windowType='UNKNOWN', inputConfig=None, alertClass='UNKNOWN'))
         for mode in ('valid', 'stale', 'duplicate', 'secret'):
             with self.subTest(mode=mode), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
@@ -210,6 +210,35 @@ with patch('focus_diagnostic.arm', return_value=None), patch('focus_diagnostic.c
             adb.assert_not_called()
         for text in ('{"schema":2,"schema":2}', '{"title":"private"}', 'x' * 4097):
             with self.assertRaises(ValueError): focus.sanitize(text)
+
+    def test_alert_schema4_is_fixed_enum_and_attribution_only(self):
+        metadata = dict(processRole='SYSTEM_SERVER', windowType='SYSTEM_ALERT', inputConfig=None,
+                        alertClass='APPLICATION_NOT_RESPONDING')
+        value = dict(schema=4, before=None, after=None, parserShape=None,
+                     ownerStatus='MATCHED', owner=dict(display=0, ownerPid=514, ownerUid=1000),
+                     ownerMetadata=metadata)
+        for kind in ('APPLICATION_NOT_RESPONDING', 'APPLICATION_ERROR', 'OTHER', 'UNKNOWN'):
+            candidate = dict(value, ownerMetadata=dict(metadata, alertClass=kind))
+            self.assertEqual(json.loads(focus.sanitize(json.dumps(candidate))), candidate)
+        for kind in ('PRIVATE', 'Application Error: PRIVATE', '', None, 1, [], {}):
+            with self.subTest(kind=kind), self.assertRaises(ValueError):
+                focus.sanitize(json.dumps(dict(value, ownerMetadata=dict(metadata, alertClass=kind))))
+        for change in (dict(processRole='UNKNOWN'), dict(processRole='SYSTEM_UI'), dict(windowType='UNKNOWN'),
+                       dict(windowType='SYSTEM_DIALOG'), dict(windowType='SYSTEM_ERROR')):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                focus.sanitize(json.dumps(dict(value, ownerMetadata=dict(metadata, **change))))
+            unknown = dict(value, ownerMetadata=dict(metadata, **change, alertClass='UNKNOWN'))
+            self.assertEqual(json.loads(focus.sanitize(json.dumps(unknown))), unknown)
+        for field in ('title', 'package', 'token', 'raw', 'reason', 'affectedRole'):
+            for candidate in (dict(value, **{field: 'PRIVATE'}),
+                              dict(value, ownerMetadata=dict(metadata, **{field: 'PRIVATE'}))):
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    focus.sanitize(json.dumps(candidate))
+        for candidate in (dict(value, schema=3), dict(value, owner=None, ownerStatus='NO_FOCUSED_WINDOW'),
+                          dict(value, ownerMetadata={key: val for key, val in metadata.items() if key != 'alertClass'})):
+            with self.assertRaises(ValueError): focus.sanitize(json.dumps(candidate))
+        text = json.dumps(value).replace('"alertClass":', '"alertClass": "UNKNOWN", "alertClass":')
+        with self.assertRaises(ValueError): focus.sanitize(text)
 
 if __name__ == '__main__':
     unittest.main()

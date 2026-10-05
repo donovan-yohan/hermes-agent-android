@@ -83,7 +83,7 @@ internal object FailureFocusSnapshot {
         runCatching {
             arm()
             val nonce = armedNonce ?: return
-            val record = JSONObject().put("schema", 3)
+            val record = JSONObject().put("schema", 4)
             val before = runCatching { bracket(activity) }.getOrNull()
             record.put("before", before ?: JSONObject.NULL)
             val input = runCatching { shell("dumpsys input") }
@@ -110,6 +110,7 @@ internal object FailureFocusSnapshot {
             record.put("ownerMetadata", metadata?.let {
                 JSONObject().put("processRole", it.processRole).put("windowType", it.windowType)
                     .put("inputConfig", it.inputConfig?.let { flags -> org.json.JSONArray(flags) } ?: JSONObject.NULL)
+                    .put("alertClass", it.alertClass.name)
             } ?: JSONObject.NULL)
             // Even failed input capture must not suppress the after bracket.
             record.put("after", runCatching { bracket(activity) }.getOrNull() ?: JSONObject.NULL)
