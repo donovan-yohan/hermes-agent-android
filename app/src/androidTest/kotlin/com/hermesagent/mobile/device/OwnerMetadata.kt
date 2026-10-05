@@ -23,11 +23,11 @@ internal object OwnerMetadata {
             values.size <= configs.size && values.distinct().size == values.size && values.all { it in configs }
         }
         val blocks = windows.split(Regex("(?m)^  Window #[0-9]+ ")).drop(1)
-            .filter { Regex("Window\\{$key u[0-9]+ [^{}\\r\\n]*}:\\n").find(it)?.range?.first == 0 }
+            .filter { Regex("Window\\{$key u[0-9]+ [^{}\\r\\n]*\\}:\\n").find(it)?.range?.first == 0 }
         val type = blocks.singleOrNull()?.takeIf { block ->
             Regex("(?m)^    mDisplayId=${owner.display}(?: |$)").containsMatchIn(block) &&
                 Regex("(?m)^    mOwnerUid=${owner.ownerUid}(?: |$)").containsMatchIn(block)
-        }?.let { block -> Regex("(?m)^    mAttrs=[^\\r\\n]*\\bty=([A-Z_]+)(?: |\\n|})").findAll(block).toList().singleOrNull()?.groupValues?.get(1) }
+        }?.let { block -> Regex("(?m)^    mAttrs=[^\\r\\n]*\\bty=([A-Z_]+)(?: |\\n|\\})").findAll(block).toList().singleOrNull()?.groupValues?.get(1) }
             ?.takeIf { it in types } ?: "UNKNOWN"
         return Record(process, type, config)
     }
