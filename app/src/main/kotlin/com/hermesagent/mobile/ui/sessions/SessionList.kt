@@ -366,7 +366,7 @@ fun SessionList(
 
             if (searchIsVisible) {
                 // Desktop's own field, verbatim: placeholder `Search sessions…`
-                // with the ellipsis (`i18n/en.ts:2394`), spoken as `Search
+                // with the ellipsis (`i18n/en.ts:2394` @ `72a3277cd7`), spoken as `Search
                 // sessions` (`:2393`), behind the leading search glyph
                 // (`components/ui/search-field.tsx:69`) — all @ `72a3277cd7`.
                 // `Search projects` is this app's own: Desktop has no
