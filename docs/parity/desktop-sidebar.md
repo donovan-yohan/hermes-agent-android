@@ -15,6 +15,38 @@ mounts the enclosing pane-tab strip and derives its active tab.
 
 ## Mobile adaptation
 
+### Compact auxiliary disclosure (native Mac slice)
+
+The compact ChatScreen drawer keeps New session visible and puts Capabilities,
+Messaging, Artifacts, Scheduled jobs, Group Chats and Kanban behind one
+saveable More/Less disclosure, initially collapsed. Tabs, the project header
+and add/filter actions, and the profile/Gateway footer remain outside that
+group. Expansion preserves existing contribution order, callbacks, disabled
+state and WIP markers. Its bounded independent scroller leaves the project
+list the weighted remainder only when the measured visible chrome leaves at
+least two touch targets (96dp). Otherwise the existing whole-pane scroll
+fallback gives the project/session list a bounded 180dp slot and makes the
+footer reachable by scrolling. The persistent wide rail retains its prior
+all-actions-open behavior.
+
+This scope was inspected in a disposable local export at
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67`:
+`apps/desktop/src/app/chat/sidebar/index.tsx:207-247` retains the core order and
+Codicon mapping. More/Less is an explicitly requested mobile-only disclosure,
+not a renamed Desktop control. Existing historical pins and evidence are not
+restamped. `MobileSidebarCollapseTest` mounts the real production drawer and
+checks default state, operation/order, disabled rows, plugin callbacks, project
+scroll, 400dp overview/selected search at font scales 1.0 and 2.0 with the real
+profile rail and ConnectionSwitcherBar, the retained 280dp callback journey,
+drawer reopen and saveable restoration. Visible top/footer chrome is measured,
+including search, project back, scope notes and supplied footer content; the
+auxiliary scroller retains a one-touch-target floor. Native Robolectric screenshots are synthetic JVM window draws,
+not emulator or physical-device acceptance; exact-head paired review remains
+pending: #72 (the existing exact-head acceptance matrix, not tool-row issue #71).
+This marker does not certify a new paired capture or complete that issue.
+Execution details and local image paths are recorded in
+`/Users/donovanyohan/.hermes/profiles/ika-frontend/reports/native-drawer-budget-fix.md`.
+
 The two supported tabs (`SESSIONS`, `BOTS`) are rendered above the rows in both
 the compact drawer and wide rail. The selected tab has accent text and a thin
 accent underline. `BOTS` switches to the real `BotsRosterScreen` supplied by a
@@ -61,7 +93,7 @@ headers expose the pane's create action without a tab strip. All use existing
 callbacks and connection gates. `SessionCreateAffordancesTest` covers those
 controls; `ChatViewModelTest` covers draft retention and background-turn isolation.
 These newly integrated journeys await the parent build; they are not a rendered
-parity claim. Exact-head comparison remains pending #71.
+parity claim. Exact-head acceptance remains pending #72.
 
 The existing mounted Compose bounds journey covers contribution placement and
 cramped scrolling. The sidebar mode implementation is stateful at the mounted
@@ -113,7 +145,7 @@ contains synthetic production-Compose window draws and the main-vs-fixed test
 results. It supplements, and does not discharge, the paired/device obligation.
 
 
-- pending: #71
+- pending: #72
 
 A genuine mono Desktop shell reference has been captured from the disposable
 export at the stated pin in dark and light mode, with explicit renderer theme
@@ -133,14 +165,15 @@ parity remains pending; later changes need new exact-head evidence.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
+| Always-visible core rows at `sidebar/index.tsx:207-247` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Compact drawer keeps New session outside More/Less; measured chrome reserves a usable navigation area or selects whole-pane scrolling, with original order, WIP and callbacks | Real-drawer `MobileSidebarCollapseTest` verifies 400dp overview/selected search at 1.0/2.0 font scale, real profile/Gateway footer, 280dp callbacks, reopen and restoration; exact-head acceptance pending #72. No new paired-review approval. |
 | Project/session search results and empty copy | drift | Matching project retains both previews; `Nothing matches` differs from Desktop query-specific Results copy | Inherited before the cache; actual match/multiword-miss pixels in [report](../media/sidebar-projection-pr360/REPORT.md); dedicated behavior owner #367, Concern. |
 | Selected project branch/lane label | omission | Flat session list lacks Desktop `main` lane information | deferred: #359; actual selected pair in [report](../media/sidebar-projection-pr360/REPORT.md). Not approved as touch-density adaptation. |
 | PINNED section and pin affordance | omission | Absent from this project capture | pill-owed: #359; actual overview pair in [report](../media/sidebar-projection-pr360/REPORT.md); not an all-elements pass. |
 | Project sidebar density and presentation | mobile-adaptation | Compact drawer, 48dp rows and two-line previews | Reviewer approved from actual overview/selected pixels in [report](../media/sidebar-projection-pr360/REPORT.md); same order and ages, readable/reachable phone targets. |
 | All projects text action | mobile-adaptation | Accessible icon-only back action | Reviewer approved from actual selected pair and Activity semantics test; conserves drawer header width while retaining the All projects action/name. |
-| Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; visual comparison pending #71. |
+| Terminal mode | drift | Disabled with WIP until a mobile route exists | `SessionSidebarNavigationBoundsTest` verifies the disabled control; exact-head acceptance pending #72. |
 | Compact navigation rows | mobile-adaptation | 48dp touch floor | `SessionSidebarNavigationBoundsTest` checks cramped layout and action reachability. |
-| Pane-strip new-session action | mobile-adaptation | Chat-header plus labelled `New session`, since Android has no session tabs; flat sidebar header has its own plus | `SessionCreateAffordancesTest` covers callback, disabled state, compact/wide and project-mode exclusivity; rendered comparison pending #71. |
-| Overview project-row new-session action | mobile-adaptation | 48dp `New session in <project>` plus; visible but disabled when disconnected | `SessionCreateAffordancesTest` verifies action ordering through public `SessionList`; [native synthetic captures](visual/project-push-off-native/README.md) document the visible HOME and example-project controls; rendered comparison pending #71. |
-| Bots mode | mobile-adaptation | Existing Android roster in the sidebar pane | `SessionSidebarNavigationBoundsTest` verifies mode selection and return; rendered roster comparison pending #71. |
-| Active plugin navigation | drift | Sidebar-origin routes retain the wide rail and compact drawer door; rows use semantic active-row fill/accent and suppress the retained chat selection. The compact drawer action shares the route's own header rather than adding a second row. | `SessionSidebarNavigationBoundsTest` covers row selection; `PluginShellRouteJourneyTest` covers header alignment, reopening the drawer and selecting the same active route. Updated device pixels, wide-route geometry and rendered comparison pending #71. |
+| Pane-strip new-session action | mobile-adaptation | Chat-header plus labelled `New session`, since Android has no session tabs; flat sidebar header has its own plus | `SessionCreateAffordancesTest` covers callback, disabled state, compact/wide and project-mode exclusivity; exact-head acceptance pending #72. |
+| Overview project-row new-session action | mobile-adaptation | 48dp `New session in <project>` plus; visible but disabled when disconnected | `SessionCreateAffordancesTest` verifies action ordering through public `SessionList`; [native synthetic captures](visual/project-push-off-native/README.md) document the visible HOME and example-project controls; exact-head acceptance pending #72. |
+| Bots mode | mobile-adaptation | Existing Android roster in the sidebar pane | `SessionSidebarNavigationBoundsTest` verifies mode selection and return; exact-head acceptance pending #72. |
+| Active plugin navigation | drift | Sidebar-origin routes retain the wide rail and compact drawer door; rows use semantic active-row fill/accent and suppress the retained chat selection. The compact drawer action shares the route's own header rather than adding a second row. | `SessionSidebarNavigationBoundsTest` covers row selection; `PluginShellRouteJourneyTest` covers header alignment, reopening the drawer and selecting the same active route. Updated device pixels, wide-route geometry and exact-head acceptance pending #72. |
