@@ -3,12 +3,12 @@ package com.hermesagent.mobile.ui
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsNotDisplayed
-import androidx.compose.ui.test.hasContentDescription
+import com.hermesagent.mobile.ui.promptContentDescription as hasContentDescription
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import com.hermesagent.mobile.ui.promptNodeWithContentDescription as onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
+import com.hermesagent.mobile.ui.performPromptJourneyClick as performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import com.hermesagent.mobile.data.session.AssistantTurn
@@ -286,9 +286,10 @@ class PromptCollapseTest {
         .onNodeWithContentDescription("Current prompt: $prompt")
         .fetchSemanticsNode().boundsInRoot
 
-    private fun inlinePrompt(prompt: String): Rect = compose
-        .onNodeWithContentDescription("You said: $prompt")
-        .fetchSemanticsNode().boundsInRoot
+    private fun inlinePrompt(prompt: String): Rect {
+        val finalBody = compose.onAllNodes(androidx.compose.ui.test.hasTestTag("Final prompt body"), useUnmergedTree = true).fetchSemanticsNodes()
+        return finalBody.firstOrNull()?.boundsInRoot ?: compose.onNodeWithContentDescription("You said: $prompt").fetchSemanticsNode().boundsInRoot
+    }
 
     private fun scrollBy(pixels: Float) {
         compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { scroll ->

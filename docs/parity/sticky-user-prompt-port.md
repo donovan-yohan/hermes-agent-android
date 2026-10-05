@@ -1,5 +1,35 @@
 # Sticky current user prompt: Desktop-to-Android parity
 
+## Final-prompt viewport disclosure (native Mac slice)
+
+This additive scope was inspected in a disposable local export at
+`36922ad064d65dcf25f8f48df81e1ccf9a55de67`; historical citations below retain
+their original pins. `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:286-335,379-393`
+measures the unclamped body and renders its clamp; `apps/desktop/src/styles.css:1820-1833`
+actually caps at four line-heights and masks the bottom. The comments saying
+two lines or hover are not the current CSS contract. Watch-window disclosure
+is local state at `user-message.tsx:296-301`; ordinary Desktop editing is not
+implemented by this slice.
+
+Only the newest authoritative user turn gets the requested mobile body cap:
+the smaller of 240dp and 35% of the measured transcript viewport, excluding
+bubble padding. Overflow alone paints a semantic user-bubble bottom gradient.
+Tap expands into an 80%-viewport scrollable body; a completed outside tap
+collapses without consuming events. Drags, multi-touch and long presses are
+not collapse taps. Source and sticky owner share session/message-keyed,
+saveable UI state and one full `You said: <body>` accessibility owner.
+The pin retains its separate Return to prompt accessibility action and
+transcript drag behavior; prior prompts retain full-height sticky push-off.
+
+`FinalUserPromptHeightTest` exercises production ChatScreen with native
+Robolectric graphics, including cap, fade, short text, expansion, outside
+composer focus, body scrolling, inline handoff, small viewport and identity
+replacement. Existing push-off, continuity, selection and masking journeys
+remain part of focused verification. These are JVM window draws, not a device
+or Desktop side-by-side acceptance. Exact-head paired review remains
+pending: #72. The execution report and synthetic image paths are in
+`/Users/donovanyohan/.hermes/profiles/ika-frontend/reports/native-last-user-sidebar.md`.
+
 ## Current push-off correction
 
 The historical collapse implementation described below was **not** user-visible
@@ -94,6 +124,7 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 | The prompt excerpt renders `@image:` references as prose | mobile-adaptation | References are split out; an attachment-only prompt has no excerpt | One phone-width line of excerpt cannot spend itself on a wire-format path |
 | `styles.css:1568-1577` covers the sticky sliver with a `::before`, and `:1562-1565` offsets the bubble a pixel so the cover overlaps it | mobile-adaptation | The overlay's own `chatSurface` box is the cover, and it starts at the viewport's top edge | A Compose overlay is placed rather than offset by CSS sticky, so the sliver a `top:` creates never exists and there is no seam for the extra pixel to close; `StickyPromptMaskInkTest` reads both bands back in pixels |
 | `user-message.tsx:45` declares `data-glass-opaque` so a glass window cannot thin the mask (`styles.css:676-680`) | mobile-adaptation | No glass field exists, and `chatSurface` is the chrome seed on every theme and mode (`HermesTokens.kt:252`) | An Android window has no translucent desktop field behind it to fall through, and the token already resolves to the value that rule forces |
+| Final prompt clamp at `styles.css:1824-1833` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Newest body uses a viewport-aware cap and token-coloured bottom gradient; tap disclosure instead of Desktop edit/watch interaction | Requested phone reading behavior; `FinalUserPromptHeightTest` covers overflow-only fade, disclosure, scrolling and single accessible ownership; paired review pending #72. |
 
 ## Visual report
 

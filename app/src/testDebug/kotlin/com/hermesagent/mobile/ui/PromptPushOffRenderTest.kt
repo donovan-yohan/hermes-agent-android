@@ -5,12 +5,12 @@ import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.ui.test.hasContentDescription
+import com.hermesagent.mobile.ui.promptContentDescription as hasContentDescription
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import com.hermesagent.mobile.ui.promptNodeWithContentDescription as onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
+import com.hermesagent.mobile.ui.performPromptJourneyClick as performClick
 import androidx.compose.ui.test.performSemanticsAction
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus

@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.HermesPlugin
 import com.hermesagent.mobile.plugins.PluginAreas
@@ -181,7 +182,8 @@ class PluginShellRouteJourneyTest {
         // 1. Feature launchers live in the sessions drawer/rail, while Settings
         // keeps the separate Plugins management preference row.
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.onNodeWithTag(ROW_TAG).assertIsDisplayed()
+        compose.onNodeWithText("More").assertIsDisplayed().performClick()
+        compose.onNodeWithTag(ROW_TAG).performScrollTo().assertIsDisplayed()
         assertEquals(1, registry.getArea(PluginAreas.ROUTES_AREA).size)
         assertEquals(1, registry.getArea(PluginAreas.SIDEBAR_NAV_AREA).size)
 
@@ -196,13 +198,13 @@ class PluginShellRouteJourneyTest {
 
         // A feature retains a drawer door; choosing the same route closes it again.
         compose.onNodeWithContentDescription("Open sessions").assertIsDisplayed().performClick()
-        compose.onNodeWithTag(ROW_TAG).assertIsDisplayed().performClick()
+        compose.onNodeWithTag(ROW_TAG).performScrollTo().assertIsDisplayed().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
 
         // Returning from a sidebar feature restores Chat, not Settings.
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.onNodeWithText("Open fixture bot").performClick()
+        compose.onNodeWithText("Open fixture bot").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Open fixture bot").assertIsDisplayed()
         assertEquals(listOf(false), completions)
         compose.runOnIdle { botOpens = true }
@@ -212,10 +214,10 @@ class PluginShellRouteJourneyTest {
         compose.onNodeWithTag(ROUTE_BODY_TAG).assertDoesNotExist()
         assertEquals(listOf(false, true), completions)
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.onNodeWithTag(ROW_TAG).performClick()
+        compose.onNodeWithTag(ROW_TAG).performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("Return from feature").performClick()
         compose.onNodeWithContentDescription("Open sessions").assertIsDisplayed().performClick()
-        compose.onNodeWithTag(ROW_TAG).performClick()
+        compose.onNodeWithTag(ROW_TAG).performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag(ROUTE_BODY_TAG).assertIsDisplayed()
 
         // 3. Disabling the plugin unloads the route and the row, and the shell
@@ -235,7 +237,8 @@ class PluginShellRouteJourneyTest {
 
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Open sessions").performClick()
-        compose.onNodeWithTag(ROW_TAG).assertIsDisplayed()
+        compose.onNodeWithText("More").assertIsDisplayed().performClick()
+        compose.onNodeWithTag(ROW_TAG).performScrollTo().assertIsDisplayed()
         assertEquals(1, registry.getArea(PluginAreas.ROUTES_AREA).size)
         assertEquals(1, registry.getArea(PluginAreas.SIDEBAR_NAV_AREA).size)
 
