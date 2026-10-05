@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui
 
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -110,6 +111,40 @@ class FinalUserPromptHeightTest {
         compose.onNodeWithContentDescription("You said: $prompt").performClick()
         compose.onNodeWithContentDescription("Message Hermes").performTouchInput { longClick() }
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Message Hermes").performTouchInput {
+            swipe(center, center + androidx.compose.ui.geometry.Offset(80f, 0f))
+        }
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+    }
+
+    @Test fun `collapsed overflow return leaves readable response space and returns by touch`() {
+        launch()
+        val viewport = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot
+        val pin = compose.onNodeWithTag("Pinned final prompt").fetchSemanticsNode().boundsInRoot
+        assertTrue("return must not add a tall chrome row", pin.height <= viewport.height * .4f)
+        compose.onNodeWithContentDescription("Return to prompt").performTouchInput { click() }
+        compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
+        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        compose.onNodeWithContentDescription("Return to prompt").assertDoesNotExist()
+    }
+
+    @Test fun `overflow pinned return has separate touch target without consuming disclosure`() {
+        launch()
+        val owner = compose.onNodeWithContentDescription("You said: $prompt")
+        val before = owner.fetchSemanticsNode().boundsInRoot.height
+        owner.performTouchInput { click() }
+        assertTrue(owner.fetchSemanticsNode().boundsInRoot.height > before)
+        val action = compose.onNodeWithContentDescription("Return to prompt")
+        action.assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+        action.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, androidx.compose.ui.semantics.Role.Button))
+        action.performTouchInput { click() }
+        compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        action.assertDoesNotExist()
+        owner.performTouchInput { click() }
+        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        compose.onNodeWithContentDescription("Message Hermes").performTouchInput { click() }
+        compose.onNodeWithContentDescription("Message Hermes").assertIsFocused()
     }
 
     private fun launch() {

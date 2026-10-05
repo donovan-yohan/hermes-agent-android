@@ -25,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.click
+import androidx.compose.ui.test.onNodeWithTag
 import com.hermesagent.mobile.ui.promptNodeWithContentDescription as onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onAllNodesWithText
@@ -201,6 +203,37 @@ class TranscriptSelectionTest {
         compose.waitForIdle()
 
         assertTrue("the user bubble must select, like Desktop's", selectionHandles() > 0)
+    }
+
+    @Test
+    fun `collapsed overflowing inline prompt selects visible words without expanding`() {
+        val body = (1..60).joinToString("\n") { "Synthetic prompt line $it" }
+        launch(listOf(UserTurn(id = "$SESSION-u1", text = body, atMillis = NOW)))
+        compose.onNodeWithContentDescription("You said: $body").performTouchInput { click() }
+        compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
+        compose.onNodeWithTag("Inline final prompt").performTouchInput { click() }
+        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        compose.onNodeWithTag("Final prompt body", true).performTouchInput {
+            longClick(Offset(30f, 25f))
+        }
+        compose.waitForIdle()
+        assertTrue("collapsed inline words must select", selectionHandles() > 0)
+        assertTrue("selection must offer Copy", contextMenu.labels.any { it.equals("copy", ignoreCase = true) })
+        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+    }
+
+    @Test
+    fun `overflow pinned prompt remains nonselectable`() {
+        val body = (1..60).joinToString("\n") { "Synthetic prompt line $it" }
+        launch(listOf(
+            UserTurn(id = "$SESSION-u1", text = body, atMillis = NOW),
+            AssistantTurn(id = "$SESSION-a1", markdown = LONG_REPLY, atMillis = NOW),
+        ))
+        compose.onNodeWithTag("Pinned final prompt").assertIsDisplayed()
+        compose.onNodeWithTag("Pinned final prompt").performTouchInput { longClick(Offset(30f, 25f)) }
+        compose.waitForIdle()
+        assertEquals("the pinned copy must not select", 0, selectionHandles())
+        assertEquals("the pin must not offer Copy", emptyList<String>(), contextMenu.labels)
     }
 
     @Test

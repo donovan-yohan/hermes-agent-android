@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -43,6 +44,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.theme.HermesTheme
+import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconButton
 import kotlinx.coroutines.launch
 
 /** UI-only disclosure shared by the source bubble and its sticky owner. */
@@ -121,22 +124,34 @@ internal fun FinalUserPromptBubble(
             }),
         contentAlignment = Alignment.TopEnd,
     ) {
-    UserTurnBubble(
-        body = body,
-        contentDescription = null,
-        modifier = modifier.then(if (onReturn == null) Modifier.testTag("Final prompt body") else Modifier),
-        selectable = !hidden && onReturn == null && (expanded || !overflows),
-        textModifier = Modifier
-            .heightIn(max = if (expanded) (viewportHeight * .8f).coerceAtLeast(1.dp) else collapsedHeight)
-            .verticalScroll(scrollState, enabled = expanded),
-        onTextLayout = { overflows = it.size.height > capPx + 1f },
-        overlay = {
-            if (overflows && !expanded && !hidden) {
-                Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(minOf(32.dp, collapsedHeight * .45f))
-                    .testTag("Prompt clipping fade")
-                    .drawBehind { drawRect(Brush.verticalGradient(listOf(fill.copy(alpha = 0f), fill))) })
+        Row(verticalAlignment = Alignment.Top) {
+            Box(Modifier.weight(1f, fill = false)) {
+                UserTurnBubble(
+                    body = body,
+                    contentDescription = null,
+                    modifier = modifier.then(if (onReturn == null) Modifier.testTag("Final prompt body") else Modifier),
+                    selectable = !hidden && onReturn == null,
+                    textModifier = Modifier
+                        .heightIn(max = if (expanded) (viewportHeight * .8f).coerceAtLeast(1.dp) else collapsedHeight)
+                        .verticalScroll(scrollState, enabled = expanded),
+                    onTextLayout = { overflows = it.size.height > capPx + 1f },
+                    overlay = {
+                        if (overflows && !expanded && !hidden) {
+                            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(minOf(32.dp, collapsedHeight * .45f))
+                                .testTag("Prompt clipping fade")
+                                .drawBehind { drawRect(Brush.verticalGradient(listOf(fill.copy(alpha = 0f), fill))) })
+                        }
+                    },
+                )
             }
-        },
-    )
+            // Keep return beside the capped body, not in a second chrome row.
+            if (!hidden && onReturn != null && overflows) {
+                HermesIconButton(
+                    icon = HermesIcon.ArrowUp,
+                    contentDescription = "Return to prompt",
+                    onClick = onReturn,
+                )
+            }
+        }
     }
 }
