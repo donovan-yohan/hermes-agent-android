@@ -31,6 +31,9 @@ LANE_CLAIMS = (
     "OrientationTest",
     "PlatformAccessibilityTest",
     "TouchTargetTest",
+    # Android ICU regex portability of synthetic owner reduction, not focus causality.
+    # Robolectric uses the host JDK regex engine and cannot prove this contract.
+    "OwnerMetadataTest",
 )
 # GitHub owns the `actions` organisation; everything else is somebody else's
 # code running in a workflow whose sibling job holds the rolling keystore.
