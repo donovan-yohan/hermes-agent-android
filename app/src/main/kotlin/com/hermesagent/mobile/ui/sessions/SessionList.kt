@@ -348,8 +348,8 @@ fun SessionList(
             }
 
             if (selectedProject != null) {
-                // ProjectBackRow: sidebar/projects/overview-row.tsx:64-78; copy
-                // i18n/en.ts:3717 @ 36922ad064d65dcf25f8f48df81e1ccf9a55de67.
+                // Desktop's ProjectBackRow; pinned source and copy are recorded
+                // in PR #368 without changing this file's older citation scope.
                 Row(
                     Modifier.fillMaxWidth()
                         .heightIn(min = HermesTheme.spacing.touchTarget)
@@ -366,7 +366,7 @@ fun SessionList(
 
             if (searchIsVisible) {
                 // Desktop's own field, verbatim: placeholder `Search sessions…`
-                // with the ellipsis (`i18n/en.ts:2394` @ `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`), spoken as `Search
+                // with the ellipsis (`i18n/en.ts:2394`), spoken as `Search
                 // sessions` (`:2393`), behind the leading search glyph
                 // (`components/ui/search-field.tsx:69`) — all @ `72a3277cd7`.
                 // `Search projects` is this app's own: Desktop has no
