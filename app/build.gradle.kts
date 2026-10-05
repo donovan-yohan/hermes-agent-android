@@ -71,11 +71,13 @@ android {
     sourceSets {
         getByName("main").kotlin.srcDir("src/main/kotlin")
         getByName("test").kotlin.srcDir("src/test/kotlin")
+        getByName("test").kotlin.srcDir("src/diagnostic/kotlin")
         // Compose UI tests live here, not in `test/`: they need
         // `ui-test-manifest`, which is a debug-only artifact by design, and
         // `check` runs the release unit tests too.
         getByName("testDebug").kotlin.srcDir("src/testDebug/kotlin")
         getByName("androidTest").kotlin.srcDir("src/androidTest/kotlin")
+        getByName("androidTest").kotlin.srcDir("src/diagnostic/kotlin")
     }
 
     testOptions {
