@@ -206,12 +206,29 @@ class ChatJourneyTest {
 
         projectOpened.complete(Unit)
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("All projects").assertIsDisplayed()
+        compose.onNodeWithText("All projects").assertIsDisplayed()
+        val add = compose.onNodeWithContentDescription("New session in Hermes mobile").fetchSemanticsNode()
+        val filters = compose.onNodeWithContentDescription("Filters").fetchSemanticsNode()
+        val back = compose.onNodeWithText("All projects").fetchSemanticsNode()
+        assertTrue(add.boundsInRoot.center.x < filters.boundsInRoot.center.x)
+        assertTrue(back.boundsInRoot.top >= filters.boundsInRoot.bottom)
+        compose.runOnIdle { cache.upsertSession(cache.session("live-a")!!.copy(status = Working)) }
+        compose.waitForIdle()
+        val selectedSession = viewModel.uiState.value.activeSessionId
+        compose.onNodeWithText("All projects").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("PROJECTS").assertIsDisplayed()
+        compose.onNodeWithText("All projects").assertDoesNotExist()
+        assertEquals(selectedSession, viewModel.uiState.value.activeSessionId)
+        assertEquals(Working, cache.session("live-a")!!.status)
+        assertTrue(repository.interrupted.isEmpty())
+        compose.onNodeWithContentDescription("Open project Hermes mobile. 1 session").performClick()
+        compose.waitForIdle()
         compose.onNodeWithText("Second remote session").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithText("Second live transcript").assertIsDisplayed()
-        assertEquals(listOf("project-mobile"), repository.openedProjects)
+        assertEquals(listOf("project-mobile", "project-mobile"), repository.openedProjects)
     }
 
     @Test
@@ -719,7 +736,8 @@ class ChatJourneyTest {
             return GatewaySubmitOutcome.Accepted
         }
 
-        override suspend fun interrupt(durableId: String) = Unit
+        val interrupted = mutableListOf<String>()
+        override suspend fun interrupt(durableId: String) { interrupted += durableId }
     }
 
     private companion object {

@@ -118,6 +118,7 @@ enum class HermesIcon(val glyph: String) {
     SymbolMethod("\uEA8C"),
     Check("\uEAB2"),
     Checklist("\uEAB3"),
+    ArrowLeft("\uEA9B"),
     ArrowDown("\uEA9A"),
     ArrowUp("\uEAA1"),
     ChevronDown("\uEAB4"),

@@ -309,13 +309,6 @@ fun SessionList(
                         modifier = Modifier.testTag(SIDEBAR_HEADER_ADD_TAG),
                     )
                 }
-                if (selectedProject != null) {
-                    HermesIconButton(
-                        icon = HermesIcon.ListUnordered,
-                        contentDescription = "All projects",
-                        onClick = onExitProject,
-                    )
-                }
                 Box {
                     HermesIconButton(
                         icon = HermesIcon.ListFilter,
@@ -351,6 +344,23 @@ fun SessionList(
                             if (searchIsVisible) onQueryChange("")
                         },
                     )
+                }
+            }
+
+            if (selectedProject != null) {
+                // ProjectBackRow: sidebar/projects/overview-row.tsx:64-78; copy
+                // i18n/en.ts:3717 @ 36922ad064d65dcf25f8f48df81e1ccf9a55de67.
+                Row(
+                    Modifier.fillMaxWidth()
+                        .heightIn(min = HermesTheme.spacing.touchTarget)
+                        .clickable(role = Role.Button, onClick = onExitProject)
+                        .semantics(mergeDescendants = true) { contentDescription = "All projects" }
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    HermesIconGlyph(HermesIcon.ArrowLeft, color = tokens.textTertiary, size = 14.sp)
+                    Text("All projects", style = HermesTheme.type.caption, color = tokens.textTertiary)
                 }
             }
 

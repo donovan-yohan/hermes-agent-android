@@ -38,14 +38,24 @@ class SidebarProjectionParityActivityTest {
     }
 
     @Test
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
     fun selectedProjectIsLoadedThroughProductionViewModel() {
         launch("projection-selected") { activity ->
             compose.waitUntil(10_000) { activity.fixture.ready }
             assertEquals("synthetic-project", activity.fixture.viewModel.uiState.value.selectedProject?.id)
             assertTrue(activity.fixture.viewModel.uiState.value.projects.isEmpty())
             compose.onNodeWithContentDescription("Open sessions").performClick()
-            compose.onNodeWithContentDescription("All projects").assertIsDisplayed()
+            compose.onNodeWithText("All projects").assertIsDisplayed()
             compose.onNodeWithText("Synthetic release checklist").assertIsDisplayed()
+            compose.runOnIdle {
+                val decor = activity.window.decorView
+                val bitmap = android.graphics.Bitmap.createBitmap(decor.width, decor.height, android.graphics.Bitmap.Config.ARGB_8888)
+                decor.draw(android.graphics.Canvas(bitmap))
+                val output = java.io.File("build/outputs/project-back-button/projection-selected-dark.png")
+                output.parentFile.mkdirs()
+                output.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
         }
     }
 
