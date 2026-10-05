@@ -44,8 +44,9 @@ class SidebarProjectionParityActivityTest {
             assertEquals("synthetic-project", activity.fixture.viewModel.uiState.value.selectedProject?.id)
             assertTrue(activity.fixture.viewModel.uiState.value.projects.isEmpty())
             compose.onNodeWithContentDescription("Open sessions").performClick()
-            compose.onNodeWithContentDescription("All projects").assertIsDisplayed()
+            compose.onNodeWithText("All projects").assertIsDisplayed()
             compose.onNodeWithText("Synthetic release checklist").assertIsDisplayed()
+
         }
     }
 
