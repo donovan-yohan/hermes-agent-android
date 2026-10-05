@@ -19,7 +19,7 @@ limitations, and likely next slices behind that table.
 | Android support | API 26+ (Android 8.0+), target API 36. |
 | App version | `0.2.0-phase2` (`versionCode` 2). |
 | Distribution | One rolling, persistently debug-signed `hermes-mobile-latest` artifact from successful `main` builds. No production release channel yet. |
-| Validation boundary | JVM and Robolectric gates are broad, and an instrumented lane runs on a CI emulator for five claims Robolectric cannot make. Its seven classes contain eight test cases, including one synthetic owner-reduction parser case for Android ICU regex portability that the host JDK cannot prove; Android RED/GREEN for that new case has not run. This adds no focus-causality or device-acceptance claim. Font scale, the keyboard's own window and exact-head physical Pixel acceptance remain open. |
+| Validation boundary | JVM and Robolectric gates are broad, and an instrumented lane runs on a CI emulator for five claims Robolectric cannot make. Its seven classes contain eight test cases, including one synthetic owner-reduction parser case for Android ICU regex portability that the host JDK cannot prove; Android RED/GREEN for that case is verified on a disposable API 34 emulator. This adds no focus-causality or device-acceptance claim. Font scale, the keyboard's own window and exact-head physical Pixel acceptance remain open. |
 
 ## What works now
 
