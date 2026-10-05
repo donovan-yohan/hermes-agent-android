@@ -118,13 +118,13 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| Final prompt clamp at `styles.css:1824-1833` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Newest body uses a viewport-aware cap and token-coloured bottom gradient; tap disclosure instead of Desktop edit/watch interaction | Requested phone reading behavior; `FinalUserPromptHeightTest` covers overflow-only fade, disclosure, scrolling and single accessible ownership; paired review pending #72. |
 | `timeline.tsx:113-125` jumps by message id held from render | mobile-adaptation | The source id is re-resolved at tap time, and tail follow is disarmed | A phone transcript is re-composed under the finger far more often than a desktop one; resolving late is what keeps the jump landing on the prompt the reader can see |
 | Sticky bubble is chrome the pointer scrolls past | mobile-adaptation | The bubble shares the transcript `LazyListState` | A drag or fling begun on the overlay keeps scrolling instead of creating a dead strip under the thumb |
 | Return-to-prompt is a pointer-sized affordance | mobile-adaptation | A 48 dp `Return to prompt` action whose accessibility label includes the prompt text | Touch floor, and the spoken label has to name which prompt it returns to |
 | The prompt excerpt renders `@image:` references as prose | mobile-adaptation | References are split out; an attachment-only prompt has no excerpt | One phone-width line of excerpt cannot spend itself on a wire-format path |
 | `styles.css:1568-1577` covers the sticky sliver with a `::before`, and `:1562-1565` offsets the bubble a pixel so the cover overlaps it | mobile-adaptation | The overlay's own `chatSurface` box is the cover, and it starts at the viewport's top edge | A Compose overlay is placed rather than offset by CSS sticky, so the sliver a `top:` creates never exists and there is no seam for the extra pixel to close; `StickyPromptMaskInkTest` reads both bands back in pixels |
 | `user-message.tsx:45` declares `data-glass-opaque` so a glass window cannot thin the mask (`styles.css:676-680`) | mobile-adaptation | No glass field exists, and `chatSurface` is the chrome seed on every theme and mode (`HermesTokens.kt:252`) | An Android window has no translucent desktop field behind it to fall through, and the token already resolves to the value that rule forces |
+| Final prompt clamp at `styles.css:1824-1833` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Newest body uses a viewport-aware cap and token-coloured bottom gradient; tap disclosure instead of Desktop edit/watch interaction | Requested phone reading behavior; `FinalUserPromptHeightTest` covers overflow-only fade, disclosure, scrolling and single accessible ownership; paired review pending #72. |
 
 ## Visual report
 
