@@ -78,17 +78,3 @@ class SpeechAudio(
 ) : AutoCloseable {
     override fun close() = bytes.fill(0)
 }
-
-/** One streamed speech exchange. Implementations close socket and player. */
-interface SpeechStream : AutoCloseable {
-    /** @return frame bytes (PCM) or null when the stream ended. */
-    suspend fun read(): SpeechStreamFrame?
-}
-
-sealed interface SpeechStreamFrame {
-    data class Start(val sampleRate: Int, val channels: Int) : SpeechStreamFrame
-    data class Pcm(val bytes: ByteArray) : SpeechStreamFrame
-    data object End : SpeechStreamFrame
-    /** Only legal before any audio: caller must fall back to complete-audio TTS. */
-    data object Fallback : SpeechStreamFrame
-}
