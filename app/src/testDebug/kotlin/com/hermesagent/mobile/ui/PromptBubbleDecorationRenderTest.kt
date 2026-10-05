@@ -5,11 +5,11 @@ import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.test.hasContentDescription
+import com.hermesagent.mobile.ui.promptContentDescription as hasContentDescription
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import com.hermesagent.mobile.ui.promptNodeWithContentDescription as onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
+import com.hermesagent.mobile.ui.performPromptJourneyClick as performClick
 import androidx.compose.ui.test.performSemanticsAction
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
@@ -88,7 +88,7 @@ class PromptBubbleDecorationRenderTest {
         ) {
             currentPromptBubble()
         } else {
-            compose.onNodeWithContentDescription("You said: $prompt").fetchSemanticsNode().boundsInRoot
+            compose.onNodeWithTag("Final prompt body", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         }
         val initial = visibleBounds()
         var previous = initial
@@ -164,7 +164,7 @@ class PromptBubbleDecorationRenderTest {
         .fetchSemanticsNode().boundsInRoot
 
     private fun inlinePrompt(): Rect = compose
-        .onNodeWithContentDescription("You said: $PROMPT")
+        .onNodeWithTag("Final prompt body", useUnmergedTree = true)
         .fetchSemanticsNode().boundsInRoot
 
     private fun scrollBy(pixels: Float) {

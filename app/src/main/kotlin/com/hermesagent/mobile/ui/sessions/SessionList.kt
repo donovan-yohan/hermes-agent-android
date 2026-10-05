@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +50,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
@@ -56,6 +59,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -192,6 +196,8 @@ fun SessionList(
      * `ChatUiState.nowMillis`; a suite passes its fixture's own instant.
      */
     nowMillis: Long,
+    /** Drawer-only adaptation; the persistent Desktop-like rail keeps every action open. */
+    compactActions: Boolean = false,
 ) {
     val tokens = HermesTheme.tokens
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project &&
@@ -201,6 +207,7 @@ fun SessionList(
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var projectCreateVisible by rememberSaveable { mutableStateOf(false) }
     var sidebarMode by rememberSaveable { mutableStateOf(SidebarMode.Sessions) }
+    var auxiliaryExpanded by rememberSaveable { mutableStateOf(false) }
     val searchIsVisible = searchVisible || query.isNotBlank()
     val botDestination = sidebarNavigation
         .mapNotNull { it.data as? SidebarModeDestination }
@@ -241,7 +248,21 @@ fun SessionList(
         // view within. Above it nothing changes, so the drawer and the
         // portrait rail keep the layout they have.
         val navigationHeight = HermesTheme.spacing.touchTarget * (6 + sidebarNavigation.count { it.render != null })
-        val cramped = maxHeight < RAIL_SCROLLS_BELOW + navigationHeight
+        // Measure the visible chrome, including search/back/scope text and the
+        // supplied footer, rather than guessing its size from a fixed threshold.
+        // Start in the unbounded whole-pane fallback so both chrome regions can
+        // report their natural height. Keep two touch targets for usable content.
+        var topChromeHeight by remember { mutableStateOf<Int?>(null) }
+        var footerHeight by remember { mutableStateOf<Int?>(null) }
+        val density = LocalDensity.current
+        val compactChromeBudget = with(density) { ((topChromeHeight ?: 0) + (footerHeight ?: 0)).toDp() }
+        val cramped = if (compactActions) {
+            topChromeHeight == null || footerHeight == null ||
+                maxHeight < compactChromeBudget + HermesTheme.spacing.touchTarget * 2
+        } else {
+            maxHeight < RAIL_SCROLLS_BELOW + navigationHeight
+        }
+        val auxiliaryLimit = (maxHeight * .25f).coerceAtLeast(HermesTheme.spacing.touchTarget)
         Column(
             Modifier
                 .fillMaxSize()
@@ -250,12 +271,36 @@ fun SessionList(
             // Exact, not a minimum: a cramped pane measures its children with an
             // unbounded height, and a LazyColumn given one throws.
             val listSlot = if (cramped) Modifier.height(CRAMPED_LIST_HEIGHT) else Modifier.weight(1f)
+            Column(Modifier.fillMaxWidth().onSizeChanged { if (compactActions) topChromeHeight = it.height }) {
             SidebarModeTabs(
                 selected = sidebarMode,
                 botsAvailable = botDestination != null,
                 onSelect = { mode -> if (mode == SidebarMode.Bots && botDestination != null) sidebarMode = mode else if (mode == SidebarMode.Sessions) sidebarMode = mode },
             )
-            SidebarNavRow("New session", HermesIcon.Robot, canCreate, onCreate, "sidebar-action-new-session")
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) {
+                    SidebarNavRow("New session", HermesIcon.Robot, canCreate, onCreate, "sidebar-action-new-session")
+                }
+                if (compactActions) {
+                    Row(
+                        Modifier.heightIn(min = HermesTheme.spacing.touchTarget)
+                            .widthIn(min = HermesTheme.spacing.touchTarget)
+                            .clickable(role = Role.Button, onClickLabel = if (auxiliaryExpanded) "Show fewer actions" else "Show more actions") { auxiliaryExpanded = !auxiliaryExpanded }
+                            .semantics(mergeDescendants = true) {
+                                stateDescription = if (auxiliaryExpanded) "Expanded" else "Collapsed"
+                            }
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(if (auxiliaryExpanded) "Less" else "More", style = HermesTheme.type.caption, color = tokens.textSecondary)
+                        HermesIconGlyph(if (auxiliaryExpanded) HermesIcon.ChevronUp else HermesIcon.ChevronDown, color = tokens.textTertiary, size = 12.sp)
+                    }
+                }
+            }
+            if (!compactActions || auxiliaryExpanded) {
+            // Auxiliary actions scroll independently; projects retain the weighted remainder.
+            Column(if (compactActions) Modifier.heightIn(max = auxiliaryLimit).verticalScroll(rememberScrollState()) else Modifier) {
             SidebarNavRow("Capabilities", HermesIcon.SymbolMisc, false, {}, "sidebar-action-capabilities", showWip = true)
             SidebarNavRow("Messaging", HermesIcon.Comment, false, {}, "sidebar-action-messaging", showWip = true)
             SidebarNavRow("Artifacts", HermesIcon.Files, false, {}, "sidebar-action-artifacts", showWip = true)
@@ -263,6 +308,8 @@ fun SessionList(
             sidebarNavigation
                 .sortedWith(compareBy<com.hermesagent.mobile.plugins.Contribution> { it.order ?: Int.MAX_VALUE })
                 .forEach { contribution -> contribution.render?.invoke() }
+            }
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -407,6 +454,7 @@ fun SessionList(
                 )
             }
 
+            }
             when {
                 showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
                     title = if (query.isBlank()) "No projects" else "Nothing matches",
@@ -630,8 +678,10 @@ fun SessionList(
                 }
             }
 
-            ProfileRail(state = profileRail, actions = profileRailActions)
-            header()
+            Column(Modifier.fillMaxWidth().onSizeChanged { if (compactActions) footerHeight = it.height }) {
+                ProfileRail(state = profileRail, actions = profileRailActions)
+                header()
+            }
         }
     }
 

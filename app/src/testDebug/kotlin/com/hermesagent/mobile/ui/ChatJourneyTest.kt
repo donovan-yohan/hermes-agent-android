@@ -173,7 +173,7 @@ class ChatJourneyTest {
         assertEquals(1, compose.countWithText("Second remote session"))
         assertEquals(0, compose.countWithText("Gateway preview"))
 
-        compose.onNodeWithTag("Session list").performScrollTo()
+        compose.onNodeWithTag("Session list").assertIsDisplayed()
         compose.onNodeWithText("Second remote session").performScrollTo().assertIsDisplayed().performClick()
         compose.waitForIdle()
         compose.onNodeWithText("Second live transcript").assertIsDisplayed()

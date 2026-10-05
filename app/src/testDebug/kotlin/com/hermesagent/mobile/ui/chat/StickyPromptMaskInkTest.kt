@@ -6,7 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import com.hermesagent.mobile.ui.promptNodeWithContentDescription as onNodeWithContentDescription
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary

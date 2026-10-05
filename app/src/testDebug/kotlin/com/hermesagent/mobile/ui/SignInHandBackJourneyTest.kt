@@ -9,7 +9,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
+
 import com.hermesagent.mobile.data.connections.ConnectionKind
 import com.hermesagent.mobile.data.connections.SavedConnection
 import com.hermesagent.mobile.data.gateway.GatewayConnectionState
@@ -139,7 +139,7 @@ class SignInHandBackJourneyTest {
     private fun openGatewaysFromTheDrawer() {
         compose.onNodeWithContentDescription("Open sessions").performClick()
         compose.onNodeWithContentDescription("${ConnectionsCopy.TITLE}: Alpha")
-            .performScrollTo().assertIsDisplayed().performClick()
+            .assertIsDisplayed().performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("Connection switcher sheet").assertExists()
         compose.onNodeWithContentDescription(ConnectionsCopy.MANAGE_GATEWAYS).performClick()
