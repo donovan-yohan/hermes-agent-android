@@ -56,11 +56,13 @@ def sanitize(text):
     value = json.loads(text, object_pairs_hook=pairs)
     schema = value.get('schema')
     fields = {'schema', 'before', 'owner', 'after', 'ownerStatus', 'parserShape'}
-    if schema in (3, 4):
+    if schema in (3, 4, 5):
         fields.add('ownerMetadata')
-    if set(value) != fields or type(schema) is not int or schema not in (2, 3, 4):
+    if schema == 5:
+        fields.add('currentAnrCandidate')
+    if set(value) != fields or type(schema) is not int or schema not in (2, 3, 4, 5):
         raise ValueError('schema rejected')
-    if schema in (2, 3, 4):
+    if schema in (2, 3, 4, 5):
         status = value['ownerStatus']
         shape = value['parserShape']
         if shape is not None and (status != 'REJECTED' or not isinstance(shape, dict) or
@@ -69,12 +71,12 @@ def sanitize(text):
             raise ValueError('shape rejected')
         if status not in ('MISSING_CURRENT_SECTION', 'NO_FOCUSED_WINDOW', 'AMBIGUOUS', 'REJECTED', 'OVERFLOW', 'PROBE_FAILURE', 'MATCHED') or (status == 'MATCHED') != (value['owner'] is not None):
             raise ValueError('status rejected')
-    if schema in (3, 4) and value['ownerMetadata'] is not None:
+    if schema in (3, 4, 5) and value['ownerMetadata'] is not None:
         metadata = value['ownerMetadata']
         types = {'UNKNOWN', 'BASE_APPLICATION', 'APPLICATION', 'APPLICATION_STARTING', 'APPLICATION_ATTACHED_DIALOG', 'SYSTEM_ALERT', 'KEYGUARD', 'KEYGUARD_DIALOG', 'SYSTEM_DIALOG', 'STATUS_BAR', 'NOTIFICATION_SHADE', 'INPUT_METHOD', 'INPUT_METHOD_DIALOG', 'NAVIGATION_BAR', 'ACCESSIBILITY_OVERLAY', 'APPLICATION_OVERLAY', 'SECURE_SYSTEM_OVERLAY', 'TOAST', 'SYSTEM_ERROR', 'DREAM', 'DISPLAY_OVERLAY', 'POINTER', 'DRAG', 'DOCK_DIVIDER'}
         configs = {'NO_INPUT_CHANNEL', 'NOT_VISIBLE', 'NOT_FOCUSABLE', 'NOT_TOUCHABLE', 'PREVENT_SPLITTING', 'DUPLICATE_TOUCH_TO_WALLPAPER', 'IS_WALLPAPER', 'PAUSE_DISPATCHING', 'TRUSTED_OVERLAY', 'WATCH_OUTSIDE_TOUCH', 'SLIPPERY', 'DISABLE_USER_ACTIVITY', 'DROP_INPUT', 'DROP_INPUT_IF_OBSCURED', 'SPY', 'INTERCEPTS_STYLUS', 'NOT_TOUCH_MODAL'}
         if (value['owner'] is None or not isinstance(metadata, dict) or
-                set(metadata) != ({'processRole', 'windowType', 'inputConfig', 'alertClass'} if schema == 4 else {'processRole', 'windowType', 'inputConfig'}) or
+                set(metadata) != ({'processRole', 'windowType', 'inputConfig', 'alertClass'} if schema in (4, 5) else {'processRole', 'windowType', 'inputConfig'}) or
                 metadata['processRole'] not in ('UNKNOWN', 'SYSTEM_SERVER', 'SYSTEM_UI') or
                 not isinstance(metadata['windowType'], str) or metadata['windowType'] not in types):
             raise ValueError('metadata rejected')
@@ -82,11 +84,29 @@ def sanitize(text):
         if flags is not None and (not isinstance(flags, list) or len(flags) > len(configs) or
                 any(not isinstance(flag, str) or flag not in configs for flag in flags) or len(set(flags)) != len(flags)):
             raise ValueError('input config rejected')
-        if schema == 4:
+        if schema in (4, 5):
             alert = metadata['alertClass']
             if (alert not in ('APPLICATION_NOT_RESPONDING', 'APPLICATION_ERROR', 'OTHER', 'UNKNOWN') or
                     (alert != 'UNKNOWN' and (metadata['processRole'] != 'SYSTEM_SERVER' or metadata['windowType'] != 'SYSTEM_ALERT'))):
                 raise ValueError('alert class rejected')
+    if schema == 5:
+        candidate = value['currentAnrCandidate']
+        enums = {
+            'source': {'ACTIVITY_MANAGER_ERROR_STATE'}, 'scope': {'CALLER_USER'},
+            'status': {'CURRENT_ANR_CANDIDATE', 'UNKNOWN'},
+            'cause': {'NONE', 'NOT_ATTESTED', 'ALREADY_ATTEMPTED', 'NO_RECORD', 'MULTIPLE',
+                      'INVALID_RECORD', 'OVERFLOW', 'ACQUISITION_FAILED', 'CLEANUP_FAILED', 'TIMEOUT'},
+            'role': {'APP_PROCESS', 'SYSTEM_UI', 'UNKNOWN'},
+            'reason': {'INPUT_DISPATCH_TIMEOUT', 'UNKNOWN'},
+        }
+        if (not isinstance(candidate, dict) or set(candidate) != set(enums) or
+                any(type(candidate[key]) is not str or candidate[key] not in allowed
+                    for key, allowed in enums.items())):
+            raise ValueError('candidate rejected')
+        if ((candidate['status'] == 'CURRENT_ANR_CANDIDATE') != (candidate['cause'] == 'NONE') or
+                (candidate['status'] == 'UNKNOWN' and
+                 (candidate['role'] != 'UNKNOWN' or candidate['reason'] != 'UNKNOWN'))):
+            raise ValueError('candidate consistency rejected')
     for name in ('before', 'after', 'owner'):
         part = value[name]
         if part is None:

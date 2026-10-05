@@ -67,7 +67,7 @@ internal object FailureFocusSnapshot {
         armedNonce = null
         runCatching {
             val args = InstrumentationRegistry.getArguments()
-            if (args.getString("focusSnapshotEnabled") != "true") return
+            if (args.getString("focusSnapshotEnabled") != "true" || android.os.Build.VERSION.SDK_INT != 34) return
             val nonce = args.getString("focusSnapshotNonce") ?: return
             if (!nonce.matches(Regex("[a-f0-9]{32}")) ||
                 args.getString("focusSnapshotSerial") != "emulator-5554" ||
@@ -83,7 +83,9 @@ internal object FailureFocusSnapshot {
         runCatching {
             arm()
             val nonce = armedNonce ?: return
-            val record = JSONObject().put("schema", 4)
+            val record = JSONObject().put("schema", 5)
+            // Independent current-state evidence, never joined to focused owner/title metadata.
+            record.put("currentAnrCandidate", CurrentAnrSnapshot.capture())
             val before = runCatching { bracket(activity) }.getOrNull()
             record.put("before", before ?: JSONObject.NULL)
             val input = runCatching { shell("dumpsys input") }
