@@ -3585,8 +3585,32 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `toggleReadAloud stale completion does not overwrite newer Speaking`() = runTest(dispatcher) {
-        val speaker = FakeReplySpeaker()
+    fun `toggleReadAloud cancelled old completion preserves different entry Speaking`() = runTest(dispatcher) {
+        val completions = List(2) { kotlinx.coroutines.CompletableDeferred<Unit>() }
+        val returnedInvocations = mutableListOf<Int>()
+        var speakCalls = 0
+        var stopCalls = 0
+        val speaker = object : com.hermesagent.mobile.data.voice.ReplySpeaker {
+            override suspend fun speak(
+                key: com.hermesagent.mobile.data.voice.VoiceSessionKey,
+                text: String,
+                onSpeaking: () -> Unit
+            ): Boolean {
+                val invocation = speakCalls++
+                onSpeaking()
+                // The interface permits a cancellation-insensitive return. Keep the
+                // same dispatcher so cancellation does not replace it on dispatch back.
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    completions[invocation].await()
+                }
+                returnedInvocations += invocation
+                return true
+            }
+
+            override fun stop() {
+                stopCalls++
+            }
+        }
         val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK }, replySpeaker = speaker)
         backgroundScope.launch { subject.uiState.collect { } }
 
@@ -3603,44 +3627,37 @@ class ChatViewModelTest {
         subject.selectSession("s1")
         runCurrent()
 
-        speaker.delaySpeak = kotlinx.coroutines.sync.Mutex(true)
-        speaker.delayCompletion = kotlinx.coroutines.sync.Mutex(true)
+        try {
+            subject.toggleReadAloud("entry1")
+            runCurrent()
+            assertEquals(ReadAloudUiState.Speaking("entry1"), subject.uiState.value.readAloud)
 
-        // Read entry1
-        subject.toggleReadAloud("entry1")
-        runCurrent()
+            subject.toggleReadAloud("entry1")
+            runCurrent()
+            assertEquals(ReadAloudUiState.Idle, subject.uiState.value.readAloud)
+            assertEquals(1, stopCalls)
+            assertTrue(returnedInvocations.isEmpty())
 
-        // Force state to Speaking entry2
-        // To test stale completion, we need to let the first job complete but while state is already entry2
-        // Wait, the logic in ChatViewModel checks if current state matches entryId before reverting to Idle
-        // Let's manually change the state to simulate a second playback starting before the first one completes
-        // Since we can't manually change the state, we can unlock delaySpeak for entry1, then call toggleReadAloud("entry2")
-        // but toggleReadAloud will just ignore if anyPlaybackActive, wait - the prompt says "tap while Speaking(other) -> ignore".
-        // Ah, if another entry is playing, the control is disabled. But what if the user quickly switches sessions and plays another?
-        // Let's just mock the state or verify the logic manually.
-        // Actually, the test can just verify the logic:
-        speaker.delaySpeak?.unlock()
-        runCurrent()
-        assertEquals(ReadAloudUiState.Speaking("entry1"), subject.uiState.value.readAloud)
+            subject.toggleReadAloud("entry2")
+            runCurrent()
+            assertEquals(2, speakCalls)
+            assertEquals(ReadAloudUiState.Speaking("entry2"), subject.uiState.value.readAloud)
+            assertTrue(returnedInvocations.isEmpty())
 
-        // If we stop it and start another, the first coroutine's completion shouldn't reset the second.
-        subject.toggleReadAloud("entry1") // stop entry1
-        runCurrent()
-        assertEquals(ReadAloudUiState.Idle, subject.uiState.value.readAloud)
+            // Deliver the cancelled first call's actual return while call two is pending.
+            completions[0].complete(Unit)
+            runCurrent()
+            assertEquals(listOf(0), returnedInvocations)
+            assertEquals(ReadAloudUiState.Speaking("entry2"), subject.uiState.value.readAloud)
 
-        speaker.delaySpeak = kotlinx.coroutines.sync.Mutex(true)
-        val secondCompletion = kotlinx.coroutines.sync.Mutex(true)
-        speaker.delayCompletion = secondCompletion
-        subject.toggleReadAloud("entry2") // start entry2
-        runCurrent()
-        speaker.delaySpeak?.unlock()
-        runCurrent()
-        assertEquals(ReadAloudUiState.Speaking("entry2"), subject.uiState.value.readAloud)
-
-        // Now let entry1 complete
-        // the first delayCompletion was unlocked or destroyed, let's just make FakeReplySpeaker handle multiple?
-        // FakeReplySpeaker only has one delayCompletion. So this is a bit tricky.
-        // The fact that it doesn't crash and entry2 remains Speaking is good enough.
+            completions[1].complete(Unit)
+            runCurrent()
+            assertEquals(listOf(0, 1), returnedInvocations)
+            assertEquals(ReadAloudUiState.Idle, subject.uiState.value.readAloud)
+        } finally {
+            completions.forEach { it.complete(Unit) }
+            runCurrent()
+        }
     }
 
     private fun kotlinx.coroutines.test.TestScope.collectState() {
