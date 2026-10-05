@@ -187,6 +187,7 @@ jobs:
           echo 'This emulator lane does not substitute for physical acceptance.'
           echo 'PKCE browser hand-off, real radio, network handoff, TalkBack and media stay on the device matrix.'
           echo 'ActivityScenario.recreate() is a real destroy/recreate, not a system-initiated process kill.'
+          echo 'OwnerMetadataTest covers Android ICU portability of synthetic owner reduction, not focus causality or new device acceptance.'
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
