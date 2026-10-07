@@ -145,7 +145,7 @@ def avd_layout(config: Path) -> None:
         values[name] = value
     if values.get('path') != str(config.parent.resolve()):
         raise AvdLayoutError('locator-path')
-    if values.get('path.rel') != 'avd/test.avd':
+    if 'path.rel' in values and values['path.rel'] != 'avd/test.avd':
         raise AvdLayoutError('locator-relative-path')
 
 

@@ -265,6 +265,42 @@ class FreshRestoreAttackTest(unittest.TestCase):
         self.assertFalse((config.parent / 'snapshots').exists())
 
 
+    def test_sdk_writer_omitted_relative_field_and_strict_present_values(self):
+        # Revision-12 AvdManager.createAvdIniFile writes path unconditionally,
+        # but omits path.rel outside the SDK handler's Android-folder prefix.
+        receipt, config = self.restore()
+        locator = config.parent.parent / 'test.ini'
+        absolute = str(config.parent)
+        omitted = f'avd.ini.encoding=UTF-8\npath={absolute}\ntarget=android-34\n'
+        locator.write_text(omitted)
+        self.expect_accepted('verify', receipt, config)
+        self.expect_accepted('verify', receipt, config)
+        (config.parent / self.manifest_name).unlink()
+        self.expect_accepted('verify', receipt, config, 'miss')
+        self.expect_accepted('seal', receipt, config)
+        self.expect_accepted('verify', receipt, config)
+
+        # A real alternate relative target must reject, not merely a missing
+        # directory that some native resolver might bypass.
+        other = config.parent.with_name('other.avd')
+        shutil.copytree(config.parent, other)
+        for relative in ('', 'avd/other.avd', '../avd/test.avd',
+                         'avd/./test.avd', 'avd/test.avd/'):
+            with self.subTest(relative=relative):
+                locator.write_text(omitted + f'path.rel={relative}\n')
+                self.expect_refused(receipt, config, 'present relative value')
+        for path in (str(other), absolute + '/',
+                     str(config.parent.parent) + '/./test.avd'):
+            with self.subTest(path=path):
+                locator.write_text(f'path={path}\n')
+                self.expect_refused(receipt, config, 'absolute redirect or alias')
+        for duplicate in (f'path={absolute}\n',
+                          'path.rel=avd/test.avd\npath.rel=avd/test.avd\n',
+                          'target=android-34\n'):
+            with self.subTest(duplicate=duplicate):
+                locator.write_text(omitted + duplicate)
+                self.expect_refused(receipt, config, 'duplicate locator key')
+
     def test_b4_redirected_locator_and_symlink_boundary(self):
         for variant in ('redirect', 'absolute', 'relative', 'missing', 'locator', 'avd-parent', 'avd-home',
                         'test.avd', 'snapshots', 'default_boot', 'config.ini', 'creator-manifest.json'):
