@@ -89,37 +89,64 @@ def configuration(config: Path) -> dict:
     return current
 
 
+class AvdLayoutError(ValueError):
+    """A literal constraint code, never native input or exception text."""
+
+    def __init__(self, reason: str):
+        self.reason = reason
+        # Preserve the existing direct-call symlink rejection contract.
+        super().__init__('AVD directory must not be a symlink'
+                         if reason == 'directory-type' else reason)
+
+
 def avd_layout(config: Path) -> None:
     # Only the standard named AVD layout is supported. Native lookup prefers
     # path.rel relative to ANDROID_AVD_HOME's parent, then falls back to path.
     home = config.parent.parent
     if (not home.is_absolute() or '..' in home.parts or home.name != 'avd'
             or config != home / 'test.avd/config.ini'):
-        raise ValueError('unsupported AVD layout')
+        raise AvdLayoutError('layout-shape')
     for directory in (*reversed(home.parents), home, config.parent):
-        if not stat.S_ISDIR(directory.lstat().st_mode):
-            raise ValueError('AVD directory must not be a symlink')
+        try:
+            mode = directory.lstat().st_mode
+        except OSError:
+            raise AvdLayoutError('directory-read') from None
+        if not stat.S_ISDIR(mode):
+            raise AvdLayoutError('directory-type')
     for directory in (config.parent / 'snapshots', config.parent / 'snapshots/default_boot'):
-        if ((directory.exists() or directory.is_symlink())
-                and not stat.S_ISDIR(directory.lstat().st_mode)):
-            raise ValueError('snapshot ancestor must not be a symlink')
+        try:
+            invalid = ((directory.exists() or directory.is_symlink())
+                       and not stat.S_ISDIR(directory.lstat().st_mode))
+        except OSError:
+            raise AvdLayoutError('snapshot-ancestor-read') from None
+        if invalid:
+            raise AvdLayoutError('snapshot-ancestor-type')
     locator = home / 'test.ini'
     for path in (locator, config, config.parent / MANIFEST):
         if path == config.parent / MANIFEST and not path.exists() and not path.is_symlink():
             continue  # Miss bootstrap only; ordinary verify still requires it.
-        if not stat.S_ISREG(path.lstat().st_mode):
-            raise ValueError('AVD file must be a nonsymlink regular file')
+        try:
+            mode = path.lstat().st_mode
+        except OSError:
+            raise AvdLayoutError('file-read') from None
+        if not stat.S_ISREG(mode):
+            raise AvdLayoutError('file-type')
     values = {}
-    for line in locator.read_text().splitlines():
+    try:
+        lines = locator.read_text().splitlines()
+    except (OSError, UnicodeError):
+        raise AvdLayoutError('locator-read') from None
+    for line in lines:
         if '=' not in line or line.lstrip().startswith('#'):
             continue
         name, value = (part.strip() for part in line.split('=', 1))
         if name in values:
-            raise ValueError('ambiguous AVD locator')
+            raise AvdLayoutError('locator-duplicate')
         values[name] = value
-    if (values.get('path') != str(config.parent.resolve())
-            or values.get('path.rel') != 'avd/test.avd'):
-        raise ValueError('AVD locator differs from owned canonical root')
+    if values.get('path') != str(config.parent.resolve()):
+        raise AvdLayoutError('locator-path')
+    if values.get('path.rel') != 'avd/test.avd':
+        raise AvdLayoutError('locator-relative-path')
 
 
 def creator_quiescence() -> None:
@@ -318,8 +345,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             stage('command-dispatch')
             raise ValueError('unknown command')
-    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'AVD guard stage={current_stage} status=failed', file=sys.stderr, flush=True)
+        if current_stage == 'avd-layout' and isinstance(error, AvdLayoutError):
+            print(f'AVD guard stage=avd-layout reason={error.reason}', file=sys.stderr, flush=True)
         print('::error::AVD cache compatibility verification failed; refusing the workload.', file=sys.stderr)
         return 1
     print(f'AVD guard stage={current_stage} status=passed', flush=True)

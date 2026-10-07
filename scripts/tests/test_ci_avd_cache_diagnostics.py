@@ -82,6 +82,63 @@ class AvdGuardDiagnosticsTest(unittest.TestCase):
         self.assertNotIn('fixture-key', output)
         self.assertNotIn('hw.cpu.ncore', output)
 
+    def assert_layout_reason(self, reason):
+        result, output = self.invoke()
+        self.assertEqual(result, 1)
+        self.assertIn(f'AVD guard stage=avd-layout reason={reason}', output)
+        self.assertNotIn('stage=receipt-key', output)
+        self.assertNotIn(str(self.root), output)
+        self.assertNotIn('PRIVATE-DETAIL', output)
+
+    def test_locator_constraints_have_distinct_fixed_reasons(self):
+        locator = self.config.parent.parent / 'test.ini'
+        valid = locator.read_text()
+        cases = (
+            ('path=PRIVATE-DETAIL\npath.rel=avd/test.avd\n', 'locator-path'),
+            (f'path={self.config.parent}\npath.rel=avd/PRIVATE-DETAIL.avd\n',
+             'locator-relative-path'),
+            (valid + 'target=android-34\ntarget=android-34\n', 'locator-duplicate'),
+            (valid + f'path={self.config.parent}\n', 'locator-duplicate'),
+        )
+        for text, reason in cases:
+            with self.subTest(reason=reason, text_index=cases.index((text, reason))):
+                locator.write_text(text)
+                self.assert_layout_reason(reason)
+        locator.write_bytes(b'\xff')
+        self.assert_layout_reason('locator-read')
+
+    def test_missing_and_symlink_files_still_reject(self):
+        locator = self.config.parent.parent / 'test.ini'
+        locator.unlink()
+        self.assert_layout_reason('file-read')
+        locator.symlink_to(self.config)
+        self.assert_layout_reason('file-type')
+
+    def test_snapshot_and_directory_constraints_still_reject(self):
+        snapshots = self.config.parent / 'snapshots'
+        snapshots.symlink_to(self.root)
+        self.assert_layout_reason('snapshot-ancestor-type')
+        snapshots.unlink()
+        original = self.config.parent
+        moved = original.with_name('owned-copy.avd')
+        original.rename(moved)
+        original.symlink_to(moved, target_is_directory=True)
+        self.assert_layout_reason('directory-type')
+
+    def test_shape_and_directory_read_have_fixed_reasons(self):
+        original = self.config
+        self.config = self.root / 'PRIVATE-DETAIL/test.avd/config.ini'
+        self.assert_layout_reason('layout-shape')
+        self.config = original
+        with patch.object(Path, 'lstat', side_effect=OSError('PRIVATE-DETAIL')):
+            self.assert_layout_reason('directory-read')
+
+    def test_normal_sdk_locator_fields_are_not_duplicates(self):
+        locator = self.config.parent.parent / 'test.ini'
+        locator.write_text('avd.ini.encoding=UTF-8\n' + locator.read_text()
+                           + 'target=android-34\n')
+        self.assertEqual(self.invoke()[0], 0)
+
 
 if __name__ == '__main__':
     unittest.main()
