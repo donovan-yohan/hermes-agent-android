@@ -48,7 +48,9 @@ function fixture(dir) {
   fs.mkdirSync(dir, {recursive:true});
   for(const f of [WORKFLOW,'scripts/ci_avd_cache.py']) put(path.join(dir,f),fs.readFileSync(path.join(ROOT,f)));
   const home=path.join(dir,'home'), sdk=path.join(dir,'sdk');
-  const env={...process.env,HOME:home,ANDROID_HOME:sdk,ANDROID_AVD_HOME:path.join(home,'.android/avd'),ImageVersion:'offline-replay-image-1',GITHUB_OUTPUT:path.join(dir,'github-output'),GITHUB_ENV:path.join(dir,'github-env')};
+  // Only PATH is inherited for subprocess executable lookup. No credential
+  // or unrelated parent environment reaches the mocked action/helper.
+  const env={PATH:process.env.PATH,HOME:home,ANDROID_HOME:sdk,ANDROID_AVD_HOME:path.join(home,'.android/avd'),ImageVersion:'offline-replay-image-1',GITHUB_OUTPUT:path.join(dir,'github-output'),GITHUB_ENV:path.join(dir,'github-env')};
   for(const [f,data] of Object.entries({'emulator/emulator':'synthetic emulator binary','emulator/source.properties':'Pkg.Revision=36.6.11\n','emulator/package.xml':'<localPackage path="emulator"/>','system-images/android-34/google_apis/x86_64/system.img':'synthetic image bytes','system-images/android-34/google_apis/x86_64/source.properties':'Pkg.Revision=12\n','system-images/android-34/google_apis/x86_64/package.xml':'<localPackage path="system-images;android-34;google_apis;x86_64"/>','cmdline-tools/latest/bin/avdmanager':'synthetic profile tool','cmdline-tools/latest/source.properties':'Pkg.Revision=20.0\n'})) put(path.join(sdk,f),data);
   fs.mkdirSync(env.ANDROID_AVD_HOME,{recursive:true});
   return {dir,env,inputs:null,events:[],failures:[],helpers:[]};
@@ -58,7 +60,7 @@ function fixture(dir) {
 const bootstrap = `import runpy,sys,os,subprocess,time\nfrom pathlib import Path\noriginal=Path.read_text\ndef read_text(self,*a,**kw):\n if str(self)=='/proc/cpuinfo' and not self.exists(): return 'vendor_id : offline-fixture\\nmodel name : offline-fixture\\nflags : sse sse2\\n'\n return original(self,*a,**kw)\nPath.read_text=read_text\nreal_run=subprocess.run\nreal_clock=time.monotonic\noffset=0\nscans=0\ndef scan(args,*a,**kw):\n global scans\n if args==['ps','-ww','-eo','uid=,pid=,args=']:\n  scans+=1\n  live=os.environ.get('REPLAY_CREATOR_LIVE')=='1' or (os.environ.get('REPLAY_DELAYED_EXIT')=='1' and scans==1)\n  text=f"{os.getuid()} 123 {os.environ['ANDROID_HOME']}/emulator/qemu/linux-x86_64/qemu-system-x86_64 -avd test -port 5554\\n" if live else ''\n  return subprocess.CompletedProcess(args,0,text)\n return real_run(args,*a,**kw)\ndef wait(seconds):\n global offset\n offset+=31 if os.environ.get('REPLAY_CREATOR_LIVE')=='1' else seconds\nsubprocess.run=scan\ntime.monotonic=lambda:real_clock()+offset\ntime.sleep=wait\nsys.argv=['scripts/ci_avd_cache.py',sys.argv[1]]\nrunpy.run_path('scripts/ci_avd_cache.py',run_name='__main__')\n`;
 function helper(state, command) {
   const result=cp.spawnSync(process.env.PYTHON || 'python3',['-c',bootstrap,command],{cwd:state.dir,env:state.env,encoding:'utf8',timeout:150000});
-  const log={command,status:result.status,stdout:result.stdout,stderr:result.stderr,error:result.error?.message}; state.helpers.push(log); return log;
+  const log={command,status:result.status,stdout:result.stdout,stderr:result.stderr,error:result.error?'helper-subprocess-error':undefined}; state.helpers.push(log); return log;
 }
 function shellHelper(state, script) {
   const match=script.match(/^python3 scripts\/ci_avd_cache\.py ([a-z-]+)$/); assert(match,`unsupported compatibility command: ${script}`);
@@ -160,18 +162,25 @@ function worker(spec) {
     return state;
   })();
 }
+// Execution state is private. Receipts have an explicit field contract and
+// never serialize env, including synthetic HOME/SDK paths or inherited tokens.
+function receipt(state) {
+  const {inputs,events,failures,helpers,launch,connected,saved,lifecycleError}=state;
+  return {inputs,events,failures,helpers,launch,connected,saved,lifecycleError};
+}
+function avdHome(name) { return path.join(OUT,name,'home/.android/avd'); }
 async function main() {
   if(process.argv.includes('--worker')) {
     const spec=JSON.parse(fs.readFileSync(option('--worker'),'utf8'));
-    try { const result=await worker(spec); put(spec.result,JSON.stringify(result,null,2)); }
-    catch(e) {put(spec.result,JSON.stringify({error:e.stack},null,2));process.exitCode=1;} return;
+    try { const result=await worker(spec); put(spec.result,JSON.stringify(receipt(result),null,2)); }
+    catch(e) {put(spec.result,JSON.stringify({error:'worker-execution-failed'},null,2));process.exitCode=1;} return;
   }
   const results=[];const errors=[];
   function run(name,step,mode,cache) {
     const spec={dir:path.join(OUT,name),step,mode,cache,result:path.join(OUT,name+'.json')};
     const specPath=path.join(OUT,name+'-spec.json'); put(specPath,JSON.stringify(spec));
     const r=cp.spawnSync(process.execPath,[__filename,'--modules',MODULES,'--output',OUT,'--worker',specPath],{encoding:'utf8',timeout:180000,env:process.env});
-    const result=fs.existsSync(spec.result)?JSON.parse(fs.readFileSync(spec.result)): {error:r.error?.message||r.stderr};
+    const result=fs.existsSync(spec.result)?JSON.parse(fs.readFileSync(spec.result)): {error:'worker-receipt-missing'};
     results.push({name,processStatus:r.status,...result}); return result;
   }
   const creator=run('miss','Create the AVD snapshot','miss');
@@ -183,11 +192,11 @@ async function main() {
       assert(!r.error,r.error); assert.equal(r.failures.length,0,'upstream swallows shutdown failure');
       const seal=r.helpers.find(h=>h.command==='seal'); assert(seal,'seal must execute independently');
       assert.equal(seal.status,mode==='delayed-exit'?0:1);
-      assert.equal(fs.existsSync(path.join(r.env.ANDROID_AVD_HOME,'test.avd/creator-manifest.json')),mode==='delayed-exit');
+      assert.equal(fs.existsSync(path.join(avdHome(mode),'test.avd/creator-manifest.json')),mode==='delayed-exit');
     }catch(e){errors.push(mode+': '+e.message);}
   }
   if(!creator.error && creator.failures.length===0) {
-    fs.cpSync(creator.env.ANDROID_AVD_HOME,cache,{recursive:true});
+    fs.cpSync(avdHome('miss'),cache,{recursive:true});
     for(const mode of ['hit','divergent-config','missing-snapshot','sdk-update','connected-failure']) {
       const r=run(mode,'Run the instrumented lane',mode,cache);
       try {
@@ -205,4 +214,4 @@ async function main() {
   console.log(`${errors.length?'RED':'PASS'} actual pinned action replay; report ${path.join(OUT,'report.json')}`);
   for(const e of errors)console.error(e); if(errors.length)process.exitCode=1;
 }
-main().catch(e=>{console.error(e);process.exitCode=1;});
+main().catch(()=>{console.error('replay-execution-failed');process.exitCode=1;});
