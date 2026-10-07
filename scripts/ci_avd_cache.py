@@ -179,15 +179,19 @@ def creator_quiescence() -> None:
 
 
 class CreationConfigDelta(ValueError):
-    """Diagnostic buckets only; never relax the initial creation baseline."""
+    """A creator-only display-label transition, or fixed-category refusal."""
 
     def __init__(self, initial: dict, current: dict):
+        changed = {name for name in initial.keys() | current.keys()
+                   if name not in initial or name not in current or initial[name] != current[name]}
+        # SDK AvdManager's display label is not AvdId, a path or a profile.
+        # No prefix/category exemption: disk geometry, image/resource/user
+        # constraints and every unknown field remain immutable during creation.
+        self.bootstrap_metadata_only = changed <= {'avd.ini.displayname'}
         categories = set()
-        for name in initial.keys() | current.keys():
-            if name in initial and name in current and initial[name] == current[name]:
-                continue
-            # Lexical buckets, not native compatibility classifications. Unknown
-            # fields stay 'other'; no field is ignored or accepted by this probe.
+        for name in changed:
+            # Lexical diagnostics only, never an acceptance rule. Unknown
+            # fields stay 'other' and are not in the exact-key allowlist.
             if name.startswith('hw.'):
                 categories.add('hardware')
             elif name.startswith(('snapshot.', 'fastboot.')):
@@ -289,9 +293,14 @@ def verify(receipt: Path, key: str, config: Path, mode: str = 'required',
     if mode == 'miss' and not manifest.exists():
         stage('creation-config')
         if 'config' in saved and saved['config'] != current:
-            if isinstance(saved['config'], dict):
-                raise CreationConfigDelta(saved['config'], current)
-            raise ValueError('creation AVD configuration changed')
+            if not isinstance(saved['config'], dict):
+                raise ValueError('creation AVD configuration changed')
+            delta = CreationConfigDelta(saved['config'], current)
+            if not delta.bootstrap_metadata_only:
+                raise delta
+        # This is a complete creator sample, not a consumer baseline. seal
+        # requires exact equality again after exit; restored manifests never
+        # enter this branch and consumers bind every field, including the label.
         saved['config'] = current
         stage('receipt-write')
         receipt.write_text(json.dumps(saved, sort_keys=True) + '\n')
