@@ -201,6 +201,10 @@ jobs:
             platform-tools
             platforms;android-36
             build-tools;36.0.0
+            platforms;android-34
+            build-tools;37.0.0
+            emulator
+            system-images;android-34;google_apis;x86_64
       # Without KVM the x86_64 image falls back to software emulation and the
       # lane stops fitting in any sensible timeout.
       - name: Enable KVM
@@ -210,8 +214,13 @@ jobs:
             sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      # The AVD and its cold snapshot are the expensive part; caching them is
-      # what keeps a warm run inside the timeout above.
+      # Materialize SDK inputs before lookup. The runner's repeated install
+      # requests must be byte-idempotent, checked before either boot/workload.
+      - name: Record installed snapshot compatibility identity
+        id: avd-identity
+        run: python3 scripts/ci_avd_cache.py record
+      # v3 invalidates the incompatible v2 snapshot once. Installed emulator,
+      # image, profile tools, host and both launch configurations bind the key.
       - name: Cache the emulator image and AVD
         id: avd-cache
         uses: actions/cache@v4
@@ -219,12 +228,8 @@ jobs:
           path: |
             ~/.android/avd/*
             ~/.android/adb*
-          key: avd-api34-google_apis-x86_64-pixel_6-v2
-          # Without these a run that ends red saves nothing, so a lane that is
-          # red on the first attempt never warms its own cache and every later
-          # attempt pays the cold-boot cost again.
-          restore-keys: |
-            avd-api34-google_apis-x86_64-pixel_6-
+          key: ${{ steps.avd-identity.outputs.key }}
+          # No prefix fallback: a different identity is an ordinary cache miss.
       # Finish CPU/memory-heavy APK assembly before either cold or warm boot.
       # Resource isolation only; this is not a proven SystemUI ANR fix.
       - name: Assemble instrumented APKs before emulator boot
@@ -244,7 +249,18 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: false
-          script: echo 'AVD created; the snapshot is now cacheable.'
+          avd-name: test
+          cores: 2
+          emulator-port: 5554
+          pre-emulator-launch-script: python3 scripts/ci_avd_cache.py verify-miss
+          script: python3 scripts/ci_avd_cache.py verify-miss
+      # The action swallows shutdown errors. Seal independently waits at most
+      # 30 seconds for this SDK's test/5554 creator to exit before reading saved
+      # files; live/unknown processes or incomplete files refuse publication.
+      # A hit never creates/adopts a manifest.
+      - name: Seal the saved snapshot creator manifest
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        run: python3 scripts/ci_avd_cache.py seal
       # pixel_6 is pinned, not incidental: the chat surface switches to its wide
       # layout above 720 dp, and OrientationTest asserts the rotated window
       # really crosses that breakpoint rather than passing vacuously.
@@ -260,10 +276,14 @@ jobs:
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           emulator-port: 5554
           disable-animations: true
+          avd-name: test
+          cores: 2
+          pre-emulator-launch-script: python3 scripts/ci_avd_cache.py verify
           # CI-only mitigation for the API34 launcher ANR stealing input focus.
           # Stop only this synthetic AVD's known launcher after normal preparation;
           # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
           script: |
+            python3 scripts/ci_avd_cache.py verify
             ./scripts/prepare-ci-emulator.sh
             adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
             nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"; adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot" && FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected

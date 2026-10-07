@@ -54,6 +54,57 @@ class CiWorkflowCheckerTest(unittest.TestCase):
     def test_accepts_repository_workflow(self) -> None:
         self.assertEqual(0, self._run(self.valid_text))
 
+    def test_rejects_stale_snapshot_key_and_fallback(self) -> None:
+        marker = '          key: ${{ steps.avd-identity.outputs.key }}'
+        for replacement in ('          key: avd-api34-google_apis-x86_64-pixel_6-v2',
+                            marker + '\n          restore-keys: avd-v3-'):
+            self._assert_reports(self.valid_text.replace(marker, replacement),
+                                 'snapshot cache must use only the installed compatibility key')
+
+    def test_rejects_snapshot_creation_consumer_mismatch(self) -> None:
+        for field, other in (('cores: 2', 'cores: 4'),
+                             ('avd-name: test', 'avd-name: other'),
+                             ('profile: pixel_6', 'profile: pixel_7'),
+                             ('arch: x86_64', 'arch: arm64-v8a'),
+                             ('-gpu swiftshader_indirect', '-gpu host')):
+            with self.subTest(field=field):
+                start = self.valid_text.index('      - name: Run the instrumented lane')
+                broken = self.valid_text[:start] + self.valid_text[start:].replace(field, other, 1)
+                self._assert_reports(broken, 'snapshot creation and consumption settings must match')
+
+    def test_rejects_snapshot_sdk_and_identity_guard_bypass(self) -> None:
+        for old, new in (
+            ('            emulator\n', ''),
+            ('            system-images;android-34;google_apis;x86_64\n', ''),
+            ('        run: python3 scripts/ci_avd_cache.py record', '        run: true'),
+            ('pre-emulator-launch-script: python3 scripts/ci_avd_cache.py verify',
+             'pre-emulator-launch-script: true'),
+            ('            python3 scripts/ci_avd_cache.py verify', '            true'),
+            ("if: steps.avd-cache.outputs.cache-hit != 'true'", 'if: false'),
+        ):
+            with self.subTest(old=old):
+                self._assert_reports(self.valid_text.replace(old, new, 1), 'snapshot compatibility')
+
+    def test_rejects_missing_failed_or_misordered_snapshot_sealing(self) -> None:
+        block = ('      - name: Seal the saved snapshot creator manifest\n'
+                 "        if: steps.avd-cache.outputs.cache-hit != 'true'\n"
+                 '        run: python3 scripts/ci_avd_cache.py seal\n')
+        self.assertIn(block, self.valid_text)
+        without = self.valid_text.replace(block, '')
+        for broken in (without,
+                       self.valid_text.replace(block, block.replace('        run:', '        continue-on-error: true\n        run:')),
+                       self.valid_text.replace(block, block.replace("steps.avd-cache.outputs.cache-hit != 'true'", 'always()')),
+                       without.replace('      - name: Create the AVD snapshot', block + '      - name: Create the AVD snapshot')):
+            with self.subTest(broken=broken):
+                self._assert_reports(broken, 'snapshot compatibility must seal saved creator')
+
+    def test_rejects_identity_capture_after_cache_lookup(self) -> None:
+        block, without = self._remove_step(self.valid_text,
+            '      - name: Record installed snapshot compatibility identity',
+            '      - name: Cache the emulator image and AVD')
+        self._assert_reports(self._insert_before(without, block,
+            '      - name: Assemble instrumented APKs before emulator boot'), 'snapshot compatibility')
+
     def test_rejects_prebuilt_gate_bypasses(self) -> None:
         for command in ('python3 scripts/ci_prebuilt.py record',
                         'python3 scripts/ci_prebuilt.py connected'):
