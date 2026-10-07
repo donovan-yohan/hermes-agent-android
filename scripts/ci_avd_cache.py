@@ -224,64 +224,105 @@ def snapshot_files(config: Path) -> dict:
     return result
 
 
-def verify(receipt: Path, key: str, config: Path, mode: str = 'required') -> None:
+def verify(receipt: Path, key: str, config: Path, mode: str = 'required',
+           *, stage=lambda _: None) -> None:
+    stage('avd-layout')
     avd_layout(config)
+    stage('receipt-read')
     saved = json.loads(receipt.read_text())
+    stage('receipt-key')
     if saved['key'] != key:
         raise ValueError('installed SDK or launcher identity changed after cache key capture')
+    stage('config-read')
     current = configuration(config)
     manifest = config.parent / MANIFEST
     if mode == 'miss' and not manifest.exists():
+        stage('creation-config')
         if 'config' in saved and saved['config'] != current:
             raise ValueError('creation AVD configuration changed')
         saved['config'] = current
+        stage('receipt-write')
         receipt.write_text(json.dumps(saved, sort_keys=True) + '\n')
         return
+    stage('verification-mode')
     if mode not in ('miss', 'required'):
         raise ValueError('unknown verification mode')
+    stage('manifest-read')
     creator = json.loads(manifest.read_text())
-    if (creator['schema'] != 1 or creator['key'] != key
-            or creator['config'] != current
-            or creator['config_fingerprint'] != config_fingerprint(current)
-            or creator['snapshots'] != snapshot_files(config)):
+    stage('manifest-identity')
+    if creator['schema'] != 1 or creator['key'] != key:
+        raise ValueError('creator snapshot identity or configuration differs')
+    stage('manifest-config')
+    if (creator['config'] != current
+            or creator['config_fingerprint'] != config_fingerprint(current)):
+        raise ValueError('creator snapshot identity or configuration differs')
+    stage('snapshot-files')
+    if creator['snapshots'] != snapshot_files(config):
         raise ValueError('creator snapshot identity or configuration differs')
 
 
-def seal(receipt: Path, key: str, config: Path) -> None:
+def seal(receipt: Path, key: str, config: Path, *, stage=lambda _: None) -> None:
+    stage('avd-layout')
     avd_layout(config)
+    stage('creator-quiescence')
     creator_quiescence()
     # Action return/kill-command success alone is not exit or completed save.
+    stage('receipt-read')
     saved = json.loads(receipt.read_text())
+    stage('config-read')
     current = configuration(config)
+    stage('creation-identity')
     if saved['key'] != key or saved.get('config') != current:
         raise ValueError('snapshot creation identity or configuration changed')
+    stage('snapshot-files')
     creator = {'schema': 1, 'key': key, 'config': current,
                'config_fingerprint': config_fingerprint(current),
                'snapshots': snapshot_files(config)}
     # Never overwrite a restored creator baseline, including malformed ones.
+    stage('manifest-write')
     with (config.parent / MANIFEST).open('x') as stream:
         stream.write(json.dumps(creator, sort_keys=True) + '\n')
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Only fixed phase enums reach logs. Never emit exceptions, paths, config
+    # names/values, identity bytes or subprocess output. Direct helper callers
+    # remain quiet; CLI diagnostics are not compatibility evidence themselves.
+    current_stage = None
+
+    def stage(value: str) -> None:
+        nonlocal current_stage
+        if current_stage is not None:
+            print(f'AVD guard stage={current_stage} status=passed', flush=True)
+        current_stage = value
+        print(f'AVD guard stage={current_stage} status=started', flush=True)
+
     try:
+        stage('command')
         command, = sys.argv[1:] if argv is None else argv
+        stage('installed-identity')
         key = identity(Path(os.environ['ANDROID_HOME']), WORKFLOW, host_identity())
         if command == 'record':
+            stage('receipt-write')
             record(RECEIPT, key)
+            stage('key-output')
             with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
                 output.write(f'key={key}\n')
         elif command in ('verify', 'verify-miss', 'seal'):
+            stage('avd-input')
             config = Path(os.environ['ANDROID_AVD_HOME']) / 'test.avd/config.ini'
             if command == 'seal':
-                seal(RECEIPT, key, config)
+                seal(RECEIPT, key, config, stage=stage)
             else:
-                verify(RECEIPT, key, config, mode='miss' if command == 'verify-miss' else 'required')
+                verify(RECEIPT, key, config, mode='miss' if command == 'verify-miss' else 'required', stage=stage)
         else:
+            stage('command-dispatch')
             raise ValueError('unknown command')
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        print(f'AVD guard stage={current_stage} status=failed', file=sys.stderr, flush=True)
         print('::error::AVD cache compatibility verification failed; refusing the workload.', file=sys.stderr)
         return 1
+    print(f'AVD guard stage={current_stage} status=passed', flush=True)
     print('AVD installed-byte compatibility identity verified.')
     return 0
 
