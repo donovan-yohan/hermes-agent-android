@@ -1,9 +1,6 @@
 package com.hermesagent.mobile.plugins.bots
 
 import com.hermesagent.mobile.plugins.PluginHost
-import com.hermesagent.mobile.plugins.PluginHostResult
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 data class BotToolset(val name: String, val enabled: Boolean, val description: String,
@@ -22,17 +19,8 @@ sealed interface BotToolsetsSave {
 /** 587e673e methods_profiles.py:345-405,663-724; platform_toolsets.cli, not runtime tools. */
 class BotsToolsetsRepository(private val host: PluginHost, private val timeoutMillis: Long = 20_000L) {
     private suspend fun call(target: BotManagementTarget, method: String, params: JsonObject,
-        dispatchAllowed: (() -> Boolean)? = null): JsonObject? {
-        if (!validBotId(target.name)) return null
-        return try {
-            withTimeoutOrNull(timeoutMillis) {
-                val result = if (dispatchAllowed == null) host.requestAtEndpoint(target.endpoint, method, params)
-                    else host.requestAtEndpointGuarded(target.endpoint, method, params, dispatchAllowed)
-                (result as? PluginHostResult.Success)?.result as? JsonObject
-            }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { null }
-    }
+        dispatchAllowed: (() -> Boolean)? = null): JsonObject? =
+        host.requestBotObject(target, method, params, timeoutMillis, dispatchAllowed)
     suspend fun save(target: BotManagementTarget, baseline: BotToolsetsRead, desired: Set<String>,
         dispatchAllowed: () -> Boolean): BotToolsetsSave {
         if (desired.isEmpty() || desired.any { name -> baseline.rows.none { it.name == name } })

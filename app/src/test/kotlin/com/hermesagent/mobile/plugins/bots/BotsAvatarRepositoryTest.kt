@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.plugins.bots
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
@@ -13,6 +14,21 @@ internal fun avatarReply(bytes: ByteArray) = buildJsonObject {
 }
 class BotsAvatarRepositoryTest {
     private val target = BotManagementTarget("worker", 7)
+    @Test fun `bot editor reads rethrow external cancellation unchanged`() = runTest {
+        val sentinel = CancellationException("External bot editor cancellation")
+        data class Operation(val method: String, val invoke: suspend (ModelTestHost) -> Unit)
+        val operations = listOf(
+            Operation("profiles.get_asset") { host -> BotsAvatarRepository(host).read(target); Unit },
+            Operation("profiles.describe") { host -> BotsToolsetsRepository(host).describe(target); Unit },
+            Operation("profiles.describe") { host -> BotsModelRepository(host).describe(target); Unit },
+        )
+        for ((method, invoke) in operations) {
+            val host = ModelTestHost().apply { answer = { _, _ -> throw sentinel } }
+            val caught = try { invoke(host); null } catch (cancelled: CancellationException) { cancelled }
+            assertSame(sentinel, caught?.cause ?: caught) // Coroutine stacktrace recovery retains the original as cause.
+            assertEquals(listOf(method), host.calls.map { it.first })
+        }
+    }
     @Test fun `unchanged missing avatar cannot erase another clients new image`() = runTest {
         val host = ModelTestHost()
         assertEquals(BotAvatarSave.Unchanged, BotsAvatarRepository(host).save(target, null, BotAvatarChange.Unchanged))
