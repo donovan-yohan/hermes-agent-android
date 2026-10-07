@@ -1,4 +1,4 @@
-"""Stage-only diagnostics do not change the cache compatibility contract."""
+"""Fixed-enum diagnostics do not change the cache compatibility contract."""
 import contextlib
 import importlib.util
 import io
@@ -49,6 +49,41 @@ class AvdGuardDiagnosticsTest(unittest.TestCase):
         result, output = self.invoke()
         self.assertEqual(result, 1)
         self.assertIn('AVD guard stage=creation-config status=failed', output)
+
+    def test_creation_delta_is_fixed_categories_only_and_still_refused(self):
+        cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
+        baseline = self.receipt.read_bytes()
+        self.config.write_text('hw.cpu.ncore=4\nfastboot.forceColdBoot=yes\n'
+                               'image.sysdir.1=PRIVATE-DETAIL\n'
+                               'PRIVATE-KEY=PRIVATE-VALUE\n')
+        result, output = self.invoke()
+        self.assertEqual(result, 1)
+        deltas = [line for line in output.splitlines() if line.startswith('AVD config delta ')]
+        self.assertEqual(deltas, [f'AVD config delta category={category}'
+                                  for category in ('hardware', 'snapshot', 'path', 'other')])
+        self.assertEqual(self.receipt.read_bytes(), baseline)
+        for forbidden in ('PRIVATE-DETAIL', 'PRIVATE-KEY', 'PRIVATE-VALUE',
+                          'hw.cpu.ncore', 'hw.ramSize', 'fastboot.forceColdBoot',
+                          'image.sysdir.1', str(self.root), 'fixture-key'):
+            self.assertNotIn(forbidden, output)
+
+    def test_creation_delta_ignores_unchanged_keys_and_covers_removal(self):
+        cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
+        self.config.write_text('hw.cpu.ncore=2\n')
+        result, output = self.invoke()
+        self.assertEqual(result, 1)
+        self.assertEqual([line for line in output.splitlines()
+                          if line.startswith('AVD config delta ')],
+                         ['AVD config delta category=hardware'])
+
+    def test_direct_creation_failure_remains_quiet(self):
+        cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
+        self.config.write_text('hw.cpu.ncore=4\n')
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            with self.assertRaises(ValueError):
+                cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
+        self.assertEqual(output.getvalue(), '')
 
     def test_locator_failure_is_distinguished_from_identity_failure(self):
         (self.config.parent.parent / 'test.ini').write_text('path=wrong\npath.rel=avd/test.avd\n')

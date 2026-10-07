@@ -178,6 +178,29 @@ def creator_quiescence() -> None:
         time.sleep(min(0.25, remaining))
 
 
+class CreationConfigDelta(ValueError):
+    """Diagnostic buckets only; never relax the initial creation baseline."""
+
+    def __init__(self, initial: dict, current: dict):
+        categories = set()
+        for name in initial.keys() | current.keys():
+            if name in initial and name in current and initial[name] == current[name]:
+                continue
+            # Lexical buckets, not native compatibility classifications. Unknown
+            # fields stay 'other'; no field is ignored or accepted by this probe.
+            if name.startswith('hw.'):
+                categories.add('hardware')
+            elif name.startswith(('snapshot.', 'fastboot.')):
+                categories.add('snapshot')
+            elif name.endswith('.path') or name.startswith('image.sysdir.'):
+                categories.add('path')
+            else:
+                categories.add('other')
+        self.categories = tuple(category for category in ('hardware', 'snapshot', 'path', 'other')
+                                if category in categories)
+        super().__init__('creation AVD configuration changed')
+
+
 def config_fingerprint(current: dict) -> str:
     return hashlib.sha256(json.dumps(current, sort_keys=True).encode()).hexdigest()
 
@@ -266,6 +289,8 @@ def verify(receipt: Path, key: str, config: Path, mode: str = 'required',
     if mode == 'miss' and not manifest.exists():
         stage('creation-config')
         if 'config' in saved and saved['config'] != current:
+            if isinstance(saved['config'], dict):
+                raise CreationConfigDelta(saved['config'], current)
             raise ValueError('creation AVD configuration changed')
         saved['config'] = current
         stage('receipt-write')
@@ -312,7 +337,7 @@ def seal(receipt: Path, key: str, config: Path, *, stage=lambda _: None) -> None
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Only fixed phase enums reach logs. Never emit exceptions, paths, config
+    # Only fixed phase/category enums reach logs. Never emit exceptions, paths, config
     # names/values, identity bytes or subprocess output. Direct helper callers
     # remain quiet; CLI diagnostics are not compatibility evidence themselves.
     current_stage = None
@@ -347,6 +372,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError('unknown command')
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'AVD guard stage={current_stage} status=failed', file=sys.stderr, flush=True)
+        if current_stage == 'creation-config' and isinstance(error, CreationConfigDelta):
+            for category in error.categories:
+                print(f'AVD config delta category={category}', file=sys.stderr, flush=True)
         if current_stage == 'avd-layout' and isinstance(error, AvdLayoutError):
             print(f'AVD guard stage=avd-layout reason={error.reason}', file=sys.stderr, flush=True)
         print('::error::AVD cache compatibility verification failed; refusing the workload.', file=sys.stderr)
