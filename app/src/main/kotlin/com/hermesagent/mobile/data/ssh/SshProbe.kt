@@ -37,7 +37,7 @@ interface SshProbe {
         /**
          * What the screen says when a host is reachable, its key is trusted,
          * and it still refuses SSH auth type `none`. Held here so the sshj
-         * adapter and [FakeSshProbe] cannot drift apart on the one message
+         * adapter and the test double cannot drift apart on the one message
          * whose whole job is to separate "on the tailnet" from "Tailscale SSH
          * is enabled and the policy allows you".
          */
