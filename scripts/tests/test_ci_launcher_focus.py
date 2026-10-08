@@ -22,7 +22,8 @@ class CiLauncherFocusTest(unittest.TestCase):
                       text.split('  instrumented:\n', 1)[1].split('    steps:', 1)[0])
         commands = [line.strip() for line in lane.split('          script: |\n', 1)[1].splitlines()
                     if line.strip() and not line.lstrip().startswith('#')]
-        self.assertEqual(commands[:2], [
+        self.assertEqual(commands[:3], [
+            'python3 scripts/ci_avd_cache.py verify',
             './scripts/prepare-ci-emulator.sh',
             f'adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 {LAUNCHER}',
         ])
@@ -35,7 +36,7 @@ class CiLauncherFocusTest(unittest.TestCase):
             adb = Path(directory) / 'adb'
             adb.write_text('#!/usr/bin/env python3\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\n')
             adb.chmod(0o755)
-            result = subprocess.run(['sh', '-ec', commands[1]], check=True,
+            result = subprocess.run(['sh', '-ec', commands[2]], check=True,
                                     capture_output=True, text=True,
                                     env={**os.environ, 'PATH': directory + ':' + os.environ['PATH'],
                                          'ANDROID_SERIAL': 'emulator-5554'})

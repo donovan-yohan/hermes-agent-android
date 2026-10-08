@@ -351,11 +351,59 @@ def main() -> int:
             )
 
     avd_cache = _indented_block(effective, "      - name: Cache the emulator image and AVD")
-    if avd_cache and "restore-keys:" not in avd_cache:
+    if ('key: ${{ steps.avd-identity.outputs.key }}' not in avd_cache
+            or 'restore-keys:' in avd_cache):
         failures.append(
-            "the AVD cache needs restore-keys; a run that ends red saves nothing, "
-            "so a red lane would never warm the cache it depends on"
+            'snapshot cache must use only the installed compatibility key; no fallback'
         )
+    identity_step = _indented_block(instrumented_job,
+        '      - name: Record installed snapshot compatibility identity')
+    sdk_step = _indented_block(instrumented_job,
+        '      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2')
+    # effective strips whole-line comments, not inline SHA provenance comments.
+    expected_identity = ('      - name: Record installed snapshot compatibility identity\n'
+                         '        id: avd-identity\n'
+                         '        run: python3 scripts/ci_avd_cache.py record')
+    if (identity_step != expected_identity or not sdk_step or not avd_cache
+            or instrumented_job.index(sdk_step) > instrumented_job.index(identity_step or instrumented_job)
+            or instrumented_job.index(identity_step or instrumented_job) > instrumented_job.index(avd_cache or instrumented_job)
+            or any(package not in sdk_step for package in (
+                '            emulator', '            system-images;android-34;google_apis;x86_64',
+                '            platforms;android-34', '            build-tools;37.0.0'))):
+        failures.append('snapshot compatibility SDK installation and identity must precede cache lookup')
+    creation = _indented_block(instrumented_job, '      - name: Create the AVD snapshot')
+    consumption = _indented_block(instrumented_job, '      - name: Run the instrumented lane')
+    def settings(block: str) -> dict[str, str]:
+        return dict(re.findall(r'^          ([a-z-]+): ([^\n]+)$', block, re.M))
+    first, second = settings(creation), settings(consumption)
+    for values in (first, second):
+        for ignored in ('script', 'disable-animations', 'pre-emulator-launch-script'):
+            values.pop(ignored, None)
+        values['emulator-options'] = values.get('emulator-options', '').removeprefix('-no-snapshot-save ')
+    if (first != second or first.get('avd-name') != 'test' or first.get('cores') != '2'
+            or first.get('emulator-port') != '5554'
+            or first.get('force-avd-creation') != 'false'):
+        failures.append('snapshot creation and consumption settings must match')
+    miss_env = ('        env:\n'
+                '          AVD_CACHE_HIT: ${{ steps.avd-cache.outputs.cache-hit }}')
+    miss_condition = "        if: steps.avd-cache.outputs.cache-hit != 'true'"
+    if (_indented_block(creation, '        env:') != miss_env
+            or [line for line in creation.splitlines() if line.startswith('        if:')] != [miss_condition]):
+        failures.append('snapshot compatibility creation requires step-local cache miss provenance')
+    # Exact phase commands: suffixes, shell bypasses or relocated flags cannot pass.
+    if (settings(creation).get('pre-emulator-launch-script') != 'python3 scripts/ci_avd_cache.py verify-miss'
+            or settings(creation).get('script') != 'python3 scripts/ci_avd_cache.py verify-miss'
+            or settings(consumption).get('pre-emulator-launch-script') != 'python3 scripts/ci_avd_cache.py verify'
+            or '          script: |\n            python3 scripts/ci_avd_cache.py verify\n' not in consumption):
+        failures.append('snapshot compatibility verification must guard both boots and workloads')
+    sealing = _indented_block(instrumented_job, '      - name: Seal the saved snapshot creator manifest')
+    expected_sealing = ('      - name: Seal the saved snapshot creator manifest\n'
+                        + miss_condition + '\n' + miss_env + '\n'
+                        + '        run: python3 scripts/ci_avd_cache.py seal')
+    if (sealing != expected_sealing or not creation or not consumption
+            or not (instrumented_job.index(creation) < instrumented_job.index(sealing or instrumented_job)
+                    < instrumented_job.index(consumption))):
+        failures.append('snapshot compatibility must seal saved creator after creation and before workload')
 
     instrumented_upload = _indented_block(
         effective, "      - name: Upload instrumented lane evidence"
