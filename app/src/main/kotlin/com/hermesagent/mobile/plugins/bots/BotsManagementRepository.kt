@@ -2,6 +2,8 @@ package com.hermesagent.mobile.plugins.bots
 
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.PluginHostResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 /** All operations carry the endpoint admitted by the UI, never the endpoint at submit time. */
@@ -23,6 +25,26 @@ enum class BotManagementResult {
 }
 
 internal fun validBotId(name: String): Boolean = Regex("[a-z0-9][a-z0-9_-]{0,63}").matches(name)
+
+/** Bot editor RPC policy only; receipts and readback remain repository-owned. */
+internal suspend fun PluginHost.requestBotObject(
+    target: BotManagementTarget,
+    method: String,
+    params: JsonObject,
+    timeoutMillis: Long,
+    dispatchAllowed: (() -> Boolean)? = null,
+): JsonObject? {
+    if (!validBotId(target.name)) return null
+    return try {
+        withTimeoutOrNull(timeoutMillis) {
+            val result = if (dispatchAllowed == null) requestAtEndpoint(target.endpoint, method, params)
+                else requestAtEndpointGuarded(target.endpoint, method, params, dispatchAllowed)
+            (result as? PluginHostResult.Success)?.result as? JsonObject
+        }
+    } catch (cancelled: CancellationException) { throw cancelled }
+    catch (_: Exception) { null }
+}
+
 internal fun nextBotCopyName(name: String, taken: Set<String>): String? = (2..99)
     .map { suffix -> val tail = "-$suffix"; name.take(64 - tail.length) + tail }
     .firstOrNull { it !in taken }

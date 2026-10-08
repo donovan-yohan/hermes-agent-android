@@ -1,10 +1,7 @@
 package com.hermesagent.mobile.plugins.bots
 
 import com.hermesagent.mobile.plugins.PluginHost
-import com.hermesagent.mobile.plugins.PluginHostResult
 import com.hermesagent.mobile.data.ssh.redact
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 
 data class BotModelSelection(val provider: String = "", val model: String = "") {
@@ -23,15 +20,8 @@ sealed interface BotModelSave {
 
 /** 587e673e: methods_profiles.py:345-405,637-655. No CLI reset, credentials or session writes. */
 class BotsModelRepository(private val host: PluginHost, private val timeoutMillis: Long = 20_000L) {
-    private suspend fun call(target: BotManagementTarget, method: String, params: JsonObject): JsonObject? {
-        if (!validBotId(target.name)) return null
-        return try {
-            withTimeoutOrNull(timeoutMillis) {
-                (host.requestAtEndpoint(target.endpoint, method, params) as? PluginHostResult.Success)?.result as? JsonObject
-            }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { null }
-    }
+    private suspend fun call(target: BotManagementTarget, method: String, params: JsonObject): JsonObject? =
+        host.requestBotObject(target, method, params, timeoutMillis)
 
     suspend fun describe(target: BotManagementTarget): BotModelSelection? {
         val value = call(target, "profiles.describe", buildJsonObject { put("name", target.name) }) ?: return null

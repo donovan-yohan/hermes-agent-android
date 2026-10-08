@@ -1,12 +1,9 @@
 package com.hermesagent.mobile.plugins.bots
 
 import com.hermesagent.mobile.plugins.PluginHost
-import com.hermesagent.mobile.plugins.PluginHostResult
 import com.hermesagent.mobile.data.profiles.AvatarPayload
 import com.hermesagent.mobile.data.profiles.AvatarLimits
 import com.hermesagent.mobile.data.profiles.parseAvatarPayload
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.*
 import java.util.Base64
 
@@ -20,17 +17,9 @@ data class BotAvatarRead(val bytes: ByteArray?)
 
 /** methods_profiles.py:408-460 @ 587e673e. No metadata/config write or local-storage fallback. */
 class BotsAvatarRepository(private val host: PluginHost, private val timeoutMillis: Long = 60_000L) {
-    private suspend fun call(target: BotManagementTarget, method: String, params: JsonObject, dispatchAllowed: (() -> Boolean)? = null): JsonObject? {
-        if (!validBotId(target.name)) return null
-        return try {
-            withTimeoutOrNull(timeoutMillis) {
-                val result = if (dispatchAllowed == null) host.requestAtEndpoint(target.endpoint, method, params)
-                else host.requestAtEndpointGuarded(target.endpoint, method, params, dispatchAllowed)
-                (result as? PluginHostResult.Success)?.result as? JsonObject
-            }
-        } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { null }
-    }
+    private suspend fun call(target: BotManagementTarget, method: String, params: JsonObject,
+        dispatchAllowed: (() -> Boolean)? = null): JsonObject? =
+        host.requestBotObject(target, method, params, timeoutMillis, dispatchAllowed)
     suspend fun read(target: BotManagementTarget): BotAvatarRead? {
         val reply = call(target, "profiles.get_asset", buildJsonObject {
             put("name", target.name); put("asset", "avatar")
