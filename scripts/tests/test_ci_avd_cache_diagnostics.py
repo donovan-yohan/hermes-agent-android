@@ -1,4 +1,6 @@
 """Fixed-enum diagnostics do not change the cache compatibility contract."""
+from __future__ import annotations
+
 import contextlib
 import importlib.util
 import io
@@ -28,18 +30,50 @@ class AvdGuardDiagnosticsTest(unittest.TestCase):
         self.receipt = self.root / 'receipt.json'
         cache.record(self.receipt, 'fixture-key')
 
-    def invoke(self, identity='fixture-key'):
+    def invoke(self, identity='fixture-key', *, command='verify-miss', cache_hit: str | None=''):
         output = io.StringIO()
-        with patch.dict(os.environ, {'ANDROID_HOME': str(self.root / 'sdk'),
-                                     'ANDROID_AVD_HOME': str(self.config.parent.parent)}), \
+        env = {'ANDROID_HOME': str(self.root / 'sdk'),
+               'ANDROID_AVD_HOME': str(self.config.parent.parent)}
+        if cache_hit is not None:
+            env['AVD_CACHE_HIT'] = cache_hit
+        with patch.dict(os.environ, env, clear=True), \
                 patch.object(cache, 'RECEIPT', self.receipt), \
                 patch.object(cache, 'host_identity', return_value={}), \
                 patch.object(cache, 'identity', return_value=identity), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            result = cache.main(['verify-miss'])
+            result = cache.main([command])
         return result, output.getvalue()
 
-    def test_key_mismatch_is_distinguished_from_config_mutation(self):
+    def test_miss_commands_refuse_absent_hit_or_unknown_before_any_work(self):
+        for command in ('verify-miss', 'seal'):
+            for value in (None, 'true', 'unknown', 'False', ' '):
+                with self.subTest(command=command, value=value), \
+                        patch.object(cache, 'identity') as identity, \
+                        patch.object(cache, 'creator_quiescence') as quiescence, \
+                        patch.object(cache, 'seal') as seal:
+                    before = self.receipt.read_bytes()
+                    result, output = self.invoke(command=command, cache_hit=value)
+                    self.assertEqual(result, 1)
+                    self.assertIn('stage=cache-miss-provenance status=failed', output)
+                    self.assertNotIn('stage=installed-identity', output)
+                    self.assertNotIn('stage=creator-quiescence', output)
+                    identity.assert_not_called()
+                    quiescence.assert_not_called()
+                    seal.assert_not_called()
+                    self.assertEqual(self.receipt.read_bytes(), before)
+                    self.assertFalse((self.config.parent / cache.MANIFEST).exists())
+
+    def test_explicit_empty_and_false_misses_allow_both_commands(self):
+        for value in ('', 'false'):
+            with self.subTest(value=value):
+                self.assertEqual(self.invoke(cache_hit=value)[0], 0)
+                with patch.object(cache, 'seal') as seal:
+                    result, output = self.invoke(command='seal', cache_hit=value)
+                    self.assertEqual(result, 0)
+                    self.assertIn('stage=cache-miss-provenance status=passed', output)
+                    seal.assert_called_once()
+
+    def test_key_mismatch_is_distinguished_from_fresh_config_transition(self):
         result, output = self.invoke('different-key')
         self.assertEqual(result, 1)
         self.assertIn('AVD guard stage=receipt-key status=failed', output)
@@ -47,42 +81,40 @@ class AvdGuardDiagnosticsTest(unittest.TestCase):
         cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
         self.config.write_text('hw.cpu.ncore=4\nhw.ramSize=2048\n')
         result, output = self.invoke()
-        self.assertEqual(result, 1)
-        self.assertIn('AVD guard stage=creation-config status=failed', output)
+        self.assertEqual(result, 0)
+        self.assertNotIn('stage=creation-config', output)
 
-    def test_creation_delta_is_fixed_categories_only_and_still_refused(self):
+    def test_fresh_final_config_does_not_emit_delta_or_private_inputs(self):
         cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
         baseline = self.receipt.read_bytes()
         self.config.write_text('hw.cpu.ncore=4\nfastboot.forceColdBoot=yes\n'
                                'image.sysdir.1=PRIVATE-DETAIL\n'
                                'PRIVATE-KEY=PRIVATE-VALUE\n')
         result, output = self.invoke()
-        self.assertEqual(result, 1)
+        self.assertEqual(result, 0)
         deltas = [line for line in output.splitlines() if line.startswith('AVD config delta ')]
-        self.assertEqual(deltas, [f'AVD config delta category={category}'
-                                  for category in ('hardware', 'snapshot', 'path', 'other')])
+        self.assertEqual(deltas, [])
         self.assertEqual(self.receipt.read_bytes(), baseline)
         for forbidden in ('PRIVATE-DETAIL', 'PRIVATE-KEY', 'PRIVATE-VALUE',
                           'hw.cpu.ncore', 'hw.ramSize', 'fastboot.forceColdBoot',
                           'image.sysdir.1', str(self.root), 'fixture-key'):
             self.assertNotIn(forbidden, output)
 
-    def test_creation_delta_ignores_unchanged_keys_and_covers_removal(self):
+    def test_fresh_config_removal_does_not_emit_delta(self):
         cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
         self.config.write_text('hw.cpu.ncore=2\n')
         result, output = self.invoke()
-        self.assertEqual(result, 1)
+        self.assertEqual(result, 0)
         self.assertEqual([line for line in output.splitlines()
                           if line.startswith('AVD config delta ')],
-                         ['AVD config delta category=hardware'])
+                         [])
 
-    def test_direct_creation_failure_remains_quiet(self):
+    def test_direct_fresh_transition_remains_quiet(self):
         cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
         self.config.write_text('hw.cpu.ncore=4\n')
         output = io.StringIO()
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-            with self.assertRaises(ValueError):
-                cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
+            cache.verify(self.receipt, 'fixture-key', self.config, mode='miss')
         self.assertEqual(output.getvalue(), '')
 
     def test_locator_failure_is_distinguished_from_identity_failure(self):
@@ -94,7 +126,8 @@ class AvdGuardDiagnosticsTest(unittest.TestCase):
         with patch.object(cache, 'identity', side_effect=OSError('PRIVATE-DETAIL')):
             # invoke patches identity itself, so exercise main directly here.
             output = io.StringIO()
-            with patch.dict(os.environ, {'ANDROID_HOME': str(self.root / 'sdk')}), \
+            with patch.dict(os.environ, {'ANDROID_HOME': str(self.root / 'sdk'),
+                                         'AVD_CACHE_HIT': ''}), \
                     patch.object(cache, 'host_identity', return_value={}), \
                     contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
                 self.assertEqual(cache.main(['verify-miss']), 1)
@@ -104,8 +137,8 @@ class AvdGuardDiagnosticsTest(unittest.TestCase):
     def test_success_and_output_are_fixed_stage_status_only(self):
         result, output = self.invoke()
         self.assertEqual(result, 0)
-        allowed = {'command', 'installed-identity', 'avd-input', 'avd-layout',
-                   'receipt-read', 'receipt-key', 'config-read', 'creation-config', 'receipt-write'}
+        allowed = {'command', 'cache-miss-provenance', 'installed-identity', 'avd-input', 'avd-layout',
+                   'receipt-read', 'receipt-key', 'config-read', 'verification-mode'}
         lines = [line for line in output.splitlines() if line.startswith('AVD guard ')]
         self.assertTrue(lines)
         for line in lines:

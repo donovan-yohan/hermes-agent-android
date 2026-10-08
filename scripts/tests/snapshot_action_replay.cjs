@@ -66,8 +66,21 @@ function shellHelper(state, script) {
   const match=script.match(/^python3 scripts\/ci_avd_cache\.py ([a-z-]+)$/); assert(match,`unsupported compatibility command: ${script}`);
   const r=helper(state,match[1]); if(r.status!==0) throw new Error(`helper ${match[1]} exit ${r.status}: ${r.stderr}`);
 }
+function stepEnvironment(state, text, name) {
+  const b = blocks(text).find(b => b.name === name); assert(b, 'workflow step absent');
+  // Resolve the actual step-local expression, not an inherited or fabricated
+  // miss flag. Cache restore truth belongs to this worker's synthetic lookup.
+  delete state.env.AVD_CACHE_HIT;
+  if (name === 'Create the AVD snapshot' || name === 'Seal the saved snapshot creator manifest') {
+    assert(b.body.includes("        if: steps.avd-cache.outputs.cache-hit != 'true'\n"));
+    assert(b.body.includes('        env:\n          AVD_CACHE_HIT: ${{ steps.avd-cache.outputs.cache-hit }}\n'));
+    assert.notEqual(state.cacheHit, 'true', 'hit must never execute a miss-only workflow step');
+    state.env.AVD_CACHE_HIT = state.cacheHit;
+  }
+}
 async function action(state, step, mode) {
   const workflow=fs.readFileSync(path.join(state.dir,WORKFLOW),'utf8');
+  stepEnvironment(state,workflow,step);
   const inputs=state.inputs=inputsFor(workflow,step);
   let launched=false; let resolveTerminated;
   const terminated=new Promise(r=>resolveTerminated=r);
@@ -136,6 +149,7 @@ async function action(state, step, mode) {
 }
 function sealFromWorkflow(state) {
   const text=fs.readFileSync(path.join(state.dir,WORKFLOW),'utf8');
+  stepEnvironment(state,text,'Seal the saved snapshot creator manifest');
   const afterCreator=text.slice(text.indexOf('      - name: Create the AVD snapshot'),text.indexOf('      - name: Run the instrumented lane'));
   const seal=afterCreator.match(/^        run: python3 scripts\/ci_avd_cache\.py seal\s*$/m) || afterCreator.match(/^          python3 scripts\/ci_avd_cache\.py seal\s*$/m);
   assert(seal,'workflow must seal after creator action termination, before cache save');
@@ -146,6 +160,7 @@ function sealFromWorkflow(state) {
 function worker(spec) {
   return (async()=>{
     const state=fixture(spec.dir);
+    state.cacheHit=spec.cache?'true':'';
     const recorded=helper(state,'record'); assert.equal(recorded.status,0,recorded.stderr);
     if(spec.cache) {
       fs.cpSync(spec.cache,state.env.ANDROID_AVD_HOME,{recursive:true});

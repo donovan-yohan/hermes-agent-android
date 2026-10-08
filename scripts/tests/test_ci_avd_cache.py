@@ -136,7 +136,7 @@ class AvdCacheTest(unittest.TestCase):
 
     def test_cli_outputs_and_nonzero_mismatch(self):
         env = {'ANDROID_HOME': str(self.sdk), 'ANDROID_AVD_HOME': str(self.avd.parent.parent),
-               'GITHUB_OUTPUT': str(self.root / 'outputs')}
+               'GITHUB_OUTPUT': str(self.root / 'outputs'), 'AVD_CACHE_HIT': ''}
         with patch.dict(os.environ, env), patch.object(cache, 'WORKFLOW', self.workflow), \
                 patch.object(cache, 'RECEIPT', self.receipt), patch.object(cache, 'host_identity', return_value={'arch': 'x86_64', 'cpu': 'fixture'}):
             self.assertEqual(0, cache.main(['record']))
@@ -191,6 +191,20 @@ class AvdCacheTest(unittest.TestCase):
         with patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, unrelated)) as scan:
             cache.creator_quiescence()
         self.assertEqual(scan.call_args.kwargs['timeout'], 5)
+
+    def test_unmatched_quote_in_unrelated_ps_command_does_not_block_quiescence(self):
+        output = f'{os.getuid()} 123 /usr/bin/tool unmatched\'argument\n'
+        with patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, output)):
+            cache.creator_quiescence()
+
+    def test_unmatched_quote_in_same_ps_output_cannot_hide_live_creator(self):
+        output = (f'{os.getuid()} 123 /usr/bin/tool unmatched\'argument\n'
+                  f'{os.getuid()} 124 {self.sdk}/emulator/emulator @test -port 5554\n')
+        with patch('subprocess.run', return_value=subprocess.CompletedProcess([], 0, output)), \
+                patch.object(cache.time, 'monotonic', side_effect=[0, 0, 31]), \
+                patch.object(cache.time, 'sleep'):
+            with self.assertRaisesRegex(ValueError, 'did not become quiescent'):
+                cache.creator_quiescence()
 
 
 if __name__ == '__main__':

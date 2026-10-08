@@ -88,6 +88,8 @@ class CiWorkflowCheckerTest(unittest.TestCase):
     def test_rejects_missing_failed_or_misordered_snapshot_sealing(self) -> None:
         block = ('      - name: Seal the saved snapshot creator manifest\n'
                  "        if: steps.avd-cache.outputs.cache-hit != 'true'\n"
+                 '        env:\n'
+                 '          AVD_CACHE_HIT: ${{ steps.avd-cache.outputs.cache-hit }}\n'
                  '        run: python3 scripts/ci_avd_cache.py seal\n')
         self.assertIn(block, self.valid_text)
         without = self.valid_text.replace(block, '')
@@ -97,6 +99,34 @@ class CiWorkflowCheckerTest(unittest.TestCase):
                        without.replace('      - name: Create the AVD snapshot', block + '      - name: Create the AVD snapshot')):
             with self.subTest(broken=broken):
                 self._assert_reports(broken, 'snapshot compatibility must seal saved creator')
+
+    def test_rejects_missing_wrong_or_relocated_miss_provenance(self) -> None:
+        flag = '        env:\n          AVD_CACHE_HIT: ${{ steps.avd-cache.outputs.cache-hit }}\n'
+        for name in ('Create the AVD snapshot', 'Seal the saved snapshot creator manifest'):
+            with self.subTest(step=name):
+                block = checker._indented_block(self.valid_text, '      - name: ' + name)
+                self.assertIn(flag, block + '\n')
+                for replacement in ('', flag.replace('steps.avd-cache.outputs.cache-hit', "'false'"),
+                                    flag.replace('AVD_CACHE_HIT', 'OTHER_CACHE_HIT')):
+                    broken = self.valid_text.replace(block, block.replace(flag, replacement), 1)
+                    self._assert_reports(broken, 'snapshot compatibility')
+                relocated = self.valid_text.replace(block, block.replace(flag, ''), 1)
+                relocated = relocated.replace('      - name: Record installed snapshot compatibility identity\n',
+                                               '      - name: Record installed snapshot compatibility identity\n' + flag)
+                self._assert_reports(relocated, 'snapshot compatibility')
+                for condition in ('false', 'always()', "steps.avd-cache.outputs.cache-hit == 'false'"):
+                    broken = self.valid_text.replace(block, block.replace(
+                        "if: steps.avd-cache.outputs.cache-hit != 'true'", 'if: ' + condition), 1)
+                    self._assert_reports(broken, 'snapshot compatibility')
+
+    def test_rejects_miss_phase_guard_bypasses(self) -> None:
+        block = checker._indented_block(self.valid_text, '      - name: Create the AVD snapshot')
+        for field in ('pre-emulator-launch-script', 'script'):
+            for command in ('verify', 'verify-miss || true', 'verify-miss --allow-hit'):
+                broken = self.valid_text.replace(block, block.replace(
+                    field + ': python3 scripts/ci_avd_cache.py verify-miss',
+                    field + ': python3 scripts/ci_avd_cache.py ' + command), 1)
+                self._assert_reports(broken, 'snapshot compatibility')
 
     def test_rejects_identity_capture_after_cache_lookup(self) -> None:
         block, without = self._remove_step(self.valid_text,

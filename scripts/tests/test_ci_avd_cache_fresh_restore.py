@@ -222,8 +222,8 @@ class FreshRestoreAttackTest(unittest.TestCase):
                 self.assertEqual(result['status'], 'REJECTED')
                 self.assertEqual(path.read_bytes(), existing)
 
-    def test_seal_requires_complete_saved_files_and_creation_config(self):
-        for mutation in (*ARTIFACTS, 'config', 'receipt'):
+    def test_seal_requires_complete_saved_files_and_creation_identity(self):
+        for mutation in (*ARTIFACTS, 'receipt'):
             with self.subTest(mutation=mutation):
                 receipt, config = self.restore()
                 manifest = config.parent / self.manifest_name
@@ -231,8 +231,6 @@ class FreshRestoreAttackTest(unittest.TestCase):
                 self.expect_accepted('verify', receipt, config, 'miss')
                 if mutation in ARTIFACTS:
                     (config.parent / 'snapshots/default_boot' / mutation).unlink()
-                elif mutation == 'config':
-                    self.write_config(config, {**CONFIG, 'hw.ramSize': '9999'})
                 else:
                     saved = json.loads(receipt.read_text())
                     saved['key'] = 'stale'

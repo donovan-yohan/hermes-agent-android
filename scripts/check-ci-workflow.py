@@ -384,16 +384,22 @@ def main() -> int:
             or first.get('emulator-port') != '5554'
             or first.get('force-avd-creation') != 'false'):
         failures.append('snapshot creation and consumption settings must match')
-    guard = 'pre-emulator-launch-script: python3 scripts/ci_avd_cache.py verify'
-    if (guard + '-miss' not in creation or guard + '\n' not in consumption + '\n'
-            or '          script: python3 scripts/ci_avd_cache.py verify-miss' not in creation
-            or '          script: |\n            python3 scripts/ci_avd_cache.py verify\n' not in consumption
-            or "        if: steps.avd-cache.outputs.cache-hit != 'true'" not in creation):
+    miss_env = ('        env:\n'
+                '          AVD_CACHE_HIT: ${{ steps.avd-cache.outputs.cache-hit }}')
+    miss_condition = "        if: steps.avd-cache.outputs.cache-hit != 'true'"
+    if (_indented_block(creation, '        env:') != miss_env
+            or [line for line in creation.splitlines() if line.startswith('        if:')] != [miss_condition]):
+        failures.append('snapshot compatibility creation requires step-local cache miss provenance')
+    # Exact phase commands: suffixes, shell bypasses or relocated flags cannot pass.
+    if (settings(creation).get('pre-emulator-launch-script') != 'python3 scripts/ci_avd_cache.py verify-miss'
+            or settings(creation).get('script') != 'python3 scripts/ci_avd_cache.py verify-miss'
+            or settings(consumption).get('pre-emulator-launch-script') != 'python3 scripts/ci_avd_cache.py verify'
+            or '          script: |\n            python3 scripts/ci_avd_cache.py verify\n' not in consumption):
         failures.append('snapshot compatibility verification must guard both boots and workloads')
     sealing = _indented_block(instrumented_job, '      - name: Seal the saved snapshot creator manifest')
     expected_sealing = ('      - name: Seal the saved snapshot creator manifest\n'
-                        "        if: steps.avd-cache.outputs.cache-hit != 'true'\n"
-                        '        run: python3 scripts/ci_avd_cache.py seal')
+                        + miss_condition + '\n' + miss_env + '\n'
+                        + '        run: python3 scripts/ci_avd_cache.py seal')
     if (sealing != expected_sealing or not creation or not consumption
             or not (instrumented_job.index(creation) < instrumented_job.index(sealing or instrumented_job)
                     < instrumented_job.index(consumption))):

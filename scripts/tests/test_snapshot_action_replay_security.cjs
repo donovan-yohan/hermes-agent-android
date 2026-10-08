@@ -14,7 +14,7 @@ const output = path.join(root, 'receipts');
 const sentinel = 'synthetic-fixture-secret-not-a-credential-7329';
 const result = cp.spawnSync(process.execPath, [replay, '--modules', process.argv[i + 1], '--output', output], {
   // Exercise an inherited secret without importing any real credentials.
-  env: {PATH: process.env.PATH, TMPDIR: root, FAKE_SECRET: sentinel}, encoding: 'utf8', timeout: 300000
+  env: {PATH: process.env.PATH, TMPDIR: root, FAKE_SECRET: sentinel, AVD_CACHE_HIT: 'true'}, encoding: 'utf8', timeout: 300000
 });
 assert(!(result.stdout || '').includes(sentinel), 'synthetic secret reached stdout');
 assert(!(result.stderr || '').includes(sentinel), 'synthetic secret reached stderr');
@@ -38,6 +38,15 @@ for (const name of scenarios) {
   assert(!Object.hasOwn(receipt, 'env'), 'execution env must not be a receipt field');
   assert(!Object.hasOwn(receipt, 'dir'), 'execution directory must not be a receipt field');
   assert(Array.isArray(receipt.events));
+  for (const helper of receipt.helpers) {
+    if (helper.command === 'verify-miss' || helper.command === 'seal') {
+      assert(helper.stdout.includes('stage=cache-miss-provenance status=passed'),
+             'creator hooks and sealing must resolve actual workflow miss provenance');
+    } else {
+      assert(!helper.stdout.includes('stage=cache-miss-provenance'),
+             'record and restored-hit verification must not use a miss bypass');
+    }
+  }
   for (const event of receipt.events) {
     assert(Object.keys(event).every(key => key === 'command' || key === 'args'), 'command contract changed');
     assert.equal(typeof event.command, 'string');

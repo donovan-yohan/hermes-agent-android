@@ -7,12 +7,12 @@ workload because a421e438's pre-launch error handler does not prevent boot.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 import hashlib
 import json
 import os
 from pathlib import Path
 import platform
-import shlex
 import stat
 import subprocess
 import sys
@@ -167,7 +167,7 @@ def creator_quiescence() -> None:
             uid, pid, command = line.strip().split(None, 2)
             if int(uid) != os.getuid():
                 continue
-            args = shlex.split(command)
+            args = command.split()
             if not args or not Path(args[0]).is_relative_to(sdk_emulator):
                 continue
             if ('@test' in args or any(args[i:i + 2] in (['-avd', 'test'], ['-port', '5554'])
@@ -176,33 +176,6 @@ def creator_quiescence() -> None:
         if not live:
             return
         time.sleep(min(0.25, remaining))
-
-
-class CreationConfigDelta(ValueError):
-    """A creator-only display-label transition, or fixed-category refusal."""
-
-    def __init__(self, initial: dict, current: dict):
-        changed = {name for name in initial.keys() | current.keys()
-                   if name not in initial or name not in current or initial[name] != current[name]}
-        # SDK AvdManager's display label is not AvdId, a path or a profile.
-        # No prefix/category exemption: disk geometry, image/resource/user
-        # constraints and every unknown field remain immutable during creation.
-        self.bootstrap_metadata_only = changed <= {'avd.ini.displayname'}
-        categories = set()
-        for name in changed:
-            # Lexical diagnostics only, never an acceptance rule. Unknown
-            # fields stay 'other' and are not in the exact-key allowlist.
-            if name.startswith('hw.'):
-                categories.add('hardware')
-            elif name.startswith(('snapshot.', 'fastboot.')):
-                categories.add('snapshot')
-            elif name.endswith('.path') or name.startswith('image.sysdir.'):
-                categories.add('path')
-            else:
-                categories.add('other')
-        self.categories = tuple(category for category in ('hardware', 'snapshot', 'path', 'other')
-                                if category in categories)
-        super().__init__('creation AVD configuration changed')
 
 
 def config_fingerprint(current: dict) -> str:
@@ -290,24 +263,13 @@ def verify(receipt: Path, key: str, config: Path, mode: str = 'required',
     stage('config-read')
     current = configuration(config)
     manifest = config.parent / MANIFEST
-    if mode == 'miss' and not manifest.exists():
-        stage('creation-config')
-        if 'config' in saved and saved['config'] != current:
-            if not isinstance(saved['config'], dict):
-                raise ValueError('creation AVD configuration changed')
-            delta = CreationConfigDelta(saved['config'], current)
-            if not delta.bootstrap_metadata_only:
-                raise delta
-        # This is a complete creator sample, not a consumer baseline. seal
-        # requires exact equality again after exit; restored manifests never
-        # enter this branch and consumers bind every field, including the label.
-        saved['config'] = current
-        stage('receipt-write')
-        receipt.write_text(json.dumps(saved, sort_keys=True) + '\n')
-        return
     stage('verification-mode')
     if mode not in ('miss', 'required'):
         raise ValueError('unknown verification mode')
+    if mode == 'miss' and not manifest.exists():
+        # A fresh creator owns its final config. The receipt binds only the
+        # installed identity; the quiescent seal supplies the consumer baseline.
+        return
     stage('manifest-read')
     creator = json.loads(manifest.read_text())
     stage('manifest-identity')
@@ -322,19 +284,20 @@ def verify(receipt: Path, key: str, config: Path, mode: str = 'required',
         raise ValueError('creator snapshot identity or configuration differs')
 
 
-def seal(receipt: Path, key: str, config: Path, *, stage=lambda _: None) -> None:
-    stage('avd-layout')
-    avd_layout(config)
+def seal(receipt: Path, key: str | Callable[[], str], config: Path, *, stage=lambda _: None) -> None:
     stage('creator-quiescence')
     creator_quiescence()
     # Action return/kill-command success alone is not exit or completed save.
+    stage('avd-layout')
+    avd_layout(config)
     stage('receipt-read')
     saved = json.loads(receipt.read_text())
     stage('config-read')
     current = configuration(config)
+    key = key() if callable(key) else key
     stage('creation-identity')
-    if saved['key'] != key or saved.get('config') != current:
-        raise ValueError('snapshot creation identity or configuration changed')
+    if saved['key'] != key:
+        raise ValueError('snapshot creation identity changed')
     stage('snapshot-files')
     creator = {'schema': 1, 'key': key, 'config': current,
                'config_fingerprint': config_fingerprint(current),
@@ -358,32 +321,40 @@ def main(argv: list[str] | None = None) -> int:
         current_stage = value
         print(f'AVD guard stage={current_stage} status=started', flush=True)
 
+    def installed_key() -> str:
+        stage('installed-identity')
+        return identity(Path(os.environ['ANDROID_HOME']), WORKFLOW, host_identity())
+
     try:
         stage('command')
         command, = sys.argv[1:] if argv is None else argv
-        stage('installed-identity')
-        key = identity(Path(os.environ['ANDROID_HOME']), WORKFLOW, host_identity())
-        if command == 'record':
-            stage('receipt-write')
-            record(RECEIPT, key)
-            stage('key-output')
-            with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-                output.write(f'key={key}\n')
-        elif command in ('verify', 'verify-miss', 'seal'):
+        if command in ('verify-miss', 'seal'):
+            stage('cache-miss-provenance')
+            # actions/cache emits empty on a miss; absence is not provenance.
+            if os.environ.get('AVD_CACHE_HIT') not in ('', 'false'):
+                raise ValueError('explicit cache miss required')
+        if command == 'seal':
+            # Resolve fresh installed bytes only after creator quiescence.
             stage('avd-input')
             config = Path(os.environ['ANDROID_AVD_HOME']) / 'test.avd/config.ini'
-            if command == 'seal':
-                seal(RECEIPT, key, config, stage=stage)
-            else:
-                verify(RECEIPT, key, config, mode='miss' if command == 'verify-miss' else 'required', stage=stage)
+            seal(RECEIPT, installed_key, config, stage=stage)
         else:
-            stage('command-dispatch')
-            raise ValueError('unknown command')
+            key = installed_key()
+            if command == 'record':
+                stage('receipt-write')
+                record(RECEIPT, key)
+                stage('key-output')
+                with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                    output.write(f'key={key}\n')
+            elif command in ('verify', 'verify-miss'):
+                stage('avd-input')
+                config = Path(os.environ['ANDROID_AVD_HOME']) / 'test.avd/config.ini'
+                verify(RECEIPT, key, config, mode='miss' if command == 'verify-miss' else 'required', stage=stage)
+            else:
+                stage('command-dispatch')
+                raise ValueError('unknown command')
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f'AVD guard stage={current_stage} status=failed', file=sys.stderr, flush=True)
-        if current_stage == 'creation-config' and isinstance(error, CreationConfigDelta):
-            for category in error.categories:
-                print(f'AVD config delta category={category}', file=sys.stderr, flush=True)
         if current_stage == 'avd-layout' and isinstance(error, AvdLayoutError):
             print(f'AVD guard stage=avd-layout reason={error.reason}', file=sys.stderr, flush=True)
         print('::error::AVD cache compatibility verification failed; refusing the workload.', file=sys.stderr)
