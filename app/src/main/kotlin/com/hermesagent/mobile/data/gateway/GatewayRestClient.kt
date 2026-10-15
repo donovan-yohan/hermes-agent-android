@@ -762,6 +762,9 @@ class GatewayRestClient(
     }
 
     // -----------------------------------------------------------------------
+    // Historical REST/status/update citations below retain their inspected pin:
+    // 3ca096de5f8183cb2e0ec23673f294d5978656a3. Current backend contracts are
+    // recorded separately in docs/upstream-compatibility-379cf122.md.
     // System panel: backend status, the host's own updater, and the messaging
     // gateway's restart. Every route below is public HTTP on the Gateway and
     // route-agnostic; nothing here is Remote-specific.
@@ -874,7 +877,9 @@ class GatewayRestClient(
      * Restart the **messaging gateway** through `POST /api/gateway/restart`
      * (`web_server.py:4988-5002` @ the pin).
      *
-     * Not the `hermes serve` process this app is connected to: the host runs
+     * Historical messaging-only behavior at the retained source pin; the current composed
+     * backend may also affect the chat socket (see the compatibility document).
+     * The older host runs
      * `hermes [--profile P] gateway restart` (`:4842-4843,4939`) and the HTTP
      * server survives it. No HTTP endpoint restarts `hermes serve` itself;
      * Desktop's "Restart backend" is Electron IPC.
@@ -1017,8 +1022,9 @@ private fun parseSessionPage(bytes: ByteArray): GatewaySessionPage? {
 }
 
 /**
- * The route clamps its own answer to 100 rows (`sessions.py:229,316` @ the
- * pin), so a longer list is a backend this client does not recognise rather
+ * The route clamps its own answer to 100 rows (`sessions.py:229,316` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so a longer list is a backend
+ * this client does not recognise rather
  * than a bigger page. Refused whole, like every other envelope that does not
  * match the contract — truncating would render a page nobody asked for.
  */
