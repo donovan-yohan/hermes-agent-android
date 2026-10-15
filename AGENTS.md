@@ -63,6 +63,13 @@ Cite `path:line` **with** the inspected SHA or the citation means nothing.
 Existing per-surface pins and rendered reports retain their original provenance;
 the new target does not retroactively certify them against the newer source.
 
+**Backend compatibility target.** Existing Gateway consumers are being adapted to
+`379cf1220fe289b5ecfe8bcf61cd4d5126e140cd`; see
+`docs/upstream-compatibility-379cf122.md` for executed evidence and unresolved
+upstream boundaries. This backend target does not replace the Desktop UI/theme
+target above or restamp historical visual evidence. Full compatibility and
+release remain blocked on the public named-profile native-response contract.
+
 **Theme parity is an invariant.** Every Desktop built-in at the pinned SHA has
 an Android preset with the same name, label, description and registry order.
 Adding a theme must be a data edit to `BuiltinThemes.ALL` — if a chat component

@@ -684,7 +684,7 @@ class GatewayRestClient(
         }
     }
 
-    private data class MutationAddress(val transport: GatewayHttp, val profile: String?, val sessionId: String)
+    private data class MutationAddress(val scope: Any, val profile: String?, val sessionId: String)
     private data class MutationAttempt(val operation: String, val payload: JsonObject, val requestId: String,
         val revision: Long, val generation: Long?)
     private data class MutationSnapshot(val revision: Long, val generation: Long?)
@@ -700,7 +700,7 @@ class GatewayRestClient(
         // Bind once before either suspension. A replacement endpoint can never
         // receive a write fenced by the previous endpoint's snapshot.
         val transport = http() ?: return GatewayRestResult.Failed(0, RECONNECT_MESSAGE)
-        val address = MutationAddress(transport, profile, id)
+        val address = MutationAddress(transport.mutationScope ?: transport, profile, id)
         return mutationLocks.withLock(address) {
             val intent = MutationIntent(address, operation, payload)
             val existing = synchronized(mutationStateLock) { mutationAttempts[intent] }

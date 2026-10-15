@@ -1,5 +1,8 @@
 package com.hermesagent.mobile.data.gateway
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -9,7 +12,10 @@ import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
 
-/** Native secret/sudo builders lack owner/epoch: session_sudo_prompt.py:80-93 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
+/** Client channel/provenance tests only. Synthetic peers do not prove server native settlement.
+ * Public dashboard root response authorization is blocked for named-profile-only IDs at this pin.
+ * Native builders: session_sudo_prompt.py:80-93; resolver: session_controls.py:139-146,581-590
+ * @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProfileGatewayRpcTest {
     @Test
@@ -53,6 +59,49 @@ class ProfileGatewayRpcTest {
         client.close()
         assertEquals(1, primary.closeCount)
         assertEquals(1, beta.closeCount)
+    }
+
+    @Test
+    fun `late authenticated child dial closes without attaching after graph teardown`() = runTest {
+        val primary = Peer("alpha", UnconfinedTestDispatcher(testScheduler))
+        val child = Peer("beta", UnconfinedTestDispatcher(testScheduler))
+        val dialing = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val client = ProfileGatewayRpcClient(primary.rpc, backgroundScope) {
+            dialing.complete(Unit)
+            withContext(NonCancellable) { release.await() }
+            child.rpc
+        }
+        val result = CompletableDeferred<Throwable?>()
+        val request = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            result.complete(runCatching { client.request("session.resume", params("beta")) }.exceptionOrNull())
+        }
+        dialing.await()
+        client.close()
+        release.complete(Unit)
+        runCurrent()
+        request.join()
+        assertNotNull(result.await())
+        assertEquals(1, primary.closeCount)
+        assertEquals(1, child.closeCount)
+        assertTrue("a stale dial must never attach or advertise", child.frames.isEmpty())
+        assertTrue(runCatching { client.request("session.resume", params("alpha")) }.exceptionOrNull() is GatewayRpcException)
+        assertEquals(1, primary.closeCount)
+    }
+
+    @Test
+    fun `child authentication refusal does not attach on primary or retry another grant`() = runTest {
+        val primary = Peer("alpha", UnconfinedTestDispatcher(testScheduler))
+        var dials = 0
+        val client = ProfileGatewayRpcClient(primary.rpc, backgroundScope) {
+            dials++
+            throw GatewayRpcException("Synthetic authentication refusal")
+        }
+        val failure = runCatching { client.request("session.resume", params("beta")) }.exceptionOrNull()
+        assertEquals("Synthetic authentication refusal", failure?.message)
+        assertEquals(1, dials)
+        assertTrue(primary.frames.none { it["method"] == JsonPrimitive("session.resume") })
+        client.close()
     }
 
     private fun params(profile: String) = buildJsonObject { put("profile", profile); put("session_id", "same") }

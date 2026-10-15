@@ -102,6 +102,8 @@ internal inline fun <T> GatewayHttpResult.Rejected.consumeEnvelope(block: (ByteA
  * remote native bearer); callers never see a token, URL origin, or ticket.
  */
 interface GatewayHttp {
+    /** Immutable non-secret connection identity, stable across reconnects to the same endpoint. */
+    val mutationScope: String? get() = null
     suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult
 }
 
@@ -118,6 +120,7 @@ internal class OkHttpGatewayHttp(
     private val resolveEndpoint: () -> String?,
     private val resolveAuthorization: suspend () -> Pair<String, String>?,
     private val ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
+    override val mutationScope: String? = null,
 ) : EndpointDispatchingGatewayHttp {
     override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult = executeRequest(request, null)
 

@@ -18,6 +18,16 @@ longer exist, so before #279 a session could sit parked on a vault prompt with
 nothing on screen and nothing in the shade until the backend's own 120 s or
 180 s wait gave up for it.
 
+## Current canonical-input boundary
+
+The every-prompt-is-srq description above records the historical `437116f9`
+port. At backend target `379cf1220fe289b5ecfe8bcf61cd4d5126e140cd`, ordinary
+canonical approval/clarification also arrive as events/snapshot prompts and
+use profile-routed reply RPCs; native and legacy registries remain distinct.
+See [the input addendum](canonical-inputs.md) and
+[the public named-profile native-response blocker](../upstream-compatibility-379cf122.md).
+Original vault citations and pending visual evidence below retain their pin.
+
 ## Pin
 
 | Source | Pin | Read via |

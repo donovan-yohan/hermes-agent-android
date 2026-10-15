@@ -91,7 +91,35 @@ class GatewayMutationContractTest {
         assertEquals(3, http.requests.count { it.method == "GET" })
     }
 
-    private class MutationHttp : GatewayHttp {
+    @Test
+    fun `explicit ambiguous retry survives reconnect only within the same owner endpoint scope`() = runTest {
+        val first = MutationHttp("public-endpoint-a").apply { refuseWrite = 200 }
+        var active: GatewayHttp = first
+        val client = GatewayRestClient { active }
+        assertTrue(client.updateSession("public-session", pinned = true, profile = "work") is GatewayRestResult.Failed)
+        val original = first.bodies.last()
+        val replacement = MutationHttp("public-endpoint-a")
+        active = replacement
+        assertTrue(client.updateSession("public-session", pinned = true, profile = "work") is GatewayRestResult.Success)
+        assertEquals("same endpoint retry must not remint the operation", listOf("PATCH"), replacement.requests.map { it.method })
+        assertEquals(original, replacement.bodies.last())
+
+        replacement.refuseWrite = 200
+        assertTrue(client.updateSession("public-session", title = "Public title", profile = "work") is GatewayRestResult.Failed)
+        val ambiguous = replacement.bodies.last()
+        val otherProfile = MutationHttp("public-endpoint-a")
+        active = otherProfile
+        assertTrue(client.updateSession("public-session", title = "Public title", profile = "other") is GatewayRestResult.Success)
+        assertEquals(listOf("GET", "PATCH"), otherProfile.requests.map { it.method })
+        assertNotEquals(ambiguous["request_id"], otherProfile.bodies.last()["request_id"])
+        val otherEndpoint = MutationHttp("public-endpoint-b")
+        active = otherEndpoint
+        assertTrue(client.updateSession("public-session", title = "Public title", profile = "work") is GatewayRestResult.Success)
+        assertEquals(listOf("GET", "PATCH"), otherEndpoint.requests.map { it.method })
+        assertNotEquals(ambiguous["request_id"], otherEndpoint.bodies.last()["request_id"])
+    }
+
+    private class MutationHttp(override val mutationScope: String? = null) : GatewayHttp {
         val requests = mutableListOf<GatewayHttpRequest>()
         val bodies = mutableListOf<JsonObject>()
         var refuseSnapshot: Int? = null
