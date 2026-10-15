@@ -557,7 +557,9 @@ fun PrimaryButton(
             .heightIn(min = HermesTheme.spacing.touchTarget)
             .widthIn(min = HermesTheme.spacing.touchTarget)
             .background(
-                if (enabled) container else container.copy(alpha = 0.3f),
+                // Loading is active feedback: retain the opaque fill paired with
+                // its progress ink even while interaction remains disabled.
+                if (enabled || loading) container else container.copy(alpha = 0.3f),
                 RoundedCornerShape(8.dp),
             )
             .clickable(enabled = enabled && !loading, onClick = onClick)
