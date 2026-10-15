@@ -227,7 +227,7 @@ private fun ClarifyCard(
     }
 }
 
-/** Target Desktop pending.tsx:152-207 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
+/** Target Desktop apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
 @Composable
 private fun ClarifyBatchCard(
     pending: ClarifyPending,

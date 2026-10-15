@@ -693,7 +693,7 @@ class GatewayRestClient(
     private data class MutationIntent(val address: MutationAddress, val operation: String, val payload: JsonObject)
     private val mutationAttempts = mutableMapOf<MutationIntent, MutationAttempt>()
 
-    /** Target sessions.py:583-597,843-874,923-931 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
+    /** Target hermes_cli/web_routers/sessions.py:583-597,843-874,923-931 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
     private suspend fun <T> mutateSession(
         id: String, profile: String?, operation: String, payload: JsonObject, parse: (ByteArray) -> T?,
     ): GatewayRestResult<T> {

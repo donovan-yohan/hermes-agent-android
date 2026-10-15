@@ -13,7 +13,7 @@ and visual ceilings. They are not retroactively certified against U.
 
 | Changed control | U source / copy / tests | Android |
 |---|---|---|
-| Staged one-question and multiselect batch | `apps/desktop/src/components/assistant-ui/clarify/core/pending.tsx:152-207`, `core/confirm-bar.tsx:19`; `apps/desktop/src/i18n/en_clarify.ts:3-22`; `clarify/clarify-tool.test.tsx:751-833,1261-1379` | Pick per question and/or type answer, then Skip or Confirm and continue. Canonical single question uses same staged card. Legacy immediate single-question fixture retains historical behavior. |
+| Staged one-question and multiselect batch | `apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207`, `core/confirm-bar.tsx:19`; `apps/desktop/src/i18n/en_clarify.ts:3-22`; `clarify/clarify-tool.test.tsx:751-833,1261-1379` | Pick per question and/or type answer, then Skip or Confirm and continue. Canonical single question uses same staged card. Legacy immediate single-question fixture retains historical behavior. |
 | Model confirmation | `apps/desktop/src/lib/guarded-model-switch.ts:36-99`; `apps/desktop/src/i18n/en.ts:5040-5047` | Keep current model then Switch anyway; back/dismiss declines; captured session/model/endpoint guards explicit consent. No automatic expensive-model approval. |
 | Lost/queued admissions | `apps/desktop/src/app/chat/composer/queue-panel.tsx:130-222`, `queue-slot.tsx:47-81`; `apps/desktop/src/i18n/en.ts:3520-3541` | Lost row Discard uses original backend generation; queued Delete uses admission ID. No resubmission. |
 
