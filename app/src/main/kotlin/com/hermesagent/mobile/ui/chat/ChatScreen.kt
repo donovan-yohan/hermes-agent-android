@@ -1013,8 +1013,11 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
         PendingInputSurface(
             pending = state.composer.runtime.pendingInput,
             background = state.backgroundPendingInput,
-            isSubmitting = false,
-            onRespond = actions.onRespondToPendingInput,
+            isSubmitting = state.composer.runtime.pendingInputSubmitting,
+            errorText = state.composer.runtime.pendingInputError,
+            onRespond = { action ->
+                state.composer.runtime.pendingInput?.key?.let { actions.onRespondToPendingInput(it, action) }
+            },
             onOpenSession = actions.onSelectSession,
             modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
         )
@@ -1022,9 +1025,9 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
         if (securePrompt != null) {
             SecurePendingDialog(
                 pending = securePrompt,
-                isSubmitting = false,
-                errorText = null,
-                onRespond = actions.onRespondToPendingInput,
+                isSubmitting = state.composer.runtime.pendingInputSubmitting,
+                errorText = state.composer.runtime.pendingInputError,
+                onRespond = { action -> actions.onRespondToPendingInput(securePrompt.key, action) },
                 onDismiss = { actions.onDismissSecurePending() },
             )
         }

@@ -3433,6 +3433,15 @@ internal class LiveGatewaySessionRepository(
     override suspend fun respondToPendingInput(
         key: PendingInputKey,
         action: PendingInputAction,
+    ): PendingInputResponse = try {
+        respondToPendingInputOwned(key, action)
+    } finally {
+        action.wipeSensitive()
+    }
+
+    private suspend fun respondToPendingInputOwned(
+        key: PendingInputKey,
+        action: PendingInputAction,
     ): PendingInputResponse {
         // A miss is two different facts wearing the same face. The key carries
         // its own generation, so a key from a dead connection can never be in
@@ -3547,7 +3556,10 @@ internal class LiveGatewaySessionRepository(
 
                 PendingInputResponse.Resolved -> {
                     removePendingInput(key)
-                    setStatus(request.durableSessionId, SessionStatus.Idle)
+                    val status = synchronized(stateLock) {
+                        if (request.runtimeSessionId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle
+                    }
+                    setStatus(request.durableSessionId, status)
                     PendingInputResponse.Resolved
                 }
 
@@ -4105,7 +4117,7 @@ internal class LiveGatewaySessionRepository(
         )
         return when (result) {
             is GatewayRestResult.Success -> {
-                val resolvedTitle = result.value.title
+                val resolvedTitle = result.value.title ?: trimmed
                 val existing = cache.session(durableId)
                 if (existing != null) {
                     cache.upsertSession(existing.copy(title = resolvedTitle))
@@ -4191,7 +4203,7 @@ internal class LiveGatewaySessionRepository(
             is GatewayRestResult.Success -> {
                 synchronized(stateLock) {
                     ensureCurrent(connection)
-                    cache.removeSession(durableId)
+                    (result.value.deletedIds + durableId).distinct().forEach(cache::removeSession)
                 }
             }
             is GatewayRestResult.Failed -> {

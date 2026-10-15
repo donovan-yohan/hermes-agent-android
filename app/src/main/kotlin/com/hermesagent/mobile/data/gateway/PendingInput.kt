@@ -160,7 +160,7 @@ data class VaultUnlockPending(
 sealed interface PendingInputAction {
     data class ClarifyAnswer(
         /** Null question id targets single-question mode; batch answers are keyed by qid. */
-        val answers: Map<String, String>,
+        val answers: Map<String, String?>,
         /** True sends the batch-wide cancel (empty answer without a question id). */
         val cancelBatch: Boolean = false,
     ) : PendingInputAction
@@ -235,4 +235,16 @@ interface PendingInputRegistry {
     val requests: StateFlow<Map<PendingInputKey, PendingInputRequest>>
 
     suspend fun respond(key: PendingInputKey, action: PendingInputAction): PendingInputResponse
+}
+
+/** Every owner, including a rejected UI action, wipes mutable secret material. */
+internal fun PendingInputAction.wipeSensitive() {
+    when (this) {
+        is PendingInputAction.SudoPassword -> password.fill('\u0000')
+        is PendingInputAction.SecretValue -> value.fill('\u0000')
+        is PendingInputAction.VaultCode -> code.fill('\u0000')
+        is PendingInputAction.VaultUnlockPassword -> password.fill('\u0000')
+        is PendingInputAction.VaultLogin -> { identifier.fill('\u0000'); password.fill('\u0000') }
+        else -> Unit
+    }
 }

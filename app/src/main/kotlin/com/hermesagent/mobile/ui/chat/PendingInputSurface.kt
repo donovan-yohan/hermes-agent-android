@@ -23,12 +23,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -50,6 +52,8 @@ import com.hermesagent.mobile.data.gateway.VaultCodePending
 import com.hermesagent.mobile.data.gateway.VaultSaveLoginPending
 import com.hermesagent.mobile.data.gateway.VaultUnlockPending
 import com.hermesagent.mobile.ui.common.TextButton
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
 /**
@@ -64,6 +68,7 @@ internal fun PendingInputSurface(
     onRespond: (PendingInputAction) -> Unit,
     onOpenSession: (String) -> Unit,
     modifier: Modifier = Modifier,
+    errorText: String? = null,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when (pending) {
@@ -79,6 +84,9 @@ internal fun PendingInputSurface(
             is VaultUnlockPending,
             -> {}
             null -> Unit
+        }
+        if (pending != null && errorText != null) {
+            Text(errorText, style = HermesTheme.type.body, color = HermesTheme.tokens.destructive)
         }
         if (background != null && pending == null) {
             BackgroundPendingBanner(background, onOpenSession)
@@ -136,6 +144,10 @@ private fun ClarifyCard(
     isSubmitting: Boolean,
     onRespond: (PendingInputAction) -> Unit,
 ) {
+    if (pending.questions.isNotEmpty()) {
+        ClarifyBatchCard(pending, isSubmitting, onRespond)
+        return
+    }
     val tokens = HermesTheme.tokens
     var answer by remember(pending.key) { mutableStateOf("") }
     val questions = pending.questions.ifEmpty {
@@ -151,6 +163,7 @@ private fun ClarifyCard(
                 TextButton(
                     label = choice,
                     onClick = {
+                        if (isSubmitting) return@TextButton
                         onRespond(
                             PendingInputAction.ClarifyAnswer(
                                 answers = if (question.questionId.isBlank()) {
@@ -165,7 +178,10 @@ private fun ClarifyCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = HermesTheme.spacing.touchTarget)
-                        .semantics { contentDescription = "Answer ${question.question}: $choice" },
+                        .semantics {
+                            contentDescription = "Answer ${question.question}: $choice"
+                            if (isSubmitting) disabled()
+                        },
                 )
             }
         }
@@ -211,6 +227,91 @@ private fun ClarifyCard(
     }
 }
 
+/** Target Desktop pending.tsx:152-207 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
+@Composable
+private fun ClarifyBatchCard(
+    pending: ClarifyPending,
+    isSubmitting: Boolean,
+    onRespond: (PendingInputAction) -> Unit,
+) {
+    val tokens = HermesTheme.tokens
+    var picks by remember(pending.key) { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var drafts by remember(pending.key) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    fun staged(question: ClarifyQuestion): String? {
+        val choices = picks[question.questionId].orEmpty()
+        val draft = drafts[question.questionId].orEmpty().trim()
+        return if (question.multiSelect) {
+            (choices + listOfNotNull(draft.takeIf(String::isNotEmpty))).takeIf { it.isNotEmpty() }
+                ?.let { JsonArray(it.map(::JsonPrimitive)).toString() }
+        } else choices.firstOrNull() ?: draft.takeIf(String::isNotEmpty)
+    }
+    PendingCard("Hermes has a question", "${pending.questions.size} question" +
+        if (pending.questions.size == 1) "" else "s", "Composer clarify card") {
+        Column(Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * 0.25f).dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        pending.questions.forEach { question ->
+            Text(question.question, style = HermesTheme.type.body, color = tokens.textPrimary)
+            Text(if (question.multiSelect) "Select all that apply" else "Pick one",
+                style = HermesTheme.type.body, color = tokens.textSecondary)
+            question.choices.forEach { choice ->
+                val chosen = choice in picks[question.questionId].orEmpty()
+                TextButton(
+                    label = choice,
+                    onClick = {
+                        if (isSubmitting) return@TextButton
+                        val current = picks[question.questionId].orEmpty()
+                        picks = picks + (question.questionId to if (question.multiSelect) {
+                            if (chosen) current - choice else current + choice
+                        } else listOf(choice))
+                        if (!question.multiSelect) drafts = drafts - question.questionId
+                    },
+                    enabled = !isSubmitting,
+                    color = if (chosen) tokens.accentForeground else tokens.textPrimary,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = HermesTheme.spacing.touchTarget)
+                        .background(if (chosen) tokens.chatSurface else tokens.widgetSurface, RoundedCornerShape(8.dp))
+                        .semantics {
+                            contentDescription = "Answer ${question.question}: $choice"
+                            selected = chosen
+                            if (isSubmitting) disabled()
+                        },
+                )
+            }
+            Text("Other (type your answer)", style = HermesTheme.type.body, color = tokens.textSecondary)
+            val draft = drafts[question.questionId].orEmpty()
+            BasicTextField(
+                value = draft,
+                onValueChange = {
+                    drafts = drafts + (question.questionId to it)
+                    if (!question.multiSelect) picks = picks - question.questionId
+                },
+                enabled = !isSubmitting,
+                textStyle = HermesTheme.type.body.copy(color = tokens.textPrimary),
+                modifier = Modifier.fillMaxWidth().heightIn(min = HermesTheme.spacing.touchTarget)
+                    .background(tokens.chatSurface, RoundedCornerShape(8.dp))
+                    .semantics { contentDescription = "Your answer: ${question.question}" }
+                    .padding(8.dp),
+                decorationBox = { inner ->
+                    if (draft.isEmpty()) Text("Type your answer…", style = HermesTheme.type.body, color = tokens.textTertiary)
+                    inner()
+                },
+            )
+        }
+        }
+        val answers = pending.questions.associateTo(linkedMapOf()) { it.questionId to staged(it) }
+        val canConfirm = !isSubmitting && answers.values.any { it != null }
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton("Skip", {
+                if (!isSubmitting) onRespond(PendingInputAction.ClarifyAnswer(emptyMap(), cancelBatch = true))
+            }, color = tokens.textSecondary, enabled = !isSubmitting, modifier = Modifier.heightIn(min = HermesTheme.spacing.touchTarget)
+                .semantics { if (isSubmitting) disabled() })
+            TextButton("Confirm and continue", {
+                if (canConfirm) onRespond(PendingInputAction.ClarifyAnswer(answers))
+            }, color = tokens.accentForeground, enabled = canConfirm, modifier = Modifier.heightIn(min = HermesTheme.spacing.touchTarget)
+                .semantics { if (!canConfirm) disabled() })
+        }
+    }
+}
+
 @Composable
 private fun ApprovalCard(
     pending: ApprovalPending,
@@ -244,13 +345,14 @@ private fun ApprovalCard(
                 val destructive = isDenial(choice)
                 TextButton(
                     label = label,
-                    onClick = { onRespond(PendingInputAction.ApprovalChoice(choice)) },
+                    onClick = { if (!isSubmitting) onRespond(PendingInputAction.ApprovalChoice(choice)) },
                     color = if (destructive) HermesTheme.tokens.destructive else HermesTheme.tokens.accentForeground,
                     modifier = Modifier
                         .heightIn(min = HermesTheme.spacing.touchTarget)
                         .semantics {
                             contentDescription = "$label for ${pending.command.take(80)}"
                             role = Role.Button
+                            if (isSubmitting) disabled()
                         },
                 )
             }
