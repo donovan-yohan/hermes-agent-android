@@ -29,11 +29,11 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Source-derived public questions: apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207,313-344,
- * apps/desktop/src/components/assistant-ui/clarify/core/question-block.tsx:35-112,
- * apps/desktop/src/components/assistant-ui/clarify/core/confirm-bar.tsx:29-40 and
- * apps/desktop/src/lib/guarded-model-switch.ts:57-79 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
- * Native Canvas proves production paint; no device/backend/provider execution. */
+/** Source-derived public questions; native Canvas proves production paint, not device/backend/provider execution.
+ * apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207,313-344 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
+ * apps/desktop/src/components/assistant-ui/clarify/core/question-block.tsx:35-112 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
+ * apps/desktop/src/components/assistant-ui/clarify/core/confirm-bar.tsx:29-40 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
+ * apps/desktop/src/lib/guarded-model-switch.ts:57-79 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w412dp-h892dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

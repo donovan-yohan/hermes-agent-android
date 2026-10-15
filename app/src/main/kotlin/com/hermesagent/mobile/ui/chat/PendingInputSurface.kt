@@ -239,9 +239,10 @@ private fun ClarifyCard(
     }
 }
 
-/** Canonical staged card: apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207,313-344;
- * core/question-block.tsx:35-112 and core/use-clarify-keys-handlers.ts:17-61
- * @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. Legacy immediate cards keep their historical pin. */
+/** Canonical staged card; legacy immediate cards keep their historical pin.
+ * apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207,313-344 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
+ * apps/desktop/src/components/assistant-ui/clarify/core/question-block.tsx:35-112 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
+ * apps/desktop/src/components/assistant-ui/clarify/core/use-clarify-keys-handlers.ts:17-61 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
 @Composable
 private fun ClarifyBatchCard(
     pending: ClarifyPending,
