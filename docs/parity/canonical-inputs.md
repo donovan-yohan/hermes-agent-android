@@ -16,6 +16,7 @@ and visual ceilings. They are not retroactively certified against U.
 | Staged one-question and multiselect batch | `apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207`, `core/confirm-bar.tsx:19`; `apps/desktop/src/i18n/en_clarify.ts:3-22`; `clarify/clarify-tool.test.tsx:751-833,1261-1379` | Pick per question and/or type answer, then Skip or Confirm and continue. Canonical single question uses same staged card. Legacy immediate single-question fixture retains historical behavior. |
 | Model confirmation | `apps/desktop/src/lib/guarded-model-switch.ts:36-99`; `apps/desktop/src/i18n/en.ts:5040-5047` | Keep current model then Switch anyway; back/dismiss declines; captured session/model/endpoint guards explicit consent. No automatic expensive-model approval. |
 | Lost/queued admissions | `apps/desktop/src/app/chat/composer/queue-panel.tsx:130-222`, `queue-slot.tsx:47-81`; `apps/desktop/src/i18n/en.ts:3520-3541` | Lost row Discard uses original backend generation; queued Delete uses admission ID. No resubmission. |
+| Reply branch continuation and cut | `apps/desktop/src/app/session/hooks/use-session-actions/index.ts:2689-2697`; `apps/desktop/src/app/session/hooks/use-session-actions/branch-boundary.test.ts:8-27`; `apps/desktop/src/api/canonical-protocol.ts:79-88`; `gateway/session_controls.py:530-539` | Resume actual child snapshot before adoption/first send. Carry selected authoritative saved row independently of visible count or cached page. Existing labels, action order, glyphs and error copy unchanged by this repair; no new render claimed. |
 
 New staged-card copy is verbatim: Pick one; Select all that apply; Other (type
 your answer); Type your answer…; Skip; Confirm and continue. Model title/fallback,
@@ -49,4 +50,5 @@ No new Desktop-versus-Android renders are claimed. Review ceiling is **Concern**
 interaction checks do not close visual parity or physical acceptance. Capture
 normal/submitting/retry/settled clarify, multi-question selection, model keep/
 switch/stale, unknown discard and queued cancel in light/dark on the frozen
-candidate. Secure dialogs retain FLAG_SECURE; no screenshot workaround is added.
+candidate; include branch latest/paged reply → copied child history → first
+send/control. Secure dialogs retain FLAG_SECURE; no screenshot workaround is added.

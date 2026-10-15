@@ -255,7 +255,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             if (operation == "branch" && (value.text("branched_session_id").isNullOrBlank() || value.number("copied_messages")?.let { it >= 0 } != true)) uncertain()
             if (value.text("status") == "confirmation_required" && value.text("confirm").isNullOrBlank()) uncertain()
             synchronized(stateLock) {
-                mutations.remove(key)
+                if (operation != "branch") mutations.remove(key)
                 value.number("revision")?.let { revision -> snapshots[owner]?.let { previous ->
                     snapshots[owner] = previous.copy(revision = maxOf(previous.revision, revision))
                 } }
@@ -292,7 +292,19 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     })
                 }
             }
-            if (operation == "compress" && value.text("status") != "preview") {
+            if (operation == "branch") {
+                // The mutation auto-attaches the child but returns only a receipt, not its state.
+                // Read the child's own revision/generation and display history before adoption.
+                val child = value.text("branched_session_id") ?: unusable()
+                val raw = send("session.resume", buildJsonObject {
+                    put("session_id", child); put("display_projection", true)
+                    params["profile"]?.let { put("profile", it) }
+                }).objectResult()
+                if (raw.text("session_id") != child || raw.text("stored_session_id") != child) uncertain()
+                val resumed = snapshot(raw, owner.profile, requireDisplay = true)
+                synchronized(stateLock) { mutations.remove(key) }
+                JsonObject(result + resumed)
+            } else if (operation == "compress" && value.text("status") != "preview") {
                 val resumed = snapshot(send("session.resume", buildJsonObject {
                     put("session_id", sid); put("display_projection", true); params["profile"]?.let { put("profile", it) }
                 }).objectResult(), owner.profile, requireDisplay = true)

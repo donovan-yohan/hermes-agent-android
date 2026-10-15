@@ -38,6 +38,33 @@ No backend update, new provider/model purchase or physical install is implied.
 | PluginHost/Bots/cron/groups/Kanban/Skills/MCP | `gateway/session_group_controls.py:9-41,109-130`; `tui_gateway/methods_tools.py:1292`; `hermes_cli/web_routers/skills.py:343-395`; `mcp.py:94-108,372-396`; `plugins/kanban/dashboard/plugin_api.py:359-409` | Shared canonical adapter covers PluginHost session calls. Bots validates committed rename directly, no invented pending flag or redundant mint. Existing group send operation/reconciliation and capability gates, routine actions, Kanban reads, scoped skill/MCP readback retained. Bundled-only SDK unchanged. |
 | Host status/update/log/git/theme routes | `hermes_cli/web_routers/status.py:466,826`; `actions.py:160-165,240-283,373-479`; `git.py:50-62,125-128,167-169`; `dashboard_ui.py:51-84` | Existing bounded authenticated routes retained. Composed restart may affect chat socket. Chat error-log excerpt exists; System Recent logs controls remain WIP. No live update/restart run. |
 
+## Branch adoption and saved-row boundaries
+
+A canonical branch receipt contains the child ID, not a child snapshot.
+`gateway/session_controls.py:530-539` auto-attaches the child but discards the
+resume result; Android explicitly resumes that child with display projection
+before navigation. Its own revision, generation, replay/subscription and copied
+transcript initialize the adapter/cache. Parent state never substitutes for
+child state. A failed or wrong-child snapshot retains the original branch
+request identity/fences for an explicit retry; endpoint departure or cancellation
+prevents publication/adoption.
+
+Desktop sends the cut from the selected authoritative prefix, independently of
+its visible count (`apps/desktop/src/app/session/hooks/use-session-actions/index.ts:2689-2697`;
+`apps/desktop/src/api/canonical-protocol.ts:79-88`). Android carries the unique
+saved row selected from the same authoritative visible history. A count-only
+repository caller resolves fresh visible history instead of indexing a cached
+page. Reasoning/tool projections cannot shift the cut; unsaved or ambiguous
+visible rows refuse mutation. Whole-chat branching omits the cut, and legacy
+Gateways retain their existing count contract. The upstream folded-bubble
+boundary test is `apps/desktop/src/app/session/hooks/use-session-actions/branch-boundary.test.ts:8-27`.
+
+`CanonicalBranchRegressionTest` exercises real ViewModel → live repository →
+correlated adapter dispatch with public synthetic source-derived peers, including
+launch/named owners, first child submit/control without reopen, paged/filtered
+history, hydration retry, endpoint and cancellation. These are client contract
+checks, not live server or visual acceptance.
+
 ## Public named-profile native-response blocker
 
 A public dashboard ticket carries user/provider/issuer, not a profile root
@@ -77,7 +104,7 @@ is inferred while that decision is pending.
 
 ## Regression and evidence limits
 
-Core tests: CanonicalGatewayRpcTest, CanonicalOwnerIdentityTest,
+Core tests: CanonicalBranchRegressionTest, CanonicalGatewayRpcTest, CanonicalOwnerIdentityTest,
 CanonicalExecutionFramesTest, GatewayMutationContractTest,
 ProfileGatewayRpcTest, PendingAnswerJourneyTest and GatewayVoiceOwnerTest,
 alongside existing repository/connection/plugin/attachment/update/theme gates.

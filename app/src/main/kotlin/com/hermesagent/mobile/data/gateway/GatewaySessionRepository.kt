@@ -238,6 +238,9 @@ interface GatewaySessionRepository {
     ): String = createSession(workspacePath, overrides)
     suspend fun branchSession(durableId: String, count: Int?): String =
         error("Branching is not implemented by this repository.")
+    /** Preserve the exact row selected in the same authoritative visible history used for count. */
+    suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long? = null): String =
+        branchSession(durableId, count)
     suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> =
         error("History fetch not implemented.")
     suspend fun loadModelOptions(durableId: String?): ModelCatalog =
@@ -2563,24 +2566,42 @@ internal class LiveGatewaySessionRepository(
         parseHistory(historyResult, binding.runtimeId, clock())
     }
 
-    /**
-     * Calls `session.branch` with `session_id` and optional `count`, then
-     * upserts the created runtime/session using the same parse and parseMessages
-     * path `session.create` uses.
-     */
-    override suspend fun branchSession(durableId: String, count: Int?): String = navigationMutex.withLock {
+    override suspend fun branchSession(durableId: String, count: Int?): String =
+        branchSessionInternal(durableId, count, null, fromReply = false)
+
+    override suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long?): String =
+        branchSessionInternal(durableId, count, selectedRow, fromReply = true, expectedEndpointGeneration)
+
+    private suspend fun branchSessionInternal(durableId: String, count: Int?, selectedRow: TranscriptRowId?, fromReply: Boolean, expectedEndpointGeneration: Long? = null): String = navigationMutex.withLock {
+        requireEndpoint(expectedEndpointGeneration)
         val binding = ensureRuntime(durableId)
+        requireEndpoint(expectedEndpointGeneration)
         val connection = connectionSnapshot(binding)
-        val result = connection.client.request(
+        val canonical = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
+        val endpoint = connection.endpointGeneration.takeIf { canonical ||
+            (expectedEndpointGeneration != null && connection.client is EndpointDispatchingGatewayRpcClient) }
+        val profile = synchronized(stateLock) { runtimeProfiles[binding.runtimeId] }
+        fun unsaved(): Nothing = throw GatewayRpcException("This message is not saved yet; wait for it to settle, then branch from it again.")
+        val boundary = if (!canonical) null else if (fromReply) {
+            selectedRow?.value?.takeIf { it > 0 } ?: unsaved()
+        } else if (count != null) {
+            // A count-only caller must resolve against fresh visible history, never a paged cache.
+            val history = requestAtEndpointDispatch(connection, endpoint, "session.history", historyParams(binding.runtimeId))
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val visible = parseHistory(history, binding.runtimeId, clock()).filter {
+                (it is UserTurn && it.text.isNotBlank()) || (it is AssistantTurn && it.markdown.isNotBlank())
+            }
+            val row = visible.getOrNull(count - 1)?.rowId?.value?.takeIf { it > 0 } ?: unsaved()
+            if (visible.count { it.rowId?.value == row } != 1) unsaved()
+            row
+        } else null
+        val result = requestAtEndpointDispatch(connection, endpoint,
             "session.branch",
             buildJsonObject {
                 put("session_id", JsonPrimitive(binding.runtimeId))
                 count?.let {
                     put("count", JsonPrimitive(it))
-                    // Desktop's count is a rendered prefix; only its last persisted row names an authority cut.
-                    if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
-                        cache.transcript(durableId).take(it).lastOrNull()?.rowId?.value?.let { row -> put("through_message_id", JsonPrimitive(row)) }
-                    }
+                    if (canonical) put("through_message_id", JsonPrimitive(boundary ?: unsaved()))
                 }
             },
         ).asObject("session.branch")
@@ -2597,8 +2618,11 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.bind(newDurableId, newRuntimeId)
+            runtimeProfiles[newRuntimeId] = profile
             // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
-            cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId))
+            cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId).let { row ->
+                row.copy(remoteProfile = row.remoteProfile ?: profile)
+            })
             val messages = result["messages"]
             if (messages is JsonArray) {
                 cache.setTranscript(

@@ -145,7 +145,7 @@ class CanonicalGatewayRpcTest {
         assertTrue(runCatching { peer.rpc.request("session.branch", base) }.isFailure)
         assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
         val result = peer.rpc.request("session.branch", JsonObject(base + ("through_message_id" to JsonPrimitive(42)))).jsonObject
-        assertEquals(JsonPrimitive(42), peer.frames.last().getValue("params").jsonObject.getValue("payload").jsonObject["through_message_id"])
+        assertEquals(JsonPrimitive(42), peer.frames.last { it["method"] == JsonPrimitive("session.mutate") }.getValue("params").jsonObject.getValue("payload").jsonObject["through_message_id"])
         assertNotEquals(JsonPrimitive("public-child"), result["session_id"])
         assertEquals(result["session_id"], result["stored_session_id"])
         peer.rpc.close()
@@ -332,7 +332,7 @@ class CanonicalGatewayRpcTest {
                         created = true
                         snapshot()
                     }
-                    "session.resume" -> snapshot()
+                    "session.resume" -> snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
                     "session.list" -> {
                         if (refuseRegistryAfterCreate && created) return false
                         """{"sessions":[],"scope":"${params["scope"]?.jsonPrimitive?.content ?: "live"}"}"""
@@ -409,6 +409,6 @@ class CanonicalGatewayRpcTest {
             rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"error":{"code":$code,"message":"invalid_params","data":{"reason":"invalid_params"}}}""")
         }
         fun ready() = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"session_authority":true,"change_events":true,"heartbeat":true,"replay_epoch":"public-global"}}}""")
-        private fun snapshot() = """{"session_id":"canonical-public","stored_session_id":"canonical-public","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work","profile_id":"public-owner","model":"public-model","cwd":"/workspace/public"}}"""
+        private fun snapshot(sid: String = "canonical-public") = """{"session_id":"$sid","stored_session_id":"$sid","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work","profile_id":"public-owner","model":"public-model","cwd":"/workspace/public"}}"""
     }
 }

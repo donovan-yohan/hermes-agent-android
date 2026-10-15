@@ -77,6 +77,7 @@ import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.BranchPlan
+import com.hermesagent.mobile.data.gateway.selectedSavedBranchRow
 import com.hermesagent.mobile.data.gateway.deriveBranchCount
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
@@ -2280,16 +2281,19 @@ internal class ChatViewModel(
             return
         }
 
+        val endpoint = cache.endpointGeneration.value
+        fun stillOwnsBranch() = activeSessionId.value == sessionId && cache.endpointGeneration.value == endpoint
         viewModelScope.launch {
             try {
+                if (!stillOwnsBranch()) return@launch
                 val authoritativeHistory = repository.fetchSessionHistory(sessionId)
-                if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
-                    noticeLine = "Session busy. Stop the current turn before branching this chat."
-                    return@launch
-                }
-                if (activeSessionId.value != sessionId) {
+                if (!stillOwnsBranch()) {
                     // Desktop aborts if session ownership drifted while the RPC
                     // ran, so don't paint anything until this call returns.
+                    return@launch
+                }
+                if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
+                    noticeLine = "Session busy. Stop the current turn before branching this chat."
                     return@launch
                 }
                 val localTranscript = cache.transcript(sessionId)
@@ -2304,8 +2308,9 @@ internal class ChatViewModel(
 
                 val createdControls = composer.value.controls
                 val createdCatalog = composer.value.catalog
-                val newId = repository.branchSession(sessionId, count)
-                if (activeSessionId.value != sessionId) {
+                val selectedRow = selectedSavedBranchRow(localTranscript, authoritativeHistory, entryId)
+                val newId = repository.branchSessionFromReply(sessionId, count, selectedRow, endpoint)
+                if (!stillOwnsBranch()) {
                     // Desktop aborts on drift after branching, so don't swap
                     // composer state and don't switch to the result session.
                     return@launch
@@ -2323,7 +2328,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                noticeLine = "Branch failed. Check the Gateway and try again."
+                if (stillOwnsBranch()) noticeLine = "Branch failed. Check the Gateway and try again."
             }
         }
     }
