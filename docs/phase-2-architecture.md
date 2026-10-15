@@ -6,6 +6,59 @@ contract and `59795c40fff95b3029b8f2b02164da892429070f` for native Remote
 Gateway authentication. The pinned source and tests were inspected read-only;
 the checkout was neither modified nor fetched.
 
+## Current backend compatibility target
+
+Existing Gateway consumers adapt to unmodified `NousResearch/hermes-agent` at
+`046094df28b712f62a5e3c728a9e59da05dcbf1e`. See
+[the current compatibility matrix](upstream-compatibility-046094df.md).
+The original authorities above and per-surface evidence retain their historical
+scope. No backend contribution or maintainer merge is a delivery prerequisite.
+
+An authenticated `gateway.ready` advertising `session_authority:true` selects
+the canonical adapter. The empty-parameter root `runtime.describe` confirms the
+launch owner/capabilities. A scoped public `profiles.list` response supplies the
+serving authority's first row as provisional route identity; discovered siblings
+are not authorization. The canonical resume snapshot must match `info.profile_id`
+before session state is adopted. Non-local snapshots omitting it require an actual
+same-profile/session canonical `session.info` confirmation first. Named `runtime.describe` remains a stock closed-
+schema error; Android does not fabricate a descriptor or fall back to another owner.
+Legacy sockets retain their contracts. Canonical creates use `gui` and stable
+request IDs; resume snapshots supply display history, revision, execution
+generation, replay epoch, subscription, prompts and admissions. Runtime/durable
+cache IDs are opaque projections of endpoint namespace, confirmed owner and raw
+backend ID. REST and RPC unwrap only within that owner; equal raw IDs in different
+profiles never share cached truth.
+
+Lazy profile channels isolate client event/native-request provenance and attach
+each owner/session once. Remote children use fresh public tickets; Local and
+Managed SSH use their existing authenticated endpoint. Graph teardown cancels
+child dials and closes every leg. Stock public native id-only responses authorize
+against the launch authority. Android therefore refuses answers for a different
+owner, exposes a truthful limitation and offers the existing generation-fenced
+owner `session.interrupt` control through **Stop**. The request stays visible
+while stopping until backend cancellation/terminal state arrives. No optimistic
+answer/removal, private ticket bootstrap or backend update is introduced. Native
+inputs on the actual launch owner remain supported, including named aliases of
+that owner. Canonical approval.respond/clarify.respond retain profile routing.
+Historical repaired-backend evidence does not certify stock settlement.
+
+Canonical submits carry logical input IDs and explicit staged image attachments.
+Queue retries retain logical identity. Unknown accepted work is never replayed
+automatically; discard uses its own execution generation, while queued cancel
+uses the admission ID. Events are fenced by owner/replay epoch/sequence/backend
+generation; gaps reattach from authoritative snapshots. Local UI turn generations
+remain separate. Pending callbacks capture request keys, so navigation cannot
+redirect an answer. Legacy batch locks and authority native batch replies use
+their distinct registries; GUI does not request `clarify_batch`.
+
+Canonical session edits use `session.mutate` with retained request/revision and
+required execution-generation fences. Edit/regenerate rewinds at a saved row
+before submitting. Model confirmation needs explicit consent using the offered
+token. Persisted-row REST edits read `mutation-snapshot` first; ambiguous explicit
+retries reuse the same request/revision across reconnect to the same endpoint
+and profile. Only a confirmed missing route permits the historical REST writer.
+Refusals and conflicts never authorize an unguarded second write.
+
 ## What is real
 
 | Area | Current behavior |
@@ -24,7 +77,7 @@ the checkout was neither modified nor fetched.
 
 ### Remote Gateway (recommended)
 
-1. Normalize the HTTPS base URL; reject cleartext HTTP, credentials, query, and fragment.
+1. Normalize the HTTP(S) base URL (scheme-less means HTTP); reject userinfo, query, and fragment. Preserve port/path. HTTP is unencrypted; HTTPS verification is unchanged.
 2. Require a gated `/api/status` advertising `native_pkce`.
 3. Load the endpoint-scoped token envelope from Android Keystore-encrypted,
    no-backup storage. Refresh 60 seconds before expiry.
@@ -95,8 +148,9 @@ or exception text.
 | Connection configuration | `HermesPreferences` | Route, non-secret Remote URL/provider, or SSH host, port, username, optional remote profile, auth method, accepted fingerprint, and random install ownership id only. OAuth tokens are not DataStore values. |
 
 Session actions are live backend operations, not local-only metadata. Rename
-uses a live runtime's `session.title` RPC when available, with persisted-row
-REST fallback. Pin, archive/restore and read/unread use profile-scoped REST
+uses a live runtime's `session.title` projection when available (canonical
+`session.mutate rename`), with guarded persisted-row REST fallback only on the
+appropriate path. Pin, archive/restore and read/unread use profile-scoped REST
 updates with optimistic cache projection and rollback on refusal; archive is
 reversible and never a cache tombstone. Delete removes cached truth only after
 backend confirmation.

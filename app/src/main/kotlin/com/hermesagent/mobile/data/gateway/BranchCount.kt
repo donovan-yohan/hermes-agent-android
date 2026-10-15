@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.data.gateway
 
 import com.hermesagent.mobile.data.session.AssistantTurn
+import com.hermesagent.mobile.data.session.TranscriptRowId
 import com.hermesagent.mobile.data.session.TranscriptEntry
 import com.hermesagent.mobile.data.session.UserTurn
 
@@ -93,4 +94,19 @@ fun deriveBranchCount(
     }
 
     return BranchPlan.Keep(matchedIndex + 1)
+}
+
+/** The canonical cut is a unique saved visible row, never a text/ordinal guess.
+ * Reasoning and tool projections do not count as visible user/assistant rows. */
+fun selectedSavedBranchRow(
+    localTranscript: List<TranscriptEntry>,
+    authoritativeTranscript: List<TranscriptEntry>,
+    targetId: String,
+): TranscriptRowId? {
+    val target = localTranscript.singleOrNull { it.id == targetId } as? AssistantTurn ?: return null
+    val row = target.rowId?.takeIf { it.value > 0 && target.markdown.isNotBlank() } ?: return null
+    val matches = authoritativeTranscript.filter {
+        ((it is UserTurn && it.text.isNotBlank()) || (it is AssistantTurn && it.markdown.isNotBlank())) && it.rowId == row
+    }
+    return row.takeIf { matches.singleOrNull() is AssistantTurn }
 }

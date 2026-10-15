@@ -612,6 +612,68 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `guarded live model waits for explicit owned consent`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val before = viewModel.uiState.value.composer.controls.selection
+        repository.modelMutation = ControlMutationResult.ConfirmationRequired("Confirm this model change.")
+        viewModel.selectModel(ComposerModelSelection("model/guarded", "provider"))
+        runCurrent()
+        assertEquals(before, viewModel.uiState.value.composer.controls.selection)
+        assertEquals("ConfirmationRequired", viewModel.uiState.value.composer.mutation.javaClass.simpleName)
+        assertEquals(1, repository.modelSelections.size)
+        val consent = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        viewModel.confirmModelChange(consent.key + 1)
+        runCurrent()
+        assertEquals(0, repository.confirmedModels.size)
+        assertNull("an unknown confirmation key has no stale outcome to report", viewModel.uiState.value.notice)
+        repository.modelMutation = ControlMutationResult.Applied
+        viewModel.confirmModelChange(consent.key)
+        viewModel.confirmModelChange(consent.key)
+        runCurrent()
+        assertEquals(listOf(ComposerModelSelection("model/guarded", "provider")), repository.confirmedModels)
+        assertEquals(ComposerMutationUiState.Idle, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `model consent cannot follow session or endpoint switch`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.modelMutation = ControlMutationResult.ConfirmationRequired("Confirm this model change.")
+        viewModel.selectModel(ComposerModelSelection("model/guarded", "provider"))
+        runCurrent()
+        val consent = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        viewModel.selectSession("session-b")
+        runCurrent()
+        viewModel.confirmModelChange(consent.key)
+        runCurrent()
+        assertTrue(repository.confirmedModels.isEmpty())
+        assertEquals("Selection changed — the model switch was not applied.", viewModel.uiState.value.notice?.text)
+    }
+
+    @Test
+    fun `stale model confirmation never replaces a newer choice or crosses endpoint notice boundary`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        repository.modelMutation = ControlMutationResult.ConfirmationRequired("Confirm this model change.")
+        viewModel.selectModel(ComposerModelSelection("model/guarded", "provider")); runCurrent()
+        val stale = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        repository.modelMutation = ControlMutationResult.Applied
+        viewModel.selectModel(ComposerModelSelection("model/newer", "provider")); runCurrent()
+        viewModel.confirmModelChange(stale.key); runCurrent()
+        assertTrue(repository.confirmedModels.isEmpty())
+        assertEquals("model/newer", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals("Selection changed — the model switch was not applied.", viewModel.uiState.value.notice?.text)
+        repository.modelMutation = ControlMutationResult.ConfirmationRequired("Confirm this model change.")
+        viewModel.selectModel(ComposerModelSelection("model/guarded", "provider")); runCurrent()
+        val leftEndpoint = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        cache.resetForEndpointSwitch(); runCurrent()
+        val currentNotice = viewModel.uiState.value.notice
+        viewModel.confirmModelChange(leftEndpoint.key); runCurrent()
+        assertTrue(repository.confirmedModels.isEmpty())
+        assertEquals(currentNotice, viewModel.uiState.value.notice)
+    }
+
+    @Test
     fun `deferred live model keeps the requested next turn selection`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -1968,7 +2030,7 @@ class ChatViewModelTest {
         viewModel.regenerateReply("reply-entry")
         viewModel.branchFromReply("reply-entry")
         viewModel.resumeQueue()
-        viewModel.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
+        viewModel.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputKey(0, "runtime-bot", "absent", com.hermesagent.mobile.data.gateway.PendingInputKind.Approval), com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
         viewModel.selectModel(ComposerModelSelection("model/blocked", "provider"))
         viewModel.selectReasoning(ReasoningEffort.High)
         viewModel.selectFast(FastMode.Fast)
@@ -2238,7 +2300,7 @@ class ChatViewModelTest {
         subject.redirectDraftFromUi()
         subject.stop()
         subject.resumeQueue()
-        subject.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
+        subject.respondToPendingInput(com.hermesagent.mobile.data.gateway.PendingInputKey(0, "runtime-bot", "absent", com.hermesagent.mobile.data.gateway.PendingInputKind.Approval), com.hermesagent.mobile.data.gateway.PendingInputAction.ApprovalChoice("allow"))
         subject.selectModel(ComposerModelSelection("model/blocked", "provider"))
         subject.selectReasoning(ReasoningEffort.High)
         subject.selectFast(FastMode.Fast)
@@ -3853,6 +3915,7 @@ class ChatViewModelTest {
             reasoning = ReasoningEffort.Medium,
             fast = FastMode.Normal,
         )
+        val confirmedModels = mutableListOf<ComposerModelSelection>()
         var modelMutation: ControlMutationResult = ControlMutationResult.Applied
         var modelMutationGate: CompletableDeferred<ControlMutationResult>? = null
         var modelOptionsGate: CompletableDeferred<Unit>? = null
@@ -4050,6 +4113,11 @@ class ChatViewModelTest {
         ): ControlMutationResult {
             modelSelections += selection
             return modelMutationGate?.await() ?: modelMutation
+        }
+
+        override suspend fun confirmLiveModel(durableId: String, selection: ComposerModelSelection): ControlMutationResult {
+            confirmedModels += selection
+            return modelMutation
         }
 
         override suspend fun setLiveReasoning(

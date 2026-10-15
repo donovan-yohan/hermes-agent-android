@@ -2,6 +2,7 @@ package com.hermesagent.mobile.data.gateway
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -111,7 +112,8 @@ enum class GatewayMessageOrder(val wire: String) {
 sealed interface GatewayRestResult<out T> {
     data class Success<out T>(val value: T) : GatewayRestResult<T>
 
-    data class Failed(val statusCode: Int?, val safeMessage: String) : GatewayRestResult<Nothing>
+    data class Failed(val statusCode: Int?, val safeMessage: String,
+        internal val missingRoute: Boolean = false, internal val refusalReason: String? = null) : GatewayRestResult<Nothing>
 }
 
 /**
@@ -185,7 +187,7 @@ data class GatewaySessionMessagePage(
  * "not requested", never "false".
  */
 data class GatewaySessionUpdate(
-    val title: String,
+    val title: String?,
     val archived: Boolean?,
     val pinned: Boolean?,
     val unread: Boolean?,
@@ -196,7 +198,7 @@ data class GatewaySessionUpdate(
  * id it could not resolve (`sessions.py:674-676` @ the pin): DELETE's contract
  * there is "ensure it is gone", so a missing row is a success, not a 404.
  */
-data class GatewaySessionDeletion(val alreadyAbsent: Boolean)
+data class GatewaySessionDeletion(val alreadyAbsent: Boolean, val deletedIds: List<String> = emptyList())
 
 /**
  * What `GET /api/status` says about the backend, as the System panel needs it
@@ -384,6 +386,7 @@ class GatewayRestClient(
     private val ioContext: CoroutineContext = Dispatchers.IO,
     private val http: () -> GatewayHttp?,
 ) {
+    internal var sessionIdentity: () -> GatewaySessionIdentity? = { null }
 
     /** Custom Dashboard themes only; server built-ins have no definition and are skipped. */
     suspend fun dashboardThemes(): GatewayRestResult<List<GatewayTheme>> =
@@ -423,18 +426,21 @@ class GatewayRestClient(
      * The server accepts prefixes; this client deliberately requires the exact echoed id and profile.
      */
     suspend fun sessionDetail(sessionId: String, profile: String): GatewayRestResult<GatewaySessionDetail> {
-        if (sessionId.isBlank() || sessionId.length > MAX_ID_LENGTH ||
-            sessionId.any(Char::isISOControl) || sessionId in setOf(".", "..")) return malformed()
-        if (profile != profile.trim() || profile == "current" || safeProfile(profile) == null) return malformed()
+        val address = sessionIdentity()?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        if (wireId.isBlank() || wireId.length > MAX_ID_LENGTH ||
+            wireId.any(Char::isISOControl) || wireId in setOf(".", "..")) return malformed()
+        if (wireProfile != wireProfile.trim() || wireProfile == "current" || safeProfile(wireProfile) == null) return malformed()
         val id = okhttp3.HttpUrl.Builder().scheme("https").host("localhost")
-            .addPathSegment(sessionId).build().encodedPath.removePrefix("/")
+            .addPathSegment(wireId).build().encodedPath.removePrefix("/")
         return send(
             path = "$SESSIONS_PATH/$id",
             verb = GatewayRestVerb.GET,
-            query = mapOf("profile" to profile),
+            query = mapOf("profile" to wireProfile),
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
-            parse = { bytes -> parseObject(bytes)?.let { GatewaySessionDetail.parse(it, sessionId, profile) } },
+            parse = { bytes -> parseObject(bytes)?.let { GatewaySessionDetail.parse(it, wireId, wireProfile)?.copy(id = sessionId) } },
         )
     }
 
@@ -479,6 +485,7 @@ class GatewayRestClient(
         order: GatewaySessionOrder = GatewaySessionOrder.Recent,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionPage> {
+        val identity = sessionIdentity()
         if (limit !in 1..MAX_SESSION_PAGE) return malformed()
         if (offset < 0) return malformed()
         // The route clamps a negative `min_messages` to 0 itself (`:108`).
@@ -500,7 +507,9 @@ class GatewayRestClient(
             },
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
-            parse = ::parseSessionPage,
+            parse = { bytes -> parseSessionPage(bytes)?.let { page ->
+                identity?.let { bound -> page.copy(rows = page.rows.map { bound.projectRow(it, profile) }) } ?: page
+            } },
         )
     }
 
@@ -540,6 +549,7 @@ class GatewayRestClient(
         limit: Int = DEFAULT_SESSION_SEARCH,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionSearchPage> {
+        val identity = sessionIdentity()
         if (query.isBlank()) return malformed()
         if (query.any(Char::isISOControl)) return malformed()
         if (limit !in 1..MAX_SESSION_SEARCH) return malformed()
@@ -554,7 +564,9 @@ class GatewayRestClient(
             },
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
-            parse = ::parseSessionSearchPage,
+            parse = { bytes -> parseSessionSearchPage(bytes)?.let { page ->
+                identity?.let { bound -> page.copy(results = page.results.map { bound.projectRow(it, profile) }) } ?: page
+            } },
         )
     }
 
@@ -575,10 +587,14 @@ class GatewayRestClient(
         includeCompacted: Boolean = false,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionMessagePage> {
-        val id = safeSessionId(sessionId) ?: return malformed()
+        val identity = sessionIdentity()
+        val address = identity?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        val id = safeSessionId(wireId) ?: return malformed()
         if (limit != null && limit !in 1..MAX_MESSAGE_PAGE) return malformed()
         if (offset < 0) return malformed()
-        val scope = scopeQuery(profile) ?: return malformed()
+        val scope = scopeQuery(wireProfile) ?: return malformed()
         return send(
             path = "$SESSIONS_PATH/$id/messages",
             verb = GatewayRestVerb.GET,
@@ -591,7 +607,9 @@ class GatewayRestClient(
             },
             timeoutMillis = MESSAGES_TIMEOUT_MILLIS,
             maxResponseBytes = messagesResponseBound(limit),
-            parse = ::parseMessagePage,
+            parse = { bytes -> parseMessagePage(bytes)?.let { page ->
+                identity?.let { page.copy(sessionId = it.qualify(page.sessionId, wireProfile)) } ?: page
+            } },
         )
     }
 
@@ -617,33 +635,27 @@ class GatewayRestClient(
         unread: Boolean? = null,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionUpdate> {
-        val id = safeSessionId(sessionId) ?: return malformed()
+        val identity = sessionIdentity()
+        val address = identity?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        val id = safeSessionId(wireId) ?: return malformed()
         if (title == null && archived == null && pinned == null && unread == null) {
             return GatewayRestResult.Failed(NOTHING_TO_UPDATE_STATUS, MALFORMED_REQUEST_MESSAGE)
         }
-        val scope = profile?.let { safeProfile(it) ?: return malformed() }
-        // Encoded once and measured before it is sent, so the bytes that were
-        // bounded are the bytes that go on the wire. The bound is this client's
-        // own: the Gateway owns what a valid title is (`:711-716`), but a
-        // shared authenticated transport should not carry an unbounded caller
-        // string, and no session title is 64 KiB.
-        val encoded = buildJsonObject {
+        val scope = wireProfile?.let { safeProfile(it) ?: return malformed() }
+        val payload = buildJsonObject {
             title?.let { put("title", it) }
             archived?.let { put("archived", it) }
             pinned?.let { put("pinned", it) }
             unread?.let { put("unread", it) }
-            scope?.let { put("profile", it) }
-        }.toString().toByteArray(Charsets.UTF_8)
-        if (encoded.size > MAX_UPDATE_BODY_BYTES) return malformed()
-        return send(
-            path = "$SESSIONS_PATH/$id",
-            verb = GatewayRestVerb.PATCH,
-            query = emptyMap(),
-            body = encoded.toRequestBody(JSON_MEDIA_TYPE),
-            timeoutMillis = WRITE_TIMEOUT_MILLIS,
-            maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
-            parse = ::parseSessionUpdate,
-        )
+        }
+        if (payload.toString().toByteArray(Charsets.UTF_8).size > MAX_UPDATE_BODY_BYTES) return malformed()
+        return mutateSession(id, scope, "sidebar", payload) { bytes ->
+            parseSessionUpdate(bytes)?.takeIf { result ->
+                title == null || result.title != null
+            }
+        }
     }
 
     /**
@@ -659,19 +671,100 @@ class GatewayRestClient(
         sessionId: String,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionDeletion> {
-        val id = safeSessionId(sessionId) ?: return malformed()
-        val scope = scopeQuery(profile) ?: return malformed()
-        return send(
-            path = "$SESSIONS_PATH/$id",
-            verb = GatewayRestVerb.DELETE,
-            query = scope,
-            timeoutMillis = WRITE_TIMEOUT_MILLIS,
-            maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
-            parse = ::parseSessionDeletion,
-        )
+        val identity = sessionIdentity()
+        val address = identity?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        val id = safeSessionId(wireId) ?: return malformed()
+        val scope = wireProfile?.let { safeProfile(it) ?: return malformed() }
+        return mutateSession(id, scope, "delete", JsonObject(emptyMap())) { bytes ->
+            parseSessionDeletion(bytes)?.let { result ->
+                if (identity == null) result else result.copy(deletedIds = result.deletedIds.map { identity.qualify(it, wireProfile) })
+            }
+        }
+    }
+
+    private data class MutationAddress(val scope: Any, val profile: String?, val sessionId: String)
+    private data class MutationAttempt(val operation: String, val payload: JsonObject, val requestId: String,
+        val revision: Long, val generation: Long?)
+    private data class MutationSnapshot(val revision: Long, val generation: Long?)
+    private val mutationStateLock = Any()
+    private val mutationLocks = KeyedMutex<MutationAddress>()
+    private data class MutationIntent(val address: MutationAddress, val operation: String, val payload: JsonObject)
+    private val mutationAttempts = mutableMapOf<MutationIntent, MutationAttempt>()
+
+    /** Target hermes_cli/web_routers/sessions.py:583-597,843-874,923-931 @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. */
+    private suspend fun <T> mutateSession(
+        id: String, profile: String?, operation: String, payload: JsonObject, parse: (ByteArray) -> T?,
+    ): GatewayRestResult<T> {
+        // Bind once before either suspension. A replacement endpoint can never
+        // receive a write fenced by the previous endpoint's snapshot.
+        val transport = http() ?: return GatewayRestResult.Failed(0, RECONNECT_MESSAGE)
+        val address = MutationAddress(transport.mutationScope ?: transport, profile, id)
+        return mutationLocks.withLock(address) {
+            val intent = MutationIntent(address, operation, payload)
+            val existing = synchronized(mutationStateLock) { mutationAttempts[intent] }
+            val attempt = if (existing != null) existing else {
+                val snapshot = send(
+                    path = "$SESSIONS_PATH/$id/mutation-snapshot", verb = GatewayRestVerb.GET,
+                    query = profile?.let { mapOf("profile" to it) }.orEmpty(),
+                    timeoutMillis = WRITE_TIMEOUT_MILLIS, maxResponseBytes = ACK_MAX_RESPONSE_BYTES,
+                    transport = transport, captureEnvelope = true,
+                    parse = { bytes ->
+                        val root = parseObject(bytes)
+                        val revision = root?.number("runtime_revision")
+                        val exists = root?.boolean("exists")
+                        val generation = root?.number("runtime_generation")
+                        if (root?.jsonString("session_id") != id || revision == null || revision < 0 ||
+                            exists != true || generation == null || generation < 0) null
+                        else MutationSnapshot(revision, generation)
+                    },
+                )
+                when (snapshot) {
+                    is GatewayRestResult.Success -> MutationAttempt(operation, payload, UUID.randomUUID().toString(),
+                        snapshot.value.revision, snapshot.value.generation).also {
+                        synchronized(mutationStateLock) { mutationAttempts[intent] = it }
+                    }
+                    is GatewayRestResult.Failed -> {
+                        // The target answers an absent row with a 200 snapshot.
+                        // Only an absent route permits the historical writer.
+                        if (!snapshot.missingRoute) return@withLock snapshot
+                        null
+                    }
+                }
+            }
+            val query = if (operation == "delete") buildMap {
+                profile?.let { put("profile", it) }
+                attempt?.let {
+                    put("request_id", it.requestId); put("expected_revision", it.revision.toString())
+                    put("expected_generation", requireNotNull(it.generation).toString())
+                }
+            } else emptyMap()
+            val body = if (operation == "delete") null else buildJsonObject {
+                payload.forEach { (key, value) -> put(key, value) }
+                profile?.let { put("profile", it) }
+                attempt?.let { put("request_id", it.requestId); put("expected_revision", it.revision)
+                    it.generation?.let { generation -> put("expected_generation", generation) } }
+            }.toString().toByteArray(Charsets.UTF_8).toRequestBody(JSON_MEDIA_TYPE)
+            val result = send(path = "$SESSIONS_PATH/$id",
+                verb = if (operation == "delete") GatewayRestVerb.DELETE else GatewayRestVerb.PATCH,
+                query = query, body = body, timeoutMillis = WRITE_TIMEOUT_MILLIS,
+                maxResponseBytes = ACK_MAX_RESPONSE_BYTES, transport = transport, captureEnvelope = true, parse = parse)
+            synchronized(mutationStateLock) {
+                if (result is GatewayRestResult.Success) {
+                    mutationAttempts.keys.removeAll { it.address == address }
+                } else if (result is GatewayRestResult.Failed && result.refusalReason in DEFINITIVE_MUTATION_REFUSALS) {
+                    mutationAttempts.remove(intent)
+                }
+            }
+            result
+        }
     }
 
     // -----------------------------------------------------------------------
+    // Historical REST/status/update citations below retain their inspected pin:
+    // 3ca096de5f8183cb2e0ec23673f294d5978656a3. Current backend contracts are
+    // recorded separately in docs/upstream-compatibility-379cf122.md.
     // System panel: backend status, the host's own updater, and the messaging
     // gateway's restart. Every route below is public HTTP on the Gateway and
     // route-agnostic; nothing here is Remote-specific.
@@ -784,7 +877,9 @@ class GatewayRestClient(
      * Restart the **messaging gateway** through `POST /api/gateway/restart`
      * (`web_server.py:4988-5002` @ the pin).
      *
-     * Not the `hermes serve` process this app is connected to: the host runs
+     * Historical messaging-only behavior at the retained source pin; the current composed
+     * backend may also affect the chat socket (see the compatibility document).
+     * The older host runs
      * `hermes [--profile P] gateway restart` (`:4842-4843,4939`) and the HTTP
      * server survives it. No HTTP endpoint restarts `hermes serve` itself;
      * Desktop's "Restart backend" is Electron IPC.
@@ -826,11 +921,13 @@ class GatewayRestClient(
         timeoutMillis: Long,
         maxResponseBytes: Long,
         parse: (ByteArray) -> T?,
+        transport: GatewayHttp? = http(),
+        captureEnvelope: Boolean = false,
     ): GatewayRestResult<T> {
         // Bind before the dispatcher hop: a queued mutation belongs to the
         // transport selected by its caller, never the replacement connection.
         // Production GatewayHttp instances capture their endpoint and auth scope.
-        val transport = http()
+        val boundTransport = transport
             ?: return GatewayRestResult.Failed(0, RECONNECT_MESSAGE)
         return withContext(ioContext) {
             val request = GatewayHttpRequest(
@@ -840,10 +937,17 @@ class GatewayRestClient(
                 timeoutMillis = timeoutMillis,
                 query = query,
                 maxResponseBytes = maxResponseBytes,
+                captureEnvelope = captureEnvelope,
             )
-            when (val result = transport.execute(request)) {
-                is GatewayHttpResult.Rejected ->
-                    GatewayRestResult.Failed(result.statusCode, result.safeMessage)
+            when (val result = boundTransport.execute(request)) {
+                is GatewayHttpResult.Rejected -> result.consumeEnvelope { bytes ->
+                    val detail = if (captureEnvelope) parseObject(bytes)?.jsonString("detail") else null
+                    val missing = captureEnvelope && result.statusCode == 404 &&
+                        (detail?.contains("No such API endpoint", ignoreCase = true) == true ||
+                            bytes.toString(Charsets.UTF_8).contains("Headless backend (hermes serve): web UI disabled", ignoreCase = true))
+                    GatewayRestResult.Failed(result.statusCode, result.safeMessage, missing,
+                        detail?.takeIf { result.statusCode >= 400 && it in DEFINITIVE_MUTATION_REFUSALS })
+                }
 
                 is GatewayHttpResult.Success -> result.consumeBody(parse)
                     ?.let { GatewayRestResult.Success(it) }
@@ -918,8 +1022,9 @@ private fun parseSessionPage(bytes: ByteArray): GatewaySessionPage? {
 }
 
 /**
- * The route clamps its own answer to 100 rows (`sessions.py:229,316` @ the
- * pin), so a longer list is a backend this client does not recognise rather
+ * The route clamps its own answer to 100 rows (`sessions.py:229,316` @
+ * `3ca096de5f8183cb2e0ec23673f294d5978656a3`), so a longer list is a backend
+ * this client does not recognise rather
  * than a bigger page. Refused whole, like every other envelope that does not
  * match the contract — truncating would render a page nobody asked for.
  */
@@ -951,7 +1056,7 @@ private fun parseSessionUpdate(bytes: ByteArray): GatewaySessionUpdate? {
         // The route always echoes the stored title, empty string included
         // (`sessions.py:723` @ the pin); an answer without it is not that
         // route's answer.
-        title = root.jsonString("title") ?: return null,
+        title = root.jsonString("title"),
         archived = root.boolean("archived"),
         pinned = root.boolean("pinned"),
         unread = root.boolean("unread"),
@@ -961,7 +1066,8 @@ private fun parseSessionUpdate(bytes: ByteArray): GatewaySessionUpdate? {
 private fun parseSessionDeletion(bytes: ByteArray): GatewaySessionDeletion? {
     val root = parseObject(bytes) ?: return null
     if (root.boolean("ok") != true) return null
-    return GatewaySessionDeletion(alreadyAbsent = root.boolean("already_absent") == true)
+    return GatewaySessionDeletion(alreadyAbsent = root.boolean("already_absent") == true,
+        deletedIds = (root["deleted_ids"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty())
 }
 
 private fun parseStatusSummary(bytes: ByteArray): GatewayStatusSummary? {
@@ -1285,3 +1391,8 @@ private val JSON_MEDIA_TYPE = "application/json".toMediaType()
  * rather than retyped so the two files cannot drift apart.
  */
 internal const val UNUSABLE_RESPONSE_MESSAGE = "The Gateway returned an unusable response. Try again."
+
+// Source-defined reasons only; raw refusal bodies never escape the parser.
+private val DEFINITIVE_MUTATION_REFUSALS = setOf("revision_conflict", "stale_generation", "permission_denied",
+    "profile_mismatch", "invalid_params", "admission_conflict", "session_busy", "retained_receipts",
+    "runtime_coordination_required", "unknown_execution", "not_found", "mutation_identity_required")

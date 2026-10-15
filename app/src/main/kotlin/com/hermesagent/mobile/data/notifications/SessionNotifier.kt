@@ -646,6 +646,7 @@ private fun PendingInputRequest.promptIdentity(): PromptIdentity =
 private fun PendingInputKind.notificationKind(): NotificationKind = when (this) {
     PendingInputKind.Approval -> NotificationKind.Approval
     PendingInputKind.Clarify,
+    PendingInputKind.Unsupported,
     PendingInputKind.Sudo,
     PendingInputKind.Secret,
     PendingInputKind.VaultCode,

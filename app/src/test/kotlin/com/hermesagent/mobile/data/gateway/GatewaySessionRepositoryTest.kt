@@ -7531,14 +7531,15 @@ class GatewaySessionRepositoryTest {
         val repository = liveRepository(cache, http) { CLOCK + testScheduler.currentTime }
         runCurrent()
         repository.refreshSessions()
-        val readsBeforeWrite = http.requests.count { it.method == "GET" }
+        val readsBeforeWrite = http.requests.count { it.method == "GET" && it.path == "api/sessions" }
 
         repository.setSessionArchived("durable-a", true)
         advanceTimeBy(30_000L)
         runCurrent()
         advanceUntilIdle()
 
-        assertEquals(readsBeforeWrite, http.requests.count { it.method == "GET" })
+        assertEquals(1, http.requests.count { it.path.endsWith("/mutation-snapshot") })
+        assertEquals(readsBeforeWrite, http.requests.count { it.method == "GET" && it.path == "api/sessions" })
         assertEquals(true, cache.session("durable-a")?.archived)
     }
 
@@ -8766,6 +8767,11 @@ class GatewaySessionRepositoryTest {
 
         override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
             requests.add(request)
+            // Historical standalone fixture: this route did not exist at its
+            // evidence pin. Record the probe, then preserve each authored write
+            // script. Modern fenced mutations have their own contract suite.
+            if (request.path.endsWith("/mutation-snapshot")) return GatewayHttpResult.Rejected(404,
+                "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray())
             return answer(request)
         }
     }
@@ -8781,6 +8787,11 @@ class GatewaySessionRepositoryTest {
 
         override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
             requests.add(request)
+            // Historical standalone fixture: this route did not exist at its
+            // evidence pin. Record the probe, then preserve each authored write
+            // script. Modern fenced mutations have their own contract suite.
+            if (request.path.endsWith("/mutation-snapshot")) return GatewayHttpResult.Rejected(404,
+                "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray())
             return answer(request)
         }
     }

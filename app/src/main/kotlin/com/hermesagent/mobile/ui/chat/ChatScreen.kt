@@ -174,6 +174,9 @@ fun ChatScreen(
     state.diagnostics?.let { diagnostics ->
         SendDiagnosticsDialog(diagnostics, actions.onConfirmDiagnostics, actions.onDismissDiagnostics)
     }
+    (state.composer.mutation as? ComposerMutationUiState.ConfirmationRequired)?.let { consent ->
+        ModelChangeDialog(consent, { actions.onConfirmModelChange(consent.key) }, { actions.onDismissModelChange(consent.key) })
+    }
     state.gatewayLogs?.let { GatewayLogsDialog(it, actions.onConfirmGatewayLogs, actions.onDismissGatewayLogs) }
     val dismissGatewayLogs by androidx.compose.runtime.rememberUpdatedState(actions.onDismissGatewayLogs)
     androidx.compose.runtime.DisposableEffect(Unit) {
@@ -1013,8 +1016,11 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
         PendingInputSurface(
             pending = state.composer.runtime.pendingInput,
             background = state.backgroundPendingInput,
-            isSubmitting = false,
-            onRespond = actions.onRespondToPendingInput,
+            isSubmitting = state.composer.runtime.pendingInputSubmitting,
+            errorText = state.composer.runtime.pendingInputError,
+            onRespond = { action ->
+                state.composer.runtime.pendingInput?.key?.let { actions.onRespondToPendingInput(it, action) }
+            },
             onOpenSession = actions.onSelectSession,
             modifier = Modifier.padding(horizontal = HermesTheme.spacing.pageInset, vertical = 4.dp),
         )
@@ -1022,9 +1028,9 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
         if (securePrompt != null) {
             SecurePendingDialog(
                 pending = securePrompt,
-                isSubmitting = false,
-                errorText = null,
-                onRespond = actions.onRespondToPendingInput,
+                isSubmitting = state.composer.runtime.pendingInputSubmitting,
+                errorText = state.composer.runtime.pendingInputError,
+                onRespond = { action -> actions.onRespondToPendingInput(securePrompt.key, action) },
                 onDismiss = { actions.onDismissSecurePending() },
             )
         }
@@ -1046,6 +1052,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
                             onRefreshProcesses = actions.onRefreshProcesses,
                             onReconcileProcesses = actions.onReconcileProcesses,
                             onKillProcess = actions.onKillProcess,
+                            onResolveGatewayAdmission = actions.onResolveGatewayAdmission,
                             hasQueue = hasQueue,
                             queueContent = {
                                 ComposerQueueSection(

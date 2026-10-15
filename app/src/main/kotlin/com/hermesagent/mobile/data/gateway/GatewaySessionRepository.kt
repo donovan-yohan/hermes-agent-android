@@ -61,6 +61,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -237,6 +238,9 @@ interface GatewaySessionRepository {
     ): String = createSession(workspacePath, overrides)
     suspend fun branchSession(durableId: String, count: Int?): String =
         error("Branching is not implemented by this repository.")
+    /** Preserve the exact row selected in the same authoritative visible history used for count. */
+    suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long? = null): String =
+        branchSession(durableId, count)
     suspend fun fetchSessionHistory(durableId: String): List<TranscriptEntry> =
         error("History fetch not implemented.")
     suspend fun loadModelOptions(durableId: String?): ModelCatalog =
@@ -277,6 +281,8 @@ interface GatewaySessionRepository {
         durableId: String,
         selection: ComposerModelSelection,
     ): ControlMutationResult = error("Live model controls are not implemented by this repository.")
+    suspend fun confirmLiveModel(durableId: String, selection: ComposerModelSelection): ControlMutationResult =
+        ControlMutationResult.Rejected("This model change could not be confirmed. Choose it again.")
     suspend fun setLiveReasoning(
         durableId: String,
         effort: ReasoningEffort,
@@ -316,6 +322,10 @@ interface GatewaySessionRepository {
         queued: Boolean = false,
         attachments: List<OutgoingAttachment> = emptyList(),
     ): GatewaySubmitOutcome = submit(durableId, text, queued)
+    /** Durable queue retries carry their logical input identity; legacy transports keep their original shape. */
+    suspend fun resolveGatewayAdmission(key: GatewayAdmissionKey): PendingInputResponse = PendingInputResponse.Unanswerable
+    suspend fun submitIdentified(durableId: String, text: String, queued: Boolean, submissionId: String): GatewaySubmitOutcome =
+        submit(durableId, text, queued)
     /**
      * Plain prompt submit bound to the endpoint generation the caller
      * observed.
@@ -921,6 +931,14 @@ internal class LiveGatewaySessionRepository(
      * direction, since that shows the user a way to respond rather than
      * silently withdrawing a live request.
      */
+    private data class CanonicalWatermark(val epoch: String, val sequence: Long, val generation: Long)
+    private val canonicalWatermarks = mutableMapOf<String, CanonicalWatermark>()
+    private val unboundEvents = mutableListOf<GatewayEvent>()
+    private val replayReconciliations = mutableSetOf<String>()
+    private val canonicalAdmissionOwners = mutableMapOf<GatewayAdmissionKey, String>()
+    private val resolvingAdmissions = mutableSetOf<GatewayAdmissionKey>()
+    private val authorityBatchAnswers = mutableMapOf<PendingInputKey, Map<String, String?>>()
+    private val unboundServerRequests = linkedMapOf<Pair<String, String>, GatewayServerRequest>()
     private val retiredKeys = object : LinkedHashMap<PendingInputKey, Unit>(64, 0.75f, false) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PendingInputKey, Unit>): Boolean =
             size > MAX_RETIRED_KEYS
@@ -976,7 +994,9 @@ internal class LiveGatewaySessionRepository(
     private var projectScopeRevision = 0L
 
     /** Session REST routes over the connection-owned transport; holds no credential. */
-    private val rest = GatewayRestClient(restContext, http)
+    private val rest = GatewayRestClient(restContext, http).also { client ->
+        client.sessionIdentity = { (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity }
+    }
     private val cronAdmission = CronSessionAdmission()
     private val cronReadVersions = mutableMapOf<CronSessionOwner, Long>()
     private var cronReadSequence = 0L
@@ -1273,6 +1293,8 @@ internal class LiveGatewaySessionRepository(
                                             requestId = request.id,
                                             method = request.method,
                                             params = request.params,
+                                            origin = if (request.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native,
+                                            executionGeneration = request.executionGeneration,
                                         )
                                     } else null
                                 }
@@ -1522,6 +1544,13 @@ internal class LiveGatewaySessionRepository(
         offset: Int,
         pool: SessionPool = SessionPool.Live,
     ): SessionLegPage {
+        val authorityIdentity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        if (authorityIdentity != null) {
+            connection.client.request("profiles.list", buildJsonObject {
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            })
+            synchronized(stateLock) { ensureCurrent(connection) }
+        }
         val restUsable = http() != null &&
             !isCapabilityUnsupported(GatewayOptionalCapability.SessionListRest, connection)
         if (restUsable) {
@@ -1944,6 +1973,10 @@ internal class LiveGatewaySessionRepository(
             return null
         }
         if (isCapabilityUnsupported(GatewayOptionalCapability.SearchSessionsRest, connection)) return null
+        if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+            connection.client.request("profiles.list", buildJsonObject { profile?.let { put("profile", JsonPrimitive(it)) } })
+            synchronized(stateLock) { ensureCurrent(connection) }
+        }
         return when (val result = rest.searchSessions(query, profile = profile)) {
             is GatewayRestResult.Success -> result.value.results.mapNotNull(::parseSearchStub)
             is GatewayRestResult.Failed -> {
@@ -1989,6 +2022,9 @@ internal class LiveGatewaySessionRepository(
             lineageRootId = row.jsonString("lineage_root"),
             model = row.jsonString("model"),
             source = row.jsonString("source"),
+            remoteProfile = row.jsonString("profile"),
+            backendSessionId = row.jsonString("backend_session_id"),
+            backendLineageRootId = row.jsonString("backend_lineage_root"),
         )
     }
 
@@ -2220,7 +2256,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     override fun sessionReadOnlyReason(durableId: String): String? = synchronized(stateLock) {
-        if (!isCronExecutionSessionId(durableId)) return@synchronized null
+        if (!isCronExecutionSessionId(backendSessionId(durableId))) return@synchronized null
         val profile = owningProfileParam(durableId) ?: return@synchronized CRON_LOOKUP_UNAVAILABLE
         cronAdmission.verdict(CronSessionOwner(cache.endpointGeneration.value, profile, durableId))
             .takeUnless { it == CronSessionVerdict.Writable }?.let(::cronRefusal)
@@ -2271,7 +2307,7 @@ internal class LiveGatewaySessionRepository(
                 owningProfileParam(durableId)
             }
         }
-        if (isCronExecutionSessionId(durableId)) {
+        if (isCronExecutionSessionId(backendSessionId(durableId))) {
             val verdict = refreshCronAdmission(connection, durableId, owningProfile).verdict
             if (verdict != CronSessionVerdict.Writable) {
                 // Reading stored history must not start a runtime merely to display it.
@@ -2513,6 +2549,7 @@ internal class LiveGatewaySessionRepository(
                     parseMessages(messages, clock()) { index -> "$runtimeId-history-$index" },
                 )
             }
+            restoreOpenRequests(result, durableId, runtimeId, mutableListOf())
         }
         durableId
     }
@@ -2530,19 +2567,43 @@ internal class LiveGatewaySessionRepository(
         parseHistory(historyResult, binding.runtimeId, clock())
     }
 
-    /**
-     * Calls `session.branch` with `session_id` and optional `count`, then
-     * upserts the created runtime/session using the same parse and parseMessages
-     * path `session.create` uses.
-     */
-    override suspend fun branchSession(durableId: String, count: Int?): String = navigationMutex.withLock {
+    override suspend fun branchSession(durableId: String, count: Int?): String =
+        branchSessionInternal(durableId, count, null, fromReply = false)
+
+    override suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long?): String =
+        branchSessionInternal(durableId, count, selectedRow, fromReply = true, expectedEndpointGeneration)
+
+    private suspend fun branchSessionInternal(durableId: String, count: Int?, selectedRow: TranscriptRowId?, fromReply: Boolean, expectedEndpointGeneration: Long? = null): String = navigationMutex.withLock {
+        requireEndpoint(expectedEndpointGeneration)
         val binding = ensureRuntime(durableId)
+        requireEndpoint(expectedEndpointGeneration)
         val connection = connectionSnapshot(binding)
-        val result = connection.client.request(
+        val canonical = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
+        val endpoint = connection.endpointGeneration.takeIf { canonical ||
+            (expectedEndpointGeneration != null && connection.client is EndpointDispatchingGatewayRpcClient) }
+        val profile = synchronized(stateLock) { runtimeProfiles[binding.runtimeId] }
+        fun unsaved(): Nothing = throw GatewayRpcException("This message is not saved yet; wait for it to settle, then branch from it again.")
+        val boundary = if (!canonical) null else if (fromReply) {
+            selectedRow?.value?.takeIf { it > 0 } ?: unsaved()
+        } else if (count != null) {
+            // A count-only caller must resolve against fresh visible history, never a paged cache.
+            val history = requestAtEndpointDispatch(connection, endpoint, "session.history", historyParams(binding.runtimeId))
+            synchronized(stateLock) { ensureCurrent(connection) }
+            val visible = parseHistory(history, binding.runtimeId, clock()).filter {
+                (it is UserTurn && it.text.isNotBlank()) || (it is AssistantTurn && it.markdown.isNotBlank())
+            }
+            val row = visible.getOrNull(count - 1)?.rowId?.value?.takeIf { it > 0 } ?: unsaved()
+            if (visible.count { it.rowId?.value == row } != 1) unsaved()
+            row
+        } else null
+        val result = requestAtEndpointDispatch(connection, endpoint,
             "session.branch",
             buildJsonObject {
                 put("session_id", JsonPrimitive(binding.runtimeId))
-                count?.let { put("count", JsonPrimitive(it)) }
+                count?.let {
+                    put("count", JsonPrimitive(it))
+                    if (canonical) put("through_message_id", JsonPrimitive(boundary ?: unsaved()))
+                }
             },
         ).asObject("session.branch")
         val newRuntimeId = result.string("session_id")
@@ -2558,8 +2619,11 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.bind(newDurableId, newRuntimeId)
+            runtimeProfiles[newRuntimeId] = profile
             // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
-            cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId))
+            cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId).let { row ->
+                row.copy(remoteProfile = row.remoteProfile ?: profile)
+            })
             val messages = result["messages"]
             if (messages is JsonArray) {
                 cache.setTranscript(
@@ -2829,6 +2893,12 @@ internal class LiveGatewaySessionRepository(
         return mutateLiveControl(durableId, "model", value, modelSwitch = true)
     }
 
+    override suspend fun confirmLiveModel(durableId: String, selection: ComposerModelSelection): ControlMutationResult {
+        if (!selection.isSpecified) return ControlMutationResult.Rejected("Choose a model, then try again.")
+        val value = "${selection.model.trim()} --provider ${selection.provider.trim()} --session"
+        return mutateLiveControl(durableId, "model", value, modelSwitch = true, confirmed = true)
+    }
+
     override suspend fun setLiveReasoning(
         durableId: String,
         effort: ReasoningEffort,
@@ -2915,6 +2985,7 @@ internal class LiveGatewaySessionRepository(
         val fileRefs = StringBuilder()
         val imageRefs = mutableListOf<String>()
         val stagedImagePaths = mutableListOf<String>()
+        val canonicalImages = mutableListOf<JsonObject>()
         var hasUndetachableImage = false
 
         suspend fun rejectAfterCleanup(failure: GatewayRpcException): Nothing {
@@ -2947,6 +3018,9 @@ internal class LiveGatewaySessionRepository(
                             } else {
                                 stagedImagePaths += path
                                 imageRefs += ImageRefLines.formatRef(path)
+                                result.reference.mimeType?.let { mime -> canonicalImages += buildJsonObject {
+                                    put("path", JsonPrimitive(path)); put("mime", JsonPrimitive(mime))
+                                } }
                             }
                         }
 
@@ -2998,6 +3072,7 @@ internal class LiveGatewaySessionRepository(
                 queued,
                 gatewayQueueMergeable = attachments.none { it is OutgoingAttachment.Image },
                 interruptEpoch = interruptEpoch,
+                canonicalAttachments = canonicalImages,
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
@@ -3014,8 +3089,8 @@ internal class LiveGatewaySessionRepository(
     ): GatewayStageOutcome {
         return try {
             val result = when (attachment) {
-                is OutgoingAttachment.Image -> connection.client.request(
-                    "image.attach_bytes",
+                is OutgoingAttachment.Image -> requestAtEndpointDispatch(
+                    connection, connection.endpointGeneration, "image.attach_bytes",
                     buildJsonObject {
                         // Attach RPCs resolve the session by id before staging;
                         // the desktop always sends its session's runtime id.
@@ -3025,8 +3100,8 @@ internal class LiveGatewaySessionRepository(
                     },
                 ).asObject("image.attach_bytes")
 
-                is OutgoingAttachment.GenericFile -> connection.client.request(
-                    "file.attach",
+                is OutgoingAttachment.GenericFile -> requestAtEndpointDispatch(
+                    connection, connection.endpointGeneration, "file.attach",
                     buildJsonObject {
                         put("session_id", JsonPrimitive(binding.runtimeId))
                         put("data_url", JsonPrimitive(attachment.dataUrl))
@@ -3035,11 +3110,17 @@ internal class LiveGatewaySessionRepository(
                 ).asObject("file.attach")
             }
             synchronized(stateLock) { ensureCurrent(connection) }
+            val canonical = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
+            if (canonical && (result.boolean("attached") != true || result.string("path").isNullOrBlank() ||
+                    (attachment is OutgoingAttachment.Image && result.string("mime") !in setOf("image/png", "image/jpeg", "image/gif", "image/webp")) ||
+                    (attachment is OutgoingAttachment.GenericFile && result.string("ref_text").isNullOrBlank()))) {
+                return GatewayStageOutcome.Rejected("The attachment upload was incomplete. Attach it again.")
+            }
             val refText = result.string("ref_text")
                 ?: result.string("text")?.takeIf(String::isNotBlank)
                 ?: "@file:${attachment.displayName}"
             GatewayStageOutcome.Staged(
-                StagedAttachmentReference(refText = refText, gatewayPath = result.string("path")),
+                StagedAttachmentReference(refText = refText, gatewayPath = result.string("path"), mimeType = result.string("mime").takeIf { canonical }),
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException) throw failure
@@ -3060,7 +3141,7 @@ internal class LiveGatewaySessionRepository(
         runtimeId: String,
         paths: List<String>,
     ): Boolean {
-        if (paths.isEmpty()) return true
+        if (paths.isEmpty() || (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) return true
         var allDetached = true
         paths.asReversed().forEach { path ->
             try {
@@ -3093,6 +3174,12 @@ internal class LiveGatewaySessionRepository(
         return submitInternal(durableId, prompt, prompt, queued)
     }
 
+    override suspend fun submitIdentified(durableId: String, text: String, queued: Boolean, submissionId: String): GatewaySubmitOutcome {
+        require(submissionId.isNotBlank())
+        val prompt = text.trim()
+        return submitInternal(durableId, prompt, prompt, queued, submissionId = submissionId)
+    }
+
     override suspend fun submitAtEndpoint(
         durableId: String,
         text: String,
@@ -3109,6 +3196,7 @@ internal class LiveGatewaySessionRepository(
         optimisticText: String,
         queued: Boolean,
         expectedEndpointGeneration: Long? = null,
+        submissionId: String? = null,
     ): GatewaySubmitOutcome {
         val interruptEpoch = submitInterruptEpoch(durableId)
         // Before the runtime resolution, because that resolution can itself be
@@ -3130,6 +3218,7 @@ internal class LiveGatewaySessionRepository(
                 gatewayQueueMergeable = true,
                 interruptEpoch = interruptEpoch,
                 expectedEndpointGeneration = expectedEndpointGeneration,
+                submissionId = submissionId,
             )
         } }
     }
@@ -3191,9 +3280,19 @@ internal class LiveGatewaySessionRepository(
             path
         }.distinct()
         val staged = mutableListOf<String>()
+        val canonicalImages = mutableListOf<JsonObject>()
+        val authority = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
         try {
             for (path in paths) {
                 requireUninterruptedSubmit(binding.durableId, interruptEpoch)
+                if (authority != null) {
+                    val reference = reacquireCanonicalImage(binding, connection, path, endpoint)
+                    val newPath = reference.gatewayPath ?: throw GatewayRpcException("Attach this image again before retrying.")
+                    val mime = reference.mimeType ?: throw GatewayRpcException("Attach this image again before retrying.")
+                    staged += newPath
+                    canonicalImages += buildJsonObject { put("path", JsonPrimitive(newPath)); put("mime", JsonPrimitive(mime)) }
+                    continue
+                }
                 val attached = requestAtEndpointDispatch(connection, endpoint, "image.attach", buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("path", JsonPrimitive(ImageRefLines.formatRef(path).removePrefix("@image:")))
@@ -3204,10 +3303,12 @@ internal class LiveGatewaySessionRepository(
                 staged += path
             }
             return submitInternalLocked(
-                binding, connection, body.ifBlank { IMAGE_ONLY_PROMPT }, prompt,
+                binding, connection, body.ifBlank { IMAGE_ONLY_PROMPT },
+                if (authority == null) prompt else listOf(body.ifBlank { IMAGE_ONLY_PROMPT }, staged.joinToString("\n", transform = ImageRefLines::formatRef)).joinToString("\n"),
                 queued = false, gatewayQueueMergeable = paths.isEmpty(), interruptEpoch = interruptEpoch,
                 truncateBeforeRowId = truncateBeforeRowId,
                 optimisticTranscriptPrefix = optimisticTranscriptPrefix, expectedEndpointGeneration = endpoint,
+                canonicalAttachments = canonicalImages,
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
@@ -3215,6 +3316,38 @@ internal class LiveGatewaySessionRepository(
                 throw GatewayRpcException("The image restoration could not be reconciled. Reopen this session.", requestMayHaveBeenAccepted = true)
             }
             throw failure
+        }
+    }
+
+    /** Reacquire through the authenticated owner/endpoint route; authority has no image.attach verb.
+     * gateway/session_images.py:8-44 and hermes_cli/web_routers/files.py:934-958 @ 379cf122. */
+    private suspend fun reacquireCanonicalImage(binding: SessionBinding, connection: ConnectionSnapshot,
+        path: String, endpoint: Long): StagedAttachmentReference {
+        val transport = http() ?: throw GatewayRpcException("Reconnect before restoring this image.")
+        val identity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+            ?: throw GatewayRpcException("Reopen this session before restoring its image.")
+        val address = identity.address(binding.runtimeId) ?: throw GatewayRpcException("Reopen this session before restoring its image.")
+        val current = { cache.endpointGeneration.value == endpoint && synchronized(stateLock) {
+            connectionGeneration == connection.generation && clientFlow.value === connection.client
+        } }
+        return withContext(restContext) {
+            if (!current()) throw GatewayRpcException("Reconnect before restoring this image.")
+            val result = transport.execute(GatewayHttpRequest("api/fs/download", "GET", null, 15_000,
+                query = buildMap { put("path", path); put("session_id", address.rawId); address.profile?.let { put("profile", it) } },
+                maxResponseBytes = 25L * 1024L * 1024L, isCurrent = current))
+            when (result) {
+                is GatewayHttpResult.Rejected -> {
+                    result.envelopeBytes.fill(0)
+                    throw GatewayRpcException("This image could not be restored. Attach it again.")
+                }
+                is GatewayHttpResult.Success -> result.consumeBody { bytes ->
+                    if (!current() || bytes.isEmpty()) throw GatewayRpcException("This image could not be restored. Attach it again.")
+                    val staged = stageOne(binding, connection, OutgoingAttachment.Image(path.substringAfterLast('/'),
+                        java.util.Base64.getEncoder().encodeToString(bytes)))
+                    (staged as? GatewayStageOutcome.Staged)?.reference
+                        ?: throw GatewayRpcException("This image could not be restored. Attach it again.")
+                }
+            }
         }
     }
 
@@ -3258,6 +3391,8 @@ internal class LiveGatewaySessionRepository(
         truncateBeforeRowId: TranscriptRowId? = null,
         optimisticTranscriptPrefix: List<TranscriptEntry>? = null,
         expectedEndpointGeneration: Long? = null,
+        submissionId: String? = null,
+        canonicalAttachments: List<JsonObject> = emptyList(),
     ): GatewaySubmitOutcome {
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
@@ -3318,19 +3453,50 @@ internal class LiveGatewaySessionRepository(
                 // mutex, and an endpoint-bound prompt may not cross after the
                 // app left the Gateway it was bound to.
                 requireEndpoint(expectedEndpointGeneration)
-                requestPromptSubmit(
+                val receipt = requestPromptSubmit(
                     connection = connection,
                     runtimeId = binding.runtimeId,
                     prompt = wireText,
                     queued = queued,
                     truncateBeforeRowId = truncateBeforeRowId,
                     expectedEndpointGeneration = expectedEndpointGeneration,
+                    submissionId = submissionId,
+                    canonicalAttachments = canonicalAttachments,
                 )
+                val canonicalReceipt = (receipt as? JsonObject)?.takeIf {
+                    (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
+                }
+                val receiptStatus = canonicalReceipt?.string("status")
+                if (receiptStatus in setOf("queued", "unknown")) synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    if (optimistic != null && binding.runtimeId !in liveTurnRuntimeIds) {
+                        releaseRuntimeGuard(binding.runtimeId)
+                        localSubmitStartedAtByRuntime.remove(binding.runtimeId)
+                        optimisticUserByRuntime.remove(binding.runtimeId)
+                        cache.setTranscript(binding.durableId, optimistic.transcript)
+                        optimistic.session?.let(cache::upsertSession)
+                    }
+                    (canonicalReceipt?.get("pending") as? JsonArray)?.let { applyCanonicalAdmissions(binding.durableId, binding.runtimeId, it) }
+                }
+                if (receiptStatus == "unknown") {
+                    // Accepted work with lost execution is never retried automatically.
+                    return@withLock GatewaySubmitOutcome.Ambiguous
+                }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
+                    val acknowledgedGeneration = canonicalReceipt?.primitive("execution_generation")?.toLongOrNull()
+                    val currentGeneration = canonicalWatermarks[binding.runtimeId]?.generation
+                    if (receiptStatus == "terminal" && (binding.runtimeId !in liveTurnRuntimeIds ||
+                            (acknowledgedGeneration != null && (currentGeneration == null || currentGeneration <= acknowledgedGeneration)))) {
+                        releaseRuntimeGuard(binding.runtimeId)
+                        liveTurnRuntimeIds.remove(binding.runtimeId)
+                        localSubmitStartedAtByRuntime.remove(binding.runtimeId)
+                        updateActiveTurnsLocked()
+                        cache.session(binding.durableId)?.let { cache.upsertSession(it.copy(status = SessionStatus.Idle)) }
+                    }
                     val stoppedBeforeAcknowledgement =
                         (confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L) > interruptEpoch
-                    if (optimistic == null && !stoppedBeforeAcknowledgement) {
+                    if (optimistic == null && !stoppedBeforeAcknowledgement && canonicalReceipt == null) {
                         // Strip only @image: lines; a @file: ref is real prompt
                         // content and must stay readable in the queue row.
                         val displayText = optimisticText
@@ -3359,6 +3525,13 @@ internal class LiveGatewaySessionRepository(
                     }
                     ephemeralSessions.remove(binding.durableId)
                 }
+                if (receiptStatus == "terminal") {
+                    val endpoint = connection.endpointGeneration
+                    scope.launch {
+                        try { openSessionInternal(binding.durableId, null, endpoint) }
+                        catch (failure: Throwable) { if (failure is CancellationException) throw failure }
+                    }
+                }
                 GatewaySubmitOutcome.Accepted
             }
         } catch (failure: Throwable) {
@@ -3369,7 +3542,7 @@ internal class LiveGatewaySessionRepository(
                     // not just the runtime that happens to own the event pin.
                     // Ambiguous acknowledgements still keep the optimistic row.
                     val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds &&
-                        (!isCronExecutionSessionId(binding.durableId) ||
+                        (!isCronExecutionSessionId(backendSessionId(binding.durableId)) ||
                             identities.runtimeFor(binding.durableId) == binding.runtimeId) &&
                         connection.generation == connectionGeneration && clientFlow.value === connection.client &&
                         (expectedEndpointGeneration == null || cache.endpointGeneration.value == expectedEndpointGeneration)
@@ -3401,14 +3574,19 @@ internal class LiveGatewaySessionRepository(
         queued: Boolean,
         truncateBeforeRowId: TranscriptRowId? = null,
         expectedEndpointGeneration: Long? = null,
-    ) {
-        requestAtEndpointDispatch(
+        submissionId: String? = null,
+        canonicalAttachments: List<JsonObject> = emptyList(),
+    ): JsonElement {
+        return requestAtEndpointDispatch(
             connection = connection,
             expectedEndpointGeneration = expectedEndpointGeneration,
             method = "prompt.submit",
             params = buildJsonObject {
                 put("session_id", JsonPrimitive(runtimeId))
                 put("text", JsonPrimitive(prompt))
+                if (submissionId != null && (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null)
+                    put("submission_id", JsonPrimitive(submissionId))
+                if (canonicalAttachments.isNotEmpty()) put("attachments", JsonArray(canonicalAttachments))
                 if (queued) put("queued", JsonPrimitive(true))
                 if (truncateBeforeRowId != null) {
                     put("confirm_truncate", JsonPrimitive(true))
@@ -3431,6 +3609,15 @@ internal class LiveGatewaySessionRepository(
     private val respondingKeys = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<PendingInputKey, Boolean>())
 
     override suspend fun respondToPendingInput(
+        key: PendingInputKey,
+        action: PendingInputAction,
+    ): PendingInputResponse = try {
+        respondToPendingInputOwned(key, action)
+    } finally {
+        action.wipeSensitive()
+    }
+
+    private suspend fun respondToPendingInputOwned(
         key: PendingInputKey,
         action: PendingInputAction,
     ): PendingInputResponse {
@@ -3464,10 +3651,35 @@ internal class LiveGatewaySessionRepository(
             // (`store/server-requests.ts:5-12` @ the pin) — and the generation
             // fence above is what stops a request from a leg this app has left
             // being answered on the replacement.
-            val responder = connection.client as? GatewayServerRequestResponder
+            if (request is UnsupportedPendingInput) {
+                if (action != PendingInputAction.StopUnsupported) return PendingInputResponse.Unanswerable
+                if (request.stopping) return PendingInputResponse.Stopping
+                val generation = key.executionGeneration ?: return PendingInputResponse.Unanswerable
+                return try {
+                    requestAtEndpointDispatch(connection, connection.endpointGeneration, "session.interrupt", buildJsonObject {
+                        put("session_id", JsonPrimitive(request.runtimeSessionId))
+                        put("execution_generation", JsonPrimitive(generation))
+                    })
+                    synchronized(stateLock) {
+                        ensureCurrent(connection)
+                        if (mutablePendingInputs.value[key] === request) {
+                            mutablePendingInputs.value = mutablePendingInputs.value + (key to request.copy(stopping = true))
+                        }
+                    }
+                    PendingInputResponse.Stopping
+                } catch (failure: Throwable) {
+                    if (failure is CancellationException) throw failure
+                    PendingInputResponse.Retryable
+                }
+            }
+            if (key.origin == PendingInputOrigin.Canonical) {
+                return answerCanonicalPrompt(connection, request, action)
+            }
+            val responder = responderAtOwner(connection, request.runtimeSessionId, key)
                 ?: return PendingInputResponse.Unanswerable
             val outcome = try {
                 when (action) {
+                    PendingInputAction.StopUnsupported -> return PendingInputResponse.Unanswerable
                     is PendingInputAction.ClarifyAnswer ->
                         answerClarify(connection, responder, request, action)
 
@@ -3547,7 +3759,10 @@ internal class LiveGatewaySessionRepository(
 
                 PendingInputResponse.Resolved -> {
                     removePendingInput(key)
-                    setStatus(request.durableSessionId, SessionStatus.Idle)
+                    val status = synchronized(stateLock) {
+                        if (request.runtimeSessionId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle
+                    }
+                    setStatus(request.durableSessionId, status)
                     PendingInputResponse.Resolved
                 }
 
@@ -3557,6 +3772,124 @@ internal class LiveGatewaySessionRepository(
             }
         } finally {
             respondingKeys.remove(key)
+        }
+    }
+
+    override suspend fun resolveGatewayAdmission(key: GatewayAdmissionKey): PendingInputResponse {
+        val durableId = synchronized(stateLock) {
+            if (key.connectionGeneration != connectionGeneration || key.endpointGeneration != cache.endpointGeneration.value)
+                return PendingInputResponse.Unanswerable
+            val owner = canonicalAdmissionOwners[key] ?: return PendingInputResponse.Unanswerable
+            if (cache.session(owner)?.composerStatus?.gatewayAdmissions?.none { it.key == key } != false)
+                return PendingInputResponse.Unanswerable
+            if (!resolvingAdmissions.add(key)) return PendingInputResponse.Retryable
+            owner
+        }
+        try {
+            val connection = connectionSnapshot()
+            if (connection.generation != key.connectionGeneration || connection.endpointGeneration != key.endpointGeneration)
+                return PendingInputResponse.Unanswerable
+            val method = if (key.status == GatewayAdmissionStatus.Unknown) "prompt.resolve_unknown" else "prompt.cancel"
+            val result = requestAtEndpointDispatch(connection, key.endpointGeneration, method, buildJsonObject {
+                put("session_id", JsonPrimitive(key.runtimeSessionId)); put("admission_id", JsonPrimitive(key.admissionId))
+                if (key.status == GatewayAdmissionStatus.Unknown)
+                    put("execution_generation", JsonPrimitive(key.executionGeneration ?: return PendingInputResponse.Unanswerable))
+            }).asObject(method)
+            if (result.string("admission_id") != key.admissionId || result.string("status") != "terminal") return PendingInputResponse.Retryable
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                canonicalAdmissionOwners.remove(key)
+                updateComposerStatus(durableId, key.runtimeSessionId) { status ->
+                    status.copy(gatewayAdmissions = status.gatewayAdmissions.filter { it.key != key })
+                }
+            }
+            return PendingInputResponse.Resolved
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            return PendingInputResponse.Retryable
+        } finally { synchronized(stateLock) { resolvingAdmissions.remove(key) } }
+    }
+
+    private fun applyCanonicalAdmissions(durableId: String, runtimeId: String, pending: JsonArray) {
+        val rows = pending.mapNotNull { item ->
+            val row = item as? JsonObject ?: return@mapNotNull null
+            val id = row.string("admission_id")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val status = when (row.string("status")) {
+                "queued" -> GatewayAdmissionStatus.Queued
+                "unknown" -> GatewayAdmissionStatus.Unknown
+                else -> return@mapNotNull null
+            }
+            val generation = row.primitive("execution_generation")?.toLongOrNull()
+            if (status == GatewayAdmissionStatus.Unknown && generation == null) return@mapNotNull null
+            com.hermesagent.mobile.data.session.ComposerGatewayAdmission(
+                GatewayAdmissionKey(connectionGeneration, cache.endpointGeneration.value, runtimeId, id, status, generation),
+                redact(row.string("text").orEmpty()))
+        }
+        canonicalAdmissionOwners.keys.removeAll { it.runtimeSessionId == runtimeId }
+        rows.forEach { canonicalAdmissionOwners[it.key] = durableId }
+        updateComposerStatus(durableId, runtimeId) { status -> status.copy(gatewayAdmissions = rows) }
+    }
+
+    private suspend fun answerCanonicalPrompt(connection: ConnectionSnapshot, request: PendingInputRequest,
+        action: PendingInputAction): PendingInputResponse {
+        val key = request.key
+        val field: String
+        val value: String
+        val method: String
+        when {
+            request is ClarifyPending && action is PendingInputAction.ClarifyAnswer -> {
+                val qid = request.questions.singleOrNull()?.questionId ?: return PendingInputResponse.Unanswerable
+                if (!action.cancelBatch && qid !in action.answers) return PendingInputResponse.Retryable
+                field = "answer"; value = if (action.cancelBatch) "" else action.answers[qid].orEmpty(); method = "clarify.respond"
+            }
+            request is ApprovalPending && action is PendingInputAction.ApprovalChoice && action.choice in request.choices -> {
+                field = "choice"; value = action.choice; method = "approval.respond"
+            }
+            else -> return PendingInputResponse.Unanswerable
+        }
+        return try {
+            val result = requestAtEndpointDispatch(connection, connection.endpointGeneration, method, buildJsonObject {
+                put("session_id", JsonPrimitive(request.runtimeSessionId)); put("prompt_id", JsonPrimitive(key.requestId))
+                put("execution_generation", JsonPrimitive(key.executionGeneration ?: return PendingInputResponse.Unanswerable))
+                put(field, JsonPrimitive(value))
+            }).asObject(method)
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (result.string("prompt_id") != key.requestId || result.string("status") !in setOf("resolved", "already_resolved"))
+                    return PendingInputResponse.Retryable
+                removePendingInput(key)
+                setStatus(request.durableSessionId, if (request.runtimeSessionId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle)
+            }
+            PendingInputResponse.Resolved
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            PendingInputResponse.Retryable
+        }
+    }
+
+    /** The original socket and owner survive foreground/session/profile switches. */
+    private fun responderAtOwner(
+        connection: ConnectionSnapshot,
+        runtimeId: String?,
+        pendingKey: PendingInputKey? = null,
+    ): GatewayServerRequestResponder? {
+        val original = connection.client as? GatewayServerRequestResponder ?: return null
+        val owned = connection.client as? GatewayOwnedServerRequestResponder ?: return original
+        val stillOwns = {
+            cache.endpointGeneration.value == connection.endpointGeneration && synchronized(stateLock) {
+                connection.generation == connectionGeneration && clientFlow.value === connection.client &&
+                    (pendingKey == null || pendingKey in mutablePendingInputs.value)
+            }
+        }
+        val dispatch: (() -> Boolean) -> Boolean = { send ->
+            val lease = endpointDispatchFence.leaseAt(connection.endpointGeneration, stillOwns)
+            lease != null && endpointDispatchFence.dispatchIfCurrent(lease, stillOwns, send)
+        }
+        return object : GatewayServerRequestResponder {
+            override suspend fun respondToServerRequest(id: String, result: JsonObject) =
+                owned.respondToServerRequestAtOwner(runtimeId, id, result, dispatch)
+            override suspend fun failServerRequest(id: String, code: Int, message: String) =
+                owned.failServerRequestAtOwner(runtimeId, id, code, message, dispatch)
         }
     }
 
@@ -3604,6 +3937,26 @@ internal class LiveGatewaySessionRepository(
         request: PendingInputRequest,
         answer: PendingInputAction.ClarifyAnswer,
     ): PendingInputResponse {
+        if (request.key.origin == PendingInputOrigin.AuthorityNative) {
+            val questions = (request as? ClarifyPending)?.questions.orEmpty()
+            val previous = synchronized(stateLock) { authorityBatchAnswers[request.key].orEmpty() }
+            val known = questions.map { it.questionId }.toSet() + previous.keys
+            if (answer.answers.keys.any { it !in known }) return PendingInputResponse.Retryable
+            val all = previous + answer.answers
+            if (!answer.cancelBatch && !known.all(all::containsKey)) {
+                synchronized(stateLock) {
+                    authorityBatchAnswers[request.key] = all
+                    mutablePendingInputs.value = mutablePendingInputs.value + (request.key to (request as ClarifyPending).copy(
+                        questions = questions.filter { it.questionId !in all }))
+                }
+                return PendingInputResponse.PartiallyAnswered
+            }
+            responder.respondToServerRequest(request.key.requestId, buildJsonObject {
+                put("answers", if (answer.cancelBatch) JsonObject(emptyMap()) else JsonObject(all.mapValues { (_, value) -> value?.let(::JsonPrimitive) ?: JsonNull }))
+                put("outcome", JsonPrimitive(if (answer.cancelBatch) "cancelled" else "submitted"))
+            })
+            return PendingInputResponse.Resolved
+        }
         if (answer.cancelBatch) {
             responder.respondToServerRequest(request.key.requestId, JsonObject(emptyMap()))
             return PendingInputResponse.Resolved
@@ -3650,6 +4003,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun removePendingInput(key: PendingInputKey) {
+        authorityBatchAnswers.remove(key)
         val next = mutablePendingInputs.value.minus(key)
         if (next.size != mutablePendingInputs.value.size) {
             mutablePendingInputs.value = next
@@ -3659,6 +4013,7 @@ internal class LiveGatewaySessionRepository(
 
     /** Records requests this connection finished with. See [retiredKeys]. */
     private fun retire(keys: Collection<PendingInputKey>) {
+        keys.forEach(authorityBatchAnswers::remove)
         synchronized(stateLock) { keys.forEach { retiredKeys[it] = Unit } }
     }
 
@@ -4085,6 +4440,8 @@ internal class LiveGatewaySessionRepository(
                 return resolvedTitle
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
+                // Authority refusal/ambiguity must never trigger a second writer.
+                if ((client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) throw failure
                 // Fall through to the REST path rather than report the RPC's
                 // refusal. Desktop does exactly this, and says why
                 // (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:86-92`
@@ -4105,7 +4462,7 @@ internal class LiveGatewaySessionRepository(
         )
         return when (result) {
             is GatewayRestResult.Success -> {
-                val resolvedTitle = result.value.title
+                val resolvedTitle = result.value.title ?: trimmed
                 val existing = cache.session(durableId)
                 if (existing != null) {
                     cache.upsertSession(existing.copy(title = resolvedTitle))
@@ -4191,7 +4548,7 @@ internal class LiveGatewaySessionRepository(
             is GatewayRestResult.Success -> {
                 synchronized(stateLock) {
                     ensureCurrent(connection)
-                    cache.removeSession(durableId)
+                    (result.value.deletedIds + durableId).distinct().forEach(cache::removeSession)
                 }
             }
             is GatewayRestResult.Failed -> {
@@ -4550,20 +4907,26 @@ internal class LiveGatewaySessionRepository(
         key: String,
         value: String,
         modelSwitch: Boolean = false,
+        confirmed: Boolean = false,
     ): ControlMutationResult {
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot(binding)
         return try {
-            val result = connection.client.request(
-                "config.set",
+            val result = requestAtEndpointDispatch(
+                connection, cache.endpointGeneration.value, "config.set",
                 buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("key", JsonPrimitive(key))
                     put("value", JsonPrimitive(value))
+                    if (confirmed) put("confirm_expensive_model", JsonPrimitive(true))
                 },
             ).asObject("config.set")
             synchronized(stateLock) { ensureCurrent(connection) }
-            if (modelSwitch && result.boolean("deferred") == true) {
+            if (modelSwitch && result.boolean("confirm_required") == true) {
+                ControlMutationResult.ConfirmationRequired(redact(result.string("confirm_message") ?: "This model switch needs confirmation."))
+            } else if (result.boolean("ok") == false || result.string("status") == "rejected") {
+                ControlMutationResult.Rejected(controlFailureMessage(key))
+            } else if (modelSwitch && result.boolean("deferred") == true) {
                 ControlMutationResult.Deferred
             } else {
                 ControlMutationResult.Applied
@@ -4601,7 +4964,7 @@ internal class LiveGatewaySessionRepository(
     ): SessionBinding {
         val connection = connectionSnapshot()
         requireEndpoint(expectedEndpointGeneration)
-        if (isCronExecutionSessionId(durableId)) {
+        if (isCronExecutionSessionId(backendSessionId(durableId))) {
             val profile = synchronized(stateLock) {
                 val runtime = identities.runtimeFor(durableId)
                 if (runtime != null && runtimeProfiles.containsKey(runtime)) runtimeProfiles[runtime]
@@ -4678,9 +5041,63 @@ internal class LiveGatewaySessionRepository(
     private fun applyEvent(event: GatewayEvent): Boolean {
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
         val runtimeId = event.runtimeSessionId ?: unscopedRuntimeId ?: return false
-        var durableId = identities.durableFor(runtimeId) ?: return false
+        var durableId = identities.durableFor(runtimeId) ?: run {
+            if (event.canonical) {
+                if (unboundEvents.size >= 1024) clientFlow.value?.close() else unboundEvents += event
+            }
+            return false
+        }
+        if (event.canonical && event.type != "session.replay_gap") {
+            val previous = canonicalWatermarks[runtimeId]
+            if (previous != null && (event.executionGeneration?.let { it < previous.generation } == true ||
+                    event.seq?.let { it <= previous.sequence } == true)) return false
+            if (previous != null && event.replayEpoch != null && event.replayEpoch != previous.epoch) return false
+            event.executionGeneration?.let { generation ->
+                mutablePendingInputs.value.keys.filter { it.runtimeSessionId == runtimeId && it.origin == PendingInputOrigin.Canonical &&
+                    it.executionGeneration?.let { old -> old < generation } == true }.forEach(::removePendingInput)
+            }
+            val epoch = event.replayEpoch ?: previous?.epoch
+            if (epoch != null) canonicalWatermarks[runtimeId] = CanonicalWatermark(epoch,
+                event.seq ?: previous?.sequence ?: 0L, event.executionGeneration ?: previous?.generation ?: 0L)
+        }
+        if (event.canonical) (payload["pending"] as? JsonArray)?.let { applyCanonicalAdmissions(durableId, runtimeId, it) }
+        if (event.canonical && event.type == "message.complete" && event.executionGeneration == null &&
+            payload.string("outcome") == "cancelled" && event.admissionId != null) {
+            // Cancelled before claim: no execution stamp, no assistant turn, no live turn to settle.
+            // Captured source fixture: execution-authority.frames.json epoch2.paused_cancel_frames @ 379cf122.
+            val id = event.admissionId
+            canonicalAdmissionOwners.keys.removeAll { it.runtimeSessionId == runtimeId && it.admissionId == id }
+            updateComposerStatus(durableId, runtimeId) { status -> status.copy(
+                gatewayAdmissions = status.gatewayAdmissions.filter { it.key.admissionId != id }) }
+            return false
+        }
         if (event.type in LIVE_RUNTIME_EVENT_TYPES) advanceLiveEventRevision(runtimeId)
         return when (event.type) {
+            "approval.request", "clarify.request" -> {
+                if (event.canonical) adoptCanonicalPrompt(durableId, runtimeId, payload, event.executionGeneration)
+                false
+            }
+            "approval.settled", "clarify.settled" -> {
+                if (event.canonical) mutablePendingInputs.value.keys.filter {
+                    it.runtimeSessionId == runtimeId && it.origin == PendingInputOrigin.Canonical &&
+                        it.requestId == payload.string("prompt_id") && it.executionGeneration == event.executionGeneration
+                }.forEach(::removePendingInput)
+                if (!hasPendingInput(runtimeId)) setStatus(durableId, if (runtimeId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle)
+                false
+            }
+            "session.updated" -> true
+            "session.replay_gap" -> {
+                if (event.canonical && replayReconciliations.add(runtimeId)) {
+                    val endpoint = cache.endpointGeneration.value
+                    val generation = connectionGeneration
+                    scope.launch {
+                        try { openSessionInternal(durableId, null, endpoint) }
+                        catch (failure: Throwable) { if (failure is CancellationException) throw failure }
+                        finally { synchronized(stateLock) { if (generation == connectionGeneration) replayReconciliations.remove(runtimeId) } }
+                    }
+                }
+                false
+            }
             "session.info" -> {
                 val eventDurable = payload.string("stored_session_id")
                     ?: payload.string("session_key")
@@ -4753,7 +5170,29 @@ internal class LiveGatewaySessionRepository(
                 // A new turn on this runtime cannot inherit a previous turn's
                 // locally requested Stop attribution.
                 locallyRequestedInterruptRuntimeIds.remove(runtimeId)
-                if ((payload.string("role") ?: "assistant") == "assistant") {
+                // Current authority admission_display emits typed completion starts without a role
+                // (gateway/session_automation.py:94-106 @ 046094df28b712f62a5e3c728a9e59da05dcbf1e).
+                // Use the same metadata classifier as hydration; only typed rows license machinery text.
+                val timeline = classifyTimelineEvent(
+                    payload.string("display_kind"),
+                    payload["display_metadata"] ?: payload.string("display_text")?.let { label ->
+                        buildJsonObject { put("display_text", JsonPrimitive(label)) }
+                    },
+                    payload.contentText(),
+                )
+                if (timeline != null) {
+                    advanceObservedTurn(runtimeId)
+                    consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
+                    cache.putEntry(durableId, TimelineEvent(
+                        id = payload.messageId() ?: "gateway-timeline-${sequence.incrementAndGet()}",
+                        label = timeline.label, report = timeline.report,
+                        atMillis = payload.timestamp(clock()), rowId = payload.durableRowId(),
+                    ))
+                    clearProgress(durableId, runtimeId)
+                    markRuntimeLive(runtimeId)
+                    ephemeralSessions.remove(durableId)
+                    setStatus(durableId, SessionStatus.Working)
+                } else if ((payload.string("role") ?: "assistant") == "assistant") {
                     advanceObservedTurn(runtimeId)
                     consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     val turn = AssistantTurn(
@@ -4949,6 +5388,27 @@ internal class LiveGatewaySessionRepository(
         runtimeId: String,
         replayedRefusals: MutableList<GatewayServerRequest>,
     ) {
+        if ((clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+            (snapshot["pending"] as? JsonArray)?.let { applyCanonicalAdmissions(durableId, runtimeId, it) }
+            val epoch = snapshot.string("replay_epoch")
+            val sequence = snapshot.primitive("last_sequence")?.toLongOrNull()
+            val generation = snapshot.primitive("execution_generation")?.toLongOrNull()
+            if (epoch != null && sequence != null && generation != null) canonicalWatermarks[runtimeId] = CanonicalWatermark(epoch, sequence, generation)
+            val present = (snapshot["prompts"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            val ids = present.mapNotNull { it.string("prompt_id") }.toSet()
+            mutablePendingInputs.value.keys.filter { it.runtimeSessionId == runtimeId &&
+                it.origin == PendingInputOrigin.Canonical && it.requestId !in ids }.forEach(::removePendingInput)
+            present.forEach { adoptCanonicalPrompt(durableId, runtimeId, it, snapshot.primitive("execution_generation")?.toLongOrNull()) }
+        }
+        val events = unboundEvents.filter { it.runtimeSessionId == runtimeId }
+        unboundEvents.removeAll(events.toSet())
+        events.forEach(::applyEvent)
+        val buffered = unboundServerRequests.filterKeys { it.first == runtimeId }.values.toList()
+        unboundServerRequests.keys.removeAll { it.first == runtimeId }
+        buffered.forEach { adoptOrRefuseServerRequest(durableId, runtimeId, it.id, it.method, it.params,
+            if (it.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native,
+            it.executionGeneration ?: snapshot.primitive("execution_generation")?.toLongOrNull()) }
+
         val entries = snapshot["open_requests"] as? JsonArray ?: return
         entries.forEach { entry ->
             val open = entry as? JsonObject ?: return@forEach
@@ -5000,12 +5460,31 @@ internal class LiveGatewaySessionRepository(
         requestId: String,
         method: String,
         params: JsonObject,
+        origin: PendingInputOrigin = PendingInputOrigin.Native,
+        executionGeneration: Long? = null,
     ): GatewayServerRequest? {
         val runtime = runtimeId?.takeIf(String::isNotBlank)
-        val known = pendingInputKind(method) != null
+        val authorityIdentity = (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        val foreignNative = origin == PendingInputOrigin.AuthorityNative && runtime != null && authorityIdentity != null &&
+            authorityIdentity.address(runtime)?.ownerId != authorityIdentity.ownerId(null)
+        val known = pendingInputKind(method) != null || foreignNative
         // Resolved here rather than by the caller: a live frame routes by its
         // runtime, a replay entry routes by the session its snapshot belongs to.
         val bound = durableId ?: runtime?.let(identities::durableFor)
+        if (known && bound == null && runtime != null) {
+            if (unboundServerRequests.size >= 64 && (runtime to requestId) !in unboundServerRequests) {
+                clientFlow.value?.close()
+                return null
+            }
+            unboundServerRequests[runtime to requestId] = GatewayServerRequest(requestId, method, runtime, params, origin == PendingInputOrigin.AuthorityNative, executionGeneration)
+        }
+        if (foreignNative && bound != null && runtime != null) {
+            val key = PendingInputKey(connectionGeneration, runtime, requestId,
+                pendingInputKind(method) ?: PendingInputKind.Unsupported, origin, executionGeneration)
+            mutablePendingInputs.value = mutablePendingInputs.value + (key to UnsupportedPendingInput(key, bound, runtime))
+            setStatus(bound, SessionStatus.NeedsInput)
+            return null
+        }
         if (known && bound != null && runtime != null) {
             // Every kind [PendingInputKind] has is adopted here. A parser that
             // refuses a malformed one leaves it to the backend's own timeout
@@ -5017,6 +5496,7 @@ internal class LiveGatewaySessionRepository(
                     requestId = requestId,
                     method = method,
                     params = params,
+                    suppliedKey = PendingInputKey(connectionGeneration, runtime, requestId, pendingInputKind(method) ?: return null, origin),
                 )
             ) {
                 return null
@@ -5042,10 +5522,11 @@ internal class LiveGatewaySessionRepository(
      * there is no surface that could act on "the refusal did not go out".
      */
     private suspend fun refuseServerRequest(client: GatewayRpcClient, request: GatewayServerRequest) {
-        val responder = client as? GatewayServerRequestResponder ?: return
-        synchronized(stateLock) {
+        val connection = synchronized(stateLock) {
             if (clientFlow.value !== client) return
+            connectionSnapshot()
         }
+        val responder = responderAtOwner(connection, request.runtimeSessionId) ?: return
         // Not `runCatching`: it swallows CancellationException, and a cancelled
         // open would keep sending the rest of a replay's refusals instead of
         // unwinding. The send's own failure is the thing being tolerated —
@@ -5094,6 +5575,7 @@ internal class LiveGatewaySessionRepository(
         payload: JsonObject,
     ) {
         val requestId = payload.string("id")?.takeIf(String::isNotBlank) ?: return
+        unboundServerRequests.remove(runtimeId to requestId)
         val current = mutablePendingInputs.value
         val cancelled = current.keys.filter {
             it.runtimeSessionId == runtimeId && it.requestId == requestId
@@ -5123,17 +5605,33 @@ internal class LiveGatewaySessionRepository(
      * an answer for one would be worse than the timeout the backend already
      * owns.
      */
+    private fun adoptCanonicalPrompt(durableId: String, runtimeId: String, payload: JsonObject, envelopeGeneration: Long?) {
+        val id = payload.string("prompt_id")?.takeIf(String::isNotBlank) ?: return
+        val generation = payload.primitive("execution_generation")?.toLongOrNull() ?: envelopeGeneration ?: return
+        if (envelopeGeneration != null && generation != envelopeGeneration) return
+        val kind = payload.string("kind") ?: return
+        if (kind !in setOf("approval", "clarify")) return
+        val params = if (kind == "clarify") buildJsonObject {
+            put("questions", JsonArray(listOf(JsonObject(payload + ("qid" to JsonPrimitive(id))))))
+        } else payload
+        val key = PendingInputKey(connectionGeneration, runtimeId, id, pendingInputKind(kind) ?: return,
+            PendingInputOrigin.Canonical, generation)
+        adoptServerRequest(durableId, runtimeId, id, kind, params, key)
+    }
+
     private fun adoptServerRequest(
         durableId: String,
         runtimeId: String,
         requestId: String,
         method: String,
         params: JsonObject,
+        suppliedKey: PendingInputKey? = null,
     ): Boolean {
         if (requestId.isBlank()) return false
         val kind = pendingInputKind(method) ?: return false
-        val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
+        val key = suppliedKey ?: PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
         val request: PendingInputRequest = when (kind) {
+            PendingInputKind.Unsupported -> return false
             PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, params) ?: return false
             PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, params) ?: return false
             PendingInputKind.Sudo -> SudoPending(key, durableId, runtimeId)
@@ -5774,6 +6272,7 @@ internal class LiveGatewaySessionRepository(
             val landed = ComposerStatusState(
                 todos = finishedTodos.orEmpty(),
                 gatewayQueuedPrompts = gatewayQueue,
+                gatewayAdmissions = existing.composerStatus?.gatewayAdmissions.orEmpty(),
             ).takeIf(ComposerStatusState::hasVisibleRows)
             if (existing.progress != null || existing.composerStatus != landed) {
                 cache.upsertSession(existing.copy(progress = null, composerStatus = landed))
@@ -6212,6 +6711,13 @@ internal class LiveGatewaySessionRepository(
         // as "already answered".
         mutablePendingInputs.value = emptyMap()
         retiredKeys.clear()
+        unboundServerRequests.clear()
+        authorityBatchAnswers.clear()
+        canonicalAdmissionOwners.clear()
+        resolvingAdmissions.clear()
+        unboundEvents.clear()
+        canonicalWatermarks.clear()
+        replayReconciliations.clear()
         clearUnscopedRuntime()
         updateActiveTurnsLocked()
         val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()
@@ -6235,6 +6741,10 @@ internal class LiveGatewaySessionRepository(
         }
         return reset
     }
+
+    private fun backendSessionId(durableId: String): String = cache.session(durableId)?.backendSessionId
+        ?: (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity?.address(durableId)?.rawId
+        ?: durableId
 
     private fun connectionSnapshot(binding: SessionBinding? = null): ConnectionSnapshot {
         if (binding != null) return synchronized(stateLock) {
@@ -6291,7 +6801,7 @@ internal class LiveGatewaySessionRepository(
             val id = params.string("session_id")
             val durable = id?.let { identities.durableFor(it) ?: it }
             if (method in setOf("session.resume", "session.activate", "prompt.submit") &&
-                durable != null && isCronExecutionSessionId(durable)) {
+                durable != null && isCronExecutionSessionId(backendSessionId(durable))) {
                 durable to (if (method == "session.resume") params.string("profile") else runtimeProfiles[id])
             } else null
         }
@@ -6338,7 +6848,7 @@ internal class LiveGatewaySessionRepository(
         explicitProfile: String? = null,
         action: suspend () -> T,
     ): T {
-        if (!isCronExecutionSessionId(durableId) || currentCoroutineContext()[SessionSelectionLease] != null) return action()
+        if (!isCronExecutionSessionId(backendSessionId(durableId)) || currentCoroutineContext()[SessionSelectionLease] != null) return action()
         val connection = connectionSnapshot()
         val profile = synchronized(stateLock) {
             explicitProfile ?: identities.runtimeFor(durableId)?.let { runtimeProfiles[it] }
@@ -6366,7 +6876,9 @@ internal class LiveGatewaySessionRepository(
         }
         val transport = http()
         val result = try {
-            GatewayRestClient(restContext) { transport }.sessionDetail(durableId, profile)
+            GatewayRestClient(restContext) { transport }.also {
+                it.sessionIdentity = { (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity }
+            }.sessionDetail(durableId, profile)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -7010,6 +7522,8 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
         gitBranch = root.sessionGitBranch(),
         worktreePath = root.sessionWorktreePath(),
         usage = if (usageObj != null) parseSessionUsage(usageObj) else null,
+        backendSessionId = root.jsonString("backend_session_id"),
+        backendLineageRootId = root.jsonString("backend_lineage_root"),
     )
 }
 
@@ -7659,7 +8173,7 @@ private fun todoListActive(todos: List<ComposerTodoStatus>): Boolean =
 
 private fun ComposerStatusState.hasVisibleRows(): Boolean =
     goal != null || todos.isNotEmpty() || subagents.isNotEmpty() || backgroundProcesses.isNotEmpty() ||
-        previewArtifacts.isNotEmpty() || gatewayQueuedPrompts.isNotEmpty() || isCompacting
+        previewArtifacts.isNotEmpty() || gatewayQueuedPrompts.isNotEmpty() || gatewayAdmissions.isNotEmpty() || isCompacting
 
 /**
  * Replace by rendering key, or append.

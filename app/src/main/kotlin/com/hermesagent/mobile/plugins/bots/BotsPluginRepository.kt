@@ -517,9 +517,16 @@ class BotsPluginRepository(
         // or a number is a malformed answer that proves nothing about
         // durability, so it takes the same route as `pending:true` and is
         // reconciled against the registry rather than adopted as canonical.
+        // Authority rename commits the row transactionally and returns operation/revision/title,
+        // without legacy pending. Validate that receipt directly; never invent a backend pending flag.
+        // hermes_state_mutations.py:95-106 and gateway/session_mutations.py @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd.
+        val revision = (titleResult?.get("revision") as? JsonPrimitive)?.takeIf { !it.isString && it !is JsonNull }
+            ?.content?.toLongOrNull()
+        val canonicalCommit = titleResult?.string("operation") == "rename" &&
+            titleResult.string("session_id") == runtimeId && revision?.let { it >= 0 } == true
         if (
-            titleResult?.literalBoolean("pending") == false &&
-            titleResult.string("title") == CANONICAL_CHAT_TITLE
+            (titleResult?.literalBoolean("pending") == false || canonicalCommit) &&
+            titleResult?.string("title") == CANONICAL_CHAT_TITLE
         ) {
             return Created.Confirmed(storedId)
         }

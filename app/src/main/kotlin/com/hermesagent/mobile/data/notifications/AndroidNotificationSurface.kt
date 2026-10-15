@@ -199,6 +199,8 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             .putExtra(EXTRA_RUNTIME_SESSION_ID, target.key.runtimeSessionId)
             .putExtra(EXTRA_REQUEST_ID, target.key.requestId)
             .putExtra(EXTRA_CONNECTION_GENERATION, target.key.connectionGeneration)
+            .putExtra(EXTRA_PENDING_ORIGIN, target.key.origin.name)
+            .putExtra(EXTRA_EXECUTION_GENERATION, target.key.executionGeneration ?: -1L)
             .putExtra(EXTRA_QUESTION_ID, target.questionId)
         if (choice != null) intent.putExtra(EXTRA_ANSWER, choice)
         return PendingIntent.getBroadcast(
@@ -339,6 +341,8 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
             .putExtra(EXTRA_RUNTIME_SESSION_ID, target.key.runtimeSessionId)
             .putExtra(EXTRA_REQUEST_ID, target.key.requestId)
             .putExtra(EXTRA_CONNECTION_GENERATION, target.key.connectionGeneration)
+            .putExtra(EXTRA_PENDING_ORIGIN, target.key.origin.name)
+            .putExtra(EXTRA_EXECUTION_GENERATION, target.key.executionGeneration ?: -1L)
             .putExtra(EXTRA_CHOICE, choice)
         return PendingIntent.getBroadcast(
             context,
@@ -440,3 +444,6 @@ const val EXTRA_QUESTION_ID: String = "com.hermesagent.mobile.notifications.extr
 
 /** Both the button's fixed answer and the key `RemoteInput` writes under. */
 const val EXTRA_ANSWER: String = "com.hermesagent.mobile.notifications.extra.ANSWER"
+
+const val EXTRA_PENDING_ORIGIN = "com.hermesagent.mobile.notifications.extra.PENDING_ORIGIN"
+const val EXTRA_EXECUTION_GENERATION = "com.hermesagent.mobile.notifications.extra.EXECUTION_GENERATION"

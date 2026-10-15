@@ -174,6 +174,9 @@ data class SessionSummary(
     val lineageRootId: String? = null,
     /** Latest coalesced Gateway `usage` from `session.info` or `session.usage`. */
     val usage: SessionUsage? = null,
+    /** Raw backend identity for product copy/references; never navigation or cache authority. */
+    val backendSessionId: String? = null,
+    val backendLineageRootId: String? = null,
 )
 
 /** A transient backend notice rendered at the live turn tail, never stored as transcript content. */
@@ -195,8 +198,11 @@ data class ComposerStatusState(
     val previewArtifacts: List<ComposerPreviewArtifact> = emptyList(),
     /** Accepted for a later turn; retained across reconnect, but never persisted locally. */
     val gatewayQueuedPrompts: List<ComposerGatewayQueuedPrompt> = emptyList(),
+    val gatewayAdmissions: List<ComposerGatewayAdmission> = emptyList(),
     val isCompacting: Boolean = false,
 )
+
+data class ComposerGatewayAdmission(val key: com.hermesagent.mobile.data.gateway.GatewayAdmissionKey, val text: String)
 
 data class ComposerGatewayQueuedPrompt(
     val id: String,
@@ -208,10 +214,9 @@ data class ComposerGatewayQueuedPrompt(
 )
 
 /** Keep only accepted Gateway queue rows; null when no queue remains visible. */
-internal fun ComposerStatusState?.retainingGatewayQueue(): ComposerStatusState? =
-    this?.gatewayQueuedPrompts
-        ?.takeIf(List<ComposerGatewayQueuedPrompt>::isNotEmpty)
-        ?.let { ComposerStatusState(gatewayQueuedPrompts = it) }
+internal fun ComposerStatusState?.retainingGatewayQueue(): ComposerStatusState? = this
+    ?.takeIf { it.gatewayQueuedPrompts.isNotEmpty() || it.gatewayAdmissions.isNotEmpty() }
+    ?.let { ComposerStatusState(gatewayQueuedPrompts = it.gatewayQueuedPrompts, gatewayAdmissions = it.gatewayAdmissions) }
 
 enum class ComposerGoalState { Active, Waiting, Paused, Done, None, Unknown }
 

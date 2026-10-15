@@ -79,11 +79,12 @@ class ChatActions(
     val onDeleteQueuedEntry: (String) -> Unit = {},
     val onRedirectQueuedEntry: (String) -> Unit = {},
     val onMarkQueuedEntryReady: (String) -> Unit = {},
+    val onResolveGatewayAdmission: (com.hermesagent.mobile.data.gateway.GatewayAdmissionKey) -> Unit = {},
     val onHistoryOlder: () -> Boolean = { false },
     val onHistoryNewer: () -> Boolean = { false },
     val onUndoDraft: () -> Boolean = { false },
     val onRedoDraft: () -> Boolean = { false },
-    val onRespondToPendingInput: (com.hermesagent.mobile.data.gateway.PendingInputAction) -> Unit = {},
+    val onRespondToPendingInput: (com.hermesagent.mobile.data.gateway.PendingInputKey, com.hermesagent.mobile.data.gateway.PendingInputAction) -> Unit = { _, _ -> },
     val onDismissSecurePending: () -> Unit = {},
     val onComposerStatusOpened: () -> Unit = {},
     val onRefreshCodingContext: () -> Unit = {},
@@ -96,6 +97,8 @@ class ChatActions(
     /** Write the host's approval mode; the repository owns the rollback. */
     val onSelectApprovalMode: (ApprovalMode) -> Unit = {},
     val onSelectModel: (ComposerModelSelection) -> Unit = {},
+    val onConfirmModelChange: (Long) -> Unit = {},
+    val onDismissModelChange: (Long) -> Unit = {},
     /** Show or hide one model in the picker. */
     val onToggleModelVisible: (provider: String, model: String) -> Unit = { _, _ -> },
     /** Show or hide every model a provider serves. */

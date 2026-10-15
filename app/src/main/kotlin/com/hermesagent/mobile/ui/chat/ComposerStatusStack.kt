@@ -91,6 +91,7 @@ fun ComposerStatusStack(
     // It should be removed once every caller passes `joinedLayout`.
     fusedToComposer: Boolean = false,
     modifier: Modifier = Modifier,
+    onResolveGatewayAdmission: (com.hermesagent.mobile.data.gateway.GatewayAdmissionKey) -> Unit = {},
 ) {
     val visiblePreviews = remember(activeSessionId, status?.previewArtifacts) {
         status?.previewArtifacts.orEmpty().take(MAX_PREVIEW_ROWS).distinctBy(ComposerPreviewArtifact::id)
@@ -229,6 +230,28 @@ fun ComposerStatusStack(
             }
         }
         if (status?.isCompacting == true) StatusText("Hermes is compacting this session.")
+        status?.gatewayAdmissions?.filter { it.key.status == com.hermesagent.mobile.data.gateway.GatewayAdmissionStatus.Unknown }
+            ?.takeIf { it.isNotEmpty() }?.let { admissions ->
+                StatusGroup("${activeSessionId}:lost-admissions", "Turn lost during restart", defaultExpanded = true,
+                    count = admissions.size, joinedLayout = nextGroupLayout()) {
+                    // product-copy-allow: upstream explains the exact consequence of acknowledging a lost turn.
+                    StatusText("The gateway restarted mid-turn and cannot finish this one. Discard it so the queued turns behind it run.")
+                    admissions.forEach { admission ->
+                        StatusText(admission.text)
+                        TextButton("Discard", onClick = { onResolveGatewayAdmission(admission.key) })
+                    }
+                }
+            }
+        status?.gatewayAdmissions?.filter { it.key.status == com.hermesagent.mobile.data.gateway.GatewayAdmissionStatus.Queued }
+            ?.takeIf { it.isNotEmpty() }?.let { admissions ->
+                StatusGroup("${activeSessionId}:queued-admissions", "${admissions.size} Queued", defaultExpanded = false,
+                    joinedLayout = nextGroupLayout()) {
+                    admissions.forEach { admission ->
+                        StatusText(admission.text)
+                        TextButton("Delete", onClick = { onResolveGatewayAdmission(admission.key) })
+                    }
+                }
+            }
         status?.gatewayQueuedPrompts?.takeIf { it.isNotEmpty() }?.let { prompts ->
             StatusGroup(
                 "${activeSessionId}:gateway-queue",
@@ -330,6 +353,8 @@ internal fun composerStatusGroupCount(
     previewCount > 0,
     status?.isCompacting == true,
     status?.gatewayQueuedPrompts?.isNotEmpty() == true,
+    status?.gatewayAdmissions?.any { it.key.status == com.hermesagent.mobile.data.gateway.GatewayAdmissionStatus.Unknown } == true,
+    status?.gatewayAdmissions?.any { it.key.status == com.hermesagent.mobile.data.gateway.GatewayAdmissionStatus.Queued } == true,
     hasQueue,
 ).count { it }
 

@@ -77,6 +77,7 @@ import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.BranchPlan
+import com.hermesagent.mobile.data.gateway.selectedSavedBranchRow
 import com.hermesagent.mobile.data.gateway.deriveBranchCount
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
@@ -92,6 +93,7 @@ import com.hermesagent.mobile.data.session.ContextMeterState
 import com.hermesagent.mobile.data.session.SessionUsage
 import com.hermesagent.mobile.data.gateway.PendingInputKey
 import com.hermesagent.mobile.data.gateway.PendingInputKind
+import com.hermesagent.mobile.data.gateway.wipeSensitive
 import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.prefs.ComposerControlsScope
 import com.hermesagent.mobile.data.prefs.ComposerControlsStore
@@ -155,6 +157,7 @@ sealed interface ComposerMutationUiState {
     data object Idle : ComposerMutationUiState
     data object Saving : ComposerMutationUiState
     data object Deferred : ComposerMutationUiState
+    data class ConfirmationRequired(val key: Long, val model: String, val safeMessage: String) : ComposerMutationUiState
     data class Error(val safeMessage: String) : ComposerMutationUiState
 }
 
@@ -210,6 +213,8 @@ data class ComposerRuntimeUiState(
     val undoRedo: ComposerUndoRedoState = ComposerUndoRedoState(),
     /** The required action parked in this session, if any. Repository memory only. */
     val pendingInput: PendingInputRequest? = null,
+    val pendingInputSubmitting: Boolean = false,
+    val pendingInputError: String? = null,
     /** Locally acquired attachment drafts for this session; memory-only. */
     val attachments: List<ComposerAttachmentDraft> = emptyList(),
     /** Occurrence-keyed preview bitmaps for image drafts; UI-only, never persisted. */
@@ -719,6 +724,12 @@ internal class ChatViewModel(
     private var composerGeneration = 0L
     /** Fences live mutation replies independently of editor completion work. */
     private var liveMutationGeneration = 0L
+    private data class ModelConsent(val key: Long, val durableId: String, val composerGeneration: Long,
+        val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        val request: suspend () -> ControlMutationResult)
+    private var modelConsent: ModelConsent? = null
+    private val supersededModelConsentEndpoints = linkedMapOf<Long, Long>()
+    private val gatewayAdmissionActions = mutableSetOf<com.hermesagent.mobile.data.gateway.GatewayAdmissionKey>()
     /** Latest authoritative partial session.info controls for the active durable session. */
     private var liveComposerControls: SessionComposerControls? = null
     private var inputGeneration = 0L
@@ -739,13 +750,16 @@ internal class ChatViewModel(
     /** One automatic drain may be in flight per durable session. */
     private val scheduledQueueDrains = mutableSetOf<String>()
 
+    private data class PendingResponseUi(val key: PendingInputKey, val submitting: Boolean, val error: String? = null)
+    private val pendingResponseUi = MutableStateFlow<PendingResponseUi?>(null)
+
     private val localComposerState = combine(
         combine(queueState, parkedQueueIds, queueEdit, queueEditText) { state, parked, edit, editText ->
             LocalQueueState(state, parked, edit, editText)
         },
         historyRevision,
         queueScopeReady,
-        repository.pendingInputs,
+        combine(repository.pendingInputs, pendingResponseUi) { requests, response -> requests to response },
         combine(attachments, attachmentThumbnails, recentImages, recentImageAdds) { drafts, thumbnails, rail, marks ->
             AttachmentBundle(drafts, thumbnails, rail, marks)
         },
@@ -754,7 +768,8 @@ internal class ChatViewModel(
             queue = queue,
             historyRevision = revision,
             scopeReady = scopeReady,
-            pendingInputs = pending,
+            pendingInputs = pending.first,
+            pendingResponse = pending.second,
             attachments = draftsWithThumbnails.attachments,
             attachmentThumbnails = draftsWithThumbnails.thumbnails,
             recentImages = draftsWithThumbnails.recentImages,
@@ -936,6 +951,12 @@ internal class ChatViewModel(
             undoRedo = displayedActiveId?.let(composerHistoryController::undoRedoState) ?: ComposerUndoRedoState(),
             pendingInput = navigation.localComposer.pendingInputs.entries
                 .firstOrNull { it.value.durableSessionId == displayedActiveId }?.value,
+            pendingInputSubmitting = navigation.localComposer.pendingResponse?.takeIf { response ->
+                navigation.localComposer.pendingInputs[response.key]?.durableSessionId == displayedActiveId
+            }?.submitting == true,
+            pendingInputError = navigation.localComposer.pendingResponse?.takeIf { response ->
+                navigation.localComposer.pendingInputs[response.key]?.durableSessionId == displayedActiveId
+            }?.error,
             attachments = navigation.localComposer.attachments.filter { it.durableSessionId == displayedActiveId },
             attachmentThumbnails = navigation.localComposer.attachmentThumbnails,
             recentImages = navigation.localComposer.recentImages.forDisplayedScope(
@@ -1790,6 +1811,27 @@ internal class ChatViewModel(
         }
     }
 
+    fun resolveGatewayAdmission(key: com.hermesagent.mobile.data.gateway.GatewayAdmissionKey) {
+        val sessionId = activeSessionId.value ?: return
+        if (key.endpointGeneration != cache.endpointGeneration.value ||
+            cache.session(sessionId)?.composerStatus?.gatewayAdmissions?.none { it.key == key } != false ||
+            refuseBotChatMutation(allowPendingResponse = true) != null || !gatewayAdmissionActions.add(key)) return
+        viewModelScope.launch {
+            try {
+                val result = repository.resolveGatewayAdmission(key)
+                if (result == com.hermesagent.mobile.data.gateway.PendingInputResponse.Retryable &&
+                    activeSessionId.value == sessionId && cache.endpointGeneration.value == key.endpointGeneration)
+                    noticeLine = "Couldn't remove the queued turn"
+            } finally { gatewayAdmissionActions.remove(key) }
+        }
+    }
+
+    internal fun captureVoiceSessionKey(durableId: String): VoiceSessionKey = VoiceSessionKey(
+        connectionGeneration = connectionGeneration(), durableSessionId = durableId,
+        profile = cache.session(durableId)?.remoteProfile ?: profileScope.value.activeProfile,
+        endpointGeneration = cache.endpointGeneration.value,
+    )
+
     fun selectModel(selection: ComposerModelSelection) {
         if (refuseBotChatMutation() != null) return
         val liveId = activeSessionId.value
@@ -1800,7 +1842,8 @@ internal class ChatViewModel(
             return
         }
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
-        mutateLiveControls(liveId, { snapshot -> snapshot.copy(selection = selection) }) {
+        mutateLiveControls(liveId, { snapshot -> snapshot.copy(selection = selection) },
+            confirmRequest = { repository.confirmLiveModel(liveId, selection) }) {
             repository.setLiveModel(liveId, selection)
         }
     }
@@ -1854,14 +1897,51 @@ internal class ChatViewModel(
         }
     }
 
+    fun confirmModelChange(key: Long) {
+        // Source: apps/desktop/src/lib/guarded-model-switch.ts:73-79
+        // @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. Generic notice only on the
+        // same endpoint; retired callbacks never expose prior-owner details.
+        fun stale(endpoint: Long?) {
+            if (endpoint != null && endpoint == cache.endpointGeneration.value)
+                noticeLine = "Selection changed — the model switch was not applied."
+        }
+        val consent = modelConsent
+        if (consent == null || consent.key != key) {
+            stale(supersededModelConsentEndpoints.remove(key))
+            return
+        }
+        modelConsent = null
+        if ((composer.value.mutation as? ComposerMutationUiState.ConfirmationRequired)?.key != key ||
+            activeSessionId.value != consent.durableId || composerGeneration != consent.composerGeneration ||
+            cache.endpointGeneration.value != consent.endpoint) {
+            stale(consent.endpoint)
+            return
+        }
+        if (refuseBotChatMutation() != null) return
+        mutateLiveControls(consent.durableId, consent.update, request = consent.request)
+    }
+
+    fun dismissModelChange(key: Long) {
+        if ((composer.value.mutation as? ComposerMutationUiState.ConfirmationRequired)?.key != key) return
+        modelConsent = null
+        composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
+    }
+
     private fun mutateLiveControls(
         durableId: String,
         update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        confirmRequest: (suspend () -> ControlMutationResult)? = null,
         request: suspend () -> ControlMutationResult,
     ) {
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
+        modelConsent?.let { old ->
+            supersededModelConsentEndpoints[old.key] = old.endpoint
+            while (supersededModelConsentEndpoints.size > 8) supersededModelConsentEndpoints.remove(supersededModelConsentEndpoints.keys.first())
+        }
+        modelConsent = null
         val before = composer.value
         val generation = composerGeneration
+        val endpoint = cache.endpointGeneration.value
         val mutationGeneration = ++liveMutationGeneration
         composerLoad?.cancel()
         composer.value = before.copy(
@@ -1889,6 +1969,13 @@ internal class ChatViewModel(
                 }
                 ControlMutationResult.Deferred -> {
                     composer.value = composer.value.copy(mutation = ComposerMutationUiState.Deferred)
+                }
+                is ControlMutationResult.ConfirmationRequired -> {
+                    if (confirmRequest != null) {
+                        modelConsent = ModelConsent(mutationGeneration, durableId, generation, endpoint, update, confirmRequest)
+                        composer.value = before.copy(mutation = ComposerMutationUiState.ConfirmationRequired(
+                            mutationGeneration, update(before.controls).selection?.model.orEmpty(), result.safeMessage))
+                    } else composer.value = before.copy(mutation = ComposerMutationUiState.Error("Choose this model again to confirm the change."))
                 }
                 is ControlMutationResult.Rejected -> {
                     composer.value = before.copy(
@@ -2214,16 +2301,19 @@ internal class ChatViewModel(
             return
         }
 
+        val endpoint = cache.endpointGeneration.value
+        fun stillOwnsBranch() = activeSessionId.value == sessionId && cache.endpointGeneration.value == endpoint
         viewModelScope.launch {
             try {
+                if (!stillOwnsBranch()) return@launch
                 val authoritativeHistory = repository.fetchSessionHistory(sessionId)
-                if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
-                    noticeLine = "Session busy. Stop the current turn before branching this chat."
-                    return@launch
-                }
-                if (activeSessionId.value != sessionId) {
+                if (!stillOwnsBranch()) {
                     // Desktop aborts if session ownership drifted while the RPC
                     // ran, so don't paint anything until this call returns.
+                    return@launch
+                }
+                if (cache.session(sessionId)?.status in PROMPT_BLOCKING_STATUSES) {
+                    noticeLine = "Session busy. Stop the current turn before branching this chat."
                     return@launch
                 }
                 val localTranscript = cache.transcript(sessionId)
@@ -2238,8 +2328,9 @@ internal class ChatViewModel(
 
                 val createdControls = composer.value.controls
                 val createdCatalog = composer.value.catalog
-                val newId = repository.branchSession(sessionId, count)
-                if (activeSessionId.value != sessionId) {
+                val selectedRow = selectedSavedBranchRow(localTranscript, authoritativeHistory, entryId)
+                val newId = repository.branchSessionFromReply(sessionId, count, selectedRow, endpoint)
+                if (!stillOwnsBranch()) {
                     // Desktop aborts on drift after branching, so don't swap
                     // composer state and don't switch to the result session.
                     return@launch
@@ -2257,7 +2348,7 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                noticeLine = "Branch failed. Check the Gateway and try again."
+                if (stillOwnsBranch()) noticeLine = "Branch failed. Check the Gateway and try again."
             }
         }
     }
@@ -2687,6 +2778,7 @@ internal class ChatViewModel(
         targetId: String? = activeSessionId.value,
         allowPromptSend: Boolean = false,
         allowLiveTurnControl: Boolean = false,
+        allowPendingResponse: Boolean = false,
     ): BotChatMutationException? {
         val botId = botChatSessionId ?: return null
         val activeId = activeSessionId.value
@@ -2701,7 +2793,7 @@ internal class ChatViewModel(
             if (!staleBotIsActive || targetId != botId) return null
         } else if (targetId != botId) {
             return null
-        } else if (botChatReady && (allowPromptSend || allowLiveTurnControl)) {
+        } else if (botChatReady && (allowPromptSend || allowLiveTurnControl || allowPendingResponse)) {
             return null
         }
         val refusal = BotChatMutationException()
@@ -2779,7 +2871,7 @@ internal class ChatViewModel(
         val originalSubmittedDraft = draft.value
         val compactBotChat = botChatSessionId == sessionId && prompt in setOf("/new", "/reset")
         val submittedPrompt = if (compactBotChat) "/compact" else prompt
-        val cronSendKey = if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(sessionId)) {
+        val cronSendKey = if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(cache.session(sessionId)?.backendSessionId ?: sessionId)) {
             Triple(cache.endpointGeneration.value, cache.session(sessionId)?.remoteProfile, sessionId)
         } else null
         if (cronSendKey != null && !pendingCronSends.add(cronSendKey)) return
@@ -3256,12 +3348,9 @@ internal class ChatViewModel(
         val entry = transcript.find { it.id == entryId } as? AssistantTurn ?: return
         if (entry.markdown.isBlank()) return
 
+        val key = captureVoiceSessionKey(sessionId)
         readAloudState.value = ReadAloudUiState.Preparing(entryId)
         readAloudJob = viewModelScope.launch {
-            val key = VoiceSessionKey(
-                connectionGeneration = connectionGeneration(),
-                durableSessionId = sessionId
-            )
             try {
                 replySpeaker?.speak(key, entry.markdown) {
                     if (readAloudState.value is ReadAloudUiState.Preparing && readAloudOwns(entryId)) {
@@ -3766,14 +3855,44 @@ internal class ChatViewModel(
     }
 
     /** One deliberate answer for a parked request; the repository owns fencing. */
-    fun respondToPendingInput(action: com.hermesagent.mobile.data.gateway.PendingInputAction) {
-        if (refuseBotChatMutation() != null) return
-        val key = composer.value.runtime.pendingInput?.key ?: return
+    fun respondToPendingInput(
+        key: com.hermesagent.mobile.data.gateway.PendingInputKey,
+        action: com.hermesagent.mobile.data.gateway.PendingInputAction,
+    ) {
+        val pending = repository.pendingInputs.value[key]
+        val displayed = uiState.value.composer.runtime.pendingInput
+        // Carry the rendered key, never re-read a replacement prompt's key.
+        // A ready Bot Chat may answer its own parked input; other mutations
+        // retain their separate capability checks.
+        if (pendingResponseUi.value?.let { it.key == key && it.submitting } == true ||
+            pending == null || displayed?.key != key ||
+            pending.durableSessionId != activeSessionId.value ||
+            refuseBotChatMutation(allowPendingResponse = true) != null
+        ) {
+            action.wipeSensitive()
+            return
+        }
+        pendingResponseUi.value = PendingResponseUi(key, submitting = true)
         viewModelScope.launch {
-            runCatching { repository.respondToPendingInput(key, action) }
-                .onFailure { failure ->
-                    if (failure is CancellationException) throw failure
+            try {
+                val result = repository.respondToPendingInput(key, action)
+                if (pendingResponseUi.value?.key == key) {
+                    pendingResponseUi.value = when (result) {
+                        com.hermesagent.mobile.data.gateway.PendingInputResponse.Retryable ->
+                            PendingResponseUi(key, false, if (pending is com.hermesagent.mobile.data.gateway.UnsupportedPendingInput)
+                                "Could not stop this turn. Try again." else "Could not send clarify response")
+                        else -> null
+                    }
                 }
+            } catch (failure: Throwable) {
+                if (pendingResponseUi.value?.key == key) {
+                    pendingResponseUi.value = PendingResponseUi(key, false, if (pending is com.hermesagent.mobile.data.gateway.UnsupportedPendingInput)
+                                "Could not stop this turn. Try again." else "Could not send clarify response")
+                }
+                if (failure is CancellationException) throw failure
+            } finally {
+                action.wipeSensitive()
+            }
         }
     }
 
@@ -4053,7 +4172,7 @@ internal class ChatViewModel(
     }
 
     private fun captureSessionSelection(id: String): kotlin.coroutines.CoroutineContext =
-        if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(id)) {
+        if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(cache.session(id)?.backendSessionId ?: id)) {
             sessionSelectionFence.capture(cache.endpointGeneration.value, id, cache.session(id)?.remoteProfile)
         } else kotlin.coroutines.EmptyCoroutineContext
 
@@ -4321,8 +4440,8 @@ internal class ChatViewModel(
             .map { session ->
                 val profile = session.remoteProfile?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_PROFILE
                 CompletionItem(
-                    text = ComposerReference.Session("$profile/${session.id}").wireText,
-                    display = session.title.ifBlank { "Session ${session.id.take(8)}" },
+                    text = ComposerReference.Session("$profile/${session.backendSessionId ?: session.id}").wireText,
+                    display = session.title.ifBlank { "Session ${(session.backendSessionId ?: session.id).take(8)}" },
                     detail = "Session reference",
                     kind = "session",
                 )
@@ -4415,6 +4534,7 @@ internal class ChatViewModel(
         @Suppress("unused") val historyRevision: Long = 0L,
         val scopeReady: Boolean = false,
         val pendingInputs: Map<PendingInputKey, PendingInputRequest> = emptyMap(),
+        val pendingResponse: PendingResponseUi? = null,
         /** In-memory attachment drafts; UI projects them per active session. */
         val attachments: List<ComposerAttachmentDraft> = emptyList(),
         /** Occurrence-keyed preview bitmaps for image drafts; UI-only. */

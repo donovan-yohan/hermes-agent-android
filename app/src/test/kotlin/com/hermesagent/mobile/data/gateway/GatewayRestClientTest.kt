@@ -328,7 +328,7 @@ class GatewayRestClientTest {
         // The PATCH handler takes no `profile` parameter and reads
         // `body.profile` (`sessions.py:686,696`, model `web_models.py:342`), so
         // a query-scoped update would silently edit the default profile's row.
-        val http = RecordingGatewayHttp(success("""{"ok":true,"title":"Renamed","archived":true}"""))
+        val http = RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":true,"title":"Renamed","archived":true}"""))
 
         val updated = GatewayRestClient { http }.updateSession(
             sessionId = "a1b2",
@@ -337,13 +337,14 @@ class GatewayRestClientTest {
             profile = "work",
         ).valueOrFail()
 
-        val request = http.requests.single()
+        assertEquals(listOf("GET", "PATCH"), http.requests.map { it.method })
+        val request = http.requests.last()
         assertEquals("api/sessions/a1b2", request.path)
         assertEquals("PATCH", request.method)
         assertTrue(request.query.isEmpty())
         assertEquals(
             """{"title":"Renamed","archived":true,"profile":"work"}""",
-            http.bodies.single(),
+            http.bodies.last(),
         )
         assertEquals("Renamed", updated.title)
         assertEquals(true, updated.archived)
@@ -356,13 +357,14 @@ class GatewayRestClientTest {
     fun `deletes with no body, scoped by query, and reads the route's idempotent answer`() = runTest {
         // `sessions.py:657-658` scopes DELETE by query parameter, and an id it
         // cannot resolve is a success, not a 404 (`:674-676`).
-        val http = RecordingGatewayHttp(success("""{"ok":true,"already_absent":true}"""))
+        val http = RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":true,"already_absent":true}"""))
 
         val deleted = GatewayRestClient { http }
             .deleteSession(sessionId = "a1b2", profile = "work")
             .valueOrFail()
 
-        val request = http.requests.single()
+        assertEquals(listOf("GET", "DELETE"), http.requests.map { it.method })
+        val request = http.requests.last()
         assertEquals("api/sessions/a1b2", request.path)
         assertEquals("DELETE", request.method)
         assertNull(request.body)
@@ -478,13 +480,14 @@ class GatewayRestClientTest {
         // retrying a destructive verb on the caller's behalf is this client
         // deciding something it was not asked to decide.
         val http = RecordingGatewayHttp(
+            GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()),
             GatewayHttpResult.Rejected(0, "The Gateway route could not be reached. Check the connection and try again."),
             success("""{"ok":true}"""),
         )
 
         val failed = GatewayRestClient { http }.deleteSession("a1b2") as GatewayRestResult.Failed
 
-        assertEquals(1, http.requests.size)
+        assertEquals(listOf("GET", "DELETE"), http.requests.map { it.method })
         assertEquals(0, failed.statusCode)
         assertTrue(failed.safeMessage.contains("could not be reached"))
     }
@@ -492,13 +495,14 @@ class GatewayRestClientTest {
     @Test
     fun `never retries a server-side delete failure either`() = runTest {
         val http = RecordingGatewayHttp(
+            GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()),
             GatewayHttpResult.Rejected(503, "The Gateway could not complete that request. Try again."),
             success("""{"ok":true}"""),
         )
 
         val failed = GatewayRestClient { http }.deleteSession("a1b2") as GatewayRestResult.Failed
 
-        assertEquals(1, http.requests.size)
+        assertEquals(listOf("GET", "DELETE"), http.requests.map { it.method })
         assertEquals(503, failed.statusCode)
     }
 
@@ -540,12 +544,12 @@ class GatewayRestClientTest {
         }
 
         // A write that did not say it worked did not work.
-        val notOk = GatewayRestClient { RecordingGatewayHttp(success("""{"ok":false}""")) }
+        val notOk = GatewayRestClient { RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":false}""")) }
             .deleteSession("a1b2") as GatewayRestResult.Failed
         assertNull(notOk.statusCode)
 
         // The rename route always echoes the stored title (`sessions.py:723`).
-        val noTitle = GatewayRestClient { RecordingGatewayHttp(success("""{"ok":true}""")) }
+        val noTitle = GatewayRestClient { RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":true}""")) }
             .updateSession("a1b2", title = "x") as GatewayRestResult.Failed
         assertNull(noTitle.statusCode)
     }
@@ -654,13 +658,13 @@ class GatewayRestClientTest {
         assertEquals(UNUSABLE_RESPONSE_MESSAGE, numericId.safeMessage)
 
         val numericTitle = GatewayRestClient {
-            RecordingGatewayHttp(success("""{"ok":true,"title":42}"""))
+            RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":true,"title":42}"""))
         }.updateSession("a1b2", title = "x") as GatewayRestResult.Failed
         assertNull(numericTitle.statusCode)
 
         // The success gate gets the same treatment: a quoted "true" is not one.
         val quotedOk = GatewayRestClient {
-            RecordingGatewayHttp(success("""{"ok":"true","already_absent":false}"""))
+            RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":"true","already_absent":false}"""))
         }.deleteSession("a1b2") as GatewayRestResult.Failed
         assertNull(quotedOk.statusCode)
     }
@@ -670,11 +674,11 @@ class GatewayRestClientTest {
         // The route stores what it is given and echoes the stored title back,
         // empty string included (`sessions.py:711-716,723`). An empty string is
         // a value; only *no* field at all is "nothing to update" (`:701-710`).
-        val http = RecordingGatewayHttp(success("""{"ok":true,"title":""}"""))
+        val http = RecordingGatewayHttp(GatewayHttpResult.Rejected(404, "Route absent", """{"detail":"No such API endpoint: mutation-snapshot"}""".toByteArray()), success("""{"ok":true,"title":""}"""))
 
         val update = GatewayRestClient { http }.updateSession("a1b2", title = "").valueOrFail()
 
-        assertEquals("""{"title":""}""", http.bodies.single())
+        assertEquals("""{"title":""}""", http.bodies.last())
         assertEquals("", update.title)
         // Nothing else was asked for, so nothing else is reported.
         assertNull(update.archived)
@@ -688,7 +692,8 @@ class GatewayRestClientTest {
         val transport = OkHttpGatewayHttp(
             http = clientResponding { request ->
                 captured = request
-                httpResponse(request, 200, """{"ok":true}""")
+                if (request.url.encodedPath.endsWith("/mutation-snapshot")) httpResponse(request, 404, """{"detail":"No such API endpoint: mutation-snapshot"}""")
+                else httpResponse(request, 200, """{"ok":true}""")
             },
             resolveEndpoint = { "https://gateway.example/root/" },
             resolveAuthorization = { "Authorization" to "Bearer token" },

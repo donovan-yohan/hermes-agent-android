@@ -584,7 +584,7 @@ internal class GatewayConnectionManager(
                         }
 
                         is SshOpenResult.Failed -> fail(opened.kind, opened.message)
-                        is SshOpenResult.Connected -> finishConnect(opened.transport, config)
+                        is SshOpenResult.Connected -> finishConnect(opened.transport, config, profile)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -725,7 +725,13 @@ internal class GatewayConnectionManager(
         var leg: LocalGatewayLeg? = null
         try {
             leg = connector.open(profile)
-            val rpc = leg.rpc
+            val rpc = profileChannels(leg.rpc) {
+                val bytes = leg.authorization()?.second?.toByteArray(Charsets.US_ASCII)
+                    ?: throw GatewayRpcException("Reconnect before opening this profile.")
+                try { OkHttpGatewayRpcClient.connectLocal(loopbackHttp, baseUrl, bytes) }
+                finally { bytes.fill(0) }
+            }
+            val mutationScope = bindSessionNamespace(rpc, "local", profile.secretSlotId, profile.normalizedBaseUrl.orEmpty())
             // A successful upgrade alone is not readiness. This authenticated
             // round trip proves the leg the app will actually use.
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
@@ -741,6 +747,7 @@ internal class GatewayConnectionManager(
             // The loopback client, not the shared one: every hop that carries
             // the session token refuses to follow a redirect off the device.
             _gatewayHttp.value = OkHttpGatewayHttp(
+                mutationScope = mutationScope,
                 http = loopbackHttp,
                 resolveEndpoint = { baseUrl },
                 resolveAuthorization = { authorized.authorization() },
@@ -941,7 +948,8 @@ internal class GatewayConnectionManager(
                 if (connector == null) {
                     checkNotNull(unavailable)
                 } else {
-                    val rpc = connector.open(profile, browser)
+                    val rpc = profileChannels(connector.open(profile, browser)) { connector.open(profile, browser) }
+                    val mutationScope = bindSessionNamespace(rpc, "remote", profile.secretSlotId, profile.normalizedBaseUrl.orEmpty())
                     try {
                         // The authenticated RPC round trip, not merely a WS
                         // upgrade, is the readiness boundary.
@@ -961,6 +969,7 @@ internal class GatewayConnectionManager(
                             active = ActiveConnection.Remote(rpc, profile)
                             localRouteActive.set(false)
                             _gatewayHttp.value = OkHttpGatewayHttp(
+                                mutationScope = mutationScope,
                                 http = http,
                                 resolveEndpoint = { profile.normalizedBaseUrl },
                                 resolveAuthorization = {
@@ -1092,9 +1101,14 @@ internal class GatewayConnectionManager(
         connector.remember(profile, token)
     }
 
+    private fun profileChannels(primary: GatewayRpcClient, open: suspend (String) -> GatewayRpcClient): GatewayRpcClient =
+        if (primary is AuthorityGatewayRpcClient && primary is EndpointDispatchingGatewayRpcClient &&
+            primary is GatewayServerRequestResponder) ProfileGatewayRpcClient(primary, scope, open) else primary
+
     private suspend fun finishConnect(
         transport: SshTransport,
         config: RemoteHermesConfig,
+        profile: HostProfile,
     ): GatewayConnectResult {
         var backend: RemoteBackend? = null
         var forward: com.hermesagent.mobile.data.ssh.SshForward? = null
@@ -1114,7 +1128,13 @@ internal class GatewayConnectionManager(
             )
             val servedToken = servedTokenResolver.resolve(forward.localPort)
             backend.adoptServedToken(servedToken)
-            rpc = rpcOpen(forward.localPort, backend.token)
+            val localPort = forward.localPort
+            val ownerToken = backend.token.toString(Charsets.US_ASCII)
+            rpc = profileChannels(rpcOpen(localPort, backend.token)) {
+                val bytes = ownerToken.toByteArray(Charsets.US_ASCII)
+                try { rpcOpen(localPort, bytes) } finally { bytes.fill(0) }
+            }
+            val mutationScope = bindSessionNamespace(rpc, "ssh", profile.host, profile.port.toString(), profile.username, profile.remoteHermesProfile)
             // A successful upgrade alone is not readiness. This authenticated
             // JSON-RPC round trip proves the leg the app will actually use.
             rpc.request("session.list", buildJsonObject { put("limit", JsonPrimitive(1)) })
@@ -1131,6 +1151,7 @@ internal class GatewayConnectionManager(
             val gatewayToken = backend.token.toString(Charsets.US_ASCII)
             val gatewayEndpoint = "http://127.0.0.1:${forward.localPort}"
             _gatewayHttp.value = OkHttpGatewayHttp(
+                mutationScope = mutationScope,
                 http = http,
                 resolveEndpoint = { gatewayEndpoint },
                 resolveAuthorization = {
@@ -1858,3 +1879,11 @@ internal class GatewayConnectionManager(
 
 internal fun Throwable.isRetryableRemoteConnectionFailure(): Boolean =
     this !is GatewayAuthException || (statusCode != null && statusCode !in setOf(401, 403))
+
+/** Stable non-secret endpoint namespace; address bytes never enter product-visible session keys. */
+private fun bindSessionNamespace(rpc: GatewayRpcClient, vararg parts: String): String {
+    val tuple = kotlinx.serialization.json.JsonArray(parts.map(::JsonPrimitive)).toString().toByteArray(Charsets.UTF_8)
+    val namespace = java.security.MessageDigest.getInstance("SHA-256").digest(tuple).joinToString("") { "%02x".format(it) }
+    (rpc as? AuthorityGatewayRpcClient)?.bindSessionEndpoint(namespace)
+    return namespace
+}

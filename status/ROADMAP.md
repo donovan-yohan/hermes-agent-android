@@ -21,6 +21,33 @@ limitations, and likely next slices behind that table.
 | Distribution | One rolling, persistently debug-signed `hermes-mobile-latest` artifact from successful `main` builds. No production release channel yet. |
 | Validation boundary | JVM and Robolectric gates are broad, and an instrumented lane runs on a CI emulator for five claims Robolectric cannot make. Its seven classes contain eight test cases, including one synthetic owner-reduction parser case for Android ICU regex portability that the host JDK cannot prove; Android RED/GREEN for that case is verified on a disposable API 34 emulator. This adds no focus-causality or device-acceptance claim. Font scale, the keyboard's own window and exact-head physical Pixel acceptance remain open. |
 
+### Backend target and acceptance boundary (2026-10-15)
+
+Existing-feature compatibility work targets unmodified Hermes Agent
+`046094df28b712f62a5e3c728a9e59da05dcbf1e`.
+[The current matrix](../docs/upstream-compatibility-046094df.md) records owner
+confirmation, typed live completion, closed capability/root routing and unsupported
+optional additions. Historical UI/theme/report pins remain unchanged.
+
+Named-profile canonical approval and clarification remain supported. Stock public
+native sudo, secret, native CLI batch and bridge requests from a different authority
+cannot be answered safely through the public socket. Android shows **Reply
+unavailable** with **Stop**: the captured owner turn is interrupted, and the card
+remains until backend withdrawal. A next send requires terminal backend/client
+state. Launch-authority native inputs, including aliases of that same owner, retain
+their existing reply path. No backend patch, private bootstrap or maintainer merge
+is required. Earlier repaired-backend positives are historical only; that upstream
+contribution was closed. Exact-head review, required CI and merged-main APK
+verification remain separate delivery gates.
+
+Existing visual debt [#378](https://github.com/donovan-yohan/hermes-agent-android/issues/378)
+and [#380](https://github.com/donovan-yohan/hermes-agent-android/issues/380) retains
+its recorded scope; unrelated visual debt does not gate this stock compatibility
+correction. Physical acceptance remains separate.
+Optional upstream runtime management, private-ticket bootstrap, new room
+controls, native cron/worker/ACP management, live-voice leases and expanded
+Skills/MCP management remain outside this existing-feature slice.
+
 ## What works now
 
 ### Connection and security
@@ -305,8 +332,9 @@ lifecycle.
   the action Desktop's way — eighteen attempts, 1200 ms apart. Exit code 0 is a
   handoff to the supervisor rather than a running gateway, so the panel
   re-reads the status instead of claiming anything; a non-zero exit says
-  `Gateway restart failed.` It does not restart the `hermes serve` this app is
-  connected to, and no HTTP route does.
+  `Gateway restart failed.` At the current composed-runtime backend target,
+  restart can also affect the chat socket; messaging-only isolation is not
+  guaranteed. No live backend restart/update was run for this audit.
 - `Update Hermes` opens an updates sheet with Desktop's grouped changelog and
   applies through an app-scoped engine, so leaving the screen never cancels an
   apply. It survives the backend restarting underneath it: the poll blacks out,
@@ -322,8 +350,10 @@ lifecycle.
   owes it, and the parity page records the review at Concern for that reason.
   Nothing has been exercised against a real backend update: every claim above
   rests on unit tests against the pinned HTTP contract and Robolectric journeys.
-- **Not built.** `Recent logs` renders every control Desktop has and none of
-  them work (`WIP`): no `/api/logs` fetch, no level filter, no search. There is
+- **System log panel not built.** `Recent logs` renders every control Desktop has and none of
+  them work (`WIP`): no panel level filter or search. The chat error recovery
+  path separately offers an explicit-consent, bounded, redacted Gateway-wide
+  error-log excerpt from `/api/logs`; it is view-only and cleared on dismissal. There is
   no background update check and no `Update ready` surfacing, because this app
   has no in-app notification stack, and no backend contract-skew warning. The
   update receipt's `pre_update` → `post_update` versions and `hermes serve`'s
@@ -332,7 +362,7 @@ lifecycle.
 
 ### Appearance and Android adaptation
 
-- All eleven built-in Desktop themes at the pinned theme authority, in the same
+- All twelve built-in Desktop themes at the pinned theme authority, in the same
   registry order, with light/dark/system mode and mobile chat-chrome choices.
 - Phone drawer and wide persistent session rail, IME-aware composer layouts,
   48 dp semantic actions, and desktop-keyboard shortcuts guarded against IME
@@ -419,7 +449,7 @@ lifecycle.
 | Voice | The core path exists, but barge-in and several recovery/fallback journeys are incomplete. | Permission, audio-focus, interruption, process-death, headset/Bluetooth, and physical-device matrix passes. |
 | Coding workspace | Status counters and changed-file metadata work, and Gateway-supplied inline diffs render in transcript tool rows. The coding/review surface does not provide repository file contents, changed-file patches, editing, terminal, or review workflows. | Authenticated Gateway contracts and purpose-built Android surfaces rather than local-path assumptions. |
 | Desktop management breadth | The Profiles roster remains read-only. The Bots plugin has bounded identity management and existing-Bot provider/model configuration, including inventory/manual entry, explicit warning consent and readback. Model reset, model configuration during creation/duplication, broader Skills management and lifecycle-safe deletion remain WIP; existing-Bot installed Skills autosave is implemented with [visual/build acceptance still pending](../docs/parity/bot-installed-skills.md); existing-Bot [configured MCP autosave](../docs/parity/bot-configured-mcp.md) now supports named config enable/disable with readback and future-session semantics, with independent review/native capture still pending and broader MCP controls WIP; this is not full Desktop management parity. See [the bounded model contract](../docs/parity/bot-model-config.md). Other management surfaces retain their own parity ledgers. | Backend authority identified per surface, then an Android adaptation with tests and honest unsupported states. |
-| Backend updates and restart | The System panel's status read, gateway restart and backend update are covered by unit tests against the pinned HTTP contract and by Robolectric journeys, and by nothing else. No `hermes update` has been run through this app against a real host; the six-minute apply, the restart blackout, the receipt proof and the forced redial are all proven on virtual time only. Log fetching is not built, and the panel's `Recent logs` block ships disabled. | A device pass that applies a real backend update over the Remote route and watches the socket come back, plus the rendered Desktop side-by-side the parity page owes. |
+| Backend updates and restart | The System panel's status read, gateway restart and backend update are covered by unit tests against the pinned HTTP contract and by Robolectric journeys, and by nothing else. No `hermes update` has been run through this app against a real host; the six-minute apply, the restart blackout, the receipt proof and the forced redial are all proven on virtual time only. The panel's `Recent logs` block ships disabled; chat error recovery has a separate bounded, consent-gated, view-only `/api/logs` excerpt. | A device pass that applies a real backend update over the Remote route and watches the socket come back, plus the rendered Desktop side-by-side the parity page owes. |
 | Distribution | The rolling artifact is a debug APK behind GitHub sign-in. It is not a production-signed release or store package. | Versioned release signing, upgrade policy, distribution, and rollback/recovery gates. |
 | Device evidence | An instrumented emulator lane runs on every CI build and covers what an emulator is green on: 48 dp touch targets at the real display density, the chat chrome arriving in the platform accessibility tree in the window under test, a real input method binding to the composer, a real orientation change, and the open destination surviving a real Activity destroy and rebuild. It is not physical acceptance and does not stand in for it: the PKCE browser hand-off (freezer-proofed and covered by JVM/Robolectric tests, never yet run screen-off on a physical device), real radio, network handoff, TalkBack, media, an enlarged font scale, the keyboard's own window under the composer, a system-initiated process kill, and the label and touch-size audit of what that accessibility tree publishes ([#91](https://github.com/donovan-yohan/hermes-agent-android/issues/91)) remain unproven, and exact-head physical Pixel acceptance is incomplete. | Repeatable acceptance matrix on the target device against a non-personal test Gateway. |
 

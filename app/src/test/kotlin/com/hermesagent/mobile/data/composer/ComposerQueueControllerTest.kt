@@ -12,6 +12,22 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ComposerQueueControllerTest {
     @Test
+    fun `reviewed ambiguous queue retry retains logical entry through controller recreation`() = runTest {
+        val store = TransientComposerQueueStore()
+        val gateway = RecordingSubmitter(QueueSubmissionOutcome.Ambiguous)
+        val first = ComposerQueueController(store, gateway, entryId = ids("public-input"))
+        first.enqueue("durable", "Public prompt")
+        assertEquals(ComposerQueueDrainResult.Ambiguous, first.drainIfIdle("durable", true))
+        val restored = ComposerQueueController(store, gateway)
+        assertEquals(ComposerQueueDrainResult.ReviewRequired, restored.drainIfIdle("durable", true))
+        assertEquals(ComposerQueueMutation.Applied, restored.markReadyAfterReview("durable", "public-input"))
+        gateway.outcome = QueueSubmissionOutcome.Accepted
+        assertEquals(ComposerQueueDrainResult.Accepted, restored.drainIfIdle("durable", true))
+        assertEquals(listOf("public-input", "public-input"), gateway.entries.map { it.id })
+        assertEquals(gateway.entries.first().text, gateway.entries.last().text)
+    }
+
+    @Test
     fun `accepted queued submission removes only its acknowledged FIFO head`() = runTest {
         val store = TransientComposerQueueStore()
         val gateway = RecordingSubmitter(QueueSubmissionOutcome.Accepted)
@@ -169,6 +185,11 @@ class ComposerQueueControllerTest {
 
     private class RecordingSubmitter(var outcome: QueueSubmissionOutcome) : ComposerQueueSubmitter {
         val texts = mutableListOf<String>()
+        val entries = mutableListOf<QueuedPrompt>()
+        override suspend fun submitQueued(durableSessionId: String, entry: QueuedPrompt): QueueSubmissionOutcome {
+            entries += entry
+            return submitQueued(durableSessionId, entry.text)
+        }
         override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome {
             texts += text
             return outcome
