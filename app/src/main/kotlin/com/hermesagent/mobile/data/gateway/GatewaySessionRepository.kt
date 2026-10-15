@@ -5147,7 +5147,29 @@ internal class LiveGatewaySessionRepository(
                 // A new turn on this runtime cannot inherit a previous turn's
                 // locally requested Stop attribution.
                 locallyRequestedInterruptRuntimeIds.remove(runtimeId)
-                if ((payload.string("role") ?: "assistant") == "assistant") {
+                // Current authority admission_display emits typed completion starts without a role
+                // (gateway/session_automation.py:94-106 @ 046094df28b712f62a5e3c728a9e59da05dcbf1e).
+                // Use the same metadata classifier as hydration; only typed rows license machinery text.
+                val timeline = classifyTimelineEvent(
+                    payload.string("display_kind"),
+                    payload["display_metadata"] ?: payload.string("display_text")?.let { label ->
+                        buildJsonObject { put("display_text", JsonPrimitive(label)) }
+                    },
+                    payload.contentText(),
+                )
+                if (timeline != null) {
+                    advanceObservedTurn(runtimeId)
+                    consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
+                    cache.putEntry(durableId, TimelineEvent(
+                        id = payload.messageId() ?: "gateway-timeline-${sequence.incrementAndGet()}",
+                        label = timeline.label, report = timeline.report,
+                        atMillis = payload.timestamp(clock()), rowId = payload.durableRowId(),
+                    ))
+                    clearProgress(durableId, runtimeId)
+                    markRuntimeLive(runtimeId)
+                    ephemeralSessions.remove(durableId)
+                    setStatus(durableId, SessionStatus.Working)
+                } else if ((payload.string("role") ?: "assistant") == "assistant") {
                     advanceObservedTurn(runtimeId)
                     consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     val turn = AssistantTurn(

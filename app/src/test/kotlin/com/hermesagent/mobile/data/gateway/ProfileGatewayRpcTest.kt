@@ -37,6 +37,9 @@ class ProfileGatewayRpcTest {
         assertEquals("named owner must attach on an isolated channel", listOf("beta"), opened)
         assertEquals(1, primary.frames.count { it["method"] == JsonPrimitive("session.resume") })
         assertEquals(1, beta.frames.count { it["method"] == JsonPrimitive("session.resume") })
+        val declaration = beta.frames.single { it["method"] == JsonPrimitive("client.capabilities") }
+        assertFalse("transport capability declaration has no profile field upstream",
+            "profile" in declaration.getValue("params").jsonObject)
         assertNotEquals(alpha, betaKey)
         primary.askSecret()
         beta.askSecret()

@@ -41,7 +41,10 @@ internal class GatewaySessionIdentity(private var endpointNamespace: String = "i
         }
         val key = PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(
             JsonArray(listOf(JsonPrimitive(endpointNamespace), JsonPrimitive(owner), JsonPrimitive(rawId))).toString().toByteArray(Charsets.UTF_8))
-        addresses[key] = Address(owner, actualName ?: profile, rawId)
+        // The empty canonical owner alias is the implicit launch route. Persisting it
+        // as a profile would add an extra field to closed canonical response params.
+        addresses[key] = Address(owner, actualName?.takeIf(String::isNotEmpty)
+            ?: profile?.takeIf(String::isNotEmpty), rawId)
         key
     }
 

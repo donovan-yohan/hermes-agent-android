@@ -14,6 +14,21 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class CanonicalOwnerIdentityTest {
     @Test
+    fun `root event alias retains implicit response route while equal named id stays separate`() {
+        val identity = GatewaySessionIdentity("synthetic-endpoint")
+        identity.bind(null, "synthetic-root")
+        identity.bind("beta", "synthetic-beta")
+        val root = identity.qualify("same", null)
+        val beta = identity.qualify("same", "beta")
+        // Canonical snapshot owners use the empty alias internally; its event must not
+        // turn an implicit root route into a forbidden profile field on a closed response.
+        assertEquals(root, identity.qualify("same", ""))
+        assertNull(identity.address(root)?.profile)
+        assertEquals("beta", identity.address(beta)?.profile)
+        assertNotEquals(root, beta)
+    }
+
+    @Test
     fun `REST alpha same and beta same survive first merge as separate authoritative rows`() = runTest {
         lateinit var rpc: CorrelatedGatewayRpc
         rpc = CorrelatedGatewayRpc(object : GatewayRpcWire {

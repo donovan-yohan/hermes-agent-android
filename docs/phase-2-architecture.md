@@ -9,9 +9,10 @@ the checkout was neither modified nor fetched.
 ## Current backend compatibility target
 
 Existing Gateway consumers now adapt to `NousResearch/hermes-agent` at
-`379cf1220fe289b5ecfe8bcf61cd4d5126e140cd`. This is a backend source target,
+base `046094df28b712f62a5e3c728a9e59da05dcbf1e` plus required owner repair
+`3fd44a954fb70a83ce3819aff96603babc625eaa`. This is a frozen backend dependency,
 not a new visual pin or a full compatibility/release acceptance claim. See
-[the compatibility matrix and upstream blocker](upstream-compatibility-379cf122.md).
+[the current compatibility matrix and maintainer dependency](upstream-compatibility-046094df.md).
 The original authorities above and existing per-surface evidence retain their
 historical scope.
 
@@ -27,12 +28,16 @@ owner; matching raw IDs in different profiles never share cached truth.
 Lazy profile channels isolate client event/native-request provenance and
 attach each owner/session on one channel. Remote children use fresh public
 tickets; Local and Managed SSH use their existing authenticated endpoint.
-Graph teardown cancels child dials and closes every leg. **This client isolation
-does not fix server native response authorization:** at the frozen target,
-public dashboard responses are resolved against the launch authority before
-profile routing. Named-profile sudo/secret/native-batch server settlement is
-blocked; canonical `approval.respond`/`clarify.respond` remain profile routable.
-No private control ticket discovery or new backend is introduced.
+Graph teardown cancels child dials and closes every leg. Client provenance alone
+does not authorize server native replies. Vanilla046 still authorizes id-only
+responses against the launch authority; required owner repair captures the actual
+serving authority/live session/epoch/generation and resolves through existing
+verified host grants plus session:respond. Real public-path regression and combined
+Android-handler settlement checks pass on that repair, including terminal
+admissions and subsequent sends. Upstream maintainer merge remains pending in
+[PR #139382](https://github.com/NousResearch/hermes-agent/pull/139382).
+Canonical approval.respond/clarify.respond retain profile routing. No private
+control ticket discovery or installed backend update is introduced.
 
 Canonical submits carry logical input IDs and explicit staged image attachments.
 Queue retries retain logical identity. Unknown accepted work is never replayed

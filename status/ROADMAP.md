@@ -23,22 +23,22 @@ limitations, and likely next slices behind that table.
 
 ### Backend target and acceptance boundary (2026-10-15)
 
-Existing-feature compatibility work targets Hermes Agent
-`379cf1220fe289b5ecfe8bcf61cd4d5126e140cd`; historical UI/theme/report pins
-remain unchanged. [The current matrix](../docs/upstream-compatibility-379cf122.md)
-records canonical create/resume/history, owner-qualified IDs, fenced mutations,
-admission/replay reconciliation, staged clarification, image/voice scoping and
-PluginHost/Bots adaptation. Tests use public synthetic source-derived fixtures;
-they are not live backend or physical-device output.
+Existing-feature compatibility work targets Hermes Agent base
+`046094df28b712f62a5e3c728a9e59da05dcbf1e` plus bounded owner repair
+`3fd44a954fb70a83ce3819aff96603babc625eaa` in
+[upstream draft PR #139382](https://github.com/NousResearch/hermes-agent/pull/139382).
+[The current matrix](../docs/upstream-compatibility-046094df.md) records exact
+source dependencies, typed live completion, closed capability/root routing,
+retained consumers and unsupported optional additions. Historical UI/theme/report
+pins remain unchanged.
 
-Full compatibility/release is **blocked** at the frozen upstream public
-named-profile native-response boundary. A dashboard ticket socket can route
-canonical approval/clarification replies to a named profile, but native
-sudo/secret/id-only replies still authorize against the launch authority.
-A second public socket does not repair server settlement. An isolated real
-public-auth-helper/dispatcher/native-waiter reproduction confirms this; no
-provider or live credential is used. Upstream repair or an explicit requester
-scope decision is required. A client socket-send is not proof a prompt settled.
+Vanilla046 remains broken for public named-profile native settlement and descriptor
+routing. Isolated actual public HTTP/WS/native-waiter/admission and combined
+production Android handler checks pass against the exact repair, using synthetic
+auth and inert runners. No installed backend or real provider was touched.
+Upstream maintainer review/merge remains a dependency; patched GREEN does not
+certify upstream main. Independent exact-head Android review, required CI and
+merged-main APK verification remain separate release gates.
 
 Rendered acceptance for changed clarification, model-consent and admission
 controls is [pending: #378](https://github.com/donovan-yohan/hermes-agent-android/issues/378).

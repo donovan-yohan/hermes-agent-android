@@ -48,6 +48,9 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
 
     suspend fun request(method: String, supplied: JsonObject,
         send: suspend (String, JsonObject) -> JsonElement): JsonElement {
+        // Transport-wide declaration has a closed shape, without profile
+        // (tui_gateway/contracts/liveness.py:14-46 @ 046094df28b712f62a5e3c728a9e59da05dcbf1e).
+        if (method == "client.capabilities") return send(method, supplied)
         val bound = fixedProfile
         if (bound != null && supplied.text("profile")?.let { it != bound } == true) {
             throw GatewayRpcException("This session channel belongs to another profile.")
