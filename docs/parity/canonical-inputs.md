@@ -13,7 +13,7 @@ and visual ceilings. They are not retroactively certified against U.
 
 | Changed control | U source / copy / tests | Android |
 |---|---|---|
-| Staged one-question and multiselect batch | `apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207`, `core/confirm-bar.tsx:19`; `apps/desktop/src/i18n/en_clarify.ts:3-22`; `clarify/clarify-tool.test.tsx:751-833,1261-1379` | Pick per question and/or type answer, then Skip or Confirm and continue. Canonical single question uses same staged card. Target progress counts staged choices/nonblank drafts; no-choice fields use only their prompt/placeholder. Legacy immediate single-question fixture retains historical behavior. |
+| Staged one-question and multiselect batch | `apps/desktop/src/components/assistant-ui/clarify/pending.tsx:152-207`, `core/confirm-bar.tsx:19`; `apps/desktop/src/i18n/en_clarify.ts:3-20`; `clarify/clarify-tool.test.tsx:751-833,1261-1379` | Pick per question and/or type answer, then Skip or Confirm and continue. Canonical single question uses same staged card. Target progress counts staged choices/nonblank drafts; no-choice fields use only their prompt/placeholder. Legacy immediate single-question fixture retains historical behavior. |
 | Model confirmation | `apps/desktop/src/lib/guarded-model-switch.ts:36-99`; `apps/desktop/src/i18n/en.ts:5040-5047` | Keep current model then Switch anyway; back/dismiss declines; captured session/model/endpoint guards explicit consent. No automatic expensive-model approval. |
 | Lost/queued admissions | `apps/desktop/src/app/chat/composer/queue-panel.tsx:130-222`, `queue-slot.tsx:47-81`; `apps/desktop/src/i18n/en.ts:3520-3541` | Lost row Discard uses original backend generation; queued Delete uses admission ID. No resubmission. |
 | Reply branch continuation and cut | `apps/desktop/src/app/session/hooks/use-session-actions/index.ts:2689-2697`; `apps/desktop/src/app/session/hooks/use-session-actions/branch-boundary.test.ts:8-27`; `apps/desktop/src/api/canonical-protocol.ts:79-88`; `gateway/session_controls.py:530-539` | Resume actual child snapshot before adoption/first send. Carry selected authoritative saved row independently of visible count or cached page. Existing labels, action order, glyphs and error copy unchanged by this repair; no new render claimed. |
@@ -34,12 +34,12 @@ Protocol tests separately enforce owner/generation/replay and receipt behavior.
 Synthetic native peers prove client routing, not named-profile upstream server
 settlement; [that boundary remains blocked](../upstream-compatibility-379cf122.md).
 
-## Divergences
+## Historical divergences at A
 
-The rendered observations below remain bound to Android `6b42e62` (A).
-Current source repair dispositions do not restamp those images or independently
-approve changed bytes. New frozen-head CODE/product checks and affected capture
-review remain required under #378.
+The following observations and repair notes remain bound to Android `6b42e62`
+(A). Their then-pending review/capture notes are retained as history; the current
+C comparison and classifications follow separately. No later result restamps
+these images or silently reclassifies their findings.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
@@ -52,6 +52,35 @@ review remain required under #378.
 | Confirming swaps label to submitting spinner | omission | A only disabled its text. Source repair adds progress with disabled controls and retained accessible Confirm and continue meaning; narrow F3 repair keeps the semantic fill/ink pair opaque during loading | deferred: #378 — independent cf86de6 native paint found faded loading fill made its paired ink hard to see. PrimaryButtonLoadingPaintTest reproduces the light/dark defect and verifies the paired painted fill/ink plus focused keyboard/pointer rejection. Default and destructive controls retain their tests. New-head independent changed-state acceptance remains owed. |
 | Stale confirmation reports Selection changed — the model switch was not applied. | omission | A silently returned. Source repair reports generic notice for same-endpoint stale owner/selection, while preserving no-RPC and prior-endpoint isolation | deferred: #378 — original stale scene was projection-only; real ViewModel tests now exercise owner/selection changes and endpoint rejection. New-head integrated effect/capture review remains owed. |
 | Settled structured responses render question/answer and No answer/Skipped | omission | A's generic ToolView has no responses-array specialization; this bounded repair preserves that pre-existing feature gap | deferred: #380 — ToolView blob ce8024440b1ff0f71864bbef10d052671efa5d72 is identical at mission base d8626506df38aeea9d941c9058ef398d4ad999be and A. Original supplied-result captures prove scoped gap, not a regression. Separate renderer port tracked in [#380](https://github.com/donovan-yohan/hermes-agent-android/issues/380). |
+
+## Divergences
+
+### Current observed head C
+
+Current observations bind exactly to Android
+`0e641823865dc2d685a4bce500eb3cd1c8031988` (C), tree
+`8fea8870e7d026c5fb8b5114b041900dbffbf487`, against U. Independent client CODE
+is clear with F3 closed; affected synthetic product QA passes 34 unique cases.
+Hotate's completed comparison observes all seven requested functional/surface
+repairs, including paired loading paint and actual stale-handler effects.
+Its overall verdict remains **Concern**. Coordinator disposition retains the
+selection-paint drift and decorative Enter omission under #378 for requester
+visual ruling/follow-up; this is tracking, not a parity waiver or release
+acceptance. #378 stays open. The pre-existing settled renderer remains #380.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| Compact transcript card and inline question body | mobile-adaptation | Composer-adjacent capped scroll body, 48dp rows/actions, larger native editor and resized footer | Current C report; coordinator retains touch/reachability adaptation. Actual 892/592dp draws reach the final editor and preserve nullable staging; they do not prove real IME behavior. |
+| Shared collapsed queue, hover X and shared total count | mobile-adaptation | Lost autoexpands separately from queued; explicit Discard/Delete; count per split group | Current C report and production action checks preserve exact admission ownership/no replay. Per-group count-plus-Queued wording matches; old legacy #245/#246 findings remain separately pinned. |
+| Toast, Desktop modal chrome and narrow reversed vertical footer | mobile-adaptation | Inline error/stale notice, native modal, existing decline treatment and horizontal Keep-before-Switch footer with touch targets | Current C report; coordinator retains phone feedback/chrome/footer adaptation. Product words and logical order match. No new Back/scrim, accessibility or precise theme-color equality claim. |
+| Selected badge uses fixed white ink; row highlight tracks cursor/focus | drift | Badge uses existing paired filledActionInk, dark in Nous dark; selected row retains accent tint | #378 — current C selected pair and source inspection establish scoped paint difference. Coordinator retains explicit drift pending requester visual ruling/follow-up. No forced raw-white change or theme-token waiver; loading contrast measurements are not badge-specific accessibility proof. |
+| Confirm includes decorative aria-hidden Enter glyph | omission | Functional confirmation, correct words and submitting feedback present; decorative glyph absent | deferred: #378 — current C report. Coordinator retains omitted decoration explicitly; no missing confirm control or physical-keyboard behavior is inferred. |
+| Structured settled question/answer, No answer and Skipped rows | omission | Generic ToolView remains unchanged from mission base | deferred: #380 — original supplied-result evidence and unchanged blob remain authoritative. Current pending-retirement pairs prove card removal, not structured result rendering. |
+
+Current table: three mobile adaptations, one drift, two omissions. This does not
+replace the historical A table. Legacy immediate words and legacy Queued next
+keep their own attribution. No full Desktop parity or public-native server
+settlement is accepted.
 
 ## Visual report
 
@@ -87,3 +116,52 @@ No physical IME, TalkBack, OS lifecycle, secure-dialog screenshot workaround or
 full visual parity is claimed. Historical UI/theme/visual pins remain unchanged.
 Secure dialogs retain FLAG_SECURE. The pre-existing settled detail is tracked
 separately by #380; no omission was silently reclassified to clear this gate.
+
+### Completed independent comparison for C
+
+The single mission evidence bundle retains
+`missions/upstream-main-compatibility/evidence/visual378-0e64182/REPORT.md`,
+`report.html`, `copy-diff.md`, `manifest.json` and `receipt.json`.
+Manifest SHA-256:
+`7cc711f8e5d0c360ccbe62672fbfb0cd634f5db6cb5d8a36a7b1e88c7a566e33`.
+Report SHA-256:
+`45cb21c063b1bcfbf173489b2e8e4250404aadb440c78cba846d2b6bae8d5d24`.
+Observed Android is exactly C above; Desktop imports unchanged exact-U production
+components from the owned disposable export. The report contains 102 comparison
+pairs and 226 attributed original image files; these are inventories, not test
+totals or additional product progress. Kani verified all image hashes, 34 capture
+artifact hashes and 21 source hashes, read the full report/copy/HTML inventory,
+and inspected the original dark selected pair. Coordinator independently
+verified receipt/image joins and dispositioned the residuals for tracking.
+
+Hotate captures actual production surfaces using external Kotlin/Compose and
+direct Java over frozen outputs, native Robolectric Canvas at API34, Nous
+light/dark, mdpi, UTC/en-US and a fixed synthetic clock. Activity windows remain
+892dp; reduced captures constrain actual ChatScreen content to 592dp and clip
+the direct Canvas draw to that boundary. Native dialogs draw their own window.
+Projection fixtures prove surface action/answer/admission identity, not repository
+settlement. Kame's 40 full-height originals retain their paths/authorship;
+Hotate's attributed reduced harness copies traverse real ChatActions, ViewModel,
+repository and correlated RPC with synthetic peers. Their 13 capture cases
+overlap existing QA and are not additive coverage.
+
+Integrated evidence shows actual failure/retry, held successful ACK, disabled
+duplicate rejection, exact-ID release, sensitive wipe and one ordinary follow-up.
+Same-endpoint stale owner/selection callbacks produce the current generic notice
+without another RPC and preserve newer selection; a foreign-endpoint callback
+paints no prior notice/model/modal and sends on neither wire. Pending retirement
+proves removal of the pending card, not ToolView responses-array specialization.
+Original no-op insets, arbitrary projection retry and projection-only stale
+scenes are excluded. Intro Splash and synthetic producer text are excluded from
+verbatim copy acceptance.
+
+Desktop uses target components in an isolated synthetic host with fresh headless
+Chrome contexts and external network refused. Existing originals are reused only
+with exact image/source joins; matched reduced/batch captures use the same U
+components and locked dependencies. No installed APK, physical density, real
+IME/binding, TalkBack, OS lifecycle, animation liveness, radio, live provider or
+public-native responder settlement is claimed. F3's independent paired loading
+paint measurements retain their static-arc limit. Historical ordinary UI/theme
+and report pins remain unchanged. Any documentation-only child carries these
+observations only through exact source/test/configuration equivalence; the
+rendered report remains pinned to C.

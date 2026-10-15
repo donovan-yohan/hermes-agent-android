@@ -15,9 +15,14 @@ registry/palette changes; this does not certify custom-theme parity.
 
 Implementation and selected RED/GREEN checks exist; full compatibility/release
 is **blocked** by the public named-profile native response boundary below.
-Independent exact-head CODE/product QA, required CI, merged-main APK proof and
-physical deployment are separate gates. Changed input visuals remain
-[pending: #378](https://github.com/donovan-yohan/hermes-agent-android/issues/378).
+At observed Android `0e64182`, independent client CODE is clear with F3 closed,
+affected synthetic product QA passes, and required CI passes. The completed
+changed-control comparison remains **Concern**: selected badge/row paint is
+explicit drift and decorative Enter remains a deferred omission under
+[#378](https://github.com/donovan-yohan/hermes-agent-android/issues/378).
+See [the observed-head report and classifications](parity/canonical-inputs.md).
+These scoped results do not accept full compatibility or visual parity.
+Merged-main APK proof and physical deployment remain separate, unfulfilled gates.
 No backend update, new provider/model purchase or physical install is implied.
 
 ## Existing consumer matrix
