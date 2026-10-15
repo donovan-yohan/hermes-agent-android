@@ -154,6 +154,7 @@ sealed interface ControlMutationResult {
     data object Applied : ControlMutationResult
     /** The Gateway accepted a busy-session model selection for the next turn. */
     data object Deferred : ControlMutationResult
+    data class ConfirmationRequired(val safeMessage: String) : ControlMutationResult
     data class Rejected(val safeMessage: String) : ControlMutationResult
 }
 

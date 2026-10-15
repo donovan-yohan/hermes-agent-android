@@ -48,7 +48,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         if (!intent.hasExtra(EXTRA_CONNECTION_GENERATION)) return
         val generation = intent.getLongExtra(EXTRA_CONNECTION_GENERATION, -1L)
 
-        val key = PendingInputKey(generation, runtimeSessionId, requestId, PendingInputKind.Approval)
+        val key = PendingInputKey(generation, runtimeSessionId, requestId, PendingInputKind.Approval, pendingOrigin(intent), pendingGeneration(intent))
         // A broadcast receiver's process can be killed the moment `onReceive`
         // returns; the RPC is the whole point, so it has to outlive it.
         val finish = goAsync()
@@ -87,7 +87,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val answer = (typed ?: intent.getStringExtra(EXTRA_ANSWER)).orEmpty().trim()
         if (answer.isEmpty()) return
 
-        val key = PendingInputKey(generation, runtimeSessionId, requestId, PendingInputKind.Clarify)
+        val key = PendingInputKey(generation, runtimeSessionId, requestId, PendingInputKind.Clarify, pendingOrigin(intent), pendingGeneration(intent))
         val finish = goAsync()
         app.appScope.launch {
             try {
@@ -227,3 +227,8 @@ private fun clearResolvedPrompt(
     // will repoint it if another request in this session is still live.
     surface.clear(NotificationKind.StillWaiting, durableSessionId)
 }
+
+private fun pendingOrigin(intent: Intent): com.hermesagent.mobile.data.gateway.PendingInputOrigin =
+    com.hermesagent.mobile.data.gateway.PendingInputOrigin.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_PENDING_ORIGIN) }
+        ?: com.hermesagent.mobile.data.gateway.PendingInputOrigin.Native
+private fun pendingGeneration(intent: Intent): Long? = intent.getLongExtra(EXTRA_EXECUTION_GENERATION, -1L).takeIf { it >= 0 }

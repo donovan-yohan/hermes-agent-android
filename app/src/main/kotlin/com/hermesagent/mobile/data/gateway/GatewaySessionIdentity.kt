@@ -35,6 +35,10 @@ internal class GatewaySessionIdentity(private var endpointNamespace: String = "i
     fun qualify(rawId: String, profile: String?, actualName: String? = null): String = synchronized(lock) {
         val owner = owners[profile.orEmpty()] ?: throw GatewayRpcException("Reopen this profile before its sessions.")
         if (actualName != null) bind(profile, owner, actualName)
+        addresses[rawId]?.let { existing ->
+            if (existing.ownerId != owner) throw GatewayRpcException("This session belongs to another profile.")
+            return@synchronized rawId
+        }
         val key = PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(
             JsonArray(listOf(JsonPrimitive(endpointNamespace), JsonPrimitive(owner), JsonPrimitive(rawId))).toString().toByteArray(Charsets.UTF_8))
         addresses[key] = Address(owner, actualName ?: profile, rawId)
@@ -75,10 +79,10 @@ internal class GatewaySessionIdentity(private var endpointNamespace: String = "i
                 } else put(key, value)
             }
             (actual ?: profile)?.let { put("profile", it) }
-            (row["stored_session_id"] ?: row["id"] ?: row["session_id"])?.let {
+            (row["backend_session_id"] ?: row["stored_session_id"] ?: row["id"] ?: row["session_id"])?.let {
                 put("backend_session_id", it)
             }
-            row["lineage_root"]?.let { put("backend_lineage_root", it) }
+            (row["backend_lineage_root"] ?: row["lineage_root"])?.let { put("backend_lineage_root", it) }
         }
     }
 

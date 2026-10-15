@@ -277,6 +277,8 @@ interface GatewaySessionRepository {
         durableId: String,
         selection: ComposerModelSelection,
     ): ControlMutationResult = error("Live model controls are not implemented by this repository.")
+    suspend fun confirmLiveModel(durableId: String, selection: ComposerModelSelection): ControlMutationResult =
+        ControlMutationResult.Rejected("This model change could not be confirmed. Choose it again.")
     suspend fun setLiveReasoning(
         durableId: String,
         effort: ReasoningEffort,
@@ -921,6 +923,12 @@ internal class LiveGatewaySessionRepository(
      * direction, since that shows the user a way to respond rather than
      * silently withdrawing a live request.
      */
+    private data class CanonicalWatermark(val epoch: String, val sequence: Long, val generation: Long)
+    private val canonicalWatermarks = mutableMapOf<String, CanonicalWatermark>()
+    private val unboundEvents = mutableListOf<GatewayEvent>()
+    private val replayReconciliations = mutableSetOf<String>()
+    private val authorityBatchAnswers = mutableMapOf<PendingInputKey, Map<String, String?>>()
+    private val unboundServerRequests = linkedMapOf<Pair<String, String>, GatewayServerRequest>()
     private val retiredKeys = object : LinkedHashMap<PendingInputKey, Unit>(64, 0.75f, false) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<PendingInputKey, Unit>): Boolean =
             size > MAX_RETIRED_KEYS
@@ -1275,6 +1283,7 @@ internal class LiveGatewaySessionRepository(
                                             requestId = request.id,
                                             method = request.method,
                                             params = request.params,
+                                            origin = if (request.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native,
                                         )
                                     } else null
                                 }
@@ -2529,6 +2538,7 @@ internal class LiveGatewaySessionRepository(
                     parseMessages(messages, clock()) { index -> "$runtimeId-history-$index" },
                 )
             }
+            restoreOpenRequests(result, durableId, runtimeId, mutableListOf())
         }
         durableId
     }
@@ -2558,7 +2568,13 @@ internal class LiveGatewaySessionRepository(
             "session.branch",
             buildJsonObject {
                 put("session_id", JsonPrimitive(binding.runtimeId))
-                count?.let { put("count", JsonPrimitive(it)) }
+                count?.let {
+                    put("count", JsonPrimitive(it))
+                    // Desktop's count is a rendered prefix; only its last persisted row names an authority cut.
+                    if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+                        cache.transcript(durableId).take(it).lastOrNull()?.rowId?.value?.let { row -> put("through_message_id", JsonPrimitive(row)) }
+                    }
+                }
             },
         ).asObject("session.branch")
         val newRuntimeId = result.string("session_id")
@@ -2843,6 +2859,12 @@ internal class LiveGatewaySessionRepository(
             append(" --session")
         }
         return mutateLiveControl(durableId, "model", value, modelSwitch = true)
+    }
+
+    override suspend fun confirmLiveModel(durableId: String, selection: ComposerModelSelection): ControlMutationResult {
+        if (!selection.isSpecified) return ControlMutationResult.Rejected("Choose a model, then try again.")
+        val value = "${selection.model.trim()} --provider ${selection.provider.trim()} --session"
+        return mutateLiveControl(durableId, "model", value, modelSwitch = true, confirmed = true)
     }
 
     override suspend fun setLiveReasoning(
@@ -3334,7 +3356,7 @@ internal class LiveGatewaySessionRepository(
                 // mutex, and an endpoint-bound prompt may not cross after the
                 // app left the Gateway it was bound to.
                 requireEndpoint(expectedEndpointGeneration)
-                requestPromptSubmit(
+                val receipt = requestPromptSubmit(
                     connection = connection,
                     runtimeId = binding.runtimeId,
                     prompt = wireText,
@@ -3342,8 +3364,19 @@ internal class LiveGatewaySessionRepository(
                     truncateBeforeRowId = truncateBeforeRowId,
                     expectedEndpointGeneration = expectedEndpointGeneration,
                 )
+                if ((receipt as? JsonObject)?.string("status") == "unknown") {
+                    // Accepted work with lost execution is never retried automatically.
+                    return@withLock GatewaySubmitOutcome.Ambiguous
+                }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
+                    if ((receipt as? JsonObject)?.string("status") == "terminal") {
+                        releaseRuntimeGuard(binding.runtimeId)
+                        liveTurnRuntimeIds.remove(binding.runtimeId)
+                        localSubmitStartedAtByRuntime.remove(binding.runtimeId)
+                        updateActiveTurnsLocked()
+                        cache.session(binding.durableId)?.let { cache.upsertSession(it.copy(status = SessionStatus.Idle)) }
+                    }
                     val stoppedBeforeAcknowledgement =
                         (confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L) > interruptEpoch
                     if (optimistic == null && !stoppedBeforeAcknowledgement) {
@@ -3417,8 +3450,8 @@ internal class LiveGatewaySessionRepository(
         queued: Boolean,
         truncateBeforeRowId: TranscriptRowId? = null,
         expectedEndpointGeneration: Long? = null,
-    ) {
-        requestAtEndpointDispatch(
+    ): JsonElement {
+        return requestAtEndpointDispatch(
             connection = connection,
             expectedEndpointGeneration = expectedEndpointGeneration,
             method = "prompt.submit",
@@ -3489,6 +3522,9 @@ internal class LiveGatewaySessionRepository(
             // (`store/server-requests.ts:5-12` @ the pin) — and the generation
             // fence above is what stops a request from a leg this app has left
             // being answered on the replacement.
+            if (key.origin == PendingInputOrigin.Canonical) {
+                return answerCanonicalPrompt(connection, request, action)
+            }
             val responder = responderAtOwner(connection, request.runtimeSessionId, key)
                 ?: return PendingInputResponse.Unanswerable
             val outcome = try {
@@ -3588,6 +3624,43 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    private suspend fun answerCanonicalPrompt(connection: ConnectionSnapshot, request: PendingInputRequest,
+        action: PendingInputAction): PendingInputResponse {
+        val key = request.key
+        val field: String
+        val value: String
+        val method: String
+        when {
+            request is ClarifyPending && action is PendingInputAction.ClarifyAnswer -> {
+                val qid = request.questions.singleOrNull()?.questionId ?: return PendingInputResponse.Unanswerable
+                if (!action.cancelBatch && qid !in action.answers) return PendingInputResponse.Retryable
+                field = "answer"; value = if (action.cancelBatch) "" else action.answers[qid].orEmpty(); method = "clarify.respond"
+            }
+            request is ApprovalPending && action is PendingInputAction.ApprovalChoice && action.choice in request.choices -> {
+                field = "choice"; value = action.choice; method = "approval.respond"
+            }
+            else -> return PendingInputResponse.Unanswerable
+        }
+        return try {
+            val result = requestAtEndpointDispatch(connection, connection.endpointGeneration, method, buildJsonObject {
+                put("session_id", JsonPrimitive(request.runtimeSessionId)); put("prompt_id", JsonPrimitive(key.requestId))
+                put("execution_generation", JsonPrimitive(key.executionGeneration ?: return PendingInputResponse.Unanswerable))
+                put(field, JsonPrimitive(value))
+            }).asObject(method)
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                if (result.string("prompt_id") != key.requestId || result.string("status") !in setOf("resolved", "already_resolved"))
+                    return PendingInputResponse.Retryable
+                removePendingInput(key)
+                setStatus(request.durableSessionId, if (request.runtimeSessionId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle)
+            }
+            PendingInputResponse.Resolved
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            PendingInputResponse.Retryable
+        }
+    }
+
     /** The original socket and owner survive foreground/session/profile switches. */
     private fun responderAtOwner(
         connection: ConnectionSnapshot,
@@ -3658,6 +3731,26 @@ internal class LiveGatewaySessionRepository(
         request: PendingInputRequest,
         answer: PendingInputAction.ClarifyAnswer,
     ): PendingInputResponse {
+        if (request.key.origin == PendingInputOrigin.AuthorityNative) {
+            val questions = (request as? ClarifyPending)?.questions.orEmpty()
+            val previous = synchronized(stateLock) { authorityBatchAnswers[request.key].orEmpty() }
+            val known = questions.map { it.questionId }.toSet() + previous.keys
+            if (answer.answers.keys.any { it !in known }) return PendingInputResponse.Retryable
+            val all = previous + answer.answers
+            if (!answer.cancelBatch && !known.all(all::containsKey)) {
+                synchronized(stateLock) {
+                    authorityBatchAnswers[request.key] = all
+                    mutablePendingInputs.value = mutablePendingInputs.value + (request.key to (request as ClarifyPending).copy(
+                        questions = questions.filter { it.questionId !in all }))
+                }
+                return PendingInputResponse.PartiallyAnswered
+            }
+            responder.respondToServerRequest(request.key.requestId, buildJsonObject {
+                put("answers", if (answer.cancelBatch) JsonObject(emptyMap()) else JsonObject(all.mapValues { (_, value) -> value?.let(::JsonPrimitive) ?: JsonNull }))
+                put("outcome", JsonPrimitive(if (answer.cancelBatch) "cancelled" else "submitted"))
+            })
+            return PendingInputResponse.Resolved
+        }
         if (answer.cancelBatch) {
             responder.respondToServerRequest(request.key.requestId, JsonObject(emptyMap()))
             return PendingInputResponse.Resolved
@@ -3704,6 +3797,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     private fun removePendingInput(key: PendingInputKey) {
+        authorityBatchAnswers.remove(key)
         val next = mutablePendingInputs.value.minus(key)
         if (next.size != mutablePendingInputs.value.size) {
             mutablePendingInputs.value = next
@@ -3713,6 +3807,7 @@ internal class LiveGatewaySessionRepository(
 
     /** Records requests this connection finished with. See [retiredKeys]. */
     private fun retire(keys: Collection<PendingInputKey>) {
+        keys.forEach(authorityBatchAnswers::remove)
         synchronized(stateLock) { keys.forEach { retiredKeys[it] = Unit } }
     }
 
@@ -4139,6 +4234,8 @@ internal class LiveGatewaySessionRepository(
                 return resolvedTitle
             } catch (failure: Throwable) {
                 if (failure is CancellationException) throw failure
+                // Authority refusal/ambiguity must never trigger a second writer.
+                if ((client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) throw failure
                 // Fall through to the REST path rather than report the RPC's
                 // refusal. Desktop does exactly this, and says why
                 // (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:86-92`
@@ -4604,20 +4701,26 @@ internal class LiveGatewaySessionRepository(
         key: String,
         value: String,
         modelSwitch: Boolean = false,
+        confirmed: Boolean = false,
     ): ControlMutationResult {
         val binding = ensureRuntime(durableId)
         val connection = connectionSnapshot(binding)
         return try {
-            val result = connection.client.request(
-                "config.set",
+            val result = requestAtEndpointDispatch(
+                connection, cache.endpointGeneration.value, "config.set",
                 buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("key", JsonPrimitive(key))
                     put("value", JsonPrimitive(value))
+                    if (confirmed) put("confirm_expensive_model", JsonPrimitive(true))
                 },
             ).asObject("config.set")
             synchronized(stateLock) { ensureCurrent(connection) }
-            if (modelSwitch && result.boolean("deferred") == true) {
+            if (modelSwitch && result.boolean("confirm_required") == true) {
+                ControlMutationResult.ConfirmationRequired(redact(result.string("confirm_message") ?: "This model switch needs confirmation."))
+            } else if (result.boolean("ok") == false || result.string("status") == "rejected") {
+                ControlMutationResult.Rejected(controlFailureMessage(key))
+            } else if (modelSwitch && result.boolean("deferred") == true) {
                 ControlMutationResult.Deferred
             } else {
                 ControlMutationResult.Applied
@@ -4732,9 +4835,52 @@ internal class LiveGatewaySessionRepository(
     private fun applyEvent(event: GatewayEvent): Boolean {
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
         val runtimeId = event.runtimeSessionId ?: unscopedRuntimeId ?: return false
-        var durableId = identities.durableFor(runtimeId) ?: return false
+        var durableId = identities.durableFor(runtimeId) ?: run {
+            if (event.canonical) {
+                if (unboundEvents.size >= 1024) clientFlow.value?.close() else unboundEvents += event
+            }
+            return false
+        }
+        if (event.canonical && event.type != "session.replay_gap") {
+            val previous = canonicalWatermarks[runtimeId]
+            if (previous != null && (event.executionGeneration?.let { it < previous.generation } == true ||
+                    event.seq?.let { it <= previous.sequence } == true)) return false
+            if (previous != null && event.replayEpoch != null && event.replayEpoch != previous.epoch) return false
+            event.executionGeneration?.let { generation ->
+                mutablePendingInputs.value.keys.filter { it.runtimeSessionId == runtimeId && it.origin == PendingInputOrigin.Canonical &&
+                    it.executionGeneration?.let { old -> old < generation } == true }.forEach(::removePendingInput)
+            }
+            val epoch = event.replayEpoch ?: previous?.epoch
+            if (epoch != null) canonicalWatermarks[runtimeId] = CanonicalWatermark(epoch,
+                event.seq ?: previous?.sequence ?: 0L, event.executionGeneration ?: previous?.generation ?: 0L)
+        }
         if (event.type in LIVE_RUNTIME_EVENT_TYPES) advanceLiveEventRevision(runtimeId)
         return when (event.type) {
+            "approval.request", "clarify.request" -> {
+                if (event.canonical) adoptCanonicalPrompt(durableId, runtimeId, payload, event.executionGeneration)
+                false
+            }
+            "approval.settled", "clarify.settled" -> {
+                if (event.canonical) mutablePendingInputs.value.keys.filter {
+                    it.runtimeSessionId == runtimeId && it.origin == PendingInputOrigin.Canonical &&
+                        it.requestId == payload.string("prompt_id") && it.executionGeneration == event.executionGeneration
+                }.forEach(::removePendingInput)
+                if (!hasPendingInput(runtimeId)) setStatus(durableId, if (runtimeId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle)
+                false
+            }
+            "session.updated" -> true
+            "session.replay_gap" -> {
+                if (event.canonical && replayReconciliations.add(runtimeId)) {
+                    val endpoint = cache.endpointGeneration.value
+                    val generation = connectionGeneration
+                    scope.launch {
+                        try { openSessionInternal(durableId, null, endpoint) }
+                        catch (failure: Throwable) { if (failure is CancellationException) throw failure }
+                        finally { synchronized(stateLock) { if (generation == connectionGeneration) replayReconciliations.remove(runtimeId) } }
+                    }
+                }
+                false
+            }
             "session.info" -> {
                 val eventDurable = payload.string("stored_session_id")
                     ?: payload.string("session_key")
@@ -5003,6 +5149,25 @@ internal class LiveGatewaySessionRepository(
         runtimeId: String,
         replayedRefusals: MutableList<GatewayServerRequest>,
     ) {
+        if ((clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+            val epoch = snapshot.string("replay_epoch")
+            val sequence = snapshot.primitive("last_sequence")?.toLongOrNull()
+            val generation = snapshot.primitive("execution_generation")?.toLongOrNull()
+            if (epoch != null && sequence != null && generation != null) canonicalWatermarks[runtimeId] = CanonicalWatermark(epoch, sequence, generation)
+            val present = (snapshot["prompts"] as? JsonArray).orEmpty().mapNotNull { it as? JsonObject }
+            val ids = present.mapNotNull { it.string("prompt_id") }.toSet()
+            mutablePendingInputs.value.keys.filter { it.runtimeSessionId == runtimeId &&
+                it.origin == PendingInputOrigin.Canonical && it.requestId !in ids }.forEach(::removePendingInput)
+            present.forEach { adoptCanonicalPrompt(durableId, runtimeId, it, snapshot.primitive("execution_generation")?.toLongOrNull()) }
+        }
+        val events = unboundEvents.filter { it.runtimeSessionId == runtimeId }
+        unboundEvents.removeAll(events.toSet())
+        events.forEach(::applyEvent)
+        val buffered = unboundServerRequests.filterKeys { it.first == runtimeId }.values.toList()
+        unboundServerRequests.keys.removeAll { it.first == runtimeId }
+        buffered.forEach { adoptServerRequest(durableId, runtimeId, it.id, it.method, it.params,
+            PendingInputKey(connectionGeneration, runtimeId, it.id, pendingInputKind(it.method) ?: return@forEach,
+                if (it.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native)) }
         val entries = snapshot["open_requests"] as? JsonArray ?: return
         entries.forEach { entry ->
             val open = entry as? JsonObject ?: return@forEach
@@ -5054,12 +5219,20 @@ internal class LiveGatewaySessionRepository(
         requestId: String,
         method: String,
         params: JsonObject,
+        origin: PendingInputOrigin = PendingInputOrigin.Native,
     ): GatewayServerRequest? {
         val runtime = runtimeId?.takeIf(String::isNotBlank)
         val known = pendingInputKind(method) != null
         // Resolved here rather than by the caller: a live frame routes by its
         // runtime, a replay entry routes by the session its snapshot belongs to.
         val bound = durableId ?: runtime?.let(identities::durableFor)
+        if (known && bound == null && runtime != null) {
+            if (unboundServerRequests.size >= 64 && (runtime to requestId) !in unboundServerRequests) {
+                clientFlow.value?.close()
+                return null
+            }
+            unboundServerRequests[runtime to requestId] = GatewayServerRequest(requestId, method, runtime, params, origin == PendingInputOrigin.AuthorityNative)
+        }
         if (known && bound != null && runtime != null) {
             // Every kind [PendingInputKind] has is adopted here. A parser that
             // refuses a malformed one leaves it to the backend's own timeout
@@ -5071,6 +5244,7 @@ internal class LiveGatewaySessionRepository(
                     requestId = requestId,
                     method = method,
                     params = params,
+                    suppliedKey = PendingInputKey(connectionGeneration, runtime, requestId, pendingInputKind(method) ?: return null, origin),
                 )
             ) {
                 return null
@@ -5178,16 +5352,31 @@ internal class LiveGatewaySessionRepository(
      * an answer for one would be worse than the timeout the backend already
      * owns.
      */
+    private fun adoptCanonicalPrompt(durableId: String, runtimeId: String, payload: JsonObject, envelopeGeneration: Long?) {
+        val id = payload.string("prompt_id")?.takeIf(String::isNotBlank) ?: return
+        val generation = payload.primitive("execution_generation")?.toLongOrNull() ?: envelopeGeneration ?: return
+        if (envelopeGeneration != null && generation != envelopeGeneration) return
+        val kind = payload.string("kind") ?: return
+        if (kind !in setOf("approval", "clarify")) return
+        val params = if (kind == "clarify") buildJsonObject {
+            put("questions", JsonArray(listOf(JsonObject(payload + ("qid" to JsonPrimitive(id))))))
+        } else payload
+        val key = PendingInputKey(connectionGeneration, runtimeId, id, pendingInputKind(kind) ?: return,
+            PendingInputOrigin.Canonical, generation)
+        adoptServerRequest(durableId, runtimeId, id, kind, params, key)
+    }
+
     private fun adoptServerRequest(
         durableId: String,
         runtimeId: String,
         requestId: String,
         method: String,
         params: JsonObject,
+        suppliedKey: PendingInputKey? = null,
     ): Boolean {
         if (requestId.isBlank()) return false
         val kind = pendingInputKind(method) ?: return false
-        val key = PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
+        val key = suppliedKey ?: PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
         val request: PendingInputRequest = when (kind) {
             PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, params) ?: return false
             PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, params) ?: return false
@@ -6267,6 +6456,11 @@ internal class LiveGatewaySessionRepository(
         // as "already answered".
         mutablePendingInputs.value = emptyMap()
         retiredKeys.clear()
+        unboundServerRequests.clear()
+        authorityBatchAnswers.clear()
+        unboundEvents.clear()
+        canonicalWatermarks.clear()
+        replayReconciliations.clear()
         clearUnscopedRuntime()
         updateActiveTurnsLocked()
         val ghosts = if (next == null) emptyList() else ephemeralSessions.toList()

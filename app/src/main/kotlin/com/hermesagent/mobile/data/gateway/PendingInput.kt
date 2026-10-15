@@ -15,11 +15,15 @@ sealed interface PendingInputRequest {
     val runtimeSessionId: String
 }
 
+enum class PendingInputOrigin { Native, AuthorityNative, Canonical }
+
 data class PendingInputKey(
     val connectionGeneration: Long,
     val runtimeSessionId: String,
     val requestId: String,
     val kind: PendingInputKind,
+    val origin: PendingInputOrigin = PendingInputOrigin.Native,
+    val executionGeneration: Long? = null,
 )
 
 /**

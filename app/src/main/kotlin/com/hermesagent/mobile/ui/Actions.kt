@@ -96,6 +96,8 @@ class ChatActions(
     /** Write the host's approval mode; the repository owns the rollback. */
     val onSelectApprovalMode: (ApprovalMode) -> Unit = {},
     val onSelectModel: (ComposerModelSelection) -> Unit = {},
+    val onConfirmModelChange: (Long) -> Unit = {},
+    val onDismissModelChange: (Long) -> Unit = {},
     /** Show or hide one model in the picker. */
     val onToggleModelVisible: (provider: String, model: String) -> Unit = { _, _ -> },
     /** Show or hide every model a provider serves. */

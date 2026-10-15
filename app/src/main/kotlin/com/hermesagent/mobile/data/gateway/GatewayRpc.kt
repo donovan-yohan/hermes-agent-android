@@ -47,6 +47,12 @@ internal data class GatewayEvent(
      * session-less frames, which upstream never stamps.
      */
     val seq: Long? = null,
+    val replayEpoch: String? = null,
+    val authorityEpoch: Long? = null,
+    val executionGeneration: Long? = null,
+    val admissionId: String? = null,
+    /** Set only by authenticated authority adapter, never a payload flag. */
+    val canonical: Boolean = false,
 )
 
 /** One logcat tag for the whole gateway package: connections and the sign-in that opens them. */
@@ -108,6 +114,7 @@ internal data class GatewayServerRequest(
     val method: String,
     val runtimeSessionId: String?,
     val params: JsonObject,
+    val authorityNative: Boolean = false,
 )
 
 /**
@@ -417,12 +424,12 @@ internal class CorrelatedGatewayRpc(
             if (id == null) return
             val params = frame["params"] as? JsonObject ?: return
             val accepted = serverRequestChannel.trySend(
-                GatewayServerRequest(
+                canonicalProtocol.serverRequest(GatewayServerRequest(
                     id = id,
                     method = method,
                     runtimeSessionId = params.string("session_id")?.takeIf(String::isNotBlank),
                     params = params,
-                ),
+                )),
             )
             if (accepted.isFailure) connectionClosed(SERVER_REQUEST_OVERFLOW_MESSAGE)
             return
@@ -432,16 +439,18 @@ internal class CorrelatedGatewayRpc(
         val params = frame["params"] as? JsonObject ?: return
         val type = params.string("type") ?: return
         canonicalProtocol.observeReady(type, params["payload"] ?: JsonNull)
-        if (type !in SUPPORTED_EVENTS) return
-        val accepted = eventChannel.trySend(
-            GatewayEvent(
+        if (type !in SUPPORTED_EVENTS || (!canonicalProtocol.announced && type in CANONICAL_EVENTS)) return
+        val event = canonicalProtocol.event(GatewayEvent(
                 type,
                 params.string("session_id")?.takeIf(String::isNotBlank),
                 params["payload"] ?: JsonNull,
                 (params["seq"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.longOrNull,
-            ),
-        )
-        if (accepted.isFailure) connectionClosed(EVENT_OVERFLOW_MESSAGE)
+                params.string("replay_epoch"),
+                (params["authority_epoch"] as? JsonPrimitive)?.longOrNull,
+                (params["execution_generation"] as? JsonPrimitive)?.longOrNull,
+                params.string("admission_id"),
+            )) ?: return
+        if (eventChannel.trySend(event).isFailure) connectionClosed(EVENT_OVERFLOW_MESSAGE)
     }
 
     /**
@@ -618,7 +627,11 @@ internal class CorrelatedGatewayRpc(
          * (`tui_gateway/change_watcher.py:177-184` @
          * `72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd`).
          *
-         * Blocking prompts are not here and cannot be: since the re-pin every
+         * Legacy blocking prompts remain server→client requests. Authority v1
+         * adds generation-bound approval/clarify request + settled events
+         * (gateway/session_pending_controls.py @ 379cf122); these share the
+         * repository registry but use their canonical response verbs.
+         * Historically, since the earlier re-pin every
          * one of them is a server→client *request* frame, and the one event
          * left in the family is the backend withdrawing it —
          * `request.cancel {id, method, reason}`
@@ -693,8 +706,10 @@ internal class CorrelatedGatewayRpc(
          * then, refused for its shape rather than its silence, and the
          * `tool.start` / `tool.complete` pair keeps carrying the tool row.
          */
+        val CANONICAL_EVENTS = setOf("session.updated", "session.replay_gap", "approval.request", "clarify.request", "approval.settled", "clarify.settled")
         val SUPPORTED_EVENTS = setOf(
-            "session.info",
+            "session.info", "session.updated", "session.usage", "session.replay_gap",
+            "approval.request", "clarify.request", "approval.settled", "clarify.settled",
             "message.start",
             "message.delta",
             "message.complete",

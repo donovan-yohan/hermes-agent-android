@@ -79,8 +79,113 @@ class CanonicalGatewayRpcTest {
         foreign.rpc.close()
     }
 
+    @Test
+    fun `anonymous canonical producer gets fresh identified admissions and accepted backend generation`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val key = peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+            .jsonObject.getValue("session_id").jsonPrimitive.content
+        val submit = buildJsonObject { put("session_id", key); put("text", "Public prompt") }
+        val first = peer.rpc.request("prompt.submit", submit).jsonObject
+        val second = peer.rpc.request("prompt.submit", JsonObject(submit + ("queued" to JsonPrimitive(true)))).jsonObject
+        val calls = peer.frames.filter { it["method"] == JsonPrimitive("prompt.submit") }.map { it.getValue("params").jsonObject }
+        assertTrue(calls.all { it.getValue("submission_id").jsonPrimitive.content.isNotBlank() })
+        assertNotEquals(calls.first()["submission_id"], calls.last()["submission_id"])
+        assertEquals(JsonPrimitive("canonical-public"), calls.first()["session_id"])
+        assertEquals(JsonPrimitive("work"), calls.first()["profile"])
+        assertEquals(JsonPrimitive("started"), first["status"])
+        assertEquals(JsonPrimitive("queued"), second["status"])
+        peer.rpc.request("session.interrupt", buildJsonObject { put("session_id", key) })
+        assertEquals(JsonPrimitive(4), peer.frames.last().getValue("params").jsonObject["execution_generation"])
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `identified retry after lost receipt sends exact same logical input identity`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val key = peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+            .jsonObject.getValue("session_id").jsonPrimitive.content
+        val submit = buildJsonObject { put("session_id", key); put("text", "Public prompt"); put("submission_id", "public-send-1") }
+        peer.silenceNextSubmit = true
+        assertTrue(runCatching { peer.rpc.request("prompt.submit", submit) }.isFailure)
+        val receipt = peer.rpc.request("prompt.submit", submit).jsonObject
+        val calls = peer.frames.filter { it["method"] == JsonPrimitive("prompt.submit") }.map { it.getValue("params").jsonObject }
+        assertEquals(2, calls.size)
+        assertEquals(calls.first(), calls.last())
+        assertEquals(JsonPrimitive("public-admission-1"), receipt["admission_id"])
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `canonical edits carry revision and generation with exact ambiguous retry`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+        val rename = buildJsonObject { put("session_id", "canonical-public"); put("profile", "work"); put("title", "Public title") }
+        peer.silenceNextMutation = true
+        assertTrue(runCatching { peer.rpc.request("session.title", rename) }.isFailure)
+        val result = peer.rpc.request("session.title", rename).jsonObject
+        val calls = peer.frames.filter { it["method"] == JsonPrimitive("session.mutate") }.map { it.getValue("params").jsonObject }
+        assertEquals(2, calls.size)
+        assertEquals(calls.first(), calls.last())
+        assertEquals(JsonPrimitive(7), calls.first()["expected_revision"])
+        assertEquals(JsonPrimitive("rename"), calls.first()["operation"])
+        assertEquals(JsonPrimitive("Public title"), result["title"])
+        peer.rpc.request("config.set", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work"); put("key", "reasoning"); put("value", "high") })
+        val reasoning = peer.frames.last().getValue("params").jsonObject
+        assertEquals(JsonPrimitive(8), reasoning["expected_revision"])
+        assertEquals(JsonPrimitive(3), reasoning["expected_generation"])
+        assertEquals(JsonPrimitive("high"), reasoning.getValue("payload").jsonObject["effort"])
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `canonical message branch requires saved row and qualifies child`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+        val base = buildJsonObject { put("session_id", "canonical-public"); put("profile", "work"); put("count", 2) }
+        assertTrue(runCatching { peer.rpc.request("session.branch", base) }.isFailure)
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+        val result = peer.rpc.request("session.branch", JsonObject(base + ("through_message_id" to JsonPrimitive(42)))).jsonObject
+        assertEquals(JsonPrimitive(42), peer.frames.last().getValue("params").jsonObject.getValue("payload").jsonObject["through_message_id"])
+        assertNotEquals(JsonPrimitive("public-child"), result["session_id"])
+        assertEquals(result["session_id"], result["stored_session_id"])
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `canonical edit rewinds durable row before identified plain submit and refuses unsaved cut`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+        val base = buildJsonObject { put("session_id", "canonical-public"); put("profile", "work"); put("text", "Edited public prompt"); put("submission_id", "public-edit") }
+        assertTrue(runCatching { peer.rpc.request("prompt.submit", JsonObject(base + ("truncate_before_user_ordinal" to JsonPrimitive(1)))) }.isFailure)
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("prompt.submit") })
+        peer.rpc.request("prompt.submit", JsonObject(base + mapOf("truncate_before_row_id" to JsonPrimitive(42), "confirm_truncate" to JsonPrimitive(true))))
+        assertEquals(listOf("session.mutate", "prompt.submit"), peer.frames.takeLast(2).map { it.getValue("method").jsonPrimitive.content })
+        assertEquals(JsonPrimitive("rewind"), peer.frames[peer.frames.lastIndex - 1].getValue("params").jsonObject["operation"])
+        assertFalse("truncate_before_row_id" in peer.frames.last().getValue("params").jsonObject)
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `guarded model returns confirmation then only explicit consent presents token`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+        val pick = buildJsonObject { put("session_id", "canonical-public"); put("profile", "work"); put("key", "model"); put("value", "public-model --provider public-provider --session") }
+        val first = peer.rpc.request("config.set", pick).jsonObject
+        assertEquals(JsonPrimitive(true), first["confirm_required"])
+        peer.rpc.request("config.set", pick)
+        assertFalse("confirm" in peer.frames.last().getValue("params").jsonObject.getValue("payload").jsonObject)
+        peer.rpc.request("config.set", JsonObject(pick + ("confirm_expensive_model" to JsonPrimitive(true))))
+        assertEquals(JsonPrimitive("public-confirmation"), peer.frames.last().getValue("params").jsonObject.getValue("payload").jsonObject["confirm"])
+        peer.rpc.close()
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
+        var silenceNextSubmit = false
+        var silenceNextMutation = false
+        private val mutations = linkedMapOf<String, JsonObject>()
+        var expectedGeneration = 3
+        private val admissions = linkedMapOf<String, JsonObject>()
         val rpc: CorrelatedGatewayRpc = CorrelatedGatewayRpc(object : GatewayRpcWire {
             override fun send(text: String): Boolean {
                 val frame = Json.parseToJsonElement(text).jsonObject
@@ -98,12 +203,54 @@ class CanonicalGatewayRpcTest {
                     }
                     "session.resume" -> snapshot()
                     "session.list" -> """{"sessions":[],"scope":"${params["scope"]?.jsonPrimitive?.content ?: "live"}"}"""
-                    "session.interrupt" -> {
-                        if (params["execution_generation"] != JsonPrimitive(3)) {
+                    "prompt.submit" -> {
+                        val submission = (params["submission_id"] ?: params["input_id"]) as? JsonPrimitive
+                        if (submission == null || submission.content.isBlank()) {
                             replyError(frame)
                             return true
                         }
-                        """{"ref":{"profile_id":"public-owner","session_id":"canonical-public"},"instance_id":"public-instance","authority_epoch":2,"revision":7,"execution_generation":3,"execution_state":"idle"}"""
+                        val receipt = admissions.getOrPut(submission.content) {
+                            val queued = params["queued"] == JsonPrimitive(true)
+                            if (!queued) expectedGeneration = 4
+                            buildJsonObject {
+                                put("admission_id", "public-admission-${admissions.size + 1}")
+                                put("ref", buildJsonObject { put("profile_id", "public-owner"); put("session_id", "canonical-public") })
+                                put("sequence", admissions.size + 1); put("status", if (queued) "queued" else "started")
+                                put("outcome", JsonNull); put("authority_epoch", 2)
+                                put("execution_generation", if (queued) JsonNull else JsonPrimitive(expectedGeneration))
+                            }
+                        }
+                        if (silenceNextSubmit) { silenceNextSubmit = false; return true }
+                        receipt.toString()
+                    }
+                    "session.mutate" -> {
+                        val id = params["request_id"]?.jsonPrimitive?.content
+                        if (id.isNullOrBlank() || params["expected_revision"] == null) { replyError(frame); return true }
+                        val operation = params.getValue("operation").jsonPrimitive.content
+                        val payload = params.getValue("payload").jsonObject
+                        val receipt = mutations.getOrPut(id) { buildJsonObject {
+                            put("session_id", "canonical-public"); put("operation", operation)
+                            val guarded = operation == "model" && "confirm" !in payload
+                            if (!guarded) {
+                                put("revision", 8)
+                                payload.forEach { (key, value) -> put(key, value) }
+                            }
+                            if (operation == "branch") { put("branched_session_id", "public-child"); put("copied_messages", 2) }
+                            if (operation == "model" && "confirm" !in payload) {
+                                put("status", "confirmation_required"); put("confirm_required", true)
+                                put("confirm", "public-confirmation"); put("confirm_message", "Confirm this model change.")
+                                put("target_model", "public-model"); put("target_provider", "public-provider"); put("warnings", JsonArray(emptyList()))
+                            }
+                        } }
+                        if (silenceNextMutation) { silenceNextMutation = false; return true }
+                        receipt.toString()
+                    }
+                    "session.interrupt" -> {
+                        if (params["execution_generation"] != JsonPrimitive(expectedGeneration)) {
+                            replyError(frame)
+                            return true
+                        }
+                        """{"ref":{"profile_id":"public-owner","session_id":"canonical-public"},"instance_id":"public-instance","authority_epoch":2,"revision":7,"execution_generation":$expectedGeneration,"execution_state":"idle"}"""
                     }
                     else -> {
                         replyError(frame, -32601)

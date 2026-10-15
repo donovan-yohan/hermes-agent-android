@@ -489,6 +489,8 @@ class MainActivity : ComponentActivity() {
                     onKillProcess = chatViewModel::killProcess,
                     onSelectApprovalMode = chatViewModel::selectApprovalMode,
                     onSelectModel = chatViewModel::selectModel,
+                    onConfirmModelChange = chatViewModel::confirmModelChange,
+                    onDismissModelChange = chatViewModel::dismissModelChange,
                     onToggleModelVisible = chatViewModel::toggleModelVisible,
                     onSetProviderModelsVisible = chatViewModel::setProviderModelsVisible,
                     onSelectReasoning = chatViewModel::selectReasoning,

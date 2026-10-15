@@ -174,6 +174,9 @@ fun ChatScreen(
     state.diagnostics?.let { diagnostics ->
         SendDiagnosticsDialog(diagnostics, actions.onConfirmDiagnostics, actions.onDismissDiagnostics)
     }
+    (state.composer.mutation as? ComposerMutationUiState.ConfirmationRequired)?.let { consent ->
+        ModelChangeDialog(consent, { actions.onConfirmModelChange(consent.key) }, { actions.onDismissModelChange(consent.key) })
+    }
     state.gatewayLogs?.let { GatewayLogsDialog(it, actions.onConfirmGatewayLogs, actions.onDismissGatewayLogs) }
     val dismissGatewayLogs by androidx.compose.runtime.rememberUpdatedState(actions.onDismissGatewayLogs)
     androidx.compose.runtime.DisposableEffect(Unit) {

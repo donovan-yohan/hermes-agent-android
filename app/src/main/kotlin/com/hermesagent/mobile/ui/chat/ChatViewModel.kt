@@ -156,6 +156,7 @@ sealed interface ComposerMutationUiState {
     data object Idle : ComposerMutationUiState
     data object Saving : ComposerMutationUiState
     data object Deferred : ComposerMutationUiState
+    data class ConfirmationRequired(val key: Long, val model: String, val safeMessage: String) : ComposerMutationUiState
     data class Error(val safeMessage: String) : ComposerMutationUiState
 }
 
@@ -722,6 +723,10 @@ internal class ChatViewModel(
     private var composerGeneration = 0L
     /** Fences live mutation replies independently of editor completion work. */
     private var liveMutationGeneration = 0L
+    private data class ModelConsent(val key: Long, val durableId: String, val composerGeneration: Long,
+        val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        val request: suspend () -> ControlMutationResult)
+    private var modelConsent: ModelConsent? = null
     /** Latest authoritative partial session.info controls for the active durable session. */
     private var liveComposerControls: SessionComposerControls? = null
     private var inputGeneration = 0L
@@ -1813,7 +1818,8 @@ internal class ChatViewModel(
             return
         }
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
-        mutateLiveControls(liveId, { snapshot -> snapshot.copy(selection = selection) }) {
+        mutateLiveControls(liveId, { snapshot -> snapshot.copy(selection = selection) },
+            confirmRequest = { repository.confirmLiveModel(liveId, selection) }) {
             repository.setLiveModel(liveId, selection)
         }
     }
@@ -1867,14 +1873,32 @@ internal class ChatViewModel(
         }
     }
 
+    fun confirmModelChange(key: Long) {
+        val consent = modelConsent ?: return
+        if (consent.key != key || (composer.value.mutation as? ComposerMutationUiState.ConfirmationRequired)?.key != key) return
+        modelConsent = null
+        if (activeSessionId.value != consent.durableId || composerGeneration != consent.composerGeneration ||
+            cache.endpointGeneration.value != consent.endpoint || refuseBotChatMutation() != null) return
+        mutateLiveControls(consent.durableId, consent.update, request = consent.request)
+    }
+
+    fun dismissModelChange(key: Long) {
+        if ((composer.value.mutation as? ComposerMutationUiState.ConfirmationRequired)?.key != key) return
+        modelConsent = null
+        composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
+    }
+
     private fun mutateLiveControls(
         durableId: String,
         update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        confirmRequest: (suspend () -> ControlMutationResult)? = null,
         request: suspend () -> ControlMutationResult,
     ) {
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
+        modelConsent = null
         val before = composer.value
         val generation = composerGeneration
+        val endpoint = cache.endpointGeneration.value
         val mutationGeneration = ++liveMutationGeneration
         composerLoad?.cancel()
         composer.value = before.copy(
@@ -1902,6 +1926,13 @@ internal class ChatViewModel(
                 }
                 ControlMutationResult.Deferred -> {
                     composer.value = composer.value.copy(mutation = ComposerMutationUiState.Deferred)
+                }
+                is ControlMutationResult.ConfirmationRequired -> {
+                    if (confirmRequest != null) {
+                        modelConsent = ModelConsent(mutationGeneration, durableId, generation, endpoint, update, confirmRequest)
+                        composer.value = before.copy(mutation = ComposerMutationUiState.ConfirmationRequired(
+                            mutationGeneration, update(before.controls).selection?.model.orEmpty(), result.safeMessage))
+                    } else composer.value = before.copy(mutation = ComposerMutationUiState.Error("Choose this model again to confirm the change."))
                 }
                 is ControlMutationResult.Rejected -> {
                     composer.value = before.copy(
