@@ -36,9 +36,13 @@ class CanonicalOwnerIdentityTest {
                 val frame = Json.parseToJsonElement(text).jsonObject
                 val params = frame.getValue("params").jsonObject
                 val profile = params["profile"]?.jsonPrimitive?.content ?: "default"
-                val result = if (frame["method"] == JsonPrimitive("runtime.describe"))
-                    """{"instance_id":"public-instance","profile_id":"public-owner-$profile","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1","local-cli-create-v1"],"session_create":{"sources":["gui"],"parameters":[]},"skin":{}}"""
-                    else "{}"
+                val result = when (frame["method"]) {
+                    JsonPrimitive("runtime.describe") ->
+                        """{"instance_id":"public-instance","profile_id":"public-owner-$profile","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1","local-cli-create-v1"],"session_create":{"sources":["gui"],"parameters":[]},"skin":{}}"""
+                    JsonPrimitive("profiles.list") ->
+                        """{"profiles":[{"name":"$profile","path":"public-owner-$profile"}],"bot_mode_protocol":true}"""
+                    else -> "{}"
+                }
                 rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":$result}""")
                 return true
             }
