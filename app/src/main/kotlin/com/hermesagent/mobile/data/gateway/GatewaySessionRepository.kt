@@ -320,6 +320,7 @@ interface GatewaySessionRepository {
         attachments: List<OutgoingAttachment> = emptyList(),
     ): GatewaySubmitOutcome = submit(durableId, text, queued)
     /** Durable queue retries carry their logical input identity; legacy transports keep their original shape. */
+    suspend fun resolveGatewayAdmission(key: GatewayAdmissionKey): PendingInputResponse = PendingInputResponse.Unanswerable
     suspend fun submitIdentified(durableId: String, text: String, queued: Boolean, submissionId: String): GatewaySubmitOutcome =
         submit(durableId, text, queued)
     /**
@@ -931,6 +932,8 @@ internal class LiveGatewaySessionRepository(
     private val canonicalWatermarks = mutableMapOf<String, CanonicalWatermark>()
     private val unboundEvents = mutableListOf<GatewayEvent>()
     private val replayReconciliations = mutableSetOf<String>()
+    private val canonicalAdmissionOwners = mutableMapOf<GatewayAdmissionKey, String>()
+    private val resolvingAdmissions = mutableSetOf<GatewayAdmissionKey>()
     private val authorityBatchAnswers = mutableMapOf<PendingInputKey, Map<String, String?>>()
     private val unboundServerRequests = linkedMapOf<Pair<String, String>, GatewayServerRequest>()
     private val retiredKeys = object : LinkedHashMap<PendingInputKey, Unit>(64, 0.75f, false) {
@@ -3435,13 +3438,31 @@ internal class LiveGatewaySessionRepository(
                     submissionId = submissionId,
                     canonicalAttachments = canonicalAttachments,
                 )
-                if ((receipt as? JsonObject)?.string("status") == "unknown") {
+                val canonicalReceipt = (receipt as? JsonObject)?.takeIf {
+                    (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
+                }
+                val receiptStatus = canonicalReceipt?.string("status")
+                if (receiptStatus in setOf("queued", "unknown")) synchronized(stateLock) {
+                    ensureCurrent(connection)
+                    if (optimistic != null && binding.runtimeId !in liveTurnRuntimeIds) {
+                        releaseRuntimeGuard(binding.runtimeId)
+                        localSubmitStartedAtByRuntime.remove(binding.runtimeId)
+                        optimisticUserByRuntime.remove(binding.runtimeId)
+                        cache.setTranscript(binding.durableId, optimistic.transcript)
+                        optimistic.session?.let(cache::upsertSession)
+                    }
+                    (canonicalReceipt?.get("pending") as? JsonArray)?.let { applyCanonicalAdmissions(binding.durableId, binding.runtimeId, it) }
+                }
+                if (receiptStatus == "unknown") {
                     // Accepted work with lost execution is never retried automatically.
                     return@withLock GatewaySubmitOutcome.Ambiguous
                 }
                 synchronized(stateLock) {
                     ensureCurrent(connection)
-                    if ((receipt as? JsonObject)?.string("status") == "terminal") {
+                    val acknowledgedGeneration = canonicalReceipt?.primitive("execution_generation")?.toLongOrNull()
+                    val currentGeneration = canonicalWatermarks[binding.runtimeId]?.generation
+                    if (receiptStatus == "terminal" && (binding.runtimeId !in liveTurnRuntimeIds ||
+                            (acknowledgedGeneration != null && (currentGeneration == null || currentGeneration <= acknowledgedGeneration)))) {
                         releaseRuntimeGuard(binding.runtimeId)
                         liveTurnRuntimeIds.remove(binding.runtimeId)
                         localSubmitStartedAtByRuntime.remove(binding.runtimeId)
@@ -3450,7 +3471,7 @@ internal class LiveGatewaySessionRepository(
                     }
                     val stoppedBeforeAcknowledgement =
                         (confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L) > interruptEpoch
-                    if (optimistic == null && !stoppedBeforeAcknowledgement) {
+                    if (optimistic == null && !stoppedBeforeAcknowledgement && canonicalReceipt == null) {
                         // Strip only @image: lines; a @file: ref is real prompt
                         // content and must stay readable in the queue row.
                         val displayText = optimisticText
@@ -3478,6 +3499,13 @@ internal class LiveGatewaySessionRepository(
                         }
                     }
                     ephemeralSessions.remove(binding.durableId)
+                }
+                if (receiptStatus == "terminal") {
+                    val endpoint = connection.endpointGeneration
+                    scope.launch {
+                        try { openSessionInternal(binding.durableId, null, endpoint) }
+                        catch (failure: Throwable) { if (failure is CancellationException) throw failure }
+                    }
                 }
                 GatewaySubmitOutcome.Accepted
             }
@@ -3698,6 +3726,61 @@ internal class LiveGatewaySessionRepository(
         } finally {
             respondingKeys.remove(key)
         }
+    }
+
+    override suspend fun resolveGatewayAdmission(key: GatewayAdmissionKey): PendingInputResponse {
+        val durableId = synchronized(stateLock) {
+            if (key.connectionGeneration != connectionGeneration || key.endpointGeneration != cache.endpointGeneration.value)
+                return PendingInputResponse.Unanswerable
+            val owner = canonicalAdmissionOwners[key] ?: return PendingInputResponse.Unanswerable
+            if (cache.session(owner)?.composerStatus?.gatewayAdmissions?.none { it.key == key } != false)
+                return PendingInputResponse.Unanswerable
+            if (!resolvingAdmissions.add(key)) return PendingInputResponse.Retryable
+            owner
+        }
+        try {
+            val connection = connectionSnapshot()
+            if (connection.generation != key.connectionGeneration || connection.endpointGeneration != key.endpointGeneration)
+                return PendingInputResponse.Unanswerable
+            val method = if (key.status == GatewayAdmissionStatus.Unknown) "prompt.resolve_unknown" else "prompt.cancel"
+            val result = requestAtEndpointDispatch(connection, key.endpointGeneration, method, buildJsonObject {
+                put("session_id", JsonPrimitive(key.runtimeSessionId)); put("admission_id", JsonPrimitive(key.admissionId))
+                if (key.status == GatewayAdmissionStatus.Unknown)
+                    put("execution_generation", JsonPrimitive(key.executionGeneration ?: return PendingInputResponse.Unanswerable))
+            }).asObject(method)
+            if (result.string("admission_id") != key.admissionId || result.string("status") != "terminal") return PendingInputResponse.Retryable
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                canonicalAdmissionOwners.remove(key)
+                updateComposerStatus(durableId, key.runtimeSessionId) { status ->
+                    status.copy(gatewayAdmissions = status.gatewayAdmissions.filter { it.key != key })
+                }
+            }
+            return PendingInputResponse.Resolved
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            return PendingInputResponse.Retryable
+        } finally { synchronized(stateLock) { resolvingAdmissions.remove(key) } }
+    }
+
+    private fun applyCanonicalAdmissions(durableId: String, runtimeId: String, pending: JsonArray) {
+        val rows = pending.mapNotNull { item ->
+            val row = item as? JsonObject ?: return@mapNotNull null
+            val id = row.string("admission_id")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+            val status = when (row.string("status")) {
+                "queued" -> GatewayAdmissionStatus.Queued
+                "unknown" -> GatewayAdmissionStatus.Unknown
+                else -> return@mapNotNull null
+            }
+            val generation = row.primitive("execution_generation")?.toLongOrNull()
+            if (status == GatewayAdmissionStatus.Unknown && generation == null) return@mapNotNull null
+            com.hermesagent.mobile.data.session.ComposerGatewayAdmission(
+                GatewayAdmissionKey(connectionGeneration, cache.endpointGeneration.value, runtimeId, id, status, generation),
+                redact(row.string("text").orEmpty()))
+        }
+        canonicalAdmissionOwners.keys.removeAll { it.runtimeSessionId == runtimeId }
+        rows.forEach { canonicalAdmissionOwners[it.key] = durableId }
+        updateComposerStatus(durableId, runtimeId) { status -> status.copy(gatewayAdmissions = rows) }
     }
 
     private suspend fun answerCanonicalPrompt(connection: ConnectionSnapshot, request: PendingInputRequest,
@@ -4930,6 +5013,17 @@ internal class LiveGatewaySessionRepository(
             if (epoch != null) canonicalWatermarks[runtimeId] = CanonicalWatermark(epoch,
                 event.seq ?: previous?.sequence ?: 0L, event.executionGeneration ?: previous?.generation ?: 0L)
         }
+        if (event.canonical) (payload["pending"] as? JsonArray)?.let { applyCanonicalAdmissions(durableId, runtimeId, it) }
+        if (event.canonical && event.type == "message.complete" && event.executionGeneration == null &&
+            payload.string("outcome") == "cancelled" && event.admissionId != null) {
+            // Cancelled before claim: no execution stamp, no assistant turn, no live turn to settle.
+            // Captured source fixture: execution-authority.frames.json epoch2.paused_cancel_frames @ 379cf122.
+            val id = event.admissionId
+            canonicalAdmissionOwners.keys.removeAll { it.runtimeSessionId == runtimeId && it.admissionId == id }
+            updateComposerStatus(durableId, runtimeId) { status -> status.copy(
+                gatewayAdmissions = status.gatewayAdmissions.filter { it.key.admissionId != id }) }
+            return false
+        }
         if (event.type in LIVE_RUNTIME_EVENT_TYPES) advanceLiveEventRevision(runtimeId)
         return when (event.type) {
             "approval.request", "clarify.request" -> {
@@ -5226,6 +5320,7 @@ internal class LiveGatewaySessionRepository(
         replayedRefusals: MutableList<GatewayServerRequest>,
     ) {
         if ((clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+            (snapshot["pending"] as? JsonArray)?.let { applyCanonicalAdmissions(durableId, runtimeId, it) }
             val epoch = snapshot.string("replay_epoch")
             val sequence = snapshot.primitive("last_sequence")?.toLongOrNull()
             val generation = snapshot.primitive("execution_generation")?.toLongOrNull()
@@ -6094,6 +6189,7 @@ internal class LiveGatewaySessionRepository(
             val landed = ComposerStatusState(
                 todos = finishedTodos.orEmpty(),
                 gatewayQueuedPrompts = gatewayQueue,
+                gatewayAdmissions = existing.composerStatus?.gatewayAdmissions.orEmpty(),
             ).takeIf(ComposerStatusState::hasVisibleRows)
             if (existing.progress != null || existing.composerStatus != landed) {
                 cache.upsertSession(existing.copy(progress = null, composerStatus = landed))
@@ -6534,6 +6630,8 @@ internal class LiveGatewaySessionRepository(
         retiredKeys.clear()
         unboundServerRequests.clear()
         authorityBatchAnswers.clear()
+        canonicalAdmissionOwners.clear()
+        resolvingAdmissions.clear()
         unboundEvents.clear()
         canonicalWatermarks.clear()
         replayReconciliations.clear()
@@ -7992,7 +8090,7 @@ private fun todoListActive(todos: List<ComposerTodoStatus>): Boolean =
 
 private fun ComposerStatusState.hasVisibleRows(): Boolean =
     goal != null || todos.isNotEmpty() || subagents.isNotEmpty() || backgroundProcesses.isNotEmpty() ||
-        previewArtifacts.isNotEmpty() || gatewayQueuedPrompts.isNotEmpty() || isCompacting
+        previewArtifacts.isNotEmpty() || gatewayQueuedPrompts.isNotEmpty() || gatewayAdmissions.isNotEmpty() || isCompacting
 
 /**
  * Replace by rendering key, or append.

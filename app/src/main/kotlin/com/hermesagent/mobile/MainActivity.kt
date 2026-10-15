@@ -484,6 +484,7 @@ class MainActivity : ComponentActivity() {
                     onRefreshProcesses = chatViewModel::refreshProcesses,
                     onReconcileProcesses = chatViewModel::reconcileProcesses,
                     onKillProcess = chatViewModel::killProcess,
+                    onResolveGatewayAdmission = chatViewModel::resolveGatewayAdmission,
                     onSelectApprovalMode = chatViewModel::selectApprovalMode,
                     onSelectModel = chatViewModel::selectModel,
                     onConfirmModelChange = chatViewModel::confirmModelChange,

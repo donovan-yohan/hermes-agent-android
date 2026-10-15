@@ -230,7 +230,8 @@ data class PluginHostEvent(
  * the same way whichever door it used.
  */
 sealed interface PluginHostResult {
-    /** The gateway answered. [result] is its JSON-RPC `result` member. */
+    /** The Gateway answered through the shared session adapter. Canonical session results
+     * project owner-qualified IDs and legacy call semantics before this door receives them. */
     data class Success(val result: JsonElement) : PluginHostResult
 
     /**

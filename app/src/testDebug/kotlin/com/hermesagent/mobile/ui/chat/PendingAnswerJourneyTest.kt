@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.hermesagent.mobile.data.gateway.*
@@ -60,7 +61,10 @@ class PendingAnswerJourneyTest {
     @Test
     fun `authority native batch responds once with nullable answers and submitted outcome`() = journey(canonical = true, batch = true, nativeBatch = true)
 
-    private fun journey(typed: Boolean = false, failFirst: Boolean = false, batch: Boolean = false, canonical: Boolean = false, restored: Boolean = false, earlySecret: Boolean = false, earlyPrompt: Boolean = false, nativeBatch: Boolean = false) = runTest {
+    @Test
+    fun `rendered lost discard and queued delete use owning canonical admission without replay`() = journey(canonical = true, admissions = true)
+
+    private fun journey(typed: Boolean = false, failFirst: Boolean = false, batch: Boolean = false, canonical: Boolean = false, restored: Boolean = false, earlySecret: Boolean = false, earlyPrompt: Boolean = false, nativeBatch: Boolean = false, admissions: Boolean = false) = runTest {
         val frames = mutableListOf<JsonObject>()
         var refuseAnswer = failFirst
         val remaining = linkedSetOf("q1", "q2")
@@ -88,9 +92,13 @@ class PendingAnswerJourneyTest {
                     val result = when (method) {
                         "session.list" -> """{"sessions":[]}"""
                         "runtime.describe" -> """{"instance_id":"public-instance","profile_id":"public-owner","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1"]}"""
+                        "prompt.resolve_unknown", "prompt.cancel" -> {
+                            val lost = method == "prompt.resolve_unknown"
+                            """{"admission_id":"${if (lost) "public-lost" else "public-next"}","ref":{"profile_id":"public-owner","session_id":"runtime-a"},"sequence":${if (lost) 1 else 2},"status":"terminal","outcome":"${if (lost) "interrupted" else "cancelled"}","authority_epoch":2,"execution_generation":${if (lost) "2" else "null"}}"""
+                        }
                         "clarify.respond" -> """{"status":"resolved","prompt_id":"public-prompt"}"""
                         "prompt.submit" -> if (canonical) """{"admission_id":"public-admission","ref":{"profile_id":"public-owner","session_id":"runtime-a"},"sequence":1,"status":"started","outcome":null,"authority_epoch":2,"execution_generation":5}""" else "{}"
-                        "session.resume" -> if (canonical) """{"session_id":"runtime-a","stored_session_id":"durable-a","messages":[],"display_messages":[],"message_count":0,"running":false,"authority_epoch":2,"replay_epoch":"public-epoch","last_sequence":${if (restored) 1 else 0},"subscription_id":"public-subscription","revision":7,"execution_generation":${if (restored) 4 else 3},"pending":[],"prompts":${if (restored) """[{"kind":"clarify","prompt_id":"public-prompt","execution_generation":4,"question":"Proceed?","choices":["Yes","No"],"multi_select":false}]""" else "[]"},"info":{"desktop_protocol":"hermes-gateway-v1","profile_id":"public-owner","profile_name":"work","model":"public-model","cwd":"/workspace/public"}}""" else """{"session_id":"runtime-a","resumed":"durable-a","session_key":"durable-a","messages":[],"running":false,"status":"idle","info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true}}"""
+                        "session.resume" -> if (canonical) """{"session_id":"runtime-a","stored_session_id":"durable-a","messages":[],"display_messages":[],"message_count":0,"running":false,"authority_epoch":2,"replay_epoch":"public-epoch","last_sequence":${if (restored) 1 else 0},"subscription_id":"public-subscription","revision":7,"execution_generation":${if (restored) 4 else 3},"pending":${if (admissions) """[{"admission_id":"public-lost","ref":{"profile_id":"public-owner","session_id":"runtime-a"},"input_id":"public-input-lost","sequence":1,"status":"unknown","outcome":null,"authority_epoch":2,"execution_generation":2,"text":"Lost public turn"},{"admission_id":"public-next","ref":{"profile_id":"public-owner","session_id":"runtime-a"},"input_id":"public-input-next","sequence":2,"status":"queued","outcome":null,"authority_epoch":2,"execution_generation":null,"text":"Next public turn"}]""" else "[]"},"prompts":${if (restored) """[{"kind":"clarify","prompt_id":"public-prompt","execution_generation":4,"question":"Proceed?","choices":["Yes","No"],"multi_select":false}]""" else "[]"},"info":{"desktop_protocol":"hermes-gateway-v1","profile_id":"public-owner","profile_name":"work","model":"public-model","cwd":"/workspace/public"}}""" else """{"session_id":"runtime-a","resumed":"durable-a","session_key":"durable-a","messages":[],"running":false,"status":"idle","info":{"model":"test/model","tools":{},"skills":{},"cwd":"/workspace","lazy":true}}"""
                         "session.history" -> """{"messages":[],"count":0}"""
                         "clarify.lock" -> {
                             remaining -= frame.getValue("params").jsonObject.getValue("question_id").jsonPrimitive.content
@@ -116,7 +124,7 @@ class PendingAnswerJourneyTest {
         val viewModel = ChatViewModel(cache, repository, clock = { 1800000000000 })
         val actions = ChatActions(onRespondToPendingInput = viewModel::respondToPendingInput,
             onDraftChange = viewModel::setDraft, onSend = viewModel::submit,
-            onSelectSession = viewModel::selectSession)
+            onSelectSession = viewModel::selectSession, onResolveGatewayAdmission = viewModel::resolveGatewayAdmission)
         compose.setContent {
             val state by viewModel.uiState.collectAsState()
             HermesTheme(AppearanceSelection(BuiltinThemes.DEFAULT_NAME, HermesThemeMode.Dark)) {
@@ -128,6 +136,28 @@ class PendingAnswerJourneyTest {
         repository.openSession("durable-a")
         runCurrent()
         compose.waitForIdle()
+        if (admissions) {
+            compose.onNodeWithContentDescription("Turn lost during restart, 1, collapse").assertExists()
+            compose.onNodeWithText("Discard").performScrollTo().performClick()
+            runCurrent()
+            compose.waitForIdle()
+            val discard = frames.single { it["method"] == JsonPrimitive("prompt.resolve_unknown") }.getValue("params").jsonObject
+            assertEquals(JsonPrimitive(2), discard["execution_generation"])
+            assertEquals(JsonPrimitive("runtime-a"), discard["session_id"])
+            compose.onNodeWithContentDescription("Queued next, 1, expand").performScrollTo().performClick()
+            compose.onNodeWithText("Delete").performScrollTo().performClick()
+            runCurrent()
+            compose.waitForIdle()
+            assertEquals(1, frames.count { it["method"] == JsonPrimitive("prompt.cancel") })
+            assertTrue(frames.none { it["method"] == JsonPrimitive("prompt.submit") })
+            compose.onNodeWithContentDescription("Message Hermes").performTextInput("New public prompt")
+            compose.onNodeWithContentDescription("Send message").performClick()
+            runCurrent()
+            compose.waitForIdle()
+            assertEquals(1, frames.count { it["method"] == JsonPrimitive("prompt.submit") })
+            rpc.close()
+            return@runTest
+        }
         if (earlySecret) {
             val secret = repository.pendingInputs.value.values.single() as SecretPending
             val value = "public-synthetic-value".toCharArray()

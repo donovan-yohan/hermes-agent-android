@@ -59,7 +59,12 @@ class CanonicalExecutionFramesTest {
         val events = mutableListOf<GatewayEvent>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { rpc.events.collect { events += it } }
         rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"session_authority":true}}}""")
-        val key = rpc.request("session.resume", buildJsonObject { put("session_id", "shared") }).jsonObject.getValue("session_id")
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { 1800000000000 }
+        runCurrent()
+        val key = JsonPrimitive(repository.openSession("shared"))
         events.clear()
         val firstFrames = fixture.getValue("epoch1").jsonObject.getValue("frames").jsonArray
         firstFrames.forEach { rpc.receive(it.toString()) }
@@ -77,7 +82,7 @@ class CanonicalExecutionFramesTest {
         runCurrent()
         assertEquals(firstFrames.size, events.size)
         epochName = "epoch2"
-        rpc.request("session.resume", buildJsonObject { put("session_id", key) })
+        repository.openSession(key.content)
         events.clear()
         // Public synthetic idle metadata variant: session.info can omit execution stamps
         // (the same fixture's paused_cancel_frames does); retain its real payload/epoch/sequence.
@@ -93,6 +98,8 @@ class CanonicalExecutionFramesTest {
         runCurrent()
         assertEquals(9, events.size)
         assertFalse(events.any { it.type == "session.replay_gap" })
+        assertTrue("queued cancellation is not an empty assistant turn", cache.transcript(key.content)
+            .filterIsInstance<com.hermesagent.mobile.data.session.AssistantTurn>().none { it.markdown.isBlank() })
         rpc.request("session.title", buildJsonObject { put("session_id", key); put("title", "Public title") })
         val mutation = sent.last().getValue("params").jsonObject
         val lastInfo = second.getValue("paused_cancel_frames").jsonArray[1].jsonObject.getValue("params").jsonObject.getValue("payload").jsonObject

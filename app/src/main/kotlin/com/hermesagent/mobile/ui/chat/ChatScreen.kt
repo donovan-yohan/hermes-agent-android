@@ -1052,6 +1052,7 @@ private fun ComposerPane(state: ChatUiState, actions: ChatActions, gatewayDoor: 
                             onRefreshProcesses = actions.onRefreshProcesses,
                             onReconcileProcesses = actions.onReconcileProcesses,
                             onKillProcess = actions.onKillProcess,
+                            onResolveGatewayAdmission = actions.onResolveGatewayAdmission,
                             hasQueue = hasQueue,
                             queueContent = {
                                 ComposerQueueSection(

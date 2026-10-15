@@ -79,6 +79,7 @@ class ChatActions(
     val onDeleteQueuedEntry: (String) -> Unit = {},
     val onRedirectQueuedEntry: (String) -> Unit = {},
     val onMarkQueuedEntryReady: (String) -> Unit = {},
+    val onResolveGatewayAdmission: (com.hermesagent.mobile.data.gateway.GatewayAdmissionKey) -> Unit = {},
     val onHistoryOlder: () -> Boolean = { false },
     val onHistoryNewer: () -> Boolean = { false },
     val onUndoDraft: () -> Boolean = { false },

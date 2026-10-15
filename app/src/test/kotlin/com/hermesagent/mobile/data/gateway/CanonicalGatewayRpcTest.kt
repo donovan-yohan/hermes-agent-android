@@ -230,8 +230,86 @@ class CanonicalGatewayRpcTest {
         peer.rpc.close()
     }
 
+    @Test
+    fun `snapshot lost admission keeps its own generation and queued cancellation never replays input`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.snapshotGeneration = 9
+        peer.pendingRows = JsonArray(listOf(
+            buildJsonObject { put("admission_id", "public-lost"); put("input_id", "public-input-lost"); put("status", "unknown"); put("execution_generation", 4); put("text", "Lost public turn")
+                put("ref", buildJsonObject { put("profile_id", "public-owner"); put("session_id", "canonical-public") }); put("sequence", 1); put("authority_epoch", 2); put("outcome", JsonNull) },
+            buildJsonObject { put("admission_id", "public-next"); put("input_id", "public-input-next"); put("status", "queued"); put("execution_generation", JsonNull); put("text", "Next public turn")
+                put("ref", buildJsonObject { put("profile_id", "public-owner"); put("session_id", "canonical-public") }); put("sequence", 2); put("authority_epoch", 2); put("outcome", JsonNull) }))
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public")
+        val rows = cache.session(key)?.composerStatus?.gatewayAdmissions.orEmpty()
+        assertEquals(listOf(GatewayAdmissionStatus.Unknown, GatewayAdmissionStatus.Queued), rows.map { it.key.status })
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("prompt.submit") })
+        assertEquals(PendingInputResponse.Resolved, repository.resolveGatewayAdmission(rows.first().key))
+        val discard = peer.frames.last().getValue("params").jsonObject
+        assertEquals(JsonPrimitive("public-lost"), discard["admission_id"])
+        assertEquals(JsonPrimitive(4), discard["execution_generation"])
+        val before = peer.frames.size
+        repository.resolveGatewayAdmission(rows.first().key)
+        assertEquals(before, peer.frames.size)
+        assertEquals(PendingInputResponse.Resolved, repository.resolveGatewayAdmission(rows.last().key))
+        assertEquals(JsonPrimitive("prompt.cancel"), peer.frames.last()["method"])
+        assertTrue(cache.session(key)?.composerStatus?.gatewayAdmissions.orEmpty().isEmpty())
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("prompt.submit") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `receipt queued unknown and terminal states reconcile without pretending every admission started`() = runTest {
+        for (status in listOf("queued", "unknown", "terminal")) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            peer.submitStatus = status
+            val cache = com.hermesagent.mobile.data.session.SessionCache()
+            val repository = LiveGatewaySessionRepository(cache,
+                kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+            val key = repository.openSession("canonical-public")
+            val result = repository.submitIdentified(key, "Public $status input", queued = status == "queued", submissionId = "public-$status")
+            assertEquals(if (status == "unknown") GatewaySubmitOutcome.Ambiguous else GatewaySubmitOutcome.Accepted, result)
+            val row = cache.session(key)!!
+            val admissions = row.composerStatus?.gatewayAdmissions.orEmpty()
+            assertEquals(if (status == "terminal") 0 else 1, admissions.size)
+            if (status != "terminal") assertEquals(if (status == "queued") GatewayAdmissionStatus.Queued else GatewayAdmissionStatus.Unknown, admissions.single().key.status)
+            assertEquals(com.hermesagent.mobile.data.session.SessionStatus.Idle, row.status)
+            assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("prompt.submit") })
+            peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `Bots hidden chat accepts committed canonical title through actual PluginHost without redundant registry read`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.refuseRegistryAfterCreate = true
+        val host = com.hermesagent.mobile.plugins.GatewayPluginHost(backgroundScope,
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc))
+        val opened = com.hermesagent.mobile.plugins.bots.BotsPluginRepository(host).openCanonicalChat("work", null)
+        val expected = peer.rpc.authoritySessionIdentity!!.qualify("canonical-public", "work")
+        assertEquals(com.hermesagent.mobile.plugins.bots.BotChatOpen.Opened(expected), opened)
+        val create = peer.frames.single { it["method"] == JsonPrimitive("session.create") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("gui"), create["source"])
+        assertEquals(JsonPrimitive("Bot Chat"), create["title"])
+        assertEquals(JsonPrimitive(true), create["hidden"])
+        assertEquals(JsonPrimitive(true), create["follow_profile_config"])
+        assertEquals(2, peer.frames.count { it["method"] == JsonPrimitive("session.list") })
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("prompt.submit") })
+        assertEquals(JsonPrimitive("rename"), peer.frames.last().getValue("params").jsonObject["operation"])
+        peer.rpc.close()
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
+        var refuseRegistryAfterCreate = false
+        private var created = false
+        var submitStatus: String? = null
+        var pendingRows = JsonArray(emptyList())
+        var snapshotGeneration = 3
         var requireAttachments = false
         var silenceNextSubmit = false
         var silenceNextMutation = false
@@ -251,10 +329,14 @@ class CanonicalGatewayRpcTest {
                             replyError(frame)
                             return true
                         }
+                        created = true
                         snapshot()
                     }
                     "session.resume" -> snapshot()
-                    "session.list" -> """{"sessions":[],"scope":"${params["scope"]?.jsonPrimitive?.content ?: "live"}"}"""
+                    "session.list" -> {
+                        if (refuseRegistryAfterCreate && created) return false
+                        """{"sessions":[],"scope":"${params["scope"]?.jsonPrimitive?.content ?: "live"}"}"""
+                    }
                     "image.attach_bytes" -> """{"attached":true,"path":"/workspace/public/upload.png","mime":"image/png","name":"upload.png","count":1,"remainder":"","text":"[User attached image: upload.png]","bytes":8}"""
                     "prompt.submit" -> {
                         if (requireAttachments && params["attachments"] !is JsonArray) { replyError(frame); return true }
@@ -265,12 +347,13 @@ class CanonicalGatewayRpcTest {
                         }
                         val receipt = admissions.getOrPut(submission.content) {
                             val queued = params["queued"] == JsonPrimitive(true)
+                            val status = submitStatus ?: if (queued) "queued" else "started"
                             if (!queued) expectedGeneration = 4
                             buildJsonObject {
                                 put("admission_id", "public-admission-${admissions.size + 1}")
                                 put("ref", buildJsonObject { put("profile_id", "public-owner"); put("session_id", "canonical-public") })
-                                put("sequence", admissions.size + 1); put("status", if (queued) "queued" else "started")
-                                put("outcome", JsonNull); put("authority_epoch", 2)
+                                put("sequence", admissions.size + 1); put("status", status)
+                                put("outcome", if (status == "terminal") JsonPrimitive("completed") else JsonNull); put("authority_epoch", 2)
                                 put("execution_generation", if (queued) JsonNull else JsonPrimitive(expectedGeneration))
                             }
                         }
@@ -299,6 +382,11 @@ class CanonicalGatewayRpcTest {
                         if (silenceNextMutation) { silenceNextMutation = false; return true }
                         receipt.toString()
                     }
+                    "prompt.resolve_unknown", "prompt.cancel" -> {
+                        val target = params.getValue("admission_id").jsonPrimitive.content
+                        if (target == "public-lost" && params["execution_generation"] != JsonPrimitive(4)) { replyError(frame); return true }
+                        """{"admission_id":"$target","ref":{"profile_id":"public-owner","session_id":"canonical-public"},"sequence":${if (target == "public-lost") 1 else 2},"status":"terminal","outcome":"${if (target == "public-lost") "interrupted" else "cancelled"}","authority_epoch":2,"execution_generation":${if (target == "public-lost") "4" else "null"}}"""
+                    }
                     "session.interrupt" -> {
                         if (params["execution_generation"] != JsonPrimitive(expectedGeneration)) {
                             replyError(frame)
@@ -321,6 +409,6 @@ class CanonicalGatewayRpcTest {
             rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"error":{"code":$code,"message":"invalid_params","data":{"reason":"invalid_params"}}}""")
         }
         fun ready() = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"session_authority":true,"change_events":true,"heartbeat":true,"replay_epoch":"public-global"}}}""")
-        private fun snapshot() = """{"session_id":"canonical-public","stored_session_id":"canonical-public","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":3,"pending":[],"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work","profile_id":"public-owner","model":"public-model","cwd":"/workspace/public"}}"""
+        private fun snapshot() = """{"session_id":"canonical-public","stored_session_id":"canonical-public","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work","profile_id":"public-owner","model":"public-model","cwd":"/workspace/public"}}"""
     }
 }

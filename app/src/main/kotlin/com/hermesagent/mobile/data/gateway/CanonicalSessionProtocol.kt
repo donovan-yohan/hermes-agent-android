@@ -33,6 +33,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private val modelConfirmations = mutableMapOf<Pair<Owner, JsonObject>, ModelConfirmation>()
     private val mutationLocks = KeyedMutex<Owner>()
     private val preSnapshotEvents = mutableListOf<GatewayEvent>()
+    private val admissionStatuses = linkedMapOf<Pair<Owner, String>, String>()
+    private val pendingAdmissions = mutableMapOf<Owner, JsonArray>()
     private val prompts = mutableMapOf<Pair<Owner, String>, JsonObject>()
     private val creates = mutableMapOf<JsonObject, String>()
     @Volatile var announced: Boolean = false
@@ -93,6 +95,34 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 })))
             }
             "projects.tree", "projects.project_sessions" -> projectMembership(send(method, params), params.text("profile"))
+            "prompt.resolve_unknown", "prompt.cancel" -> {
+                val owner = owner(profile, params.text("session_id") ?: unusable())
+                val id = params.text("admission_id") ?: unusable()
+                val expectedStatus = if (method == "prompt.resolve_unknown") "unknown" else "queued"
+                val pending = synchronized(stateLock) { pendingAdmissions[owner].orEmpty().mapNotNull { it as? JsonObject }
+                    .singleOrNull { it.text("admission_id") == id && it.text("status") == expectedStatus } }
+                    ?: throw GatewayRpcException("This turn is no longer available. Reopen this session.")
+                val prepared = buildJsonObject {
+                    put("session_id", owner.sessionId); put("admission_id", id)
+                    if (method == "prompt.resolve_unknown") {
+                        val generation = pending.number("execution_generation") ?: unusable()
+                        if (params.number("execution_generation")?.let { it != generation } == true)
+                            throw GatewayRpcException("This turn is no longer available. Reopen this session.")
+                        put("execution_generation", generation)
+                    }
+                    params["profile"]?.let { put("profile", it) }
+                }
+                val value = send(method, prepared) as? JsonObject
+                    ?: throw GatewayRpcException("The Gateway returned an unusable admission receipt.", requestMayHaveBeenAccepted = true)
+                if (value.text("admission_id") != id)
+                    throw GatewayRpcException("The Gateway returned another turn's receipt.", requestMayHaveBeenAccepted = true)
+                val result = admission(value, prepared, owner)
+                if (value.text("status") == "terminal") synchronized(stateLock) {
+                    reconcilePending(owner, JsonArray(pendingAdmissions[owner].orEmpty().filter {
+                        (it as? JsonObject)?.text("admission_id") != id }))
+                }
+                result
+            }
             "approval.respond", "clarify.respond" -> {
                 val owner = owner(profile, params.text("session_id") ?: unusable())
                 val id = params.text("prompt_id") ?: params.text("request_id") ?: unusable()
@@ -126,7 +156,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 val plain = JsonObject(params.filterKeys { it !in TRUNCATE_KEYS })
                 val prepared = if (plain.text("submission_id").isNullOrBlank() && plain.text("input_id").isNullOrBlank())
                     JsonObject(plain + ("submission_id" to JsonPrimitive(UUID.randomUUID().toString()))) else plain
-                admission(send(method, prepared).objectResult(), prepared, owner)
+                admission(send(method, prepared), prepared, owner)
             }
             "session.interrupt", "session.steer", "session.redirect" -> {
                 val owner = owner(profile, params.text("session_id") ?: unusable())
@@ -335,9 +365,10 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             }.orEmpty()
             val stale = previous != null && previous.authorityEpoch == authority && previous.replayEpoch == epoch &&
                 (previous.lastSequence > sequence || previous.generation > generation)
-            snapshots[key] = if (stale) previous!!.copy(subscriptionId = subscription) else
+            snapshots[key] = if (stale) previous.copy(subscriptionId = subscription) else
                 Snapshot(revision, generation, epoch, sequence, subscription, stored, authority, retired)
             if (!stale) {
+                reconcilePending(key, value["pending"] as? JsonArray ?: unusable())
                 prompts.keys.removeAll { it.first == key }
                 (value["prompts"] as? JsonArray).orEmpty().forEach { element ->
                     val prompt = element as? JsonObject ?: unusable()
@@ -353,10 +384,11 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             waiting.forEach(::event)
         }
         val current = synchronized(stateLock) { snapshots.getValue(owner(profile, sid)) }
+        val currentPending = synchronized(stateLock) { pendingAdmissions[owner(profile, sid)] ?: JsonArray(emptyList()) }
         val currentPrompts = synchronized(stateLock) { JsonArray(prompts.filterKeys { it.first == owner(profile, sid) }.values.toList()) }
         val currentInfo = mapOf("execution_generation" to JsonPrimitive(current.generation), "last_sequence" to JsonPrimitive(sequence))
         return JsonObject(sessionIdentity.projectRow(value, route) + currentInfo + mapOf(
-            "revision" to JsonPrimitive(current.revision), "prompts" to currentPrompts,
+            "revision" to JsonPrimitive(current.revision), "prompts" to currentPrompts, "pending" to currentPending,
             "messages" to messages,
             "session_key" to JsonPrimitive(sessionIdentity.qualify(stored, route, actual)),
             "info" to JsonObject(sessionIdentity.projectRow(info, route) + value.filterKeys { it in SNAPSHOT_INFO_FIELDS } + currentInfo +
@@ -402,11 +434,16 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                         runtimeSessionId = sessionIdentity.qualify(event.runtimeSessionId, route), canonical = true)
                 }
                 if (event.seq?.let { it <= previous.lastSequence } == true) return@synchronized null
+                (payload["pending"] as? JsonArray)?.let { reconcilePending(owner, it) }
                 if (generation != null && generation > previous.generation) prompts.keys.removeAll { it.first == owner }
                 snapshots[owner] = previous.copy(generation = generation ?: previous.generation,
                     authorityEpoch = event.authorityEpoch ?: previous.authorityEpoch,
                     lastSequence = event.seq ?: previous.lastSequence,
                     revision = maxOf(previous.revision, payload.number("revision") ?: previous.revision))
+                if (event.type == "message.complete") (event.admissionId ?: payload.text("admission_id"))?.let { id ->
+                    admissionStatuses[owner to id] = "terminal"
+                    pendingAdmissions[owner] = JsonArray(pendingAdmissions[owner].orEmpty().filter { (it as? JsonObject)?.text("admission_id") != id })
+                }
                 payload.text("prompt_id")?.let { id ->
                     when (event.type) {
                         "approval.request", "clarify.request" -> prompts[owner to id] = JsonObject(payload +
@@ -423,8 +460,9 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         }
     }
 
-    private fun admission(value: JsonObject, params: JsonObject, owner: Owner): JsonObject {
+    private fun admission(raw: JsonElement, params: JsonObject, owner: Owner): JsonObject {
         fun uncertain(): Nothing = throw GatewayRpcException("The Gateway returned an unusable admission receipt.", requestMayHaveBeenAccepted = true)
+        val value = raw as? JsonObject ?: uncertain()
         val ref = value["ref"] as? JsonObject ?: uncertain()
         val ownerId = synchronized(stateLock) { descriptors.getValue(owner.profile).text("profile_id") }
         if (ref.text("session_id") != owner.sessionId || ref.text("profile_id") != ownerId ||
@@ -442,8 +480,48 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 else -> maxOf(previous.generation, generation)
             })
         }
-        return JsonObject(value + mapOf("session_id" to JsonPrimitive(sessionIdentity.qualify(owner.sessionId, owner.profile.takeIf(String::isNotEmpty))),
-            "submission_id" to (params["submission_id"] ?: params.getValue("input_id"))))
+        synchronized(stateLock) {
+            val id = value.text("admission_id") ?: uncertain()
+            val status = value.text("status") ?: uncertain()
+            val previousStatus = admissionStatuses[owner to id]
+            if (ADMISSION_RANK.getValue(status) >= (previousStatus?.let(ADMISSION_RANK::getValue) ?: -1)) {
+                admissionStatuses[owner to id] = status
+                val rest = pendingAdmissions[owner].orEmpty().filter { (it as? JsonObject)?.text("admission_id") != id }
+                val row = if (status == "terminal") emptyList() else listOf(JsonObject(value + buildJsonObject {
+                    params["text"]?.let { put("text", it) }
+                    (params["submission_id"] ?: params["input_id"])?.let { put("input_id", it) }
+                }))
+                pendingAdmissions[owner] = JsonArray(rest + row)
+            }
+        }
+        return JsonObject(value + buildJsonObject {
+            if ("text" in params) put("pending", synchronized(stateLock) { pendingAdmissions[owner] ?: JsonArray(emptyList()) })
+            put("session_id", sessionIdentity.qualify(owner.sessionId, owner.profile.takeIf(String::isNotEmpty)))
+            (params["submission_id"] ?: params["input_id"])?.let { put("submission_id", it) }
+        })
+    }
+
+    /** A full owner pending fanout outranks delayed receipts and cannot resurrect settled inputs. */
+    private fun reconcilePending(owner: Owner, rows: JsonArray) {
+        val incoming = rows.mapNotNull { it as? JsonObject }
+        val previous = pendingAdmissions[owner].orEmpty().mapNotNull { it as? JsonObject }
+        val ids = incoming.mapNotNull { it.text("admission_id") }.toSet()
+        previous.mapNotNull { it.text("admission_id") }.filter { it !in ids }
+            .forEach { admissionStatuses[owner to it] = "terminal" }
+        val accepted = incoming.mapNotNull { row ->
+            val id = row.text("admission_id") ?: return@mapNotNull null
+            val status = row.text("status") ?: return@mapNotNull null
+            val rank = ADMISSION_RANK[status] ?: return@mapNotNull null
+            val observed = admissionStatuses[owner to id]
+            if (rank < (observed?.let(ADMISSION_RANK::getValue) ?: -1))
+                previous.singleOrNull { it.text("admission_id") == id && observed != "terminal" }
+            else { admissionStatuses[owner to id] = status; row.takeUnless { status == "terminal" } }
+        }
+        pendingAdmissions[owner] = JsonArray(accepted)
+        while (admissionStatuses.size > 4096) {
+            val retired = admissionStatuses.entries.firstOrNull { it.value == "terminal" }?.key ?: break
+            admissionStatuses.remove(retired)
+        }
     }
 
     private fun projectMembership(value: JsonElement, profile: String?): JsonElement {
@@ -467,6 +545,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private fun unusable(): Nothing = throw GatewayRpcException("The Gateway returned an unusable session response.")
 
     companion object {
+        private val ADMISSION_RANK = mapOf("queued" to 0, "started" to 1, "unknown" to 2, "terminal" to 3)
         private val TRUNCATE_KEYS = setOf("confirm_truncate", "confirm_empty_truncate", "confirm_deep_truncate", "truncate_before_row_id",
             "truncate_before_message_id", "truncate_before_user_ordinal", "rebind_survivor_row_ids")
         private val GENERATION_MUTATIONS = setOf("delete", "branch", "compress", "rewind", "reset", "model", "reasoning", "workspace")

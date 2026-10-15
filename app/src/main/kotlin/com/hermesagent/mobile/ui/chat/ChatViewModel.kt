@@ -727,6 +727,7 @@ internal class ChatViewModel(
         val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
         val request: suspend () -> ControlMutationResult)
     private var modelConsent: ModelConsent? = null
+    private val gatewayAdmissionActions = mutableSetOf<com.hermesagent.mobile.data.gateway.GatewayAdmissionKey>()
     /** Latest authoritative partial session.info controls for the active durable session. */
     private var liveComposerControls: SessionComposerControls? = null
     private var inputGeneration = 0L
@@ -1805,6 +1806,21 @@ internal class ChatViewModel(
                 if (failure is CancellationException) throw failure
                 noticeLine = MODEL_VISIBILITY_NOT_SAVED
             }
+        }
+    }
+
+    fun resolveGatewayAdmission(key: com.hermesagent.mobile.data.gateway.GatewayAdmissionKey) {
+        val sessionId = activeSessionId.value ?: return
+        if (key.endpointGeneration != cache.endpointGeneration.value ||
+            cache.session(sessionId)?.composerStatus?.gatewayAdmissions?.none { it.key == key } != false ||
+            refuseBotChatMutation(allowPendingResponse = true) != null || !gatewayAdmissionActions.add(key)) return
+        viewModelScope.launch {
+            try {
+                val result = repository.resolveGatewayAdmission(key)
+                if (result == com.hermesagent.mobile.data.gateway.PendingInputResponse.Retryable &&
+                    activeSessionId.value == sessionId && cache.endpointGeneration.value == key.endpointGeneration)
+                    noticeLine = "Couldn't remove the queued turn"
+            } finally { gatewayAdmissionActions.remove(key) }
         }
     }
 
