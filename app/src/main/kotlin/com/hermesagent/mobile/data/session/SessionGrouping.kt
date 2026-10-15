@@ -521,7 +521,7 @@ private fun searchRows(
  */
 private fun SessionSummary.matches(needle: String, locale: Locale): Boolean {
     if (needle.isEmpty()) return true
-    val fields = sequenceOf(id, lineageRootId, title, preview, worktreePath, gitBranch) +
+    val fields = sequenceOf(backendSessionId ?: id, backendLineageRootId ?: lineageRootId, title, preview, worktreePath, gitBranch) +
         sessionSourceSearchTerms(source).asSequence()
     return fields.any { it != null && it.lowercase(locale).contains(needle) }
 }

@@ -417,6 +417,7 @@ internal fun SessionActionsControl(
     onSetPinned: ((Boolean) -> Unit)? = null,
     onSetUnread: ((Boolean) -> Unit)? = null,
     onSetArchived: ((Boolean) -> Unit)? = null,
+    backendSessionId: String = sessionId,
 ) {
     // A menu with nothing in it is chrome that lies about the app. This asks the
     // rule `sessionActionItems` itself applies, so the control and its contents
@@ -484,7 +485,7 @@ internal fun SessionActionsControl(
                     // confirmation is visible (`copy-button.tsx:94-97`).
                     CopyId, CopyIdCopied, CopyIdFailed -> {
                         copyPress++
-                        copyStatus = if (writeClipboard.write(SESSION_ID_CLIP_LABEL, sessionId)) {
+                        copyStatus = if (writeClipboard.write(SESSION_ID_CLIP_LABEL, backendSessionId)) {
                             SessionIdCopyStatus.Copied
                         } else {
                             SessionIdCopyStatus.Failed

@@ -976,7 +976,9 @@ internal class LiveGatewaySessionRepository(
     private var projectScopeRevision = 0L
 
     /** Session REST routes over the connection-owned transport; holds no credential. */
-    private val rest = GatewayRestClient(restContext, http)
+    private val rest = GatewayRestClient(restContext, http).also { client ->
+        client.sessionIdentity = { (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity }
+    }
     private val cronAdmission = CronSessionAdmission()
     private val cronReadVersions = mutableMapOf<CronSessionOwner, Long>()
     private var cronReadSequence = 0L
@@ -1522,6 +1524,13 @@ internal class LiveGatewaySessionRepository(
         offset: Int,
         pool: SessionPool = SessionPool.Live,
     ): SessionLegPage {
+        val authorityIdentity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        if (authorityIdentity != null) {
+            connection.client.request("runtime.describe", buildJsonObject {
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            })
+            synchronized(stateLock) { ensureCurrent(connection) }
+        }
         val restUsable = http() != null &&
             !isCapabilityUnsupported(GatewayOptionalCapability.SessionListRest, connection)
         if (restUsable) {
@@ -1944,6 +1953,10 @@ internal class LiveGatewaySessionRepository(
             return null
         }
         if (isCapabilityUnsupported(GatewayOptionalCapability.SearchSessionsRest, connection)) return null
+        if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+            connection.client.request("runtime.describe", buildJsonObject { profile?.let { put("profile", JsonPrimitive(it)) } })
+            synchronized(stateLock) { ensureCurrent(connection) }
+        }
         return when (val result = rest.searchSessions(query, profile = profile)) {
             is GatewayRestResult.Success -> result.value.results.mapNotNull(::parseSearchStub)
             is GatewayRestResult.Failed -> {
@@ -1989,6 +2002,9 @@ internal class LiveGatewaySessionRepository(
             lineageRootId = row.jsonString("lineage_root"),
             model = row.jsonString("model"),
             source = row.jsonString("source"),
+            remoteProfile = row.jsonString("profile"),
+            backendSessionId = row.jsonString("backend_session_id"),
+            backendLineageRootId = row.jsonString("backend_lineage_root"),
         )
     }
 
@@ -2220,7 +2236,7 @@ internal class LiveGatewaySessionRepository(
     }
 
     override fun sessionReadOnlyReason(durableId: String): String? = synchronized(stateLock) {
-        if (!isCronExecutionSessionId(durableId)) return@synchronized null
+        if (!isCronExecutionSessionId(backendSessionId(durableId))) return@synchronized null
         val profile = owningProfileParam(durableId) ?: return@synchronized CRON_LOOKUP_UNAVAILABLE
         cronAdmission.verdict(CronSessionOwner(cache.endpointGeneration.value, profile, durableId))
             .takeUnless { it == CronSessionVerdict.Writable }?.let(::cronRefusal)
@@ -2271,7 +2287,7 @@ internal class LiveGatewaySessionRepository(
                 owningProfileParam(durableId)
             }
         }
-        if (isCronExecutionSessionId(durableId)) {
+        if (isCronExecutionSessionId(backendSessionId(durableId))) {
             val verdict = refreshCronAdmission(connection, durableId, owningProfile).verdict
             if (verdict != CronSessionVerdict.Writable) {
                 // Reading stored history must not start a runtime merely to display it.
@@ -3369,7 +3385,7 @@ internal class LiveGatewaySessionRepository(
                     // not just the runtime that happens to own the event pin.
                     // Ambiguous acknowledgements still keep the optimistic row.
                     val canRollback = !ambiguous && binding.runtimeId !in liveTurnRuntimeIds &&
-                        (!isCronExecutionSessionId(binding.durableId) ||
+                        (!isCronExecutionSessionId(backendSessionId(binding.durableId)) ||
                             identities.runtimeFor(binding.durableId) == binding.runtimeId) &&
                         connection.generation == connectionGeneration && clientFlow.value === connection.client &&
                         (expectedEndpointGeneration == null || cache.endpointGeneration.value == expectedEndpointGeneration)
@@ -3473,7 +3489,7 @@ internal class LiveGatewaySessionRepository(
             // (`store/server-requests.ts:5-12` @ the pin) — and the generation
             // fence above is what stops a request from a leg this app has left
             // being answered on the replacement.
-            val responder = connection.client as? GatewayServerRequestResponder
+            val responder = responderAtOwner(connection, request.runtimeSessionId, key)
                 ?: return PendingInputResponse.Unanswerable
             val outcome = try {
                 when (action) {
@@ -3569,6 +3585,32 @@ internal class LiveGatewaySessionRepository(
             }
         } finally {
             respondingKeys.remove(key)
+        }
+    }
+
+    /** The original socket and owner survive foreground/session/profile switches. */
+    private fun responderAtOwner(
+        connection: ConnectionSnapshot,
+        runtimeId: String?,
+        pendingKey: PendingInputKey? = null,
+    ): GatewayServerRequestResponder? {
+        val original = connection.client as? GatewayServerRequestResponder ?: return null
+        val owned = connection.client as? GatewayOwnedServerRequestResponder ?: return original
+        val stillOwns = {
+            cache.endpointGeneration.value == connection.endpointGeneration && synchronized(stateLock) {
+                connection.generation == connectionGeneration && clientFlow.value === connection.client &&
+                    (pendingKey == null || pendingKey in mutablePendingInputs.value)
+            }
+        }
+        val dispatch: (() -> Boolean) -> Boolean = { send ->
+            val lease = endpointDispatchFence.leaseAt(connection.endpointGeneration, stillOwns)
+            lease != null && endpointDispatchFence.dispatchIfCurrent(lease, stillOwns, send)
+        }
+        return object : GatewayServerRequestResponder {
+            override suspend fun respondToServerRequest(id: String, result: JsonObject) =
+                owned.respondToServerRequestAtOwner(runtimeId, id, result, dispatch)
+            override suspend fun failServerRequest(id: String, code: Int, message: String) =
+                owned.failServerRequestAtOwner(runtimeId, id, code, message, dispatch)
         }
     }
 
@@ -4613,7 +4655,7 @@ internal class LiveGatewaySessionRepository(
     ): SessionBinding {
         val connection = connectionSnapshot()
         requireEndpoint(expectedEndpointGeneration)
-        if (isCronExecutionSessionId(durableId)) {
+        if (isCronExecutionSessionId(backendSessionId(durableId))) {
             val profile = synchronized(stateLock) {
                 val runtime = identities.runtimeFor(durableId)
                 if (runtime != null && runtimeProfiles.containsKey(runtime)) runtimeProfiles[runtime]
@@ -5054,10 +5096,11 @@ internal class LiveGatewaySessionRepository(
      * there is no surface that could act on "the refusal did not go out".
      */
     private suspend fun refuseServerRequest(client: GatewayRpcClient, request: GatewayServerRequest) {
-        val responder = client as? GatewayServerRequestResponder ?: return
-        synchronized(stateLock) {
+        val connection = synchronized(stateLock) {
             if (clientFlow.value !== client) return
+            connectionSnapshot()
         }
+        val responder = responderAtOwner(connection, request.runtimeSessionId) ?: return
         // Not `runCatching`: it swallows CancellationException, and a cancelled
         // open would keep sending the rest of a replay's refusals instead of
         // unwinding. The send's own failure is the thing being tolerated —
@@ -6248,6 +6291,10 @@ internal class LiveGatewaySessionRepository(
         return reset
     }
 
+    private fun backendSessionId(durableId: String): String = cache.session(durableId)?.backendSessionId
+        ?: (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity?.address(durableId)?.rawId
+        ?: durableId
+
     private fun connectionSnapshot(binding: SessionBinding? = null): ConnectionSnapshot {
         if (binding != null) return synchronized(stateLock) {
             ensureCurrent(binding.connection)
@@ -6303,7 +6350,7 @@ internal class LiveGatewaySessionRepository(
             val id = params.string("session_id")
             val durable = id?.let { identities.durableFor(it) ?: it }
             if (method in setOf("session.resume", "session.activate", "prompt.submit") &&
-                durable != null && isCronExecutionSessionId(durable)) {
+                durable != null && isCronExecutionSessionId(backendSessionId(durable))) {
                 durable to (if (method == "session.resume") params.string("profile") else runtimeProfiles[id])
             } else null
         }
@@ -6350,7 +6397,7 @@ internal class LiveGatewaySessionRepository(
         explicitProfile: String? = null,
         action: suspend () -> T,
     ): T {
-        if (!isCronExecutionSessionId(durableId) || currentCoroutineContext()[SessionSelectionLease] != null) return action()
+        if (!isCronExecutionSessionId(backendSessionId(durableId)) || currentCoroutineContext()[SessionSelectionLease] != null) return action()
         val connection = connectionSnapshot()
         val profile = synchronized(stateLock) {
             explicitProfile ?: identities.runtimeFor(durableId)?.let { runtimeProfiles[it] }
@@ -6378,7 +6425,9 @@ internal class LiveGatewaySessionRepository(
         }
         val transport = http()
         val result = try {
-            GatewayRestClient(restContext) { transport }.sessionDetail(durableId, profile)
+            GatewayRestClient(restContext) { transport }.also {
+                it.sessionIdentity = { (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity }
+            }.sessionDetail(durableId, profile)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
@@ -7022,6 +7071,8 @@ internal fun parseSession(root: JsonObject, nowMillis: Long, authoritativeId: St
         gitBranch = root.sessionGitBranch(),
         worktreePath = root.sessionWorktreePath(),
         usage = if (usageObj != null) parseSessionUsage(usageObj) else null,
+        backendSessionId = root.jsonString("backend_session_id"),
+        backendLineageRootId = root.jsonString("backend_lineage_root"),
     )
 }
 

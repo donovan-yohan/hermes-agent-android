@@ -1551,6 +1551,7 @@ private fun SessionRow(
         // above keeps the one authoritative spoken label it already owns.
         SessionActionsControl(
             sessionId = session.id,
+            backendSessionId = session.backendSessionId ?: session.id,
             sessionTitle = session.title,
             modifier = Modifier.align(Alignment.CenterEnd),
             pinned = session.pinned == true,

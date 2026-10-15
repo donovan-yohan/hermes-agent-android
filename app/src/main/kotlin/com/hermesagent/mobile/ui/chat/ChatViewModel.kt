@@ -2793,7 +2793,7 @@ internal class ChatViewModel(
         val originalSubmittedDraft = draft.value
         val compactBotChat = botChatSessionId == sessionId && prompt in setOf("/new", "/reset")
         val submittedPrompt = if (compactBotChat) "/compact" else prompt
-        val cronSendKey = if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(sessionId)) {
+        val cronSendKey = if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(cache.session(sessionId)?.backendSessionId ?: sessionId)) {
             Triple(cache.endpointGeneration.value, cache.session(sessionId)?.remoteProfile, sessionId)
         } else null
         if (cronSendKey != null && !pendingCronSends.add(cronSendKey)) return
@@ -4095,7 +4095,7 @@ internal class ChatViewModel(
     }
 
     private fun captureSessionSelection(id: String): kotlin.coroutines.CoroutineContext =
-        if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(id)) {
+        if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(cache.session(id)?.backendSessionId ?: id)) {
             sessionSelectionFence.capture(cache.endpointGeneration.value, id, cache.session(id)?.remoteProfile)
         } else kotlin.coroutines.EmptyCoroutineContext
 
@@ -4363,8 +4363,8 @@ internal class ChatViewModel(
             .map { session ->
                 val profile = session.remoteProfile?.trim()?.takeIf(String::isNotEmpty) ?: DEFAULT_PROFILE
                 CompletionItem(
-                    text = ComposerReference.Session("$profile/${session.id}").wireText,
-                    display = session.title.ifBlank { "Session ${session.id.take(8)}" },
+                    text = ComposerReference.Session("$profile/${session.backendSessionId ?: session.id}").wireText,
+                    display = session.title.ifBlank { "Session ${(session.backendSessionId ?: session.id).take(8)}" },
                     detail = "Session reference",
                     kind = "session",
                 )

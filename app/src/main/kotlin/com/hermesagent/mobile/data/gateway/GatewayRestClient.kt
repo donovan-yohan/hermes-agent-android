@@ -386,6 +386,7 @@ class GatewayRestClient(
     private val ioContext: CoroutineContext = Dispatchers.IO,
     private val http: () -> GatewayHttp?,
 ) {
+    internal var sessionIdentity: () -> GatewaySessionIdentity? = { null }
 
     /** Custom Dashboard themes only; server built-ins have no definition and are skipped. */
     suspend fun dashboardThemes(): GatewayRestResult<List<GatewayTheme>> =
@@ -425,18 +426,21 @@ class GatewayRestClient(
      * The server accepts prefixes; this client deliberately requires the exact echoed id and profile.
      */
     suspend fun sessionDetail(sessionId: String, profile: String): GatewayRestResult<GatewaySessionDetail> {
-        if (sessionId.isBlank() || sessionId.length > MAX_ID_LENGTH ||
-            sessionId.any(Char::isISOControl) || sessionId in setOf(".", "..")) return malformed()
-        if (profile != profile.trim() || profile == "current" || safeProfile(profile) == null) return malformed()
+        val address = sessionIdentity()?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        if (wireId.isBlank() || wireId.length > MAX_ID_LENGTH ||
+            wireId.any(Char::isISOControl) || wireId in setOf(".", "..")) return malformed()
+        if (wireProfile != wireProfile.trim() || wireProfile == "current" || safeProfile(wireProfile) == null) return malformed()
         val id = okhttp3.HttpUrl.Builder().scheme("https").host("localhost")
-            .addPathSegment(sessionId).build().encodedPath.removePrefix("/")
+            .addPathSegment(wireId).build().encodedPath.removePrefix("/")
         return send(
             path = "$SESSIONS_PATH/$id",
             verb = GatewayRestVerb.GET,
-            query = mapOf("profile" to profile),
+            query = mapOf("profile" to wireProfile),
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
-            parse = { bytes -> parseObject(bytes)?.let { GatewaySessionDetail.parse(it, sessionId, profile) } },
+            parse = { bytes -> parseObject(bytes)?.let { GatewaySessionDetail.parse(it, wireId, wireProfile)?.copy(id = sessionId) } },
         )
     }
 
@@ -481,6 +485,7 @@ class GatewayRestClient(
         order: GatewaySessionOrder = GatewaySessionOrder.Recent,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionPage> {
+        val identity = sessionIdentity()
         if (limit !in 1..MAX_SESSION_PAGE) return malformed()
         if (offset < 0) return malformed()
         // The route clamps a negative `min_messages` to 0 itself (`:108`).
@@ -502,7 +507,9 @@ class GatewayRestClient(
             },
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
-            parse = ::parseSessionPage,
+            parse = { bytes -> parseSessionPage(bytes)?.let { page ->
+                identity?.let { bound -> page.copy(rows = page.rows.map { bound.projectRow(it, profile) }) } ?: page
+            } },
         )
     }
 
@@ -542,6 +549,7 @@ class GatewayRestClient(
         limit: Int = DEFAULT_SESSION_SEARCH,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionSearchPage> {
+        val identity = sessionIdentity()
         if (query.isBlank()) return malformed()
         if (query.any(Char::isISOControl)) return malformed()
         if (limit !in 1..MAX_SESSION_SEARCH) return malformed()
@@ -556,7 +564,9 @@ class GatewayRestClient(
             },
             timeoutMillis = LIST_TIMEOUT_MILLIS,
             maxResponseBytes = LIST_MAX_RESPONSE_BYTES,
-            parse = ::parseSessionSearchPage,
+            parse = { bytes -> parseSessionSearchPage(bytes)?.let { page ->
+                identity?.let { bound -> page.copy(results = page.results.map { bound.projectRow(it, profile) }) } ?: page
+            } },
         )
     }
 
@@ -577,10 +587,14 @@ class GatewayRestClient(
         includeCompacted: Boolean = false,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionMessagePage> {
-        val id = safeSessionId(sessionId) ?: return malformed()
+        val identity = sessionIdentity()
+        val address = identity?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        val id = safeSessionId(wireId) ?: return malformed()
         if (limit != null && limit !in 1..MAX_MESSAGE_PAGE) return malformed()
         if (offset < 0) return malformed()
-        val scope = scopeQuery(profile) ?: return malformed()
+        val scope = scopeQuery(wireProfile) ?: return malformed()
         return send(
             path = "$SESSIONS_PATH/$id/messages",
             verb = GatewayRestVerb.GET,
@@ -593,7 +607,9 @@ class GatewayRestClient(
             },
             timeoutMillis = MESSAGES_TIMEOUT_MILLIS,
             maxResponseBytes = messagesResponseBound(limit),
-            parse = ::parseMessagePage,
+            parse = { bytes -> parseMessagePage(bytes)?.let { page ->
+                identity?.let { page.copy(sessionId = it.qualify(page.sessionId, wireProfile)) } ?: page
+            } },
         )
     }
 
@@ -619,11 +635,15 @@ class GatewayRestClient(
         unread: Boolean? = null,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionUpdate> {
-        val id = safeSessionId(sessionId) ?: return malformed()
+        val identity = sessionIdentity()
+        val address = identity?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        val id = safeSessionId(wireId) ?: return malformed()
         if (title == null && archived == null && pinned == null && unread == null) {
             return GatewayRestResult.Failed(NOTHING_TO_UPDATE_STATUS, MALFORMED_REQUEST_MESSAGE)
         }
-        val scope = profile?.let { safeProfile(it) ?: return malformed() }
+        val scope = wireProfile?.let { safeProfile(it) ?: return malformed() }
         val payload = buildJsonObject {
             title?.let { put("title", it) }
             archived?.let { put("archived", it) }
@@ -633,10 +653,7 @@ class GatewayRestClient(
         if (payload.toString().toByteArray(Charsets.UTF_8).size > MAX_UPDATE_BODY_BYTES) return malformed()
         return mutateSession(id, scope, "sidebar", payload) { bytes ->
             parseSessionUpdate(bytes)?.takeIf { result ->
-                (title == null || result.title != null) &&
-                    (archived == null || result.archived == archived) &&
-                    (pinned == null || result.pinned == pinned) &&
-                    (unread == null || result.unread == unread)
+                title == null || result.title != null
             }
         }
     }
@@ -654,9 +671,17 @@ class GatewayRestClient(
         sessionId: String,
         profile: String? = null,
     ): GatewayRestResult<GatewaySessionDeletion> {
-        val id = safeSessionId(sessionId) ?: return malformed()
-        val scope = profile?.let { safeProfile(it) ?: return malformed() }
-        return mutateSession(id, scope, "delete", JsonObject(emptyMap()), ::parseSessionDeletion)
+        val identity = sessionIdentity()
+        val address = identity?.address(sessionId, profile)
+        val wireId = address?.rawId ?: sessionId
+        val wireProfile = address?.profile ?: profile
+        val id = safeSessionId(wireId) ?: return malformed()
+        val scope = wireProfile?.let { safeProfile(it) ?: return malformed() }
+        return mutateSession(id, scope, "delete", JsonObject(emptyMap())) { bytes ->
+            parseSessionDeletion(bytes)?.let { result ->
+                if (identity == null) result else result.copy(deletedIds = result.deletedIds.map { identity.qualify(it, wireProfile) })
+            }
+        }
     }
 
     private data class MutationAddress(val transport: GatewayHttp, val profile: String?, val sessionId: String)
