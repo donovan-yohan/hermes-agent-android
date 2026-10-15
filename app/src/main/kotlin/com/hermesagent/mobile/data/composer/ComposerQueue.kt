@@ -89,6 +89,9 @@ data class QueuedPrompt(
     val queuedAtMillis: Long,
     val delivery: QueuedPromptDelivery = QueuedPromptDelivery.Ready,
 ) {
+    /** Stable across ambiguous retry/restart, changed when an unsent queue entry is edited. */
+    internal val submissionId: String get() = "queue-" + sha256Utf8Hex(JsonArray(listOf(JsonPrimitive(id), JsonPrimitive(text))).toString())
+
     init {
         require(id.isQueueEntryId())
         require(text.isPersistableQueueText())

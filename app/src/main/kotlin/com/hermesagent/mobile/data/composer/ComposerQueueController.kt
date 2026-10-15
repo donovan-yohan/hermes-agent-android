@@ -10,6 +10,8 @@ import kotlinx.coroutines.sync.withLock
 /** Narrow queued-submit boundary. The adapter owns durable-to-runtime resolution and `queued:true`. */
 interface ComposerQueueSubmitter {
     suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome
+    suspend fun submitQueued(durableSessionId: String, entry: QueuedPrompt): QueueSubmissionOutcome =
+        submitQueued(durableSessionId, entry.text)
 }
 
 /** A rejected request is safe to retry later; an ambiguous acknowledgement is not. */
@@ -258,7 +260,7 @@ class ComposerQueueController(
             if (promoteEntryId == null && failureCount(durableSessionId, entry.id) >= maxAutoFailuresPerEntry) {
                 return@withLock ComposerQueueDrainResult.RetryLimitReached
             }
-            when (submitter.submitQueued(durableSessionId, entry.text)) {
+            when (submitter.submitQueued(durableSessionId, entry)) {
                 QueueSubmissionOutcome.Accepted -> when (store.remove(durableSessionId, entry.id)) {
                     ComposerQueueMutation.Applied -> {
                         clearFailure(durableSessionId, entry.id)

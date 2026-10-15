@@ -301,6 +301,7 @@ class MainActivity : ComponentActivity() {
         }
         var dictationRecordingJob: kotlinx.coroutines.Job = lifecycleScope.launch { }
         chatViewModel.onDictationCapture = { durableSessionId, onDone ->
+            val key = chatViewModel.captureVoiceSessionKey(durableSessionId)
             val started = lifecycleScope.launch { mic.start() }
             dictationRecordingJob = lifecycleScope.launch {
                 started.join()
@@ -315,10 +316,6 @@ class MainActivity : ComponentActivity() {
                 dictationRecordingJob.cancel()
                 lifecycleScope.launch {
                     val pcm = mic.stop()
-                    val key = com.hermesagent.mobile.data.voice.VoiceSessionKey(
-                        connectionGeneration = app.gatewayConnection.currentGeneration,
-                        durableSessionId = durableSessionId,
-                    )
                     val captured = com.hermesagent.mobile.data.voice.CapturedAudio("audio/wav", pcm)
                     // Transport and provider failures must surface as honest
                     // state, never masquerade as silence.

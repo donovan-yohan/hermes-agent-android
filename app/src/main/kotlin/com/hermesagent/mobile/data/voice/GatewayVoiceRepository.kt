@@ -24,11 +24,13 @@ interface SpeechSynthesizer {
  * Typed audio/wake routes over the connection-owned authenticated HTTP leg.
  * Payloads never log; response bytes are wiped by the caller's ownership.
  */
-class GatewayVoiceRepository(private val http: () -> GatewayHttp?) : SpeechSynthesizer {
+class GatewayVoiceRepository(private val http: () -> GatewayHttp?, private val isCurrent: (VoiceSessionKey) -> Boolean) : SpeechSynthesizer {
+    constructor(http: () -> GatewayHttp?) : this(http, { true })
     private val json = Json { ignoreUnknownKeys = true }
 
     suspend fun transcribe(key: VoiceSessionKey, audio: CapturedAudio): TranscriptionResult =
         withContext(Dispatchers.IO) {
+            requireCurrent(key)
             val transport = http()
                 ?: throw VoiceTransportException("Reconnect to the Gateway before using voice.")
             val encoded = Base64.getEncoder().encodeToString(audio.bytes)
@@ -38,12 +40,17 @@ class GatewayVoiceRepository(private val http: () -> GatewayHttp?) : SpeechSynth
             }.toString()
             val budgeted = VoicePolicy.audioTimeoutMillis(VoicePolicy.wireBudgetBytes(audio.bytes.size))
             when (val result = transport.execute(
-                GatewayHttpRequest("api/audio/transcribe", "POST", payload.toRequestBody("application/json".toMediaType()), budgeted),
+                GatewayHttpRequest("api/audio/transcribe", "POST", payload.toRequestBody("application/json".toMediaType()), budgeted,
+                    query = key.profile?.let { mapOf("profile" to it) }.orEmpty(), isCurrent = { isCurrent(key) }),
             )) {
                 is GatewayHttpResult.Rejected -> throw VoiceTransportException(result.safeMessage)
-                is GatewayHttpResult.Success -> result.consumeBody(::parseTranscription)
+                is GatewayHttpResult.Success -> result.consumeBody { bytes -> requireCurrent(key); parseTranscription(bytes) }
             }
         }
+
+    private fun requireCurrent(key: VoiceSessionKey) {
+        if (!isCurrent(key)) throw VoiceTransportException("The Gateway changed. Start voice again in this chat.")
+    }
 
     private fun parseTranscription(body: ByteArray): TranscriptionResult {
         val obj = runCatching { Json.parseToJsonElement(String(body, Charsets.UTF_8)) as JsonObject }.getOrNull()
@@ -60,14 +67,16 @@ class GatewayVoiceRepository(private val http: () -> GatewayHttp?) : SpeechSynth
 
     override suspend fun speak(key: VoiceSessionKey, cleanText: String): SpeechAudio =
         withContext(Dispatchers.IO) {
+            requireCurrent(key)
             val transport = http() ?: throw VoiceTransportException("Reconnect to the Gateway before using voice.")
             val payload = buildJsonObject { put("text", cleanText) }.toString()
             val timeout = VoicePolicy.audioTimeoutMillis(VoicePolicy.wireBudgetBytes(cleanText.length))
             when (val result = transport.execute(
-                GatewayHttpRequest("api/audio/speak", "POST", payload.toRequestBody("application/json".toMediaType()), timeout),
+                GatewayHttpRequest("api/audio/speak", "POST", payload.toRequestBody("application/json".toMediaType()), timeout,
+                    query = key.profile?.let { mapOf("profile" to it) }.orEmpty(), isCurrent = { isCurrent(key) }),
             )) {
                 is GatewayHttpResult.Rejected -> throw VoiceTransportException(result.safeMessage)
-                is GatewayHttpResult.Success -> result.consumeBody(::parseSpeak)
+                is GatewayHttpResult.Success -> result.consumeBody { bytes -> requireCurrent(key); parseSpeak(bytes) }
             }
         }
 

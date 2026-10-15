@@ -22,7 +22,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     }
     private data class Owner(val profile: String, val sessionId: String)
     private data class Snapshot(val revision: Long, val generation: Long, val replayEpoch: String,
-        val lastSequence: Long, val subscriptionId: String, val storedId: String, val authorityEpoch: Long)
+        val lastSequence: Long, val subscriptionId: String, val storedId: String, val authorityEpoch: Long, val retiredEpochs: Set<String> = emptySet())
     private val stateLock = Any()
     private val descriptorLocks = KeyedMutex<String>()
     private val descriptors = mutableMapOf<String, JsonObject>()
@@ -329,10 +329,14 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         synchronized(stateLock) {
             val key = owner(profile, sid)
             val previous = snapshots[key]
+            if (previous != null && (authority < previous.authorityEpoch || epoch in previous.retiredEpochs)) unusable()
+            val retired = previous?.let {
+                (it.retiredEpochs + if (it.replayEpoch != epoch) setOf(it.replayEpoch) else emptySet()).toList().takeLast(16).toSet()
+            }.orEmpty()
             val stale = previous != null && previous.authorityEpoch == authority && previous.replayEpoch == epoch &&
                 (previous.lastSequence > sequence || previous.generation > generation)
             snapshots[key] = if (stale) previous!!.copy(subscriptionId = subscription) else
-                Snapshot(revision, generation, epoch, sequence, subscription, stored, authority)
+                Snapshot(revision, generation, epoch, sequence, subscription, stored, authority, retired)
             if (!stale) {
                 prompts.keys.removeAll { it.first == key }
                 (value["prompts"] as? JsonArray).orEmpty().forEach { element ->
@@ -389,6 +393,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             val generation = event.executionGeneration ?: payload.number("execution_generation")
             if (owner != null) {
                 val previous = snapshots.getValue(owner)
+                if (event.replayEpoch in previous.retiredEpochs) return@synchronized null
                 if (event.authorityEpoch?.let { it < previous.authorityEpoch } == true ||
                     generation?.let { it < previous.generation } == true) return@synchronized null
                 if (event.replayEpoch != null && event.replayEpoch != previous.replayEpoch ||

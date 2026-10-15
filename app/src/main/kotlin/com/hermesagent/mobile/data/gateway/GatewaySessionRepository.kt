@@ -61,6 +61,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -318,6 +319,9 @@ interface GatewaySessionRepository {
         queued: Boolean = false,
         attachments: List<OutgoingAttachment> = emptyList(),
     ): GatewaySubmitOutcome = submit(durableId, text, queued)
+    /** Durable queue retries carry their logical input identity; legacy transports keep their original shape. */
+    suspend fun submitIdentified(durableId: String, text: String, queued: Boolean, submissionId: String): GatewaySubmitOutcome =
+        submit(durableId, text, queued)
     /**
      * Plain prompt submit bound to the endpoint generation the caller
      * observed.
@@ -2953,6 +2957,7 @@ internal class LiveGatewaySessionRepository(
         val fileRefs = StringBuilder()
         val imageRefs = mutableListOf<String>()
         val stagedImagePaths = mutableListOf<String>()
+        val canonicalImages = mutableListOf<JsonObject>()
         var hasUndetachableImage = false
 
         suspend fun rejectAfterCleanup(failure: GatewayRpcException): Nothing {
@@ -2985,6 +2990,9 @@ internal class LiveGatewaySessionRepository(
                             } else {
                                 stagedImagePaths += path
                                 imageRefs += ImageRefLines.formatRef(path)
+                                result.reference.mimeType?.let { mime -> canonicalImages += buildJsonObject {
+                                    put("path", JsonPrimitive(path)); put("mime", JsonPrimitive(mime))
+                                } }
                             }
                         }
 
@@ -3036,6 +3044,7 @@ internal class LiveGatewaySessionRepository(
                 queued,
                 gatewayQueueMergeable = attachments.none { it is OutgoingAttachment.Image },
                 interruptEpoch = interruptEpoch,
+                canonicalAttachments = canonicalImages,
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
@@ -3052,8 +3061,8 @@ internal class LiveGatewaySessionRepository(
     ): GatewayStageOutcome {
         return try {
             val result = when (attachment) {
-                is OutgoingAttachment.Image -> connection.client.request(
-                    "image.attach_bytes",
+                is OutgoingAttachment.Image -> requestAtEndpointDispatch(
+                    connection, connection.endpointGeneration, "image.attach_bytes",
                     buildJsonObject {
                         // Attach RPCs resolve the session by id before staging;
                         // the desktop always sends its session's runtime id.
@@ -3063,8 +3072,8 @@ internal class LiveGatewaySessionRepository(
                     },
                 ).asObject("image.attach_bytes")
 
-                is OutgoingAttachment.GenericFile -> connection.client.request(
-                    "file.attach",
+                is OutgoingAttachment.GenericFile -> requestAtEndpointDispatch(
+                    connection, connection.endpointGeneration, "file.attach",
                     buildJsonObject {
                         put("session_id", JsonPrimitive(binding.runtimeId))
                         put("data_url", JsonPrimitive(attachment.dataUrl))
@@ -3073,11 +3082,17 @@ internal class LiveGatewaySessionRepository(
                 ).asObject("file.attach")
             }
             synchronized(stateLock) { ensureCurrent(connection) }
+            val canonical = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
+            if (canonical && (result.boolean("attached") != true || result.string("path").isNullOrBlank() ||
+                    (attachment is OutgoingAttachment.Image && result.string("mime") !in setOf("image/png", "image/jpeg", "image/gif", "image/webp")) ||
+                    (attachment is OutgoingAttachment.GenericFile && result.string("ref_text").isNullOrBlank()))) {
+                return GatewayStageOutcome.Rejected("The attachment upload was incomplete. Attach it again.")
+            }
             val refText = result.string("ref_text")
                 ?: result.string("text")?.takeIf(String::isNotBlank)
                 ?: "@file:${attachment.displayName}"
             GatewayStageOutcome.Staged(
-                StagedAttachmentReference(refText = refText, gatewayPath = result.string("path")),
+                StagedAttachmentReference(refText = refText, gatewayPath = result.string("path"), mimeType = result.string("mime").takeIf { canonical }),
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException) throw failure
@@ -3098,7 +3113,7 @@ internal class LiveGatewaySessionRepository(
         runtimeId: String,
         paths: List<String>,
     ): Boolean {
-        if (paths.isEmpty()) return true
+        if (paths.isEmpty() || (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) return true
         var allDetached = true
         paths.asReversed().forEach { path ->
             try {
@@ -3131,6 +3146,12 @@ internal class LiveGatewaySessionRepository(
         return submitInternal(durableId, prompt, prompt, queued)
     }
 
+    override suspend fun submitIdentified(durableId: String, text: String, queued: Boolean, submissionId: String): GatewaySubmitOutcome {
+        require(submissionId.isNotBlank())
+        val prompt = text.trim()
+        return submitInternal(durableId, prompt, prompt, queued, submissionId = submissionId)
+    }
+
     override suspend fun submitAtEndpoint(
         durableId: String,
         text: String,
@@ -3147,6 +3168,7 @@ internal class LiveGatewaySessionRepository(
         optimisticText: String,
         queued: Boolean,
         expectedEndpointGeneration: Long? = null,
+        submissionId: String? = null,
     ): GatewaySubmitOutcome {
         val interruptEpoch = submitInterruptEpoch(durableId)
         // Before the runtime resolution, because that resolution can itself be
@@ -3168,6 +3190,7 @@ internal class LiveGatewaySessionRepository(
                 gatewayQueueMergeable = true,
                 interruptEpoch = interruptEpoch,
                 expectedEndpointGeneration = expectedEndpointGeneration,
+                submissionId = submissionId,
             )
         } }
     }
@@ -3229,9 +3252,19 @@ internal class LiveGatewaySessionRepository(
             path
         }.distinct()
         val staged = mutableListOf<String>()
+        val canonicalImages = mutableListOf<JsonObject>()
+        val authority = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
         try {
             for (path in paths) {
                 requireUninterruptedSubmit(binding.durableId, interruptEpoch)
+                if (authority != null) {
+                    val reference = reacquireCanonicalImage(binding, connection, path, endpoint)
+                    val newPath = reference.gatewayPath ?: throw GatewayRpcException("Attach this image again before retrying.")
+                    val mime = reference.mimeType ?: throw GatewayRpcException("Attach this image again before retrying.")
+                    staged += newPath
+                    canonicalImages += buildJsonObject { put("path", JsonPrimitive(newPath)); put("mime", JsonPrimitive(mime)) }
+                    continue
+                }
                 val attached = requestAtEndpointDispatch(connection, endpoint, "image.attach", buildJsonObject {
                     put("session_id", JsonPrimitive(binding.runtimeId))
                     put("path", JsonPrimitive(ImageRefLines.formatRef(path).removePrefix("@image:")))
@@ -3242,10 +3275,12 @@ internal class LiveGatewaySessionRepository(
                 staged += path
             }
             return submitInternalLocked(
-                binding, connection, body.ifBlank { IMAGE_ONLY_PROMPT }, prompt,
+                binding, connection, body.ifBlank { IMAGE_ONLY_PROMPT },
+                if (authority == null) prompt else listOf(body.ifBlank { IMAGE_ONLY_PROMPT }, staged.joinToString("\n", transform = ImageRefLines::formatRef)).joinToString("\n"),
                 queued = false, gatewayQueueMergeable = paths.isEmpty(), interruptEpoch = interruptEpoch,
                 truncateBeforeRowId = truncateBeforeRowId,
                 optimisticTranscriptPrefix = optimisticTranscriptPrefix, expectedEndpointGeneration = endpoint,
+                canonicalAttachments = canonicalImages,
             )
         } catch (failure: Throwable) {
             if (failure is CancellationException || failure.isAmbiguousGatewayMutation()) throw failure
@@ -3253,6 +3288,38 @@ internal class LiveGatewaySessionRepository(
                 throw GatewayRpcException("The image restoration could not be reconciled. Reopen this session.", requestMayHaveBeenAccepted = true)
             }
             throw failure
+        }
+    }
+
+    /** Reacquire through the authenticated owner/endpoint route; authority has no image.attach verb.
+     * gateway/session_images.py:8-44 and hermes_cli/web_routers/files.py:934-958 @ 379cf122. */
+    private suspend fun reacquireCanonicalImage(binding: SessionBinding, connection: ConnectionSnapshot,
+        path: String, endpoint: Long): StagedAttachmentReference {
+        val transport = http() ?: throw GatewayRpcException("Reconnect before restoring this image.")
+        val identity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+            ?: throw GatewayRpcException("Reopen this session before restoring its image.")
+        val address = identity.address(binding.runtimeId) ?: throw GatewayRpcException("Reopen this session before restoring its image.")
+        val current = { cache.endpointGeneration.value == endpoint && synchronized(stateLock) {
+            connectionGeneration == connection.generation && clientFlow.value === connection.client
+        } }
+        return withContext(restContext) {
+            if (!current()) throw GatewayRpcException("Reconnect before restoring this image.")
+            val result = transport.execute(GatewayHttpRequest("api/fs/download", "GET", null, 15_000,
+                query = buildMap { put("path", path); put("session_id", address.rawId); address.profile?.let { put("profile", it) } },
+                maxResponseBytes = 25L * 1024L * 1024L, isCurrent = current))
+            when (result) {
+                is GatewayHttpResult.Rejected -> {
+                    result.envelopeBytes.fill(0)
+                    throw GatewayRpcException("This image could not be restored. Attach it again.")
+                }
+                is GatewayHttpResult.Success -> result.consumeBody { bytes ->
+                    if (!current() || bytes.isEmpty()) throw GatewayRpcException("This image could not be restored. Attach it again.")
+                    val staged = stageOne(binding, connection, OutgoingAttachment.Image(path.substringAfterLast('/'),
+                        java.util.Base64.getEncoder().encodeToString(bytes)))
+                    (staged as? GatewayStageOutcome.Staged)?.reference
+                        ?: throw GatewayRpcException("This image could not be restored. Attach it again.")
+                }
+            }
         }
     }
 
@@ -3296,6 +3363,8 @@ internal class LiveGatewaySessionRepository(
         truncateBeforeRowId: TranscriptRowId? = null,
         optimisticTranscriptPrefix: List<TranscriptEntry>? = null,
         expectedEndpointGeneration: Long? = null,
+        submissionId: String? = null,
+        canonicalAttachments: List<JsonObject> = emptyList(),
     ): GatewaySubmitOutcome {
         // Null means the payload is queued behind this runtime's live turn: it
         // registers no optimistic state and so has nothing to roll back.
@@ -3363,6 +3432,8 @@ internal class LiveGatewaySessionRepository(
                     queued = queued,
                     truncateBeforeRowId = truncateBeforeRowId,
                     expectedEndpointGeneration = expectedEndpointGeneration,
+                    submissionId = submissionId,
+                    canonicalAttachments = canonicalAttachments,
                 )
                 if ((receipt as? JsonObject)?.string("status") == "unknown") {
                     // Accepted work with lost execution is never retried automatically.
@@ -3450,6 +3521,8 @@ internal class LiveGatewaySessionRepository(
         queued: Boolean,
         truncateBeforeRowId: TranscriptRowId? = null,
         expectedEndpointGeneration: Long? = null,
+        submissionId: String? = null,
+        canonicalAttachments: List<JsonObject> = emptyList(),
     ): JsonElement {
         return requestAtEndpointDispatch(
             connection = connection,
@@ -3458,6 +3531,9 @@ internal class LiveGatewaySessionRepository(
             params = buildJsonObject {
                 put("session_id", JsonPrimitive(runtimeId))
                 put("text", JsonPrimitive(prompt))
+                if (submissionId != null && (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null)
+                    put("submission_id", JsonPrimitive(submissionId))
+                if (canonicalAttachments.isNotEmpty()) put("attachments", JsonArray(canonicalAttachments))
                 if (queued) put("queued", JsonPrimitive(true))
                 if (truncateBeforeRowId != null) {
                     put("confirm_truncate", JsonPrimitive(true))

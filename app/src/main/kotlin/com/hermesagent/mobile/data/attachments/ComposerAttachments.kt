@@ -51,6 +51,8 @@ data class StagedAttachmentReference(
     val refText: String,
     /** Server-side path for best-effort detach cleanup, when provided. */
     val gatewayPath: String? = null,
+    /** Canonical admission uses the Gateway's sniffed MIME, never the Android display name. */
+    val mimeType: String? = null,
 )
 
 /**

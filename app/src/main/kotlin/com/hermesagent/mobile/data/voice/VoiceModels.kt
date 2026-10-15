@@ -10,6 +10,8 @@ package com.hermesagent.mobile.data.voice
 data class VoiceSessionKey(
     val connectionGeneration: Long,
     val durableSessionId: String,
+    val profile: String? = null,
+    val endpointGeneration: Long? = null,
 )
 
 /** Monotonic per-operation fence; late callbacks with an old id are dropped. */

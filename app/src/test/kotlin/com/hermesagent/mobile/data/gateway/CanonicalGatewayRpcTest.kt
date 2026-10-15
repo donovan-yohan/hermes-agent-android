@@ -179,8 +179,60 @@ class CanonicalGatewayRpcTest {
         peer.rpc.close()
     }
 
+    @Test
+    fun `canonical image upload is staging only and image-only admission carries returned path and mime`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.requireAttachments = true
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public")
+        assertEquals(GatewaySubmitOutcome.Accepted, repository.submit(key, "", false, listOf(
+            com.hermesagent.mobile.data.attachments.OutgoingAttachment.Image("public.png", "iVBORw0KGgo="))))
+        val submit = peer.frames.single { it["method"] == JsonPrimitive("prompt.submit") }.getValue("params").jsonObject
+        assertEquals(JsonArray(listOf(buildJsonObject { put("path", "/workspace/public/upload.png"); put("mime", "image/png") })), submit["attachments"])
+        assertTrue(submit.getValue("submission_id").jsonPrimitive.content.isNotBlank())
+        assertEquals(JsonPrimitive("What do you see in this image?"), submit["text"])
+        assertFalse(peer.frames.any { it["method"] == JsonPrimitive("image.detach") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `canonical regenerate reacquires authenticated image then rewinds and admits fresh stage`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.requireAttachments = true
+        val downloads = mutableListOf<GatewayHttpRequest>()
+        val image = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
+        val http = object : GatewayHttp {
+            override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+                if (request.path != "api/fs/download") return GatewayHttpResult.Rejected(404, "Unavailable")
+                downloads += request
+                return GatewayHttpResult.Success(200, image)
+            }
+        }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope,
+            http = { http }, restContext = UnconfinedTestDispatcher(testScheduler)) { 1800000000000 }
+        val key = repository.openSession("canonical-public")
+        assertEquals(GatewaySubmitOutcome.Accepted, repository.regenerate(key,
+            "Inspect public image\n@image:/workspace/public/old.png", com.hermesagent.mobile.data.session.TranscriptRowId(42), "public-user", cache.endpointGeneration.value))
+        assertEquals("/workspace/public/old.png", downloads.single().query["path"])
+        assertEquals("work", downloads.single().query["profile"])
+        assertEquals("canonical-public", downloads.single().query["session_id"])
+        assertTrue(image.all { it == 0.toByte() })
+        assertFalse(peer.frames.any { it["method"] in setOf(JsonPrimitive("image.attach"), JsonPrimitive("image.detach")) })
+        val operations = peer.frames.map { it.getValue("method").jsonPrimitive.content }.filter { it in setOf("image.attach_bytes", "session.mutate", "prompt.submit") }
+        assertEquals(listOf("image.attach_bytes", "session.mutate", "prompt.submit"), operations)
+        assertEquals(JsonPrimitive("/workspace/public/upload.png"), peer.frames.last().getValue("params").jsonObject.getValue("attachments").jsonArray.single().jsonObject["path"])
+        peer.rpc.close()
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
+        var requireAttachments = false
         var silenceNextSubmit = false
         var silenceNextMutation = false
         private val mutations = linkedMapOf<String, JsonObject>()
@@ -203,7 +255,9 @@ class CanonicalGatewayRpcTest {
                     }
                     "session.resume" -> snapshot()
                     "session.list" -> """{"sessions":[],"scope":"${params["scope"]?.jsonPrimitive?.content ?: "live"}"}"""
+                    "image.attach_bytes" -> """{"attached":true,"path":"/workspace/public/upload.png","mime":"image/png","name":"upload.png","count":1,"remainder":"","text":"[User attached image: upload.png]","bytes":8}"""
                     "prompt.submit" -> {
+                        if (requireAttachments && params["attachments"] !is JsonArray) { replyError(frame); return true }
                         val submission = (params["submission_id"] ?: params["input_id"]) as? JsonPrimitive
                         if (submission == null || submission.content.isBlank()) {
                             replyError(frame)

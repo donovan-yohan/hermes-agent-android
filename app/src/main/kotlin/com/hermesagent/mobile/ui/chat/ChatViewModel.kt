@@ -1808,6 +1808,12 @@ internal class ChatViewModel(
         }
     }
 
+    internal fun captureVoiceSessionKey(durableId: String): VoiceSessionKey = VoiceSessionKey(
+        connectionGeneration = connectionGeneration(), durableSessionId = durableId,
+        profile = cache.session(durableId)?.remoteProfile ?: profileScope.value.activeProfile,
+        endpointGeneration = cache.endpointGeneration.value,
+    )
+
     fun selectModel(selection: ComposerModelSelection) {
         if (refuseBotChatMutation() != null) return
         val liveId = activeSessionId.value
@@ -3301,12 +3307,9 @@ internal class ChatViewModel(
         val entry = transcript.find { it.id == entryId } as? AssistantTurn ?: return
         if (entry.markdown.isBlank()) return
 
+        val key = captureVoiceSessionKey(sessionId)
         readAloudState.value = ReadAloudUiState.Preparing(entryId)
         readAloudJob = viewModelScope.launch {
-            val key = VoiceSessionKey(
-                connectionGeneration = connectionGeneration(),
-                durableSessionId = sessionId
-            )
             try {
                 replySpeaker?.speak(key, entry.markdown) {
                     if (readAloudState.value is ReadAloudUiState.Preparing && readAloudOwns(entryId)) {

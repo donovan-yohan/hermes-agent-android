@@ -241,7 +241,10 @@ class HermesApplication : Application() {
     }
 
     internal val voiceRepository: GatewayVoiceRepository by lazy {
-        GatewayVoiceRepository { gatewayHttp }
+        GatewayVoiceRepository(http = { gatewayHttp }, isCurrent = { key ->
+            gatewayConnection.currentGeneration == key.connectionGeneration &&
+                (key.endpointGeneration == null || cache.endpointGeneration.value == key.endpointGeneration)
+        })
     }
 
     internal val replySpeaker: ReplySpeaker by lazy {
@@ -369,6 +372,16 @@ class HermesApplication : Application() {
         ComposerQueueController(
             store = composerQueueStore,
             submitter = object : ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, entry: com.hermesagent.mobile.data.composer.QueuedPrompt): QueueSubmissionOutcome = try {
+                    when (sessionRepository.submitIdentified(durableSessionId, entry.text, queued = true, submissionId = entry.submissionId)) {
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted -> QueueSubmissionOutcome.Accepted
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Ambiguous -> QueueSubmissionOutcome.Ambiguous
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Throwable) {
+                    QueueSubmissionOutcome.Rejected
+                }
                 override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome = try {
                     when (sessionRepository.submit(durableSessionId, text, queued = true)) {
                         com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted -> QueueSubmissionOutcome.Accepted

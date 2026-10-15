@@ -423,14 +423,16 @@ internal class CorrelatedGatewayRpc(
             // frame missing either is dropped rather than half-delivered.
             if (id == null) return
             val params = frame["params"] as? JsonObject ?: return
-            val accepted = serverRequestChannel.trySend(
-                canonicalProtocol.serverRequest(GatewayServerRequest(
+            val projected = try { canonicalProtocol.serverRequest(GatewayServerRequest(
                     id = id,
                     method = method,
                     runtimeSessionId = params.string("session_id")?.takeIf(String::isNotBlank),
                     params = params,
-                )),
-            )
+                )) } catch (_: GatewayRpcException) {
+                    connectionClosed("The Gateway prompt stream could not be reconciled.")
+                    return
+                }
+            val accepted = serverRequestChannel.trySend(projected)
             if (accepted.isFailure) connectionClosed(SERVER_REQUEST_OVERFLOW_MESSAGE)
             return
         }
@@ -440,7 +442,7 @@ internal class CorrelatedGatewayRpc(
         val type = params.string("type") ?: return
         canonicalProtocol.observeReady(type, params["payload"] ?: JsonNull)
         if (type !in SUPPORTED_EVENTS || (!canonicalProtocol.announced && type in CANONICAL_EVENTS)) return
-        val event = canonicalProtocol.event(GatewayEvent(
+        val event = try { canonicalProtocol.event(GatewayEvent(
                 type,
                 params.string("session_id")?.takeIf(String::isNotBlank),
                 params["payload"] ?: JsonNull,
@@ -449,7 +451,10 @@ internal class CorrelatedGatewayRpc(
                 (params["authority_epoch"] as? JsonPrimitive)?.longOrNull,
                 (params["execution_generation"] as? JsonPrimitive)?.longOrNull,
                 params.string("admission_id"),
-            )) ?: return
+            )) } catch (_: GatewayRpcException) {
+                connectionClosed("The Gateway session stream could not be reconciled.")
+                return
+            } ?: return
         if (eventChannel.trySend(event).isFailure) connectionClosed(EVENT_OVERFLOW_MESSAGE)
     }
 
