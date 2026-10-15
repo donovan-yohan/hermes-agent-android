@@ -283,13 +283,14 @@ jobs:
           avd-name: test
           cores: 2
           pre-emulator-launch-script: python3 scripts/ci_avd_cache.py verify
-          # CI-only mitigation for the API34 launcher ANR stealing input focus.
-          # Stop only this synthetic AVD's known launcher after normal preparation;
-          # the launcher ANR itself remains unfixed. Never stop the app or hide dialogs.
+          # CI-only isolation for the known API34 NexusLauncher ART crash: a one-shot
+          # force-stop permits Quickstep service respawn and new focus-stealing alerts.
+          # Disable only that package for this disposable run, checking actual state.
+          # No snapshot save, app stop, error-dialog suppression or readiness weakening.
           script: |
             python3 scripts/ci_avd_cache.py verify
             ./scripts/prepare-ci-emulator.sh
-            adb -s "$ANDROID_SERIAL" shell am force-stop --user 0 com.google.android.apps.nexuslauncher
+            ci_launcher_state="$(adb -s "$ANDROID_SERIAL" shell pm disable-user --user 0 com.google.android.apps.nexuslauncher)" && test "$(printf '%s' "$ci_launcher_state" | tr -d '\r')" = "Package com.google.android.apps.nexuslauncher new state: disabled-user"
             nonce="$(python3 -c 'import secrets; print(secrets.token_hex(16))')"; echo "FOCUS_EVIDENCE=app/build/focus-$nonce" >> "$GITHUB_ENV"; adb -s "$ANDROID_SERIAL" shell setprop debug.hermes.focus_attestation "$nonce:emulator-5554:api34-run-scoped-snapshot" && FOCUS_DIAGNOSTIC=true FOCUS_NONCE="$nonce" FOCUS_DISPOSABLE=api34-run-scoped-snapshot python3 scripts/ci_prebuilt.py connected
       - name: Upload instrumented lane evidence
         if: always()
