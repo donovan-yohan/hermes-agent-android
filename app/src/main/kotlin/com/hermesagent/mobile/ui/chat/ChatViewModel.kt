@@ -728,6 +728,7 @@ internal class ChatViewModel(
         val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
         val request: suspend () -> ControlMutationResult)
     private var modelConsent: ModelConsent? = null
+    private val supersededModelConsentEndpoints = linkedMapOf<Long, Long>()
     private val gatewayAdmissionActions = mutableSetOf<com.hermesagent.mobile.data.gateway.GatewayAdmissionKey>()
     /** Latest authoritative partial session.info controls for the active durable session. */
     private var liveComposerControls: SessionComposerControls? = null
@@ -1897,11 +1898,26 @@ internal class ChatViewModel(
     }
 
     fun confirmModelChange(key: Long) {
-        val consent = modelConsent ?: return
-        if (consent.key != key || (composer.value.mutation as? ComposerMutationUiState.ConfirmationRequired)?.key != key) return
+        // Source: apps/desktop/src/lib/guarded-model-switch.ts:73-79
+        // @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd. Generic notice only on the
+        // same endpoint; retired callbacks never expose prior-owner details.
+        fun stale(endpoint: Long?) {
+            if (endpoint != null && endpoint == cache.endpointGeneration.value)
+                noticeLine = "Selection changed — the model switch was not applied."
+        }
+        val consent = modelConsent
+        if (consent == null || consent.key != key) {
+            stale(supersededModelConsentEndpoints.remove(key))
+            return
+        }
         modelConsent = null
-        if (activeSessionId.value != consent.durableId || composerGeneration != consent.composerGeneration ||
-            cache.endpointGeneration.value != consent.endpoint || refuseBotChatMutation() != null) return
+        if ((composer.value.mutation as? ComposerMutationUiState.ConfirmationRequired)?.key != key ||
+            activeSessionId.value != consent.durableId || composerGeneration != consent.composerGeneration ||
+            cache.endpointGeneration.value != consent.endpoint) {
+            stale(consent.endpoint)
+            return
+        }
+        if (refuseBotChatMutation() != null) return
         mutateLiveControls(consent.durableId, consent.update, request = consent.request)
     }
 
@@ -1918,6 +1934,10 @@ internal class ChatViewModel(
         request: suspend () -> ControlMutationResult,
     ) {
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
+        modelConsent?.let { old ->
+            supersededModelConsentEndpoints[old.key] = old.endpoint
+            while (supersededModelConsentEndpoints.size > 8) supersededModelConsentEndpoints.remove(supersededModelConsentEndpoints.keys.first())
+        }
         modelConsent = null
         val before = composer.value
         val generation = composerGeneration

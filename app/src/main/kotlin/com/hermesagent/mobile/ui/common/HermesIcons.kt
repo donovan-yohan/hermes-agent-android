@@ -244,6 +244,14 @@ enum class TablerIcon(vararg paths: String) {
     ),
     Bolt("M13 3l0 7l6 0l-8 11l0 -7l-6 0l8 -11"),
     Check("M5 12l5 5l10 -10"),
+    /** Tabler 3.44.0 IconMessageQuestion, used by apps/desktop/src/components/assistant-ui/clarify/pending.tsx:317
+     * @ 379cf1220fe289b5ecfe8bcf61cd4d5126e140cd; same published MIT path source. */
+    MessageQuestion(
+        "M8 9h8", "M8 13h6",
+        "M14 18h-1l-5 3v-3h-2a3 3 0 0 1 -3 -3v-8a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v4.5",
+        "M19 22v.01",
+        "M19 19a2.003 2.003 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483",
+    ),
 
     ;
 

@@ -144,7 +144,7 @@ class PendingAnswerJourneyTest {
             val discard = frames.single { it["method"] == JsonPrimitive("prompt.resolve_unknown") }.getValue("params").jsonObject
             assertEquals(JsonPrimitive(2), discard["execution_generation"])
             assertEquals(JsonPrimitive("runtime-a"), discard["session_id"])
-            compose.onNodeWithContentDescription("Queued next, 1, expand").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("1 Queued, expand").performScrollTo().performClick()
             compose.onNodeWithText("Delete").performScrollTo().performClick()
             runCurrent()
             compose.waitForIdle()

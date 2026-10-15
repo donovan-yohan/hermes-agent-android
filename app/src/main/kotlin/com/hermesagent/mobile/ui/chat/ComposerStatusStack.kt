@@ -244,8 +244,8 @@ fun ComposerStatusStack(
             }
         status?.gatewayAdmissions?.filter { it.key.status == com.hermesagent.mobile.data.gateway.GatewayAdmissionStatus.Queued }
             ?.takeIf { it.isNotEmpty() }?.let { admissions ->
-                StatusGroup("${activeSessionId}:queued-admissions", "Queued next", defaultExpanded = false,
-                    count = admissions.size, joinedLayout = nextGroupLayout()) {
+                StatusGroup("${activeSessionId}:queued-admissions", "${admissions.size} Queued", defaultExpanded = false,
+                    joinedLayout = nextGroupLayout()) {
                     admissions.forEach { admission ->
                         StatusText(admission.text)
                         TextButton("Delete", onClick = { onResolveGatewayAdmission(admission.key) })

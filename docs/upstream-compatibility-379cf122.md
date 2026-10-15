@@ -117,6 +117,7 @@ not a moving success claim in this page.
 ## Explicit new-feature limits
 
 This slice does not add runtime ensure/migration/drain or private-ticket bootstrap,
+structured settled clarification responses-array renderer (pre-existing gap #380),
 worker register/adopt/persist/ACP policy, new room create/rename/disband/attachments/
 stop/retry/approve controls, native cron/kanban execution extensions, live-voice
 leases/delegation, theme accent/CSS/typography controls, reactions/tours/browser/

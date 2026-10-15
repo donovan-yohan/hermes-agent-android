@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -540,6 +541,7 @@ fun PrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     variant: FilledActionVariant = FilledActionVariant.Accent,
+    loading: Boolean = false,
 ) {
     val tokens = HermesTheme.tokens
     val container = when (variant) {
@@ -558,11 +560,13 @@ fun PrimaryButton(
                 if (enabled) container else container.copy(alpha = 0.3f),
                 RoundedCornerShape(8.dp),
             )
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled && !loading, onClick = onClick)
+            .semantics { if (loading) contentDescription = label }
             .padding(horizontal = 16.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
+        if (loading) CircularProgressIndicator(Modifier.size(16.dp), color = ink, strokeWidth = 2.dp)
+        else Text(
             text = label,
             style = HermesTheme.type.caption,
             color = if (enabled) ink else ink.copy(alpha = 0.6f),

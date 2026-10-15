@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import com.hermesagent.mobile.ui.common.FilledActionVariant
 import com.hermesagent.mobile.ui.common.PrimaryButton
 import com.hermesagent.mobile.ui.common.TextButton
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -31,7 +32,7 @@ internal fun ModelChangeDialog(state: ComposerMutationUiState.ConfirmationRequir
             Text(state.safeMessage.ifBlank { "This model switch needs confirmation." }, style = HermesTheme.type.body, color = tokens.textSecondary)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton("Keep current model", onClick = onDismiss)
-                PrimaryButton("Switch anyway", onClick = onConfirm)
+                PrimaryButton("Switch anyway", onClick = onConfirm, variant = FilledActionVariant.Destructive)
             }
         }
     }

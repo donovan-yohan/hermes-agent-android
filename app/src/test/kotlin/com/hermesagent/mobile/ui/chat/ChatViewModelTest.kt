@@ -626,6 +626,7 @@ class ChatViewModelTest {
         viewModel.confirmModelChange(consent.key + 1)
         runCurrent()
         assertEquals(0, repository.confirmedModels.size)
+        assertNull("an unknown confirmation key has no stale outcome to report", viewModel.uiState.value.notice)
         repository.modelMutation = ControlMutationResult.Applied
         viewModel.confirmModelChange(consent.key)
         viewModel.confirmModelChange(consent.key)
@@ -647,6 +648,29 @@ class ChatViewModelTest {
         viewModel.confirmModelChange(consent.key)
         runCurrent()
         assertTrue(repository.confirmedModels.isEmpty())
+        assertEquals("Selection changed — the model switch was not applied.", viewModel.uiState.value.notice?.text)
+    }
+
+    @Test
+    fun `stale model confirmation never replaces a newer choice or crosses endpoint notice boundary`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        repository.modelMutation = ControlMutationResult.ConfirmationRequired("Confirm this model change.")
+        viewModel.selectModel(ComposerModelSelection("model/guarded", "provider")); runCurrent()
+        val stale = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        repository.modelMutation = ControlMutationResult.Applied
+        viewModel.selectModel(ComposerModelSelection("model/newer", "provider")); runCurrent()
+        viewModel.confirmModelChange(stale.key); runCurrent()
+        assertTrue(repository.confirmedModels.isEmpty())
+        assertEquals("model/newer", viewModel.uiState.value.composer.controls.selection?.model)
+        assertEquals("Selection changed — the model switch was not applied.", viewModel.uiState.value.notice?.text)
+        repository.modelMutation = ControlMutationResult.ConfirmationRequired("Confirm this model change.")
+        viewModel.selectModel(ComposerModelSelection("model/guarded", "provider")); runCurrent()
+        val leftEndpoint = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        cache.resetForEndpointSwitch(); runCurrent()
+        val currentNotice = viewModel.uiState.value.notice
+        viewModel.confirmModelChange(leftEndpoint.key); runCurrent()
+        assertTrue(repository.confirmedModels.isEmpty())
+        assertEquals(currentNotice, viewModel.uiState.value.notice)
     }
 
     @Test
