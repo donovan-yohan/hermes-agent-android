@@ -60,7 +60,15 @@ const val CLARIFY_SINGLE_QUESTION_ID: String = ""
  * [VaultCode] a one-time code, so all three answer in the secure dialog and
  * never reach a notification body.
  */
-enum class PendingInputKind { Clarify, Approval, Sudo, Secret, VaultCode, VaultSaveLogin, VaultUnlock }
+enum class PendingInputKind { Clarify, Approval, Sudo, Secret, VaultCode, VaultSaveLogin, VaultUnlock, Unsupported }
+
+/** Stock named authority-native replies cannot be settled by the public response dispatcher. */
+data class UnsupportedPendingInput(
+    override val key: PendingInputKey,
+    override val durableSessionId: String,
+    override val runtimeSessionId: String,
+    val stopping: Boolean = false,
+) : PendingInputRequest
 
 data class ClarifyQuestion(
     val questionId: String,
@@ -162,6 +170,7 @@ data class VaultUnlockPending(
 
 /** What the user decided for one pending request. */
 sealed interface PendingInputAction {
+    data object StopUnsupported : PendingInputAction
     data class ClarifyAnswer(
         /** Null question id targets single-question mode; batch answers are keyed by qid. */
         val answers: Map<String, String?>,
@@ -214,6 +223,8 @@ sealed interface PendingInputResponse {
      * wrong by default.
      */
     data object PartiallyAnswered : PendingInputResponse
+    /** Owner Stop accepted; retain the card until the backend withdraws the request. */
+    data object Stopping : PendingInputResponse
 
     /**
      * This client cannot answer this request and never will: the connection

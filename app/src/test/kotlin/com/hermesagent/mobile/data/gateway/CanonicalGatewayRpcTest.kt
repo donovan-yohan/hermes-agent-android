@@ -62,6 +62,37 @@ class CanonicalGatewayRpcTest {
     }
 
     @Test
+    fun `stock nonlocal snapshot confirms missing owner through same scoped session info`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.snapshotOwner = null
+        peer.confirmationOwner = "public-owner"
+        val result = peer.rpc.request("session.resume", buildJsonObject {
+            put("profile", "work"); put("session_id", "canonical-public")
+        }).jsonObject
+        assertEquals(JsonPrimitive("public-owner"), result.getValue("info").jsonObject["profile_id"])
+        val confirmation = peer.frames.single { it["method"] == JsonPrimitive("session.info") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("work"), confirmation["profile"])
+        assertEquals(JsonPrimitive("canonical-public"), confirmation["session_id"])
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `scoped roster cannot adopt snapshot without exact serving owner identity`() = runTest {
+        for (reportedOwner in listOf<String?>(null, "public-other-owner")) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            peer.snapshotOwner = reportedOwner
+            assertTrue(runCatching { peer.rpc.request("session.resume", buildJsonObject {
+                put("profile", "work"); put("session_id", "canonical-public")
+            }) }.exceptionOrNull() is GatewayRpcException)
+            assertTrue(runCatching { peer.rpc.request("prompt.submit", buildJsonObject {
+                put("profile", "work"); put("session_id", "canonical-public"); put("text", "Public prompt")
+            }) }.exceptionOrNull() is GatewayRpcException)
+            assertTrue(peer.frames.none { it["method"] == JsonPrimitive("prompt.submit") })
+            peer.rpc.close()
+        }
+    }
+
+    @Test
     fun `owner key survives reconnect only after exact endpoint and owner are reverified`() = runTest {
         val first = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
         val key = first.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
@@ -310,6 +341,8 @@ class CanonicalGatewayRpcTest {
         var submitStatus: String? = null
         var pendingRows = JsonArray(emptyList())
         var snapshotGeneration = 3
+        var snapshotOwner: String? = "public-owner"
+        var confirmationOwner: String? = null
         var requireAttachments = false
         var silenceNextSubmit = false
         var silenceNextMutation = false
@@ -323,6 +356,7 @@ class CanonicalGatewayRpcTest {
                 val method = frame.getValue("method").jsonPrimitive.content
                 val params = frame.getValue("params").jsonObject
                 val result = when (method) {
+                    "profiles.list" -> """{"profiles":[{"name":"work","path":"public-owner"}],"bot_mode_protocol":true}"""
                     "runtime.describe" -> """{"instance_id":"public-instance","profile_id":"public-owner","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1","local-cli-create-v1"],"session_create":{"sources":["gui"],"parameters":[]},"skin":{}}"""
                     "session.create" -> {
                         if (params["source"] != JsonPrimitive("gui") || "request_id" !in params || "fast" in params || "reasoning_effort" in params) {
@@ -332,6 +366,7 @@ class CanonicalGatewayRpcTest {
                         created = true
                         snapshot()
                     }
+                    "session.info" -> confirmationOwner?.let { """{"profile_id":"$it","desktop_protocol":"hermes-gateway-v1"}""" } ?: "{}"
                     "session.resume" -> snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
                     "session.list" -> {
                         if (refuseRegistryAfterCreate && created) return false
@@ -409,6 +444,6 @@ class CanonicalGatewayRpcTest {
             rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"error":{"code":$code,"message":"invalid_params","data":{"reason":"invalid_params"}}}""")
         }
         fun ready() = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"session_authority":true,"change_events":true,"heartbeat":true,"replay_epoch":"public-global"}}}""")
-        private fun snapshot(sid: String = "canonical-public") = """{"session_id":"$sid","stored_session_id":"$sid","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work","profile_id":"public-owner","model":"public-model","cwd":"/workspace/public"}}"""
+        private fun snapshot(sid: String = "canonical-public") = """{"session_id":"$sid","stored_session_id":"$sid","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work",${snapshotOwner?.let { "\"profile_id\":\"$it\"," }.orEmpty()}"model":"public-model","cwd":"/workspace/public"}}"""
     }
 }

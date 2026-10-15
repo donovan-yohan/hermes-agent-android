@@ -55,6 +55,7 @@ import com.hermesagent.mobile.data.gateway.PendingInputAction
 import com.hermesagent.mobile.data.gateway.PendingInputRequest
 import com.hermesagent.mobile.data.gateway.SecretPending
 import com.hermesagent.mobile.data.gateway.SudoPending
+import com.hermesagent.mobile.data.gateway.UnsupportedPendingInput
 import com.hermesagent.mobile.data.gateway.VaultCodePending
 import com.hermesagent.mobile.data.gateway.VaultSaveLoginPending
 import com.hermesagent.mobile.data.gateway.VaultUnlockPending
@@ -82,6 +83,11 @@ internal fun PendingInputSurface(
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         when (pending) {
+            is UnsupportedPendingInput -> PendingCard("Reply unavailable",
+                "This request can’t be answered here. Stop this turn to continue.", "Unsupported input recovery") {
+                PrimaryButton("Stop", onClick = { onRespond(PendingInputAction.StopUnsupported) },
+                    enabled = !isSubmitting && !pending.stopping, loading = isSubmitting || pending.stopping)
+            }
             is ClarifyPending -> ClarifyCard(pending, isSubmitting, onRespond)
             is ApprovalPending -> ApprovalCard(pending, isSubmitting, onRespond)
             // Nothing inline: every one of these is answered in
@@ -122,7 +128,7 @@ internal fun PendingInputRequest.isSecurePrompt(): Boolean = when (this) {
     is VaultSaveLoginPending,
     is VaultUnlockPending,
     -> true
-    is ClarifyPending, is ApprovalPending -> false
+    is ClarifyPending, is ApprovalPending, is UnsupportedPendingInput -> false
 }
 
 @Composable
@@ -608,7 +614,7 @@ internal fun securePrompt(pending: PendingInputRequest): SecurePrompt? = when (p
         answer = { _, value -> PendingInputAction.VaultCode(value) },
     )
 
-    is ClarifyPending, is ApprovalPending -> null
+    is ClarifyPending, is ApprovalPending, is UnsupportedPendingInput -> null
 }
 
 /** The characters of a field, out of Compose's [String] state and into one array. */

@@ -74,16 +74,14 @@ internal class ProfileGatewayRpcClient(
         val primaryOwner = primaryDescription.text("profile_id") ?: throw GatewayRpcException("The Gateway did not identify its owner.")
         // Rebind a retained opaque key only after this endpoint has confirmed
         // the captured profile again. Never put the opaque key on the wire.
-        val explicitDescription = explicit?.let { route ->
-            send(primary, "runtime.describe", buildJsonObject { put("profile", route) }, dispatch) as? JsonObject
-                ?: throw GatewayRpcException("The Gateway returned an unusable owner description.")
+        suspend fun confirm(profile: String): String {
+            send(primary, "profiles.list", buildJsonObject { put("profile", profile); put("include_sessions", false) }, dispatch)
+            return identity.ownerId(profile) ?: throw GatewayRpcException("The Gateway did not identify its owner.")
         }
+        explicit?.let { confirm(it) }
         val address = id?.let { identity.address(it, explicit) }
         val profile = address?.profile ?: explicit ?: return Leg(primary, null)
-        val described = if (explicit == profile && explicitDescription != null) explicitDescription else
-            send(primary, "runtime.describe", buildJsonObject { put("profile", profile) }, dispatch) as? JsonObject
-                ?: throw GatewayRpcException("The Gateway returned an unusable owner description.")
-        val owner = described.text("profile_id") ?: throw GatewayRpcException("The Gateway did not identify its owner.")
+        val owner = confirm(profile)
         if (owner == primaryOwner) return Leg(primary, null)
         return ownerLocks.withLock(owner) {
             synchronized(lock) { children[owner] }?.let { return@withLock it }
@@ -98,8 +96,8 @@ internal class ProfileGatewayRpcClient(
                         ?: throw GatewayRpcException("This Gateway cannot open an owner channel.")
                     authority.bindSessionOwner(profile, identity)
                     send(child, "session.list", buildJsonObject { put("profile", profile); put("limit", 1) }, dispatch)
-                    val confirmed = send(child, "runtime.describe", buildJsonObject { put("profile", profile) }, dispatch) as? JsonObject
-                    if (confirmed?.text("profile_id") != owner) throw GatewayRpcException("The Gateway returned another profile owner.")
+                    send(child, "profiles.list", buildJsonObject { put("profile", profile); put("include_sessions", false) }, dispatch)
+                    if (identity.ownerId(profile) != owner) throw GatewayRpcException("The Gateway returned another profile owner.")
                     child.advertiseServerRequests()
                     val leg = Leg(child, profile)
                     synchronized(lock) { ensureOpen(); children[owner] = leg }
@@ -166,6 +164,9 @@ internal class ProfileGatewayRpcClient(
         val key = RequestOrigin(runtimeId, id)
         val client = synchronized(lock) { ensureOpen(); origins[key] }
             ?: throw GatewayRpcException("This request is no longer answerable on its owner channel.")
+        if (client !== primary && authoritySessionIdentity != null) {
+            throw GatewayRpcException("This Gateway cannot accept this reply for another profile. Stop the turn to continue.")
+        }
         if (client is GatewayOwnedServerRequestResponder) client.respondToServerRequestAtOwner(runtimeId, id, result, dispatch)
         else throw GatewayRpcException("This request cannot be answered on its owner channel.")
         synchronized(lock) { origins.remove(key) }
@@ -175,6 +176,9 @@ internal class ProfileGatewayRpcClient(
         val key = RequestOrigin(runtimeId, id)
         val client = synchronized(lock) { ensureOpen(); origins[key] }
             ?: throw GatewayRpcException("This request is no longer answerable on its owner channel.")
+        if (client !== primary && authoritySessionIdentity != null) {
+            throw GatewayRpcException("This Gateway cannot accept this reply for another profile. Stop the turn to continue.")
+        }
         if (client is GatewayOwnedServerRequestResponder) client.failServerRequestAtOwner(runtimeId, id, code, message, dispatch)
         else throw GatewayRpcException("This request cannot be answered on its owner channel.")
         synchronized(lock) { origins.remove(key) }

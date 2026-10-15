@@ -31,6 +31,7 @@ class CanonicalExecutionFramesTest {
                 val first = epoch.getValue("frames").jsonArray.first().jsonObject.getValue("params").jsonObject
                 val params = call.getValue("params").jsonObject
                 val result = when (call.getValue("method").jsonPrimitive.content) {
+                    "profiles.list" -> buildJsonObject { put("profiles", JsonArray(listOf(buildJsonObject { put("name", "work"); put("path", "p") }))); put("bot_mode_protocol", true) }
                     "runtime.describe" -> buildJsonObject {
                         put("instance_id", "public-instance"); put("profile_id", "p"); put("authority_epoch", epoch.getValue("authority_epoch"))
                         put("capabilities", JsonArray(listOf(JsonPrimitive("durable-admission-v1"), JsonPrimitive("event-replay-v1"))))

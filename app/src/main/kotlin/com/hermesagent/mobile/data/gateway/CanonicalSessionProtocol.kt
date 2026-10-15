@@ -25,7 +25,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         val lastSequence: Long, val subscriptionId: String, val storedId: String, val authorityEpoch: Long, val retiredEpochs: Set<String> = emptySet())
     private val stateLock = Any()
     private val descriptorLocks = KeyedMutex<String>()
-    private val descriptors = mutableMapOf<String, JsonObject>()
+    private data class ConfirmedOwner(val ownerId: String, val rootDescriptor: JsonObject? = null)
+    private val descriptors = mutableMapOf<String, ConfirmedOwner>()
     private val snapshots = mutableMapOf<Owner, Snapshot>()
     private data class MutationKey(val owner: Owner, val operation: String, val payload: JsonObject)
     private data class ModelConfirmation(val token: String, var sent: Boolean = false)
@@ -57,6 +58,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         }
         val input = if (bound == null) supplied else JsonObject(supplied + ("profile" to JsonPrimitive(bound)))
         if (!announced) return send(method, input)
+        if (method == "runtime.describe" && input.text("profile") != null) return send(method, input)
         ensureOwner(input.text("profile"), send)
         val address = input.text("session_id")?.let { sessionIdentity.address(it, input.text("profile")) }
         val params = if (address != null) buildJsonObject {
@@ -66,7 +68,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         } else input
         val profile = params.text("profile").orEmpty()
         ensureOwner(params.text("profile"), send)
-        if (method == "runtime.describe") return synchronized(stateLock) { descriptors.getValue(profile) }
+        if (method == "runtime.describe") return synchronized(stateLock) { descriptors.getValue(profile).rootDescriptor ?: unusable() }
         mutation(method, params)?.let { (operation, payload) ->
             return executeMutation(method, params, operation, payload, send)
         }
@@ -74,7 +76,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             "session.create" -> {
                 val prepared = prepareCreate(params)
                 val result = send(method, prepared).objectResult()
-                val projected = snapshot(result, profile, requireDisplay = false)
+                val projected = snapshot(result, profile, requireDisplay = false, send = send)
                 synchronized(stateLock) { creates.entries.removeAll { it.value == prepared.text("request_id") } }
                 projected
             }
@@ -84,7 +86,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     params["profile"]?.let { put("profile", it) }
                     put("display_projection", true)
                 }
-                val result = snapshot(send("session.resume", prepared).objectResult(), profile, requireDisplay = true)
+                val result = snapshot(send("session.resume", prepared).objectResult(), profile, requireDisplay = true, send = send)
                 if (method == "session.history") buildJsonObject {
                     put("messages", result.getValue("messages")); put("count", result.getValue("message_count"))
                 } else result
@@ -304,13 +306,13 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     params["profile"]?.let { put("profile", it) }
                 }).objectResult()
                 if (raw.text("session_id") != child || raw.text("stored_session_id") != child) uncertain()
-                val resumed = snapshot(raw, owner.profile, requireDisplay = true)
+                val resumed = snapshot(raw, params.text("profile").orEmpty(), requireDisplay = true, send = send)
                 synchronized(stateLock) { mutations.remove(key) }
                 JsonObject(result + resumed)
             } else if (operation == "compress" && value.text("status") != "preview") {
                 val resumed = snapshot(send("session.resume", buildJsonObject {
                     put("session_id", sid); put("display_projection", true); params["profile"]?.let { put("profile", it) }
-                }).objectResult(), owner.profile, requireDisplay = true)
+                }).objectResult(), params.text("profile").orEmpty(), requireDisplay = true, send = send)
                 JsonObject(result + mapOf("messages" to resumed.getValue("messages"), "info" to resumed.getValue("info")))
             } else result
         }
@@ -319,15 +321,26 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private suspend fun ensureOwner(route: String?, send: suspend (String, JsonObject) -> JsonElement) {
         val profile = route.orEmpty()
         descriptorLocks.withLock(profile) {
-            if (synchronized(stateLock) { profile !in descriptors }) {
-                val description = send("runtime.describe", buildJsonObject {
-                    route?.let { put("profile", it) }
-                }) as? JsonObject ?: unusable()
+            if (synchronized(stateLock) { profile in descriptors }) return@withLock
+            if (route == null) {
+                val description = send("runtime.describe", JsonObject(emptyMap())) as? JsonObject ?: unusable()
                 val capabilities = (description["capabilities"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.content }.orEmpty()
                 val owner = description.text("profile_id")?.takeIf(String::isNotBlank) ?: unusable()
                 if ("durable-admission-v1" !in capabilities || "event-replay-v1" !in capabilities) unusable()
-                sessionIdentity.bind(route, owner, description.text("profile_name"))
-                synchronized(stateLock) { descriptors[profile] = description }
+                sessionIdentity.bind(null, owner, description.text("profile_name"))
+                synchronized(stateLock) { descriptors[profile] = ConfirmedOwner(owner, description) }
+            } else {
+                ensureOwner(null, send)
+                // Stock serving-owner roster row precedes discovery-only rows. This public scoped
+                // method validates the routed authority/home; snapshots independently confirm it.
+                // gateway/session_group_controls.py:43-75,256-266,338-348 @ 046094df28b712f62a5e3c728a9e59da05dcbf1e.
+                val roster = send("profiles.list", buildJsonObject {
+                    put("profile", route); put("include_sessions", false)
+                }) as? JsonObject ?: unusable()
+                val serving = (roster["profiles"] as? JsonArray)?.firstOrNull() as? JsonObject ?: unusable()
+                val owner = serving.text("path")?.takeIf(String::isNotBlank) ?: unusable()
+                sessionIdentity.bind(route, owner, serving.text("name"))
+                synchronized(stateLock) { descriptors[profile] = ConfirmedOwner(owner) }
             }
         }
     }
@@ -353,10 +366,20 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         }
     }
 
-    private fun snapshot(value: JsonObject, profile: String, requireDisplay: Boolean): JsonObject {
+    private suspend fun snapshot(value: JsonObject, profile: String, requireDisplay: Boolean,
+        send: suspend (String, JsonObject) -> JsonElement): JsonObject {
         val sid = value.text("session_id")?.takeIf(String::isNotBlank) ?: unusable()
         val stored = value.text("stored_session_id")?.takeIf(String::isNotBlank) ?: unusable()
-        val info = value["info"] as? JsonObject ?: unusable()
+        val suppliedInfo = value["info"] as? JsonObject ?: unusable()
+        // Stock non-local resume omits owner metadata; confirm it through the same routed
+        // canonical session.info before projection. No discovered or launch-owner fallback.
+        // gateway/session_controls.py:358-363,455-472 @ 046094df28b712f62a5e3c728a9e59da05dcbf1e.
+        val info = if (suppliedInfo.text("profile_id") == null) {
+            val confirmed = send("session.info", buildJsonObject {
+                put("session_id", sid); profile.takeIf(String::isNotEmpty)?.let { put("profile", it) }
+            }).objectResult()
+            JsonObject(suppliedInfo + confirmed)
+        } else suppliedInfo
         if (info.text("desktop_protocol") != "hermes-gateway-v1") unusable()
         val revision = value.number("revision")?.takeIf { it >= 0 } ?: unusable()
         val generation = value.number("execution_generation")?.takeIf { it >= 0 } ?: unusable()
@@ -368,8 +391,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             ?.takeIf { !requireDisplay && it.isEmpty() } ?: unusable()
         val route = profile.takeIf(String::isNotEmpty)
         val actual = info.text("profile_name")
-        val ownerId = synchronized(stateLock) { descriptors.getValue(profile).text("profile_id") } ?: unusable()
-        if (info.text("profile_id")?.let { it != ownerId } == true) unusable()
+        val ownerId = synchronized(stateLock) { descriptors.getValue(profile).ownerId }
+        if (info.text("profile_id") != ownerId) unusable()
         sessionIdentity.bind(route, ownerId, actual)
         synchronized(stateLock) {
             val key = owner(profile, sid)
@@ -402,7 +425,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         val currentPending = synchronized(stateLock) { pendingAdmissions[owner(profile, sid)] ?: JsonArray(emptyList()) }
         val currentPrompts = synchronized(stateLock) { JsonArray(prompts.filterKeys { it.first == owner(profile, sid) }.values.toList()) }
         val currentInfo = mapOf("execution_generation" to JsonPrimitive(current.generation), "last_sequence" to JsonPrimitive(sequence))
-        return JsonObject(sessionIdentity.projectRow(value, route) + currentInfo + mapOf(
+        return JsonObject(sessionIdentity.projectRow(JsonObject(value + ("info" to info)), route) + currentInfo + mapOf(
             "revision" to JsonPrimitive(current.revision), "prompts" to currentPrompts, "pending" to currentPending,
             "messages" to messages,
             "session_key" to JsonPrimitive(sessionIdentity.qualify(stored, route, actual)),
@@ -413,8 +436,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     }
 
     private fun owner(profile: String, sid: String): Owner = synchronized(stateLock) {
-        val confirmed = descriptors[profile]?.text("profile_id") ?: unusable()
-        val route = descriptors.entries.first { it.value.text("profile_id") == confirmed }.key
+        val confirmed = descriptors[profile]?.ownerId ?: unusable()
+        val route = descriptors.entries.first { it.value.ownerId == confirmed }.key
         Owner(route, sid)
     }
 
@@ -422,7 +445,9 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         if (!announced || request.runtimeSessionId == null) return request
         val route = fixedProfile
         if (sessionIdentity.ownerId(route) == null) return request.copy(authorityNative = true)
-        return request.copy(runtimeSessionId = sessionIdentity.qualify(request.runtimeSessionId, route), authorityNative = true)
+        val generation = synchronized(stateLock) { snapshots[owner(route.orEmpty(), request.runtimeSessionId)]?.generation }
+        return request.copy(runtimeSessionId = sessionIdentity.qualify(request.runtimeSessionId, route), authorityNative = true,
+            executionGeneration = generation)
     }
 
     /** Applies per-owner execution/replay fences before any consumer sees a frame. */
@@ -479,7 +504,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         fun uncertain(): Nothing = throw GatewayRpcException("The Gateway returned an unusable admission receipt.", requestMayHaveBeenAccepted = true)
         val value = raw as? JsonObject ?: uncertain()
         val ref = value["ref"] as? JsonObject ?: uncertain()
-        val ownerId = synchronized(stateLock) { descriptors.getValue(owner.profile).text("profile_id") }
+        val ownerId = synchronized(stateLock) { descriptors.getValue(owner.profile).ownerId }
         if (ref.text("session_id") != owner.sessionId || ref.text("profile_id") != ownerId ||
             value.text("admission_id").isNullOrBlank() || value.number("sequence")?.let { it >= 0 } != true ||
             value.text("status") !in setOf("queued", "started", "unknown", "terminal")) uncertain()
@@ -511,7 +536,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         }
         return JsonObject(value + buildJsonObject {
             if ("text" in params) put("pending", synchronized(stateLock) { pendingAdmissions[owner] ?: JsonArray(emptyList()) })
-            put("session_id", sessionIdentity.qualify(owner.sessionId, owner.profile.takeIf(String::isNotEmpty)))
+            put("session_id", sessionIdentity.qualify(owner.sessionId, params.text("profile") ?: owner.profile.takeIf(String::isNotEmpty)))
             (params["submission_id"] ?: params["input_id"])?.let { put("submission_id", it) }
         })
     }

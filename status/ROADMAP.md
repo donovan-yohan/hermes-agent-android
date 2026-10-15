@@ -23,26 +23,27 @@ limitations, and likely next slices behind that table.
 
 ### Backend target and acceptance boundary (2026-10-15)
 
-Existing-feature compatibility work targets Hermes Agent base
-`046094df28b712f62a5e3c728a9e59da05dcbf1e` plus bounded owner repair
-`3fd44a954fb70a83ce3819aff96603babc625eaa` in
-[upstream draft PR #139382](https://github.com/NousResearch/hermes-agent/pull/139382).
-[The current matrix](../docs/upstream-compatibility-046094df.md) records exact
-source dependencies, typed live completion, closed capability/root routing,
-retained consumers and unsupported optional additions. Historical UI/theme/report
-pins remain unchanged.
+Existing-feature compatibility work targets unmodified Hermes Agent
+`046094df28b712f62a5e3c728a9e59da05dcbf1e`.
+[The current matrix](../docs/upstream-compatibility-046094df.md) records owner
+confirmation, typed live completion, closed capability/root routing and unsupported
+optional additions. Historical UI/theme/report pins remain unchanged.
 
-Vanilla046 remains broken for public named-profile native settlement and descriptor
-routing. Isolated actual public HTTP/WS/native-waiter/admission and combined
-production Android handler checks pass against the exact repair, using synthetic
-auth and inert runners. No installed backend or real provider was touched.
-Upstream maintainer review/merge remains a dependency; patched GREEN does not
-certify upstream main. Independent exact-head Android review, required CI and
-merged-main APK verification remain separate release gates.
+Named-profile canonical approval and clarification remain supported. Stock public
+native sudo, secret, native CLI batch and bridge requests from a different authority
+cannot be answered safely through the public socket. Android shows **Reply
+unavailable** with **Stop**: the captured owner turn is interrupted, and the card
+remains until backend withdrawal. A next send requires terminal backend/client
+state. Launch-authority native inputs, including aliases of that same owner, retain
+their existing reply path. No backend patch, private bootstrap or maintainer merge
+is required. Earlier repaired-backend positives are historical only; that upstream
+contribution was closed. Exact-head review, required CI and merged-main APK
+verification remain separate delivery gates.
 
-Rendered acceptance for changed clarification, model-consent and admission
-controls is [pending: #378](https://github.com/donovan-yohan/hermes-agent-android/issues/378).
-JVM/Robolectric evidence does not close that visual or physical acceptance gap.
+Existing visual debt [#378](https://github.com/donovan-yohan/hermes-agent-android/issues/378)
+and [#380](https://github.com/donovan-yohan/hermes-agent-android/issues/380) retains
+its recorded scope; unrelated visual debt does not gate this stock compatibility
+correction. Physical acceptance remains separate.
 Optional upstream runtime management, private-ticket bootstrap, new room
 controls, native cron/worker/ACP management, live-voice leases and expanded
 Skills/MCP management remain outside this existing-feature slice.

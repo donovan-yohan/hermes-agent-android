@@ -115,6 +115,7 @@ internal data class GatewayServerRequest(
     val runtimeSessionId: String?,
     val params: JsonObject,
     val authorityNative: Boolean = false,
+    val executionGeneration: Long? = null,
 )
 
 /**

@@ -91,6 +91,7 @@ class PendingAnswerJourneyTest {
                     }
                     val result = when (method) {
                         "session.list" -> """{"sessions":[]}"""
+                        "profiles.list" -> """{"profiles":[{"name":"work","path":"public-owner"}],"bot_mode_protocol":true}"""
                         "runtime.describe" -> """{"instance_id":"public-instance","profile_id":"public-owner","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1"]}"""
                         "prompt.resolve_unknown", "prompt.cancel" -> {
                             val lost = method == "prompt.resolve_unknown"

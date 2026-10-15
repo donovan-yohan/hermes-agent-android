@@ -165,3 +165,18 @@ paint measurements retain their static-arc limit. Historical ordinary UI/theme
 and report pins remain unchanged. Any documentation-only child carries these
 observations only through exact source/test/configuration equivalence; the
 rendered report remains pinned to C.
+
+## Stock046 native limitation recovery
+
+Unmodified `046094df28b712f62a5e3c728a9e59da05dcbf1e` authorizes public native
+id-only replies against the launch authority (`gateway/session_controls.py:581-592`).
+Other-owner native requests therefore have an explicit limitation; canonical named
+approval/clarification and launch-owner native replies remain supported.
+
+| Desktop | Class | Android | Evidence |
+|---|---|---|---|
+| No equivalent safe public native reply for another authority | mobile-adaptation | Reply unavailable; This request can’t be answered here. Stop this turn to continue.; Stop. Captured owner/generation control retains card until backend withdrawal | [Actual stock limitation/Stop report](visual/stock-native-input/report.html), original PNG and source receipt. Actual handler cancels beta while equal-ID alpha stays parked, then next beta send completes. This scoped card evidence does not restamp historical Desktop reports or certify the aggregate network run. |
+
+The existing visual report above remains pinned to C. This minimal additional
+card reuses existing native tokens/control and records its own original capture;
+no new global visual gate, Desktop parity, physical IME or accessibility claim.

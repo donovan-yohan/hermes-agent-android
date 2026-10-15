@@ -56,9 +56,9 @@ class ProfileGatewayRpcTest {
         assertTrue(runCatching { client.respondToServerRequestAtOwner(alpha, "srq-public", buildJsonObject { put("value", "public alpha answer") }) { false } }.exceptionOrNull() is GatewayRpcException)
         assertTrue(primary.frames.none { "result" in it })
         client.respondToServerRequestAtOwner(alpha, "srq-public", buildJsonObject { put("value", "public alpha answer") }) { send -> send() }
-        client.respondToServerRequestAtOwner(betaKey, "srq-public", buildJsonObject { put("value", "public beta answer") }) { send -> send() }
+        assertTrue(runCatching { client.respondToServerRequestAtOwner(betaKey, "srq-public", buildJsonObject { put("value", "public beta answer") }) { send -> send() } }.exceptionOrNull() is GatewayRpcException)
         assertEquals("public alpha answer", primary.frames.single { "result" in it }.getValue("result").jsonObject.getValue("value").jsonPrimitive.content)
-        assertEquals("public beta answer", beta.frames.single { "result" in it }.getValue("result").jsonObject.getValue("value").jsonPrimitive.content)
+        assertTrue("stock named native reply must not be sent", beta.frames.none { "result" in it })
         client.close()
         assertEquals(1, primary.closeCount)
         assertEquals(1, beta.closeCount)
@@ -107,6 +107,39 @@ class ProfileGatewayRpcTest {
         client.close()
     }
 
+    @Test
+    fun `stock named native input refuses answers and recovers only through captured owner Stop`() = runTest {
+        val primary = Peer("alpha", UnconfinedTestDispatcher(testScheduler))
+        val beta = Peer("beta", UnconfinedTestDispatcher(testScheduler))
+        val graph = ProfileGatewayRpcClient(primary.rpc, backgroundScope) { beta.rpc }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(graph), backgroundScope)
+        runCurrent()
+        repository.openSession("same", "beta")
+        beta.askSecret()
+        runCurrent()
+        val pending = repository.pendingInputs.value.values.single()
+        assertTrue(pending is UnsupportedPendingInput)
+        val secret = "public synthetic value".toCharArray()
+        assertEquals(PendingInputResponse.Unanswerable,
+            repository.respondToPendingInput(pending.key, PendingInputAction.SecretValue(secret)))
+        assertTrue(secret.all { it == '\u0000' })
+        assertTrue(beta.frames.none { "result" in it })
+        assertEquals(PendingInputResponse.Stopping,
+            repository.respondToPendingInput(pending.key, PendingInputAction.StopUnsupported))
+        assertTrue(repository.pendingInputs.value.values.single() is UnsupportedPendingInput)
+        assertEquals(PendingInputResponse.Stopping,
+            repository.respondToPendingInput(pending.key, PendingInputAction.StopUnsupported))
+        assertEquals(1, beta.frames.count { it["method"] == JsonPrimitive("session.interrupt") })
+        val control = beta.frames.single { it["method"] == JsonPrimitive("session.interrupt") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("beta"), control["profile"])
+        assertEquals(JsonPrimitive(3), control["execution_generation"])
+        assertTrue(primary.frames.none { it["method"] == JsonPrimitive("session.interrupt") })
+        graph.close()
+    }
+
     private fun params(profile: String) = buildJsonObject { put("profile", profile); put("session_id", "same") }
 
     private class Peer(private val owner: String, dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
@@ -119,8 +152,13 @@ class ProfileGatewayRpcTest {
                 if ("method" !in frame) return true
                 val params = frame.getValue("params").jsonObject
                 val profile = params["profile"]?.jsonPrimitive?.content ?: owner
+                if (frame["method"] == JsonPrimitive("runtime.describe") && params.isNotEmpty()) {
+                    rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"error":{"code":-32602,"message":"invalid_params","data":{"reason":"invalid_params","fields":["profile"]}}}""")
+                    return true
+                }
                 val result = when (frame.getValue("method").jsonPrimitive.content) {
-                    "runtime.describe" -> """{"instance_id":"public-instance","profile_id":"public-owner-$profile","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1","local-cli-create-v1"],"skin":{}}"""
+                    "profiles.list" -> """{"profiles":[{"name":"$profile","path":"public-owner-$profile"}],"bot_mode_protocol":true}"""
+                    "runtime.describe" -> """{"instance_id":"public-instance","profile_id":"public-owner-alpha","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1","local-cli-create-v1"],"skin":{}}"""
                     "session.resume" -> """{"session_id":"same","stored_session_id":"same","messages":[],"display_messages":[],"message_count":0,"running":false,"authority_epoch":2,"replay_epoch":"public-epoch-$profile","last_sequence":0,"subscription_id":"public-sub-$profile","revision":7,"execution_generation":3,"pending":[],"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"$profile","profile_id":"public-owner-$profile"}}"""
                     "session.list" -> """{"sessions":[],"scope":"live"}"""
                     else -> "{}"

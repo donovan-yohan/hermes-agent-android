@@ -177,6 +177,7 @@ internal suspend fun answerFromShade(
         // A batch lock that still owes questions leaves the notification alone:
         // the request is still parked and still answerable from the shade.
         PendingInputResponse.PartiallyAnswered,
+        PendingInputResponse.Stopping,
         PendingInputResponse.Retryable,
         PendingInputResponse.Unanswerable,
         ->
@@ -210,6 +211,7 @@ internal suspend fun respondFromShade(
         // because keeping a still-parked prompt visible is the safe reading of
         // any outcome this branch does not otherwise know.)
         PendingInputResponse.PartiallyAnswered,
+        PendingInputResponse.Stopping,
         PendingInputResponse.Retryable,
         PendingInputResponse.Unanswerable,
         ->

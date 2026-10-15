@@ -8,36 +8,39 @@ the checkout was neither modified nor fetched.
 
 ## Current backend compatibility target
 
-Existing Gateway consumers now adapt to `NousResearch/hermes-agent` at
-base `046094df28b712f62a5e3c728a9e59da05dcbf1e` plus required owner repair
-`3fd44a954fb70a83ce3819aff96603babc625eaa`. This is a frozen backend dependency,
-not a new visual pin or a full compatibility/release acceptance claim. See
-[the current compatibility matrix and maintainer dependency](upstream-compatibility-046094df.md).
-The original authorities above and existing per-surface evidence retain their
-historical scope.
+Existing Gateway consumers adapt to unmodified `NousResearch/hermes-agent` at
+`046094df28b712f62a5e3c728a9e59da05dcbf1e`. See
+[the current compatibility matrix](upstream-compatibility-046094df.md).
+The original authorities above and per-surface evidence retain their historical
+scope. No backend contribution or maintainer merge is a delivery prerequisite.
 
 An authenticated `gateway.ready` advertising `session_authority:true` selects
-the canonical adapter; `runtime.describe` confirms the owner/capabilities.
-Legacy sockets retain their existing contracts. Canonical creates use `gui`
-and stable request IDs; resume snapshots supply display history, revision,
-execution generation, replay epoch, subscription, prompts and admissions.
-Runtime/durable cache IDs are opaque projections of endpoint namespace,
-confirmed owner and raw backend ID. REST and RPC unwrap only within that
-owner; matching raw IDs in different profiles never share cached truth.
+the canonical adapter. The empty-parameter root `runtime.describe` confirms the
+launch owner/capabilities. A scoped public `profiles.list` response supplies the
+serving authority's first row as provisional route identity; discovered siblings
+are not authorization. The canonical resume snapshot must match `info.profile_id`
+before session state is adopted. Non-local snapshots omitting it require an actual
+same-profile/session canonical `session.info` confirmation first. Named `runtime.describe` remains a stock closed-
+schema error; Android does not fabricate a descriptor or fall back to another owner.
+Legacy sockets retain their contracts. Canonical creates use `gui` and stable
+request IDs; resume snapshots supply display history, revision, execution
+generation, replay epoch, subscription, prompts and admissions. Runtime/durable
+cache IDs are opaque projections of endpoint namespace, confirmed owner and raw
+backend ID. REST and RPC unwrap only within that owner; equal raw IDs in different
+profiles never share cached truth.
 
-Lazy profile channels isolate client event/native-request provenance and
-attach each owner/session on one channel. Remote children use fresh public
-tickets; Local and Managed SSH use their existing authenticated endpoint.
-Graph teardown cancels child dials and closes every leg. Client provenance alone
-does not authorize server native replies. Vanilla046 still authorizes id-only
-responses against the launch authority; required owner repair captures the actual
-serving authority/live session/epoch/generation and resolves through existing
-verified host grants plus session:respond. Real public-path regression and combined
-Android-handler settlement checks pass on that repair, including terminal
-admissions and subsequent sends. Upstream maintainer merge remains pending in
-[PR #139382](https://github.com/NousResearch/hermes-agent/pull/139382).
-Canonical approval.respond/clarify.respond retain profile routing. No private
-control ticket discovery or installed backend update is introduced.
+Lazy profile channels isolate client event/native-request provenance and attach
+each owner/session once. Remote children use fresh public tickets; Local and
+Managed SSH use their existing authenticated endpoint. Graph teardown cancels
+child dials and closes every leg. Stock public native id-only responses authorize
+against the launch authority. Android therefore refuses answers for a different
+owner, exposes a truthful limitation and offers the existing generation-fenced
+owner `session.interrupt` control through **Stop**. The request stays visible
+while stopping until backend cancellation/terminal state arrives. No optimistic
+answer/removal, private ticket bootstrap or backend update is introduced. Native
+inputs on the actual launch owner remain supported, including named aliases of
+that owner. Canonical approval.respond/clarify.respond retain profile routing.
+Historical repaired-backend evidence does not certify stock settlement.
 
 Canonical submits carry logical input IDs and explicit staged image attachments.
 Queue retries retain logical identity. Unknown accepted work is never replayed

@@ -1,0 +1,8 @@
+{
+  "source": "kani-stock046/stock-green-1",
+  "upstream": "046094df28b712f62a5e3c728a9e59da05dcbf1e",
+  "captureSha256": "c868efda23abe314691d6a86e4f6eda939555d7d5aae375bf4a533288d76c9d1",
+  "surface": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/PendingInputSurface.kt",
+  "surfaceSha256": "dd293fbadbb0ba4e17fd4ce8eaf7c5857d9a095fa1d6c45f9ebbe414912c41b7",
+  "scope": "actual limitation card and app Stop path only; aggregate run1 failed later retry assertion; later owner confirmation changes do not alter this surface"
+}

@@ -23,6 +23,7 @@ class LiveTimelineCompletionTest {
             override fun send(text: String): Boolean {
                 val call = Json.parseToJsonElement(text).jsonObject
                 val result = when (call.getValue("method").jsonPrimitive.content) {
+                    "profiles.list" -> Json.parseToJsonElement("""{"profiles":[{"name":"work","path":"synthetic-owner"}],"bot_mode_protocol":true}""")
                     "runtime.describe" -> Json.parseToJsonElement("""{"instance_id":"synthetic-instance","profile_id":"synthetic-owner","authority_epoch":1,"capabilities":["durable-admission-v1","event-replay-v1"]}""")
                     "session.resume" -> buildJsonObject {
                         put("session_id", "synthetic-session"); put("stored_session_id", "synthetic-session")

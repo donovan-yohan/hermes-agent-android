@@ -3879,13 +3879,15 @@ internal class ChatViewModel(
                 if (pendingResponseUi.value?.key == key) {
                     pendingResponseUi.value = when (result) {
                         com.hermesagent.mobile.data.gateway.PendingInputResponse.Retryable ->
-                            PendingResponseUi(key, false, "Could not send clarify response")
+                            PendingResponseUi(key, false, if (pending is com.hermesagent.mobile.data.gateway.UnsupportedPendingInput)
+                                "Could not stop this turn. Try again." else "Could not send clarify response")
                         else -> null
                     }
                 }
             } catch (failure: Throwable) {
                 if (pendingResponseUi.value?.key == key) {
-                    pendingResponseUi.value = PendingResponseUi(key, false, "Could not send clarify response")
+                    pendingResponseUi.value = PendingResponseUi(key, false, if (pending is com.hermesagent.mobile.data.gateway.UnsupportedPendingInput)
+                                "Could not stop this turn. Try again." else "Could not send clarify response")
                 }
                 if (failure is CancellationException) throw failure
             } finally {

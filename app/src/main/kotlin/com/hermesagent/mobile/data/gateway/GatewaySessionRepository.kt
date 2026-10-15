@@ -1294,6 +1294,7 @@ internal class LiveGatewaySessionRepository(
                                             method = request.method,
                                             params = request.params,
                                             origin = if (request.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native,
+                                            executionGeneration = request.executionGeneration,
                                         )
                                     } else null
                                 }
@@ -1545,7 +1546,7 @@ internal class LiveGatewaySessionRepository(
     ): SessionLegPage {
         val authorityIdentity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
         if (authorityIdentity != null) {
-            connection.client.request("runtime.describe", buildJsonObject {
+            connection.client.request("profiles.list", buildJsonObject {
                 profile?.let { put("profile", JsonPrimitive(it)) }
             })
             synchronized(stateLock) { ensureCurrent(connection) }
@@ -1973,7 +1974,7 @@ internal class LiveGatewaySessionRepository(
         }
         if (isCapabilityUnsupported(GatewayOptionalCapability.SearchSessionsRest, connection)) return null
         if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
-            connection.client.request("runtime.describe", buildJsonObject { profile?.let { put("profile", JsonPrimitive(it)) } })
+            connection.client.request("profiles.list", buildJsonObject { profile?.let { put("profile", JsonPrimitive(it)) } })
             synchronized(stateLock) { ensureCurrent(connection) }
         }
         return when (val result = rest.searchSessions(query, profile = profile)) {
@@ -3650,6 +3651,27 @@ internal class LiveGatewaySessionRepository(
             // (`store/server-requests.ts:5-12` @ the pin) — and the generation
             // fence above is what stops a request from a leg this app has left
             // being answered on the replacement.
+            if (request is UnsupportedPendingInput) {
+                if (action != PendingInputAction.StopUnsupported) return PendingInputResponse.Unanswerable
+                if (request.stopping) return PendingInputResponse.Stopping
+                val generation = key.executionGeneration ?: return PendingInputResponse.Unanswerable
+                return try {
+                    requestAtEndpointDispatch(connection, connection.endpointGeneration, "session.interrupt", buildJsonObject {
+                        put("session_id", JsonPrimitive(request.runtimeSessionId))
+                        put("execution_generation", JsonPrimitive(generation))
+                    })
+                    synchronized(stateLock) {
+                        ensureCurrent(connection)
+                        if (mutablePendingInputs.value[key] === request) {
+                            mutablePendingInputs.value = mutablePendingInputs.value + (key to request.copy(stopping = true))
+                        }
+                    }
+                    PendingInputResponse.Stopping
+                } catch (failure: Throwable) {
+                    if (failure is CancellationException) throw failure
+                    PendingInputResponse.Retryable
+                }
+            }
             if (key.origin == PendingInputOrigin.Canonical) {
                 return answerCanonicalPrompt(connection, request, action)
             }
@@ -3657,6 +3679,7 @@ internal class LiveGatewaySessionRepository(
                 ?: return PendingInputResponse.Unanswerable
             val outcome = try {
                 when (action) {
+                    PendingInputAction.StopUnsupported -> return PendingInputResponse.Unanswerable
                     is PendingInputAction.ClarifyAnswer ->
                         answerClarify(connection, responder, request, action)
 
@@ -5382,9 +5405,10 @@ internal class LiveGatewaySessionRepository(
         events.forEach(::applyEvent)
         val buffered = unboundServerRequests.filterKeys { it.first == runtimeId }.values.toList()
         unboundServerRequests.keys.removeAll { it.first == runtimeId }
-        buffered.forEach { adoptServerRequest(durableId, runtimeId, it.id, it.method, it.params,
-            PendingInputKey(connectionGeneration, runtimeId, it.id, pendingInputKind(it.method) ?: return@forEach,
-                if (it.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native)) }
+        buffered.forEach { adoptOrRefuseServerRequest(durableId, runtimeId, it.id, it.method, it.params,
+            if (it.authorityNative) PendingInputOrigin.AuthorityNative else PendingInputOrigin.Native,
+            it.executionGeneration ?: snapshot.primitive("execution_generation")?.toLongOrNull()) }
+
         val entries = snapshot["open_requests"] as? JsonArray ?: return
         entries.forEach { entry ->
             val open = entry as? JsonObject ?: return@forEach
@@ -5437,9 +5461,13 @@ internal class LiveGatewaySessionRepository(
         method: String,
         params: JsonObject,
         origin: PendingInputOrigin = PendingInputOrigin.Native,
+        executionGeneration: Long? = null,
     ): GatewayServerRequest? {
         val runtime = runtimeId?.takeIf(String::isNotBlank)
-        val known = pendingInputKind(method) != null
+        val authorityIdentity = (clientFlow.value as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        val foreignNative = origin == PendingInputOrigin.AuthorityNative && runtime != null && authorityIdentity != null &&
+            authorityIdentity.address(runtime)?.ownerId != authorityIdentity.ownerId(null)
+        val known = pendingInputKind(method) != null || foreignNative
         // Resolved here rather than by the caller: a live frame routes by its
         // runtime, a replay entry routes by the session its snapshot belongs to.
         val bound = durableId ?: runtime?.let(identities::durableFor)
@@ -5448,7 +5476,14 @@ internal class LiveGatewaySessionRepository(
                 clientFlow.value?.close()
                 return null
             }
-            unboundServerRequests[runtime to requestId] = GatewayServerRequest(requestId, method, runtime, params, origin == PendingInputOrigin.AuthorityNative)
+            unboundServerRequests[runtime to requestId] = GatewayServerRequest(requestId, method, runtime, params, origin == PendingInputOrigin.AuthorityNative, executionGeneration)
+        }
+        if (foreignNative && bound != null && runtime != null) {
+            val key = PendingInputKey(connectionGeneration, runtime, requestId,
+                pendingInputKind(method) ?: PendingInputKind.Unsupported, origin, executionGeneration)
+            mutablePendingInputs.value = mutablePendingInputs.value + (key to UnsupportedPendingInput(key, bound, runtime))
+            setStatus(bound, SessionStatus.NeedsInput)
+            return null
         }
         if (known && bound != null && runtime != null) {
             // Every kind [PendingInputKind] has is adopted here. A parser that
@@ -5540,6 +5575,7 @@ internal class LiveGatewaySessionRepository(
         payload: JsonObject,
     ) {
         val requestId = payload.string("id")?.takeIf(String::isNotBlank) ?: return
+        unboundServerRequests.remove(runtimeId to requestId)
         val current = mutablePendingInputs.value
         val cancelled = current.keys.filter {
             it.runtimeSessionId == runtimeId && it.requestId == requestId
@@ -5595,6 +5631,7 @@ internal class LiveGatewaySessionRepository(
         val kind = pendingInputKind(method) ?: return false
         val key = suppliedKey ?: PendingInputKey(connectionGeneration, runtimeId, requestId, kind)
         val request: PendingInputRequest = when (kind) {
+            PendingInputKind.Unsupported -> return false
             PendingInputKind.Clarify -> parseClarify(key, durableId, runtimeId, params) ?: return false
             PendingInputKind.Approval -> parseApproval(key, durableId, runtimeId, params) ?: return false
             PendingInputKind.Sudo -> SudoPending(key, durableId, runtimeId)

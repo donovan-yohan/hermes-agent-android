@@ -202,6 +202,7 @@ class CanonicalBranchRegressionTest {
                 val params = frame.getValue("params").jsonObject
                 val sid = params["session_id"]?.jsonPrimitive?.content ?: "public-parent"
                 val result = when (method) {
+                    "profiles.list" -> buildJsonObject { put("profiles", JsonArray(listOf(buildJsonObject { put("name", profile ?: "default"); put("path", owner) }))); put("bot_mode_protocol", true) }
                     "runtime.describe" -> buildJsonObject { put("instance_id", "public-instance"); put("profile_id", owner)
                         put("authority_epoch", 2); put("capabilities", JsonArray(listOf("durable-admission-v1", "event-replay-v1").map(::JsonPrimitive))) }
                     "session.resume" -> {
