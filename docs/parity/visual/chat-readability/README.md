@@ -52,9 +52,11 @@ remains pending under #72.
 
 ## Reproduction
 
-An unfiltered local `check assembleDebug --no-build-cache` completed successfully
-before the final review follow-ups. The final head is rechecked after those
-follow-ups; commit-specific CI is the shipping gate. The installed local emulator
+The unfiltered local `check assembleDebug --no-build-cache` completed successfully
+on implementation head `36e488b152056dcbbde265840841f99d1d4712fa` after the
+review follow-ups: 3,633 Debug and 2,847 Release tests, zero failures/errors,
+one opt-in live-Gateway skip in each variant, plus lint and repository gates.
+Commit-specific CI remains the shipping gate. The installed local emulator
 refused the APK because its existing package has another signing identity. No
 package or app data was removed to bypass that refusal.
 

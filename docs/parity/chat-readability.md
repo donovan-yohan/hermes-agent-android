@@ -56,7 +56,7 @@ coverage checks light/dark, narrow widths and enlarged fonts.
 ## Visual report
 
 - report: docs/parity/visual/chat-readability/report.html
-- commit: dc1b996
+- commit: 36e488b152056dcbbde265840841f99d1d4712fa
 
 [Rendered Desktop/native Android comparison](visual/chat-readability/report.html)
 and [provenance, states and review limits](visual/chat-readability/README.md).
