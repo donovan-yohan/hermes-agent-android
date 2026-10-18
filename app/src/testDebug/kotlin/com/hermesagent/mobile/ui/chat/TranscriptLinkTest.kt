@@ -3,6 +3,8 @@ package com.hermesagent.mobile.ui.chat
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.IntentFilter
+import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalUriHandler
@@ -71,6 +73,22 @@ class TranscriptLinkTest {
     }
 
     @Test
+    fun `uppercase scheme remains authored in text but uses lowercase browser handoff`() {
+        val authored = "HTTPS://EXAMPLE.COM:443/path?q=%25#section"
+        launch(authored)
+        touchText(authored, "EXAMPLE.COM")
+        assertEquals(listOf("https://EXAMPLE.COM:443/path?q=%25#section"), opened)
+        val annotation = textLayout(authored).layoutInput.text.getLinkAnnotations(0, authored.length).single()
+        assertEquals(authored, (annotation.item as androidx.compose.ui.text.LinkAnnotation.Url).url)
+        val browserFilter = IntentFilter().apply { addDataScheme("https") }
+        val original = Uri.parse(authored)
+        assertTrue("Android scheme matching is case-sensitive", browserFilter.matchData(null, original.scheme, original) < 0)
+        val handedOff = Uri.parse(opened.single())
+        assertTrue("the actual handoff resolves through a lowercase browser scheme filter",
+            browserFilter.matchData(null, handedOff.scheme, handedOff) >= 0)
+    }
+
+    @Test
     fun `plain markdown angle and reference labels open exact destinations`() {
         launch("[plain]($DESTINATION) and <$DESTINATION> and [reference][target]\n\n[target]: $DESTINATION")
         val visible = "plain and $DESTINATION and reference"
@@ -85,6 +103,17 @@ class TranscriptLinkTest {
         launch("# [Heading]($DESTINATION)\n\n- [Bullet]($DESTINATION)\n\n1. [Number]($DESTINATION)\n\n| [Header]($DESTINATION) |\n|---|\n| [Cell]($DESTINATION) |")
         for (label in listOf("Heading", "Bullet", "Number", "Header", "Cell")) touchText(label, label)
         assertEquals(List(5) { DESTINATION }, opened)
+    }
+
+    @Test
+    fun `quoted and heading list links retain authored targets and image alt stays inert`() {
+        launch("- > [quoted]($DESTINATION)\n\n- # [**heading**]($DESTINATION)\n\n![https://example.org/](https://example.net/image.png)")
+        touchText("quoted", "quoted")
+        touchText("heading", "heading")
+        touchText("https://example.org/", "example.org")
+        assertEquals(List(2) { DESTINATION }, opened)
+        val imageAlt = textLayout("https://example.org/").layoutInput.text
+        assertTrue(imageAlt.getLinkAnnotations(0, imageAlt.length).isEmpty())
     }
 
     @Test

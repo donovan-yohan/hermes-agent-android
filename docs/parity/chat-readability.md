@@ -37,6 +37,13 @@ An explicit link's label is never auto-detected as a second destination,
 including when the authored destination is refused. Ordinary web links do
 not inherit the Gateway endpoint normalizer's authentication restrictions.
 
+Quoted blocks and headings inside list items retain the same link ownership
+and formatted labels as ordinary prose. Image alternative text remains visible
+and copyable but is not itself auto-linked; an explicit link around an image
+still owns its authored target. Authored URL text and annotations keep their
+exact casing. Only the Android browser handoff lowercases the scheme, because
+platform intent filters match schemes case-sensitively.
+
 Expanded reasoning reserves the header's measured height before placing its
 body. The prior renderer emitted sibling nodes inside a transcript Box, so
 both started at the same origin. The correction stacks them without changing
