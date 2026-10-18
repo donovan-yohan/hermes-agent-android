@@ -39,6 +39,7 @@ fun safeTranscriptUrl(destination: String): String? {
  * Extract after flattening: a URL may cross formatting runs. Explicit labels
  * own their entire visible range even when their destination is refused, so
  * a URL-looking label can never silently open a different bare destination.
+ * Image fallback text also stays literal, unless owned by an explicit link.
  */
 fun List<InlineSpan>.transcriptLinks(): List<TranscriptLink> {
     val visible = StringBuilder()
@@ -48,14 +49,16 @@ fun List<InlineSpan>.transcriptLinks(): List<TranscriptLink> {
         for (span in spans) when (span) {
             is InlineSpan.Strong -> visit(span.children)
             is InlineSpan.Emphasis -> visit(span.children)
-            is InlineSpan.Link -> {
+            is InlineSpan.Link, is InlineSpan.ImageAlt -> {
                 val start = visible.length
                 // CommonMark disallows nested links; the outer label owns it.
                 visible.append(span.text)
                 val end = visible.length
                 if (end > start) {
                     labels += start until end
-                    safeTranscriptUrl(span.destination)?.let { explicit += TranscriptLink(start, end, it) }
+                    if (span is InlineSpan.Link) {
+                        safeTranscriptUrl(span.destination)?.let { explicit += TranscriptLink(start, end, it) }
+                    }
                 }
             }
             else -> visible.append(span.text)

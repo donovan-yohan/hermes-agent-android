@@ -1,6 +1,7 @@
 package com.hermesagent.mobile.ui.chat
 
 import android.content.ActivityNotFoundException
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -31,7 +32,7 @@ internal fun List<InlineSpan>.transcriptAnnotated(): AnnotatedString {
     return buildAnnotatedString {
         fun appendSpans(spans: List<InlineSpan>) {
             for (span in spans) when (span) {
-                is InlineSpan.Plain -> append(span.text)
+                is InlineSpan.Plain, is InlineSpan.ImageAlt -> append(span.text)
                 is InlineSpan.Strong -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { appendSpans(span.children) }
                 is InlineSpan.Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { appendSpans(span.children) }
                 is InlineSpan.Link -> appendSpans(span.children)
@@ -59,7 +60,9 @@ internal fun List<InlineSpan>.transcriptAnnotated(): AnnotatedString {
 private fun UriHandler.openTranscriptUrl(destination: String) {
     val safe = safeTranscriptUrl(destination) ?: return
     try {
-        openUri(safe)
+        // Android intent filters match schemes case-sensitively. Preserve the
+        // authored annotation and every other URI component at the hand-off.
+        openUri(Uri.parse(safe).normalizeScheme().toString())
     } catch (_: ActivityNotFoundException) {
         // No installed activity can open this URL.
     } catch (_: IllegalArgumentException) {

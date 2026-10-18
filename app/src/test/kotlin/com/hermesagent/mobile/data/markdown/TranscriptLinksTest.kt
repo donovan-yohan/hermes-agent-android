@@ -116,6 +116,105 @@ class TranscriptLinksTest {
         assertTrue(inline.all { it.transcriptLinks().single().destination == DESTINATION })
     }
 
+    @Test
+    fun `quoted and heading list labels cannot autolink a refused destination`() {
+        for (prefix in listOf("- > ", "- # ", "- > ## ", "3. > ", "3. ### ")) {
+            val blocks = parseMarkdown("${prefix}[https://example.org/](javascript:bad)")
+            val inline = when (val block = blocks.single()) {
+                is MarkdownBlock.Bullets -> block.items.single()
+                is MarkdownBlock.Numbered -> block.items.single()
+                else -> error("Expected list for $prefix")
+            }
+            assertEquals(prefix, emptyList<TranscriptLink>(), inline.transcriptLinks())
+            assertEquals(prefix, "https://example.org/", inline.spansText())
+            assertEquals(prefix, "${if (prefix.startsWith("3.")) "3." else "•"} https://example.org/", blocks.replyPlainText())
+        }
+    }
+
+    @Test
+    fun `quoted list link has only its authored label and explicit destination`() {
+        val blocks = parseMarkdown("- > [https://example.org/](https://example.com/)")
+        val inline = (blocks.single() as MarkdownBlock.Bullets).items.single()
+        assertEquals(listOf(TranscriptLink(0, "https://example.org/".length, "https://example.com/")), inline.transcriptLinks())
+        assertEquals("https://example.org/", inline.spansText())
+        assertEquals("• https://example.org/", blocks.replyPlainText())
+    }
+
+    @Test
+    fun `nested quoted list links retain styles ranges and copy separators`() {
+        val blocks = parseMarkdown(
+            """
+            - outer
+              > ## [**open**](https://example.com/)
+              >
+              > [https://example.org/](javascript:bad)
+              >
+              > - *nested* [child](https://example.net/)
+              > - > [**deep**](https://example.edu/)
+            """.trimIndent(),
+        )
+        val inline = (blocks.single() as MarkdownBlock.Bullets).items.single()
+        val visible = "outer — open — https://example.org/ — • nested child\n• deep"
+        assertEquals(visible, inline.spansText())
+        assertEquals("• $visible", blocks.replyPlainText())
+        assertEquals(
+            listOf("open" to "https://example.com/", "child" to "https://example.net/", "deep" to "https://example.edu/")
+                .map { (label, target) -> TranscriptLink(visible.indexOf(label), visible.indexOf(label) + label.length, target) },
+            inline.transcriptLinks(),
+        )
+        assertEquals(listOf(InlineSpan.Strong("open")), inline.filterIsInstance<InlineSpan.Link>().first().children)
+        assertTrue(inline.contains(InlineSpan.Emphasis("nested")))
+        assertEquals(listOf(InlineSpan.Strong("deep")), inline.filterIsInstance<InlineSpan.Link>().last().children)
+    }
+
+    @Test
+    fun `image alt URLs are visible literals excluded from bare extraction`() {
+        for (image in listOf(
+            "![https://example.com/](https://example.org/image.png)",
+            "![https://**example.com**/](https://example.org/image.png)",
+            "![https://*example.com*/](https://example.org/image.png)",
+            "![`https://example.com/`](https://example.org/image.png)",
+            "**![https://example.com/](https://example.org/image.png)**",
+            "*![https://example.com/](https://example.org/image.png)*",
+        )) {
+            val blocks = parseMarkdown("🧪 $image then https://example.net/")
+            val inline = (blocks.single() as MarkdownBlock.Paragraph).spans
+            val visible = "🧪 https://example.com/ then https://example.net/"
+            assertEquals(image, visible, inline.spansText())
+            assertEquals(image, visible, blocks.replyPlainText())
+            assertEquals(
+                image,
+                listOf(TranscriptLink(visible.indexOf("https://example.net/"), visible.length, "https://example.net/")),
+                inline.transcriptLinks(),
+            )
+        }
+    }
+
+    @Test
+    fun `explicit image links own alt labels including styled alt`() {
+        for (alt in listOf("https://example.com/", "https://**example.com**/", "https://*example.com*/")) {
+            for (target in listOf("https://example.net/", "javascript:bad")) {
+                val blocks = parseMarkdown("[![$alt](https://example.org/image.png)]($target)")
+                val inline = (blocks.single() as MarkdownBlock.Paragraph).spans
+                assertEquals("https://example.com/", inline.spansText())
+                assertEquals("https://example.com/", blocks.replyPlainText())
+                val expected = if (target.startsWith("https:")) {
+                    listOf(TranscriptLink(0, "https://example.com/".length, target))
+                } else emptyList()
+                assertEquals("$alt -> $target", expected, inline.transcriptLinks())
+            }
+        }
+    }
+
+    @Test
+    fun `quoted list heading image alt cannot acquire a bare action`() {
+        val blocks = parseMarkdown("- outer\n  > # ![https://**example.com**/](https://example.org/image.png)")
+        val inline = (blocks.single() as MarkdownBlock.Bullets).items.single()
+        assertEquals("outer — https://example.com/", inline.spansText())
+        assertEquals("• outer — https://example.com/", blocks.replyPlainText())
+        assertEquals(emptyList<TranscriptLink>(), inline.transcriptLinks())
+    }
+
     private companion object {
         const val DESTINATION = "https://example.com:8782/activity?tab=run%20log#latest"
     }

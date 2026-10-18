@@ -12,6 +12,7 @@ import org.commonmark.node.Emphasis
 import org.commonmark.node.FencedCodeBlock
 import org.commonmark.node.HardLineBreak
 import org.commonmark.node.Heading
+import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link as CmLink
 import org.commonmark.node.ListItem
@@ -74,6 +75,8 @@ sealed interface InlineSpan {
     val text: String
 
     data class Plain(override val text: String) : InlineSpan
+    /** Visible image fallback text, never a bare URL action. */
+    data class ImageAlt(override val text: String) : InlineSpan
     data class Code(override val text: String) : InlineSpan
     data class Strong(val children: List<InlineSpan>) : InlineSpan {
         constructor(text: String) : this(listOf(Plain(text)))
@@ -195,7 +198,9 @@ private fun collectItemLines(item: Node): List<InlineSpan> {
         // here so no child type can silently fuse with the previous one.
         if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
         when (child) {
-            is Paragraph -> lines += parseInline(child.firstChild)
+            is Paragraph, is Heading -> lines += parseInline(child.firstChild)
+
+            is BlockQuote -> lines += collectItemLines(child)
 
             is IndentedCodeBlock -> lines += InlineSpan.Code(child.literal.trimEnd('\n'))
 
@@ -275,6 +280,7 @@ internal fun parseInline(node: Node?): List<InlineSpan> {
             is StrongEmphasis -> spans += InlineSpan.Strong(parseInline(child.firstChild))
             is Emphasis -> spans += InlineSpan.Emphasis(parseInline(child.firstChild))
             is CmLink -> spans += InlineSpan.Link(child.destination, parseInline(child.firstChild))
+            is Image -> spans += InlineSpan.ImageAlt(collectText(child))
             is SoftLineBreak -> spans += InlineSpan.Plain(" ")
             is HardLineBreak -> spans += InlineSpan.Plain("\n")
             else -> spans += InlineSpan.Plain(collectText(child))

@@ -101,6 +101,16 @@ class MarkdownTest {
     }
 
     @Test
+    fun `image alt keeps visible and copy text without its hidden source or formatting markers`() {
+        val blocks = parseMarkdown(
+            "before ![**bold** and *slim* `code` https://example.com/](https://example.org/image.png) after",
+        )
+        val inline = (blocks.single() as MarkdownBlock.Paragraph).spans
+        assertEquals("before bold and slim code https://example.com/ after", inline.spansText())
+        assertEquals("before bold and slim code https://example.com/ after", blocks.replyPlainText())
+    }
+
+    @Test
     fun `a pipe table becomes a table block, not paragraph soup`() {
         val blocks = parseMarkdown(
             """
@@ -190,6 +200,43 @@ class MarkdownTest {
             listOf<InlineSpan>(InlineSpan.Plain("a "), InlineSpan.Code("code"), InlineSpan.Plain(" one")),
             bullets.items[1],
         )
+    }
+
+    @Test
+    fun `list headings preserve recursive link label styles`() {
+        val blocks = parseMarkdown("- # [**open**](https://example.com/)")
+        val inline = (blocks.single() as MarkdownBlock.Bullets).items.single()
+        assertEquals(
+            listOf(InlineSpan.Link("https://example.com/", listOf(InlineSpan.Strong("open")))),
+            inline,
+        )
+        assertEquals("• open", blocks.replyPlainText())
+    }
+
+    @Test
+    fun `list quotes recursively preserve headings paragraph styles and nested list separators`() {
+        val blocks = parseMarkdown(
+            """
+            - parent
+              > # **heading**
+              >
+              > *paragraph*
+              >
+              > - `child`
+              > - > **deep**
+            """.trimIndent(),
+        )
+        val inline = (blocks.single() as MarkdownBlock.Bullets).items.single()
+        assertEquals(
+            listOf(
+                InlineSpan.Plain("parent"), InlineSpan.Plain(" — "), InlineSpan.Strong("heading"),
+                InlineSpan.Plain(" — "), InlineSpan.Emphasis("paragraph"), InlineSpan.Plain(" — "),
+                InlineSpan.Plain("• "), InlineSpan.Code("child"), InlineSpan.Plain("\n"),
+                InlineSpan.Plain("• "), InlineSpan.Strong("deep"),
+            ),
+            inline,
+        )
+        assertEquals("• parent — heading — paragraph — • child\n• deep", blocks.replyPlainText())
     }
 
     @Test
