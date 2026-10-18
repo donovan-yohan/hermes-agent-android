@@ -12,6 +12,8 @@ import org.commonmark.node.Emphasis
 import org.commonmark.node.FencedCodeBlock
 import org.commonmark.node.HardLineBreak
 import org.commonmark.node.Heading
+import org.commonmark.node.HtmlBlock
+import org.commonmark.node.HtmlInline
 import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link as CmLink
@@ -128,6 +130,9 @@ private fun collectBlock(node: Node, out: MutableList<MarkdownBlock>) {
     when (node) {
         is Paragraph -> out += MarkdownBlock.Paragraph(parseInline(node.firstChild))
 
+        // HTML-shaped source is visible text, never markup to execute.
+        is HtmlBlock -> out += MarkdownBlock.Paragraph(listOf(InlineSpan.Plain(node.literal)))
+
         is Heading -> out += MarkdownBlock.Heading(
             level = node.level.coerceIn(1, 6),
             spans = parseInline(node.firstChild),
@@ -199,6 +204,8 @@ private fun collectItemLines(item: Node): List<InlineSpan> {
         if (lines.isNotEmpty()) lines += InlineSpan.Plain(" — ")
         when (child) {
             is Paragraph, is Heading -> lines += parseInline(child.firstChild)
+
+            is HtmlBlock -> lines += InlineSpan.Plain(child.literal)
 
             is BlockQuote -> lines += collectItemLines(child)
 
@@ -276,6 +283,7 @@ internal fun parseInline(node: Node?): List<InlineSpan> {
     while (child != null) {
         when (child) {
             is Text -> spans += InlineSpan.Plain(child.literal)
+            is HtmlInline -> spans += InlineSpan.Plain(child.literal)
             is Code -> spans += InlineSpan.Code(child.literal)
             is StrongEmphasis -> spans += InlineSpan.Strong(parseInline(child.firstChild))
             is Emphasis -> spans += InlineSpan.Emphasis(parseInline(child.firstChild))
@@ -296,6 +304,7 @@ internal fun parseInline(node: Node?): List<InlineSpan> {
  */
 private fun collectText(node: Node): String {
     if (node is Text) return node.literal
+    if (node is HtmlInline) return node.literal
     if (node is Code) return node.literal
     val separator = when (node) {
         is SoftLineBreak -> " "
