@@ -64,4 +64,7 @@ Android captures use the existing `saveNativeCapture` helper and native
 Activity decor-view drawing. Run focused tests with `NATIVE_UI_CAPTURE_DIR`
 and `THINKING_CAPTURE_DIR` pointing at ignored build output. Desktop's exact
 capture command and ignored fixture content are in its manifest and patch.
-`hashes.json` records every published evidence file's SHA-256 digest.
+`hashes.json` covers the published captures, capture manifests, fixture patch,
+verification receipt and report. It excludes this README and the digest list
+itself. Desktop's manifest also inventories two supplementary screenshots kept
+only in ignored capture output; those are not published in this packet.
