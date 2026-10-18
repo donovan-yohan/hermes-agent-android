@@ -11,15 +11,19 @@ two lines or hover are not the current CSS contract. Watch-window disclosure
 is local state at `user-message.tsx:296-301`; ordinary Desktop editing is not
 implemented by this slice.
 
-Only the newest authoritative user turn gets the requested mobile body cap:
-the smaller of 240dp and 35% of the measured transcript viewport, excluding
-bubble padding. Overflow alone paints a semantic user-bubble bottom gradient.
-Tap expands into an 80%-viewport scrollable body; a completed outside tap
-collapses without consuming events. Drags, multi-touch and long presses are
-not collapse taps. Source and sticky owner share session/message-keyed,
+The newest authoritative user turn's sticky copy is capped at three rendered
+lines, independent of keyboard visibility or viewport height. Only overflow
+fades the third line; a message that fits stays complete. The original inline
+message remains full-height and selectable when the reader scrolls back to it.
+Tap expands the sticky copy into an 80%-viewport scrollable body; a completed
+outside tap collapses without consuming events. Drags, multi-touch and long
+presses are not collapse taps. Source and sticky owner share session/message-keyed,
 saveable UI state and one full `You said: <body>` accessibility owner.
 The pin retains its separate Return to prompt accessibility action and
 transcript drag behavior; prior prompts retain full-height sticky push-off.
+When the next user message pushes a previous pin away, a quiet "Replies in
+between" divider identifies intervening assistant replies. It appears only
+during that collision and never for genuinely consecutive user messages.
 
 `FinalUserPromptHeightTest` exercises production ChatScreen with native
 Robolectric graphics, including cap, fade, short text, expansion, outside
@@ -124,9 +128,15 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 | The prompt excerpt renders `@image:` references as prose | mobile-adaptation | References are split out; an attachment-only prompt has no excerpt | One phone-width line of excerpt cannot spend itself on a wire-format path |
 | `styles.css:1568-1577` covers the sticky sliver with a `::before`, and `:1562-1565` offsets the bubble a pixel so the cover overlaps it | mobile-adaptation | The overlay's own `chatSurface` box is the cover, and it starts at the viewport's top edge | A Compose overlay is placed rather than offset by CSS sticky, so the sliver a `top:` creates never exists and there is no seam for the extra pixel to close; `StickyPromptMaskInkTest` reads both bands back in pixels |
 | `user-message.tsx:45` declares `data-glass-opaque` so a glass window cannot thin the mask (`styles.css:676-680`) | mobile-adaptation | No glass field exists, and `chatSurface` is the chrome seed on every theme and mode (`HermesTokens.kt:252`) | An Android window has no translucent desktop field behind it to fall through, and the token already resolves to the value that rule forces |
-| Final prompt clamp at `styles.css:1824-1833` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Newest body uses a viewport-aware cap and token-coloured bottom gradient; tap disclosure instead of Desktop edit/watch interaction | Requested phone reading behavior; `FinalUserPromptHeightTest` covers overflow-only fade, disclosure, scrolling and single accessible ownership; paired review pending #72. |
+| Final prompt clamp at `styles.css:1824-1833` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Newest sticky body uses three rendered lines with an overflow-only third-line fade, independent of keyboard height; original inline text stays full-height | Requested phone reading behavior; `FinalUserPromptHeightTest` covers measured lines, font scale, viewport changes, disclosure and single accessible ownership; physical acceptance pending #72. |
+| Desktop has no intervening-replies divider in sticky user handoff | mobile-adaptation | "Replies in between" appears when a previous pin collides with the next user message and actual assistant replies separate them | Requested phone chronology cue; `PromptReplyGapTest` asserts between-bubble placement and no cue for consecutive user messages |
 
 ## Visual report
+
+[Three-line prompt and handoff comparison](visual/chat-readability/report.html)
+contains pinned Desktop production components beside native Android window
+draws for this correction. The packet states its component-only and
+Robolectric limits; it does not discharge physical acceptance.
 
 [Project-row/push-off native regression packet](visual/project-push-off-native/README.md)
 contains synthetic production-Compose window draws and the main-vs-fixed test

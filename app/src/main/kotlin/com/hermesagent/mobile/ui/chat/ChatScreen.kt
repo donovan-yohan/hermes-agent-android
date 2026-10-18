@@ -549,6 +549,7 @@ private data class PromptPin(
     val body: String,
     val distancePastTopPx: Int,
     val nextPromptTopPx: Int?,
+    val hasInterveningReplies: Boolean,
 )
 
 @Composable
@@ -716,6 +717,11 @@ private fun TranscriptPane(
                     ?: return@derivedStateOf null
                 val distance = listState.layoutInfo.viewportStartOffset - source.offset
                 if (distance <= 0) return@derivedStateOf null
+                // A tall original must remain scrollable in the transcript.
+                // Its compact sticky copy starts only after the source leaves.
+                if (firstEntry.id == entries.lastOrNull { it is UserTurn }?.id && distance < source.size) {
+                    return@derivedStateOf null
+                }
                 ownerIndex = firstVisible
                 distancePastTopPx = distance
             } else {
@@ -733,7 +739,12 @@ private fun TranscriptPane(
                 it.index - leadingItems > ownerIndex &&
                     entries.getOrNull(it.index - leadingItems) is UserTurn
             }
-            PromptPin(owner, body, distancePastTopPx, nextPrompt?.offset)
+            val nextIndex = nextPrompt?.let { it.index - leadingItems }
+            val hasInterveningReplies = nextIndex != null &&
+                (ownerIndex + 1 until nextIndex).any {
+                    (entries[it] as? AssistantTurn)?.markdown?.isNotBlank() == true
+                }
+            PromptPin(owner, body, distancePastTopPx, nextPrompt?.offset, hasInterveningReplies)
         }
     }
 
@@ -815,6 +826,7 @@ private fun TranscriptPane(
                 promptId = owner.id,
                 body = pin.body,
                 nextPromptTopPx = pin.nextPromptTopPx,
+                hasInterveningReplies = pin.hasInterveningReplies,
                 distancePastTopPx = pin.distancePastTopPx,
                 listState = listState,
                 onClick = onReturn,
@@ -886,6 +898,7 @@ private fun StickyCurrentPrompt(
     promptId: String,
     body: String,
     nextPromptTopPx: Int?,
+    hasInterveningReplies: Boolean,
     distancePastTopPx: Int,
     listState: LazyListState,
     onClick: () -> Unit,
@@ -925,12 +938,29 @@ private fun StickyCurrentPrompt(
                 }
             }
         }.single().measure(Constraints(maxWidth = minOf(320.dp.roundToPx(), (constraints.maxWidth - inset * 2).coerceAtLeast(0))))
-        // One full bubble, not a separately clipped compact copy. The incoming
-        // inline bubble pushes this whole object offscreen before taking over.
+        // When a pinned request approaches the next user turn, explain the
+        // visually skipped response without inserting a synthetic transcript row.
+        val cue = if (hasInterveningReplies && nextPromptTopPx != null) subcompose("reply-gap") {
+            Row(
+                Modifier.padding(horizontal = spacing.pageInset, vertical = 4.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "Assistant replies between these user messages"
+                    },
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Hairline(Modifier.weight(1f))
+                Text("Replies in between", style = HermesTheme.type.caption, color = HermesTheme.tokens.textTertiary)
+                Hairline(Modifier.weight(1f))
+            }
+        }.single().measure(Constraints(maxWidth = constraints.maxWidth)) else null
         val settledTop = minOf(gap, distancePastTopPx)
-        val top = minOf(settledTop, nextPromptTopPx?.minus(bubble.height + gap) ?: settledTop)
-        layout(constraints.maxWidth, maxOf(0, top + bubble.height + gap)) {
+        val cueHeight = cue?.height ?: 0
+        val top = minOf(settledTop, nextPromptTopPx?.minus(bubble.height + cueHeight + gap) ?: settledTop)
+        val showCue = cue != null && top < settledTop
+        layout(constraints.maxWidth, maxOf(0, top + bubble.height + (if (showCue) cueHeight else 0) + gap)) {
             bubble.place(constraints.maxWidth - inset - bubble.width, top)
+            if (showCue) cue.place(0, top + bubble.height)
         }
     }
 }

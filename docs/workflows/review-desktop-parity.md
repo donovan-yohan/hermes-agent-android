@@ -36,6 +36,14 @@ SHA cites nothing.
 
 ## 1. Find the Desktop original
 
+For transcript readability, distinguish literal code from URL-only fence
+preprocessing: Desktop at `36922ad064d65dcf25f8f48df81e1ccf9a55de67`
+unwraps URL-only fences (`apps/desktop/src/lib/markdown-preprocess.ts:1070-1075`),
+while structured code remains literal. Measure the production component and
+executed CSS rather than trusting a stale line-count comment. Native Compose
+tests must prove the source message can still be read while partially scrolled;
+an unclipped layout height alone does not prove its paint survives sticky ownership.
+
 For the surface under review, name:
 
 - the component, `path:line` at the pin;

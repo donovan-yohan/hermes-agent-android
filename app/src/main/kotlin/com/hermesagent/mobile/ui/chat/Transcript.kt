@@ -75,7 +75,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
@@ -1046,22 +1045,26 @@ private fun ReasoningRow(activity: ReasoningActivity) {
         seconds < 1.0 -> "Thought briefly"
         else -> "Thought for ${seconds.elapsedLabel()}"
     }
-    DisclosureRow(
-        title = title,
-        meta = if (activity.state == ToolState.Running) listOf(seconds.elapsedLabel()) else emptyList(),
-        icon = null,
-        expanded = expanded,
-        status = if (activity.state == ToolState.Running) ToolStatus.Running else ToolStatus.Success,
-        onToggle = { expanded = !expanded },
-        contentDescription = "Reasoning, ${if (expanded) "expanded" else "collapsed"}",
-    )
-    if (expanded && activity.text.isNotBlank()) {
-        Text(
-            text = activity.text,
-            style = HermesTheme.type.caption,
-            color = HermesTheme.tokens.textTertiary,
-            modifier = Modifier.padding(start = 36.dp, end = 12.dp, bottom = 4.dp),
+    // Transcript items are Boxes; keep the disclosure and its body in flow
+    // rather than emitting siblings that both start at the item's top edge.
+    Column(Modifier.fillMaxWidth()) {
+        DisclosureRow(
+            title = title,
+            meta = if (activity.state == ToolState.Running) listOf(seconds.elapsedLabel()) else emptyList(),
+            icon = null,
+            expanded = expanded,
+            status = if (activity.state == ToolState.Running) ToolStatus.Running else ToolStatus.Success,
+            onToggle = { expanded = !expanded },
+            contentDescription = "Reasoning, ${if (expanded) "expanded" else "collapsed"}",
         )
+        if (expanded && activity.text.isNotBlank()) {
+            Text(
+                text = activity.text,
+                style = HermesTheme.type.caption,
+                color = HermesTheme.tokens.textTertiary,
+                modifier = Modifier.padding(start = 36.dp, end = 12.dp, bottom = 4.dp),
+            )
+        }
     }
 }
 
@@ -2322,7 +2325,7 @@ private fun CodeFenceView(block: MarkdownBlock.CodeFence) {
             }
         }
         Text(
-            text = block.code.trimEnd('\n').ifEmpty { " " },
+            text = listOf(InlineSpan.Plain(block.code.trimEnd('\n').ifEmpty { " " })).annotated(),
             style = HermesTheme.type.code,
             color = tokens.textSecondary,
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -2341,23 +2344,4 @@ private fun CodeFenceView(block: MarkdownBlock.CodeFence) {
  * this actually bites; revisit if upstream ships `WordBreak.Anywhere`.
  */
 @Composable
-private fun List<InlineSpan>.annotated(): AnnotatedString {
-    val tokens = HermesTheme.tokens
-    val mono = HermesTheme.type.code.fontFamily
-    return buildAnnotatedString {
-        for (span in this@annotated) {
-            when (span) {
-                is InlineSpan.Plain -> append(span.text)
-                is InlineSpan.Strong -> withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) { append(span.text) }
-                is InlineSpan.Emphasis -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(span.text) }
-                is InlineSpan.Code -> withStyle(
-                    SpanStyle(
-                        fontFamily = mono,
-                        background = tokens.inlineCodeBackground,
-                        color = tokens.inlineCodeForeground,
-                    ),
-                ) { append(span.text) }
-            }
-        }
-    }
-}
+private fun List<InlineSpan>.annotated(): AnnotatedString = transcriptAnnotated()

@@ -1,0 +1,16 @@
+{
+  "desktop/desktop-production-light.png": "04e2ca013eaa208da696742a065b8144b9b143bb3906d6dcd8417a227252dc81",
+  "desktop/desktop-markdown-links.png": "f89254f8c14a7c964848a0a46263ec959eeee12502b23c8beed6f738d389d791",
+  "desktop/capture-manifest.json": "6d0c6b76665a3ff0910c6eb416f0d9a182bfb0de65ae24a0568a3e948f251e12",
+  "desktop/capture-only.patch": "d39babcc9634b0953b4e64c7412c9a157c29154de51f30e0ed7d4a62fb73dfa5",
+  "desktop/verification.json": "2914d8236eda9a0f15d6b4c2a5cc290b356a64ad3faf1376e39e5d70b8fdb13e",
+  "android/prompt-collapsed.png": "ca6ed9a75637dda9c8891740586453d1e91842a983daf2d785d0c08cf85b6296",
+  "android/prompt-expanded.png": "5e551bcd6aa98a1b6e2246da1ad15715ab2ff2edf53ef8d7aa870554d088b948",
+  "android/prompt-reply-gap.png": "12da70a7b0498599e407b2e1e3ca054acf79631e9395b0b28b9d2899dfa5328c",
+  "android/prompt-three-line-ink.png": "43ba8011e463c4d06c95f9496ab39239e24aa5f1996634d0237743e300f4b23b",
+  "android/thinking-before.png": "cabff13a578ec1f6852db1ec1a351d32517c54beb2d05e298dac890a34713194",
+  "android/thinking-fixed.png": "d75967258563ae47c5c0db52b8098347699056b2e5480f09a82ccee9789a4084",
+  "android/transcript-links.png": "879ced588c0b3be542f04f89ce5d5baad73a84c44621581475daaf4c5d4aed88",
+  "android/source-manifest.json": "f2b6c8f5cf154c916bbd82da049c59292982746f804fe9263c1cb06bbaef41ef",
+  "report.html": "ee1648c70ab0d04132f28ab22d351adccd5919568c0b12ecb38316d9e09686cf"
+}

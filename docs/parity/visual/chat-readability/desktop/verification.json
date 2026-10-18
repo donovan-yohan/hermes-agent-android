@@ -1,0 +1,20 @@
+{
+  "verifiedAtUtc": "2026-10-18T08:58:18.236973+00:00",
+  "sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "productionFilesHashChecked": 12,
+  "screenshotHashesChecked": 4,
+  "allTrackedDiffEmpty": true,
+  "exportStatusClean": true,
+  "browserAssertions": {
+    "explicitLabelPreserved": true,
+    "bareUrlPreserved": true,
+    "inlineCodeNotLinkified": true,
+    "structuredFencedCodeNotLinkified": true,
+    "urlOnlyFenceUnwrappedByProduction": true,
+    "thinkingExpandedAndToggleVerified": true,
+    "fourLineClamp70px": true,
+    "noThreadSeparator": true,
+    "noBrowserErrors": true,
+    "noExternalRequests": true
+  }
+}

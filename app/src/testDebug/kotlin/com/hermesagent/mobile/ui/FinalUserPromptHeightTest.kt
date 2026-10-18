@@ -1,6 +1,22 @@
 package com.hermesagent.mobile.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -11,6 +27,10 @@ import org.robolectric.annotation.GraphicsMode
 import com.hermesagent.mobile.data.session.*
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
+import com.hermesagent.mobile.ui.chat.FinalPromptDisclosure
+import com.hermesagent.mobile.ui.chat.FinalUserPromptBubble
+import com.hermesagent.mobile.ui.chat.LocalFinalPromptDisclosure
+import com.hermesagent.mobile.ui.chat.UserTurnBubble
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import org.junit.Assert.assertEquals
@@ -20,6 +40,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], qualifiers = "w411dp-h800dp")
@@ -28,14 +51,14 @@ class FinalUserPromptHeightTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val prompt = (1..60).joinToString("\n") { "Synthetic prompt line $it" }
     private val state = mutableStateOf(fixture(prompt))
+    private val currentFontScale = mutableStateOf(1f)
+    private lateinit var measurer: TextMeasurer
+    private lateinit var bodyStyle: TextStyle
+    private lateinit var textDensity: Density
 
-    @Test fun `final pinned prompt has viewport cap fade and single full accessible owner`() {
+    @Test fun `final pinned prompt clips at three measured lines with one full accessible owner`() {
         launch()
-        val viewport = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot
-
-        val bubble = compose.onNodeWithTag("Current prompt bubble", true).fetchSemanticsNode().boundsInRoot
-        assertTrue("long prompt must leave response space", bubble.height <= viewport.height * .4f)
-        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        assertThreeLineClip("Current prompt bubble", prompt)
         assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size)
         compose.runOnIdle { saveNativeCapture(compose.activity, "prompt-collapsed.png") }
     }
@@ -59,6 +82,7 @@ class FinalUserPromptHeightTest {
         launch()
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
         compose.onNodeWithContentDescription("You said: short").assertExists()
+        assertCompletePrompt("Current prompt bubble", "short")
         compose.runOnIdle { saveNativeCapture(compose.activity, "prompt-short.png") }
     }
 
@@ -82,7 +106,7 @@ class FinalUserPromptHeightTest {
     }
 
     @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
-    @Test fun `expanded body scrolls and inline handoff keeps disclosure with one owner`() {
+    @Test fun `expanded sticky body scrolls and return reveals full selectable inline owner`() {
         launch()
         val owner = compose.onNodeWithContentDescription("You said: $prompt")
         owner.performClick()
@@ -93,16 +117,38 @@ class FinalUserPromptHeightTest {
         compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
         assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size)
+        assertFullInlinePrompt(prompt)
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun `expanded sticky remount retains disclosure after returning through full inline source`() {
+        launch()
+        val owner = compose.onNodeWithContentDescription("You said: $prompt")
         owner.performClick()
-        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        owner.performCustomAccessibilityActionWithLabel("Return to prompt")
+        assertFullInlinePrompt(prompt)
+        compose.onNodeWithTag("Pinned final prompt").assertDoesNotExist()
+
+        val source = compose.onNodeWithTag("Inline final prompt").fetchSemanticsNode()
+        val transcriptTop = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot.top
+        val pastSource = source.positionInRoot.y + source.size.height - transcriptTop + px(1f)
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, pastSource) }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("Pinned final prompt").assertIsDisplayed()
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+        assertEquals("Collapse prompt", owner.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        compose.onNodeWithContentDescription("Return to prompt").assertIsDisplayed()
+        assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size)
+        owner.performClick()
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        assertThreeLineClip("Current prompt bubble", prompt)
     }
 
     @Test @Config(qualifiers = "w411dp-h400dp")
-    fun `small viewport scales cap rather than keeping a fixed tall prompt`() {
+    fun `small viewport still clips at three measured lines`() {
         launch()
-        val viewport = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot
-        val body = compose.onNodeWithTag("Current prompt bubble", true).fetchSemanticsNode().boundsInRoot
-        assertTrue(body.height <= viewport.height * .35f + 20f * compose.density.density)
+        assertThreeLineClip("Current prompt bubble", prompt)
         compose.runOnIdle { saveNativeCapture(compose.activity, "prompt-small-collapsed.png") }
     }
 
@@ -119,12 +165,10 @@ class FinalUserPromptHeightTest {
 
     @Test fun `collapsed overflow return leaves readable response space and returns by touch`() {
         launch()
-        val viewport = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot
-        val pin = compose.onNodeWithTag("Pinned final prompt").fetchSemanticsNode().boundsInRoot
-        assertTrue("return must not add a tall chrome row", pin.height <= viewport.height * .4f)
+        assertThreeLineClip("Current prompt bubble", prompt)
         compose.onNodeWithContentDescription("Return to prompt").performTouchInput { click() }
         compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
-        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        assertFullInlinePrompt(prompt)
         compose.onNodeWithContentDescription("Return to prompt").assertDoesNotExist()
     }
 
@@ -141,14 +185,217 @@ class FinalUserPromptHeightTest {
         compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
         action.assertDoesNotExist()
-        owner.performTouchInput { click() }
-        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        assertFullInlinePrompt(prompt)
         compose.onNodeWithContentDescription("Message Hermes").performTouchInput { click() }
         compose.onNodeWithContentDescription("Message Hermes").assertIsFocused()
     }
 
-    private fun launch() {
-        compose.setContent { HermesTheme(AppearanceSelection()) { ChatScreen(state.value, ChatActions(), {}) } }
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun `wrapped sticky prompt clips rendered lines and return restores full inline text`() {
+        val wrapped = "Synthetic wrapping words with no explicit line breaks. ".repeat(30)
+        state.value = fixture(wrapped)
+        launch()
+        assertThreeLineClip("Current prompt bubble", wrapped)
+        compose.onNodeWithContentDescription("You said: $wrapped")
+            .performCustomAccessibilityActionWithLabel("Return to prompt")
+        assertFullInlinePrompt(wrapped)
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun `exactly three lines stay complete without fade or disclosure in both owners`() {
+        val exact = "First synthetic line\nSecond synthetic line\nThird synthetic line"
+        state.value = fixture(exact)
+        launch()
+        assertCompletePrompt("Current prompt bubble", exact)
+        compose.onNodeWithContentDescription("You said: $exact")
+            .performCustomAccessibilityActionWithLabel("Return to prompt")
+        assertFullInlinePrompt(exact)
+    }
+
+    @Test fun `font scale reflow while expanded retains collapse and return actions`() {
+        launch()
+        val owner = compose.onNodeWithContentDescription("You said: $prompt")
+        owner.performClick()
+        compose.runOnIdle { currentFontScale.value = 1.6f }
+        compose.waitForIdle()
+
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+        assertEquals("Collapse prompt", owner.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        compose.onNodeWithContentDescription("Return to prompt").assertIsDisplayed()
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        owner.performClick()
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        assertThreeLineClip("Current prompt bubble", prompt)
+    }
+
+    @Test fun `larger scaled monospace typography determines collapsed clip and third line fade`() {
+        launch(fontScale = 1.6f, appearance = AppearanceSelection("cyberpunk"))
+        assertThreeLineClip("Current prompt bubble", prompt)
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun `reading further down a tall original prompt does not replace it with sticky chrome`() {
+        launch()
+        compose.onNodeWithContentDescription("You said: $prompt")
+            .performCustomAccessibilityActionWithLabel("Return to prompt")
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100f) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("Pinned final prompt").assertDoesNotExist()
+        compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
+        assertFullInlinePrompt(prompt)
+    }
+
+    @Test fun `viewport changes such as keyboard arrival do not change sticky collapsed height`() {
+        val viewport = mutableStateOf(800.dp)
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                measurer = rememberTextMeasurer()
+                bodyStyle = HermesTheme.type.body
+                textDensity = LocalDensity.current
+                val disclosure = remember { FinalPromptDisclosure("viewport", mutableStateOf(false)) }
+                CompositionLocalProvider(LocalFinalPromptDisclosure provides disclosure) {
+                    FinalUserPromptBubble(prompt, viewport.value, Modifier.width(280.dp).testTag("Viewport prompt"), onReturn = {})
+                }
+            }
+        }
+        compose.waitForIdle()
+        assertThreeLineClip("Viewport prompt", prompt)
+        val before = compose.onNodeWithTag("Viewport prompt", true).fetchSemanticsNode().size.height
+        compose.runOnIdle { viewport.value = 160.dp }
+        assertThreeLineClip("Viewport prompt", prompt)
+        assertEquals(before, compose.onNodeWithTag("Viewport prompt", true).fetchSemanticsNode().size.height)
+    }
+
+    @Test fun `earlier historical user prompt keeps its full rendered height`() {
+        val earlier = "Earlier synthetic line\n".repeat(10).trimEnd()
+        state.value = fixture("short").let {
+            it.copy(transcript = listOf(UserTurn("historical-user", earlier, 1_700_000_000_000L), it.transcript.first()), isStreaming = false)
+        }
+        launch()
+        compose.onNodeWithTag("Transcript").performScrollToIndex(0)
+        val bubble = compose.onNodeWithTag("Transcript item historical-user").fetchSemanticsNode()
+        val layout = measure(earlier, px(320f))
+        assertTrue(layout.lineCount > 3)
+        assertEquals(layout.size.height + px(18f), bubble.size.height.toFloat(), 1f)
+    }
+
+    @Test fun `native ink fades only third line without ellipsis or padding overlap`() {
+        val ink = "MMMMMMMMMM\nMMMMMMMMMM\nMMMMMMMMMM\nMMMMMMMMMM"
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                measurer = rememberTextMeasurer()
+                bodyStyle = HermesTheme.type.body
+                textDensity = LocalDensity.current
+                val disclosure = remember { FinalPromptDisclosure("ink", mutableStateOf(false)) }
+                CompositionLocalProvider(LocalFinalPromptDisclosure provides disclosure) {
+                    Column {
+                        FinalUserPromptBubble(ink, 800.dp, Modifier.width(280.dp).testTag("Ink clipped prompt"), onReturn = {})
+                        UserTurnBubble(ink.substringBeforeLast('\n'), null, Modifier.width(280.dp).testTag("Ink reference prompt"))
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+        assertThreeLineClip("Ink clipped prompt", ink)
+        val clipped = compose.onNodeWithTag("Ink clipped prompt", true).fetchSemanticsNode().boundsInWindow
+        val reference = compose.onNodeWithTag("Ink reference prompt", true).fetchSemanticsNode().boundsInWindow
+        val layout = measure(ink, clipped.width, maxLines = 3)
+
+        compose.runOnIdle {
+            val view = compose.activity.window.decorView
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            try {
+                view.draw(Canvas(bitmap))
+                saveNativeCapture(compose.activity, "prompt-three-line-ink.png")
+                val left = px(12f).roundToInt()
+                val right = clipped.width.roundToInt() - left
+                val top = px(9f).roundToInt()
+                val thirdTop = top + ceil(layout.getLineTop(2)).toInt()
+                val thirdBottom = top + ceil(layout.getLineBottom(2)).toInt()
+                fun pixel(bounds: androidx.compose.ui.geometry.Rect, x: Int, y: Int) =
+                    bitmap.getPixel(bounds.left.roundToInt() + x, bounds.top.roundToInt() + y)
+                val background = pixel(reference, left, 2)
+                fun contrast(color: Int): Int = listOf(16, 8, 0).sumOf { shift ->
+                    abs((color shr shift and 255) - (background shr shift and 255))
+                }
+                var fadedPixels = 0
+                var thirdInk = 0
+                for (y in 1 until clipped.height.roundToInt() - 1) for (x in left until right) {
+                    val actual = pixel(clipped, x, y)
+                    // maxLines clips a continuing paragraph; its final line can retain one
+                    // more pixel of leading than a paragraph ending after exactly three lines.
+                    val referenceY = if (y >= thirdBottom) y + reference.height.roundToInt() - clipped.height.roundToInt() else y
+                    val expected = pixel(reference, x, referenceY)
+                    if (y < thirdTop || y >= thirdBottom) {
+                        assertEquals("line two and padding must not fade at $x,$y", expected, actual)
+                    } else {
+                        if (contrast(expected) > 30) thirdInk++
+                        if (contrast(actual) + 6 < contrast(expected)) fadedPixels++
+                        assertTrue("clipping must not add ellipsis ink", contrast(actual) <= contrast(expected) + 6)
+                    }
+                }
+                assertTrue("third-line reference must contain actual glyph ink", thirdInk > 20)
+                assertTrue("third-line glyphs must visibly fade", fadedPixels > 20)
+                saveNativeCapture(compose.activity, "prompt-three-line-ink.png")
+            } finally {
+                bitmap.recycle()
+            }
+        }
+    }
+
+    private fun px(dp: Float) = with(textDensity) { dp.dp.toPx() }
+
+    private fun measure(body: String, bubbleWidth: Float, maxLines: Int = Int.MAX_VALUE): TextLayoutResult = measurer.measure(
+        AnnotatedString(body), style = bodyStyle,
+        constraints = Constraints(maxWidth = (bubbleWidth - px(24f)).roundToInt()),
+        maxLines = maxLines,
+    )
+
+    private fun assertThreeLineClip(tag: String, body: String) {
+        val bubble = compose.onNodeWithTag(tag, true).fetchSemanticsNode().boundsInRoot
+        val layout = measure(body, bubble.width)
+        assertTrue("fixture must overflow three rendered lines", layout.lineCount > 3)
+        val clipped = measure(body, bubble.width, maxLines = 3)
+        val textTop = bubble.top + px(9f)
+        val thirdBottom = ceil(clipped.getLineBottom(2))
+        assertEquals("collapsed body must end after rendered line three", thirdBottom + px(18f), bubble.height, 1f)
+        val fade = compose.onNodeWithTag("Prompt clipping fade", true).fetchSemanticsNode().boundsInRoot
+        assertEquals("fade must start at line three, never line two", textTop + clipped.getLineTop(2), fade.top, 1f)
+        assertEquals("fade must stop before bottom padding", textTop + thirdBottom, fade.bottom, 1f)
+    }
+
+    private fun assertFullInlinePrompt(body: String) {
+        compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
+        val bubble = compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode()
+        val layout = measure(body, bubble.size.width.toFloat())
+        assertEquals("inline original must render the entire message without expansion", layout.size.height + px(18f), bubble.size.height.toFloat(), 1f)
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        assertTrue("inline original must not require disclosure", SemanticsProperties.StateDescription !in
+            compose.onNodeWithContentDescription("You said: $body").fetchSemanticsNode().config)
+    }
+
+    private fun assertCompletePrompt(tag: String, body: String) {
+        val bubble = compose.onNodeWithTag(tag, true).fetchSemanticsNode().boundsInRoot
+        val layout = measure(body, bubble.width)
+        assertTrue(layout.lineCount <= 3)
+        assertEquals("short prompt must retain every rendered line", layout.size.height + px(18f), bubble.height, 1f)
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        assertTrue("short prompt must not expose expand or collapse", SemanticsProperties.StateDescription !in
+            compose.onNodeWithContentDescription("You said: $body").fetchSemanticsNode().config)
+    }
+
+    private fun launch(fontScale: Float = 1f, appearance: AppearanceSelection = AppearanceSelection()) {
+        currentFontScale.value = fontScale
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, currentFontScale.value)) {
+                HermesTheme(appearance) {
+                    measurer = rememberTextMeasurer()
+                    bodyStyle = HermesTheme.type.body
+                    textDensity = LocalDensity.current
+                    ChatScreen(state.value, ChatActions(), {})
+                }
+            }
+        }
         compose.waitForIdle()
     }
 

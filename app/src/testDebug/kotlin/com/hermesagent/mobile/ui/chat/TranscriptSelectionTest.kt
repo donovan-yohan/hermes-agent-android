@@ -206,20 +206,28 @@ class TranscriptSelectionTest {
     }
 
     @Test
-    fun `collapsed overflowing inline prompt selects visible words without expanding`() {
+    fun `full overflowing inline prompt selects visible words without disclosure`() {
         val body = (1..60).joinToString("\n") { "Synthetic prompt line $it" }
         launch(listOf(UserTurn(id = "$SESSION-u1", text = body, atMillis = NOW)))
         compose.onNodeWithContentDescription("You said: $body").performTouchInput { click() }
         compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
         compose.onNodeWithTag("Inline final prompt").performTouchInput { click() }
-        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        compose.onNodeWithTag("Pinned final prompt").assertDoesNotExist()
+        val source = compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode()
+        assertTrue("full inline layout extends beyond the viewport", source.size.height >
+            compose.onNodeWithTag("Transcript").fetchSemanticsNode().size.height)
+        assertTrue("inline source must not require expansion", SemanticsProperties.StateDescription !in
+            compose.onNodeWithContentDescription("You said: $body").fetchSemanticsNode().config)
         compose.onNodeWithTag("Final prompt body", true).performTouchInput {
             longClick(Offset(30f, 25f))
         }
         compose.waitForIdle()
-        assertTrue("collapsed inline words must select", selectionHandles() > 0)
+        assertTrue("full inline words must select", selectionHandles() > 0)
         assertTrue("selection must offer Copy", contextMenu.labels.any { it.equals("copy", ignoreCase = true) })
-        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        assertEquals("selection must not resize the full source", source.size,
+            compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode().size)
     }
 
     @Test
