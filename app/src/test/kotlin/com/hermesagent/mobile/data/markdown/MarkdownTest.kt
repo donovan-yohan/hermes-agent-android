@@ -294,6 +294,89 @@ class MarkdownTest {
     }
 
     @Test
+    fun `HTML blocks preserve literal source between ordinary paragraphs`() {
+        val destination = "https://example.org/note?q=%25#latest"
+        val html = "<section>\nHTML note $destination\n</section>"
+        val blocks = parseMarkdown("Before **note**.\n\n$html\n\nAfter *note*.")
+        assertEquals(
+            listOf(
+                MarkdownBlock.Paragraph(listOf(InlineSpan.Plain("Before "), InlineSpan.Strong("note"), InlineSpan.Plain("."))),
+                MarkdownBlock.Paragraph(listOf(InlineSpan.Plain(html))),
+                MarkdownBlock.Paragraph(listOf(InlineSpan.Plain("After "), InlineSpan.Emphasis("note"), InlineSpan.Plain("."))),
+            ),
+            blocks,
+        )
+        val inline = (blocks[1] as MarkdownBlock.Paragraph).spans
+        assertEquals(listOf(destination), inline.transcriptLinks().map { it.destination })
+        assertEquals("Before note.\n\n$html\n\nAfter note.", blocks.replyPlainText())
+    }
+
+    @Test
+    fun `HTML comments remain visible literal text with safe bare URLs`() {
+        val destination = "https://example.org/comment"
+        val source = "<!-- note $destination -->"
+        val blocks = parseMarkdown(source)
+        assertEquals(listOf(MarkdownBlock.Paragraph(listOf(InlineSpan.Plain(source)))), blocks)
+        assertEquals(source, blocks.replyPlainText())
+        val inline = (blocks.single() as MarkdownBlock.Paragraph).spans
+        assertEquals(listOf(destination), inline.transcriptLinks().map { it.destination })
+    }
+
+    @Test
+    fun `inline HTML preserves attributes without creating HTML link actions`() {
+        for (destination in listOf("javascript:bad", "data:text/plain,test", "file:///sdcard/test", "ftp://example.org/file")) {
+            val source = "Before <a href=\"$destination\">label</a> after <!-- note -->"
+            val blocks = parseMarkdown(source)
+            val inline = (blocks.single() as MarkdownBlock.Paragraph).spans
+            assertEquals(source, inline.spansText())
+            assertTrue(inline.all { it is InlineSpan.Plain })
+            assertEquals(emptyList<TranscriptLink>(), inline.transcriptLinks())
+            assertEquals(source, blocks.replyPlainText())
+        }
+    }
+
+    @Test
+    fun `image fallback collection preserves inline HTML literally without actions`() {
+        val alt = "<span>https://example.org/</span>"
+        val blocks = parseMarkdown("![$alt](https://example.org/image.png)")
+        val inline = (blocks.single() as MarkdownBlock.Paragraph).spans
+        assertEquals(listOf(InlineSpan.ImageAlt(alt)), inline)
+        assertEquals(alt, blocks.replyPlainText())
+        assertEquals(emptyList<TranscriptLink>(), inline.transcriptLinks())
+    }
+
+    @Test
+    fun `HTML blocks survive nested quotes as plain source`() {
+        val html = "<section>note https://example.org/nested</section>"
+        val blocks = parseMarkdown("> > $html")
+        assertEquals(listOf(MarkdownBlock.Paragraph(listOf(InlineSpan.Plain(html)))), blocks)
+        assertEquals(html, blocks.replyPlainText())
+    }
+
+    @Test
+    fun `HTML blocks survive quoted list flattening as plain source`() {
+        val destination = "https://example.org/nested"
+        val html = "<section>\n <a href=\"javascript:bad\">note</a> $destination\n</section>  "
+        for (prefix in listOf("- ", "3. ")) {
+            val indent = " ".repeat(prefix.length)
+            val quotedHtml = html.lines().joinToString("\n") { "$indent> > $it" }
+            val blocks = parseMarkdown("${prefix}before\n$quotedHtml\n\n${indent}after")
+            val inline = when (val block = blocks.single()) {
+                is MarkdownBlock.Bullets -> block.items.single()
+                is MarkdownBlock.Numbered -> block.items.single()
+                else -> error("Expected list for $prefix")
+            }
+            assertEquals(
+                listOf(InlineSpan.Plain("before"), InlineSpan.Plain(" — "), InlineSpan.Plain(html),
+                    InlineSpan.Plain(" — "), InlineSpan.Plain("after")),
+                inline,
+            )
+            assertEquals(listOf(destination), inline.transcriptLinks().map { it.destination })
+            assertEquals("${if (prefix == "- ") "•" else "3."} before — $html — after", blocks.replyPlainText())
+        }
+    }
+
+    @Test
     fun `empty input yields no blocks`() {
         assertEquals(emptyList<MarkdownBlock>(), parseMarkdown(""))
         assertEquals(emptyList<MarkdownBlock>(), parseMarkdown("   \n  "))
