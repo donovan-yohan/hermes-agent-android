@@ -46,7 +46,7 @@ private fun stickyPromptFixture(): ChatUiState {
         transcript = listOf(
             UserTurn("synthetic-user-first", "Summarize the first synthetic task.", now),
             AssistantTurn("synthetic-assistant-first", response("First"), now),
-            UserTurn("synthetic-user-current", "Continue the current synthetic task by comparing the visible response context, recording the concrete next action, keeping the transcript readable while new paragraphs arrive, and returning to this exact request when the pinned context is tapped. This deliberately long, sanitized fixture prompt exercises the four-line clamp and soft overflow fade without using a real session, host, path, credential, or private conversation.", now),
+            UserTurn("synthetic-user-current", "Continue the current synthetic task by comparing the visible response context, recording the concrete next action, keeping the transcript readable while new paragraphs arrive, and returning to this exact request when the pinned context is tapped. This deliberately long, sanitized fixture prompt exercises the three-line sticky clamp and soft overflow fade without using a real session, host, path, credential, or private conversation.", now),
             AssistantTurn("synthetic-assistant-current", response("Current"), now, streaming = true),
         ),
         isStreaming = true,

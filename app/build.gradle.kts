@@ -217,6 +217,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.commonmark)
     implementation(libs.commonmark.gfm.tables)
+    implementation(libs.autolink)
 
     testImplementation(libs.junit)
     // ThemeParityTest walks the palette/token contract reflectively so a new

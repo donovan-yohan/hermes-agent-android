@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -50,6 +51,7 @@ class FinalUserPromptHeightTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val prompt = (1..60).joinToString("\n") { "Synthetic prompt line $it" }
     private val state = mutableStateOf(fixture(prompt))
+    private val currentFontScale = mutableStateOf(1f)
     private lateinit var measurer: TextMeasurer
     private lateinit var bodyStyle: TextStyle
     private lateinit var textDensity: Density
@@ -116,6 +118,31 @@ class FinalUserPromptHeightTest {
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
         assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size)
         assertFullInlinePrompt(prompt)
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun `expanded sticky remount retains disclosure after returning through full inline source`() {
+        launch()
+        val owner = compose.onNodeWithContentDescription("You said: $prompt")
+        owner.performClick()
+        owner.performCustomAccessibilityActionWithLabel("Return to prompt")
+        assertFullInlinePrompt(prompt)
+        compose.onNodeWithTag("Pinned final prompt").assertDoesNotExist()
+
+        val source = compose.onNodeWithTag("Inline final prompt").fetchSemanticsNode()
+        val transcriptTop = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot.top
+        val pastSource = source.positionInRoot.y + source.size.height - transcriptTop + px(1f)
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, pastSource) }
+        compose.waitForIdle()
+
+        compose.onNodeWithTag("Pinned final prompt").assertIsDisplayed()
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+        assertEquals("Collapse prompt", owner.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        compose.onNodeWithContentDescription("Return to prompt").assertIsDisplayed()
+        assertEquals(1, compose.onAllNodes(hasContentDescription("You said: $prompt")).fetchSemanticsNodes().size)
+        owner.performClick()
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        assertThreeLineClip("Current prompt bubble", prompt)
     }
 
     @Test @Config(qualifiers = "w411dp-h400dp")
@@ -185,9 +212,37 @@ class FinalUserPromptHeightTest {
         assertFullInlinePrompt(exact)
     }
 
+    @Test fun `font scale reflow while expanded retains collapse and return actions`() {
+        launch()
+        val owner = compose.onNodeWithContentDescription("You said: $prompt")
+        owner.performClick()
+        compose.runOnIdle { currentFontScale.value = 1.6f }
+        compose.waitForIdle()
+
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+        assertEquals("Collapse prompt", owner.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+        compose.onNodeWithContentDescription("Return to prompt").assertIsDisplayed()
+        compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
+        owner.performClick()
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+        assertThreeLineClip("Current prompt bubble", prompt)
+    }
+
     @Test fun `larger scaled monospace typography determines collapsed clip and third line fade`() {
         launch(fontScale = 1.6f, appearance = AppearanceSelection("cyberpunk"))
         assertThreeLineClip("Current prompt bubble", prompt)
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    @Test fun `reading further down a tall original prompt does not replace it with sticky chrome`() {
+        launch()
+        compose.onNodeWithContentDescription("You said: $prompt")
+            .performCustomAccessibilityActionWithLabel("Return to prompt")
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 100f) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("Pinned final prompt").assertDoesNotExist()
+        compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
+        assertFullInlinePrompt(prompt)
     }
 
     @Test fun `viewport changes such as keyboard arrival do not change sticky collapsed height`() {
@@ -197,7 +252,8 @@ class FinalUserPromptHeightTest {
                 measurer = rememberTextMeasurer()
                 bodyStyle = HermesTheme.type.body
                 textDensity = LocalDensity.current
-                CompositionLocalProvider(LocalFinalPromptDisclosure provides FinalPromptDisclosure("viewport", mutableStateOf(false))) {
+                val disclosure = remember { FinalPromptDisclosure("viewport", mutableStateOf(false)) }
+                CompositionLocalProvider(LocalFinalPromptDisclosure provides disclosure) {
                     FinalUserPromptBubble(prompt, viewport.value, Modifier.width(280.dp).testTag("Viewport prompt"), onReturn = {})
                 }
             }
@@ -230,7 +286,8 @@ class FinalUserPromptHeightTest {
                 measurer = rememberTextMeasurer()
                 bodyStyle = HermesTheme.type.body
                 textDensity = LocalDensity.current
-                CompositionLocalProvider(LocalFinalPromptDisclosure provides FinalPromptDisclosure("ink", mutableStateOf(false))) {
+                val disclosure = remember { FinalPromptDisclosure("ink", mutableStateOf(false)) }
+                CompositionLocalProvider(LocalFinalPromptDisclosure provides disclosure) {
                     Column {
                         FinalUserPromptBubble(ink, 800.dp, Modifier.width(280.dp).testTag("Ink clipped prompt"), onReturn = {})
                         UserTurnBubble(ink.substringBeforeLast('\n'), null, Modifier.width(280.dp).testTag("Ink reference prompt"))
@@ -243,11 +300,13 @@ class FinalUserPromptHeightTest {
         val clipped = compose.onNodeWithTag("Ink clipped prompt", true).fetchSemanticsNode().boundsInWindow
         val reference = compose.onNodeWithTag("Ink reference prompt", true).fetchSemanticsNode().boundsInWindow
         val layout = measure(ink, clipped.width, maxLines = 3)
+
         compose.runOnIdle {
             val view = compose.activity.window.decorView
             val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
             try {
                 view.draw(Canvas(bitmap))
+                saveNativeCapture(compose.activity, "prompt-three-line-ink.png")
                 val left = px(12f).roundToInt()
                 val right = clipped.width.roundToInt() - left
                 val top = px(9f).roundToInt()
@@ -263,7 +322,10 @@ class FinalUserPromptHeightTest {
                 var thirdInk = 0
                 for (y in 1 until clipped.height.roundToInt() - 1) for (x in left until right) {
                     val actual = pixel(clipped, x, y)
-                    val expected = pixel(reference, x, y)
+                    // maxLines clips a continuing paragraph; its final line can retain one
+                    // more pixel of leading than a paragraph ending after exactly three lines.
+                    val referenceY = if (y >= thirdBottom) y + reference.height.roundToInt() - clipped.height.roundToInt() else y
+                    val expected = pixel(reference, x, referenceY)
                     if (y < thirdTop || y >= thirdBottom) {
                         assertEquals("line two and padding must not fade at $x,$y", expected, actual)
                     } else {
@@ -323,8 +385,9 @@ class FinalUserPromptHeightTest {
     }
 
     private fun launch(fontScale: Float = 1f, appearance: AppearanceSelection = AppearanceSelection()) {
+        currentFontScale.value = fontScale
         compose.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, currentFontScale.value)) {
                 HermesTheme(appearance) {
                     measurer = rememberTextMeasurer()
                     bodyStyle = HermesTheme.type.body

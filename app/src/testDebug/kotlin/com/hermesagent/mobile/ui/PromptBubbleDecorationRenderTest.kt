@@ -23,6 +23,7 @@ import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.roundToInt
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
@@ -56,8 +57,10 @@ class PromptBubbleDecorationRenderTest {
 
         val intermediate = scrollUntilCurrentPromptAppears()
         capture("intermediate.png")
-        assertEquals(full.height, intermediate.height, 1f)
+        assertTrue("inline original retains all nine lines, unlike the three-line pin", full.height > intermediate.height)
         assertEquals(compact.height, intermediate.height, 1f)
+        assertEquals("hidden lines do not change the settled pin width", compact.width, intermediate.width, 1f)
+        assertRoundedBottomDecoration(capture("intermediate-decoration.png"), intermediate)
 
         scrollBy(12f * compose.density.density)
         val furtherCollapsed = currentPromptBubble()
@@ -149,11 +152,19 @@ class PromptBubbleDecorationRenderTest {
     }
 
     private fun scrollUntilCurrentPromptAppears(): Rect {
-        repeat(400) {
+        val source = inlinePrompt()
+        val viewportTop = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot.top
+        val maxPixels = ceil(source.bottom - viewportTop + 48f * compose.density.density).toInt()
+        var previousSource = source
+        repeat(maxPixels) {
             if (compose.onAllNodes(hasContentDescription("Current prompt: $PROMPT")).fetchSemanticsNodes().isNotEmpty()) {
+                assertTrue("final sticky waits for the complete source to leave", previousSource.bottom <= viewportTop + 1f)
                 scrollBy(8f * compose.density.density)
                 return currentPromptBubble()
             }
+            val inline = inlinePrompt()
+            assertEquals("reading preserves full source height", source.height, inline.height, 1f)
+            previousSource = inline
             scrollBy(1f)
         }
         throw AssertionError("prompt never entered the pinned transition")
@@ -163,9 +174,11 @@ class PromptBubbleDecorationRenderTest {
         .onNodeWithTag("Current prompt bubble", useUnmergedTree = true)
         .fetchSemanticsNode().boundsInRoot
 
-    private fun inlinePrompt(): Rect = compose
-        .onNodeWithTag("Final prompt body", useUnmergedTree = true)
-        .fetchSemanticsNode().boundsInRoot
+    private fun inlinePrompt(): Rect {
+        val node = compose.onNodeWithTag("Final prompt body", useUnmergedTree = true).fetchSemanticsNode()
+        val position = node.positionInRoot
+        return Rect(position.x, position.y, position.x + node.size.width, position.y + node.size.height)
+    }
 
     private fun scrollBy(pixels: Float) {
         compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { scroll ->

@@ -32,6 +32,7 @@ kotlinxSerialization = "1.9.0"
 
 # Markdown parsing (CommonMark spec + GFM tables extension).
 commonmark = "0.24.0"
+autolink = "0.11.0"
 
 # Test
 junit = "4.13.2"
@@ -75,6 +76,8 @@ kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serializa
 # GFM tables extension, mapped onto our own block model for rendering.
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
 commonmark-gfm-tables = { module = "org.commonmark:commonmark-ext-gfm-tables", version.ref = "commonmark" }
+# Bare HTTP(S) ranges only; explicit links stay owned by the CommonMark AST.
+autolink = { module = "org.nibor.autolink:autolink", version.ref = "autolink" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinxCoroutines" }

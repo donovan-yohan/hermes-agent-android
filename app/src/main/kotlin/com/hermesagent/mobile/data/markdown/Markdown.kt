@@ -13,6 +13,7 @@ import org.commonmark.node.FencedCodeBlock
 import org.commonmark.node.HardLineBreak
 import org.commonmark.node.Heading
 import org.commonmark.node.IndentedCodeBlock
+import org.commonmark.node.Link as CmLink
 import org.commonmark.node.ListItem
 import org.commonmark.node.Node
 import org.commonmark.node.OrderedList
@@ -74,8 +75,17 @@ sealed interface InlineSpan {
 
     data class Plain(override val text: String) : InlineSpan
     data class Code(override val text: String) : InlineSpan
-    data class Strong(override val text: String) : InlineSpan
-    data class Emphasis(override val text: String) : InlineSpan
+    data class Strong(val children: List<InlineSpan>) : InlineSpan {
+        constructor(text: String) : this(listOf(Plain(text)))
+        override val text: String get() = children.spansText()
+    }
+    data class Emphasis(val children: List<InlineSpan>) : InlineSpan {
+        constructor(text: String) : this(listOf(Plain(text)))
+        override val text: String get() = children.spansText()
+    }
+    data class Link(val destination: String, val children: List<InlineSpan>) : InlineSpan {
+        override val text: String get() = children.spansText()
+    }
 }
 
 /** Shared spec-correct parser; extensions enabled once, stateless afterwards. */
@@ -262,8 +272,9 @@ internal fun parseInline(node: Node?): List<InlineSpan> {
         when (child) {
             is Text -> spans += InlineSpan.Plain(child.literal)
             is Code -> spans += InlineSpan.Code(child.literal)
-            is StrongEmphasis -> spans += InlineSpan.Strong(collectText(child))
-            is Emphasis -> spans += InlineSpan.Emphasis(collectText(child))
+            is StrongEmphasis -> spans += InlineSpan.Strong(parseInline(child.firstChild))
+            is Emphasis -> spans += InlineSpan.Emphasis(parseInline(child.firstChild))
+            is CmLink -> spans += InlineSpan.Link(child.destination, parseInline(child.firstChild))
             is SoftLineBreak -> spans += InlineSpan.Plain(" ")
             is HardLineBreak -> spans += InlineSpan.Plain("\n")
             else -> spans += InlineSpan.Plain(collectText(child))

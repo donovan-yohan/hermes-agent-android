@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.runtime.mutableStateOf
 import com.hermesagent.mobile.ui.promptContentDescription as hasContentDescription
 import androidx.compose.ui.test.assertIsDisplayed
@@ -22,6 +23,7 @@ import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
 import com.hermesagent.mobile.ui.theme.HermesThemeMode
 import java.io.File
+import kotlin.math.ceil
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -104,8 +106,40 @@ class PromptPushOffRenderTest {
         assertEquals(before.bottom, reversed.bottom, compose.density.density)
         assertEquals(incomingReversed.top - incoming.top, reversed.bottom - after.bottom, compose.density.density + 1f)
         capture("handoff-reverse.png")
-        scroll(122f * compose.density.density)
-        compose.onNodeWithContentDescription("Current prompt: $second").fetchSemanticsNode()
+        val source = fullIncomingBounds()
+        val viewportTop = compose.onNodeWithTag("Transcript").fetchSemanticsNode().boundsInRoot.top
+        val maxPixels = ceil(source.bottom - viewportTop + 48f * compose.density.density).toInt()
+        var previousSource = source
+        var forwardPixels = 0
+        var sawInlineWithoutOutgoing = false
+        while (promptCount("Current prompt: $second") == 0 && forwardPixels < maxPixels) {
+            assertEquals("one complete inline owner until the final source leaves", 1, promptCount("You said: $second"))
+            val inline = fullIncomingBounds()
+            assertEquals("source retains full width during reading", source.width, inline.width, compose.density.density)
+            assertEquals("source retains full height during reading", source.height, inline.height, compose.density.density)
+            assertTrue("forward scroll moves source upwards", inline.top <= previousSource.top + compose.density.density)
+            if (promptCount("Current prompt: $first") == 0) {
+                if (!sawInlineWithoutOutgoing) capture("handoff-inline-reading.png")
+                sawInlineWithoutOutgoing = true
+            } else {
+                val outgoing = compose.onNodeWithTag("Current prompt bubble", true).fetchSemanticsNode().boundsInRoot
+                assertTrue("outgoing never covers incoming source", outgoing.bottom <= inline.top)
+                val cue = compose.onAllNodes(hasContentDescription("Assistant replies between these user messages"))
+                    .fetchSemanticsNodes().singleOrNull()?.boundsInRoot
+                if (cue != null) {
+                    assertTrue("reply divider remains below outgoing", cue.top >= outgoing.bottom)
+                    assertTrue("reply divider remains above incoming", cue.bottom <= inline.top)
+                }
+            }
+            previousSource = inline
+            scroll(1f)
+            forwardPixels++
+        }
+        assertTrue("reader sees inline source between outgoing and final pin", sawInlineWithoutOutgoing)
+        assertTrue("final pin waits until the whole source leaves", previousSource.bottom <= viewportTop + 1f)
+        assertEquals(0, promptCount("Current prompt: $first"))
+        assertEquals(0, promptCount("You said: $second"))
+        assertEquals(1, promptCount("Current prompt: $second"))
         capture("handoff-complete.png")
     }
 
@@ -146,5 +180,14 @@ class PromptPushOffRenderTest {
             output.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
             bitmap.recycle()
         }
+    }
+
+    private fun promptCount(label: String): Int =
+        compose.onAllNodes(hasContentDescription(label)).fetchSemanticsNodes().size
+
+    private fun fullIncomingBounds(): Rect {
+        val node = compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode()
+        val position = node.positionInRoot
+        return Rect(position.x, position.y, position.x + node.size.width, position.y + node.size.height)
     }
 }

@@ -1,0 +1,13 @@
+{
+  "base": "1e230d4",
+  "capture_head": "dc1b996568d9aa82da80c408d8c9ffb3d27e3d7e",
+  "working_tree_capture": true,
+  "sources": {
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/FinalUserPrompt.kt": "4a704b9cc8ff17912b9bfaa7bfd3e7435fe67ad318cd7e113590c16c2eb9e30d",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatScreen.kt": "6514d120ebf5fa5fb0fd2daf1bd7aa526a047ef15f910d03b535fb7b228e8e55",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt": "4652e32caa200f3b60d44201ad5f25bea0c4300faacb0debc74d3b7b87fd1799",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/TranscriptText.kt": "e6d323c503d24982acbe0ca9f8ff4f8d67e98f39fb0676c6ee02ae4e6bf08ea3",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/markdown/Markdown.kt": "434c9162c305d797042dc18cf023c50938fd68068922a54d87dc0d2f807d1616",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/markdown/TranscriptLinks.kt": "c600759aeb3c7f410bd98f866f71b751449de8e0ab5bb0d4a29c286654ed094f"
+  }
+}

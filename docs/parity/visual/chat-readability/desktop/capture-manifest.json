@@ -1,0 +1,421 @@
+{
+  "pinnedSha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "actualHead": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+  "capturedAtUtc": "2026-10-18T08:55:40.126Z",
+  "url": "http://127.0.0.1:52761/ignored/readability/index.html",
+  "browser": {
+    "channel": "chrome",
+    "version": "155.0.8059.80",
+    "headless": true,
+    "deviceScaleFactor": 1,
+    "locale": "en-US",
+    "timezone": "UTC",
+    "reducedMotion": "reduce",
+    "fixedFixtureTime": "2026-10-02T12:00:00Z"
+  },
+  "versions": {
+    "vite": "8.2.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "@playwright/test": "1.62.1"
+  },
+  "sources": [
+    {
+      "path": "apps/desktop/src/components/assistant-ui/markdown-text.tsx",
+      "sha256": "1a8ff03049da20cd3e79aab8332776efb4c1d84e53c5cfd44f49bd0d4b84c263",
+      "gitBlob": "071b2766feeb237af6ddd2aac5f9ae1c615af73e",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/lib/external-link.tsx",
+      "sha256": "38ba5db9523a00c5c7918a4ec2fd0895aefb58d95cfc094a394db08dc800149b",
+      "gitBlob": "42f77a470e41121b913033ed82473054157cfbb4",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/lib/markdown-preprocess.ts",
+      "sha256": "7fc4301ddda6d9d23169a6546be66bc3e77799db6f1b9ab72d91362371fad4a0",
+      "gitBlob": "203cd1df8ec77371e6dfbfccb43a986d3fe39b44",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/thread/message-parts.tsx",
+      "sha256": "658acadbb82689e7cec734aa39fbe03079e12a89704893a64abd5a20da514727",
+      "gitBlob": "d0741009f17b741774e5f029128a4fc8d0bdc946",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/components/chat/scaffold-row.tsx",
+      "sha256": "e889370591811c0d5be3a1f77fb481ceeaf6aaed69fe3f2bd90b7d3a16007623",
+      "gitBlob": "c16bf3187529cad8d1abf28938304b225f380fbf",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/components/chat/disclosure-row.tsx",
+      "sha256": "3055f85ec8f9e89b31f6e9f31064b84e12ecfc84e39b91ddcc4f64606064f0e0",
+      "gitBlob": "f07faa4bcf5f0a695bff049e53234573a098358e",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/thread/user-message.tsx",
+      "sha256": "20a4263fafcf6ce3960775618dca1a43fd8c693f198305f257b8873202e5520a",
+      "gitBlob": "231b1739e7937866450762369dbf42f1d2709527",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/components/assistant-ui/thread/user-message-text.tsx",
+      "sha256": "68fca985f60dbfb0944dd70d75cf32267f71a5793ef8b78fe8260a0aba01dd9b",
+      "gitBlob": "cc6b4b4d1c5e8ca27103ba999a43d7b4617eb81f",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/components/chat/shiki-highlighter.tsx",
+      "sha256": "9decfe05e146b8f5d869362ac6f7f2eb2b57222139b1acaa59b2afc62a51da14",
+      "gitBlob": "62f81a3739bcedef5f0bfd21135996d278cc489a",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/styles.css",
+      "sha256": "352deacfb820f96fad40b5d387310c8516e78684d381c147f244fc3518d94d4d",
+      "gitBlob": "0135a891f77659b305b1ae8feac62b025984bdc5",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/src/i18n/en.ts",
+      "sha256": "348dd9bc58eb76c49bf14ab6d36954c218413505229cdb245370ec2474760956",
+      "gitBlob": "73a42481cbee727a912ade1b211bd565ba53c6c0",
+      "matchesPinnedBlob": true
+    },
+    {
+      "path": "apps/desktop/vite.config.ts",
+      "sha256": "322b85dd9e9afb6401720a992ff4d46b01a146eae40c3d7f8b1f2d93849dbd9d",
+      "gitBlob": "a45b43d901f441a46255a67883eef3243d007b90",
+      "matchesPinnedBlob": true
+    }
+  ],
+  "harness": [
+    {
+      "path": "apps/desktop/ignored/readability/index.html",
+      "sha256": "abcb742029efe8b92dedb8dfba694cf83b5711314cd809aaaef0117e6ace7b57"
+    },
+    {
+      "path": "apps/desktop/ignored/readability/main.tsx",
+      "sha256": "afa215fdf67a27b4c1cb35b3dabd8630df3c9e51f79be385723f7b4bec5652db"
+    },
+    {
+      "path": "apps/desktop/ignored/readability/capture.mjs",
+      "sha256": "06611c9750ee66aa15c8889566826043872e27e5a7bf615816c47a447ae41645"
+    }
+  ],
+  "screenshots": [
+    {
+      "path": "desktop-production-light.png",
+      "sha256": "04e2ca013eaa208da696742a065b8144b9b143bb3906d6dcd8417a227252dc81"
+    },
+    {
+      "path": "desktop-markdown-links.png",
+      "sha256": "f89254f8c14a7c964848a0a46263ec959eeee12502b23c8beed6f738d389d791"
+    },
+    {
+      "path": "desktop-thinking-sticky-four-lines.png",
+      "sha256": "fd2f408deeb02bf6fca43e191c5305d3ad886fa43005539bb8d37651be737f76"
+    },
+    {
+      "path": "desktop-production-narrow-412.png",
+      "sha256": "c3348e92744032e34585736ee86d46efe7ad04c4c7769a9a4364eb85a66f9606"
+    }
+  ],
+  "productionTrackedDiff": "",
+  "status": "",
+  "command": "cd /Users/donovanyohan/.hermes/profiles/ebi/cache/scratch/hermes-desktop-links-36922/apps/desktop && node ignored/readability/capture.mjs",
+  "fixtureOnly": true,
+  "config": "Production vite.config.ts, envDir:false, ignored local entry, local optimizeDeps cache. No Hermes backend, Electron, profile or installed app started.",
+  "checks": {
+    "explicitLabelPreserved": true,
+    "bareUrlPreserved": true,
+    "inlineCodeNotLinkified": true,
+    "structuredFencedCodeNotLinkified": true,
+    "urlOnlyFenceUnwrappedByProduction": true,
+    "thinkingExpandedAndToggleVerified": true,
+    "fourLineClamp70px": true,
+    "noThreadSeparator": true,
+    "noBrowserErrors": true,
+    "noExternalRequests": true
+  },
+  "state": {
+    "fixture": {
+      "sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+      "markdown": "Explicit link: [open the sandbox](https://example.com:8782/activity)\n\nBare URL: https://example.com:8782/activity\n\nInline code URL: `https://example.com:8782/activity`\n\nURL-only fenced input (Desktop unwraps it):\n\n```text\nhttps://example.com:8782/activity\n```\n\nURL inside code:\n\n```javascript\nconst sandboxUrl = \"https://example.com:8782/activity\";\n```",
+      "reasoning": "Synthetic fixture reasoning: compare the authored link label with its destination. Keep URLs in inline code and fenced code literal. This is test content, not a private conversation.",
+      "prompt": "Synthetic prompt line 1: keep the original request readable while the answer scrolls.\nSynthetic prompt line 2: keep the original request readable while the answer scrolls.\nSynthetic prompt line 3: keep the original request readable while the answer scrolls.\nSynthetic prompt line 4: keep the original request readable while the answer scrolls.\nSynthetic prompt line 5: keep the original request readable while the answer scrolls.\nSynthetic prompt line 6: keep the original request readable while the answer scrolls.\nSynthetic prompt line 7: keep the original request readable while the answer scrolls.\nSynthetic prompt line 8: keep the original request readable while the answer scrolls.",
+      "kind": "production imports; synthetic inputs; fixture layout only"
+    },
+    "viewport": {
+      "width": 1000,
+      "height": 1100
+    },
+    "anchors": [
+      {
+        "text": "open the sandbox",
+        "href": "https://example.com:8782/activity",
+        "title": "https://example.com:8782/activity"
+      },
+      {
+        "text": "https://example.com:8782/activity",
+        "href": "https://example.com:8782/activity",
+        "title": "https://example.com:8782/activity"
+      },
+      {
+        "text": "https://example.com:8782/activity",
+        "href": "https://example.com:8782/activity",
+        "title": "https://example.com:8782/activity"
+      }
+    ],
+    "inlineCode": {
+      "text": "https://example.com:8782/activity",
+      "rect": {
+        "x": 257.9375,
+        "y": 193.375,
+        "width": 237.671875,
+        "height": 18
+      },
+      "color": "color(srgb 0.0784314 0.0784314 0.0784314 / 0.88)",
+      "opacity": "1",
+      "fontSize": "11.7px",
+      "lineHeight": "17.55px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "links": 0
+    },
+    "fencedCode": {
+      "text": "const sandboxUrl = \"https://example.com:8782/activity\";\n",
+      "rect": {
+        "x": 156,
+        "y": 315.171875,
+        "width": 700,
+        "height": 38.203125
+      },
+      "color": "color(srgb 0.0901961 0.0901961 0.101961 / 0.54)",
+      "opacity": "1",
+      "fontSize": "11px",
+      "lineHeight": "16.5px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "links": 0,
+      "html": "<div class=\"group/code relative min-w-0 max-w-full overflow-hidden rounded-[0.625rem] bg-(--ui-bg-editor) [--expandable-fade-from:var(--ui-bg-editor)] text-[length:var(--conversation-tool-font-size)] text-muted-foreground\" data-slot=\"code-card\"><button aria-label=\"Copy code\" class=\"inline-flex items-center py-0.5 text-[0.75rem] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 absolute right-4 top-1.5 z-10 h-5 gap-0 rounded-md px-1 opacity-0 transition-opacity group-hover/code:opacity-100 focus-visible:opacity-100\" type=\"button\" data-state=\"closed\" data-slot=\"tooltip-trigger\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"tabler-icon tabler-icon-copy size-3\"><path d=\"M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666\"></path><path d=\"M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1\"></path></svg></button><div class=\"font-mono text-[length:calc(0.7rem*var(--conversation-text-scale,1))] leading-relaxed text-foreground/90 [&amp;_pre]:m-0 [&amp;_pre]:overflow-x-auto [&amp;_pre]:scrollbar-overlay [&amp;_pre]:bg-transparent! [&amp;_pre]:font-mono [&amp;_pre]:leading-relaxed [&amp;_pre]:px-3 [&amp;_pre]:py-2.5\" data-slot=\"code-card-body\"><div class=\"relative\"><div class=\"scrollbar-overlay overflow-y-auto overflow-x-auto max-h-[7.5rem]\"><pre class=\"aui-shiki m-0 overflow-hidden bg-transparent p-0\"><div class=\"rs-root not-prose\"><pre class=\"shiki\" style=\"background-color: transparent; margin: 0px;\"><code>const sandboxUrl = \"https://example.com:8782/activity\";\n</code></pre></div></pre></div></div></div></div>"
+    },
+    "thinking": {
+      "text": "Thinking0sSynthetic fixture reasoning: compare the authored link label with its destination. Keep URLs in inline code and fenced code literal. This is test content, not a private conversation.",
+      "rect": {
+        "x": 196,
+        "y": 509.375,
+        "width": 620,
+        "height": 57
+      },
+      "color": "color(srgb 0.0901961 0.0901961 0.101961 / 0.54)",
+      "opacity": "0.67",
+      "fontSize": "11px",
+      "lineHeight": "16.5px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "expanded": "true",
+      "label": "Thinking",
+      "headerChildren": [
+        {
+          "tag": "SPAN",
+          "text": "Thinking",
+          "rect": {
+            "x": 196,
+            "y": 509.375,
+            "width": 44.921875,
+            "height": 18
+          },
+          "color": "color(srgb 0.0901961 0.0901961 0.101961 / 0.54)",
+          "opacity": "1",
+          "fontSize": "11px",
+          "lineHeight": "16.5px",
+          "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+          "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)"
+        },
+        {
+          "tag": "SPAN",
+          "text": "",
+          "rect": {
+            "x": 246.921875,
+            "y": 509.375,
+            "width": 12,
+            "height": 18
+          },
+          "color": "color(srgb 0.0901961 0.0901961 0.101961 / 0.54)",
+          "opacity": "0.8",
+          "fontSize": "11px",
+          "lineHeight": "16.5px",
+          "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+          "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)"
+        }
+      ],
+      "html": "<div class=\"text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)\" data-conversation-scaffold=\"\" data-slot=\"aui_thinking-disclosure\"><div class=\"group/disclosure-row relative flex w-full max-w-full min-w-0 text-(--ui-text-tertiary)\"><button aria-expanded=\"true\" class=\"flex min-w-0 max-w-fit items-start gap-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none\" type=\"button\"><span class=\"flex min-w-0 flex-col gap-0.5\"><span class=\"flex min-w-0 items-center gap-1.5\"><span class=\"text-[length:var(--conversation-tool-font-size)] leading-(--conversation-line-height) text-(--conversation-scaffold-text) shimmer\">Thinking</span></span></span><span class=\"flex h-(--conversation-line-height) shrink-0 items-center justify-center transition-opacity duration-150 opacity-80\"><i aria-hidden=\"true\" class=\"codicon codicon-chevron-right shrink-0 transition-transform duration-150 rotate-90\" style=\"font-size: 0.75rem;\"></i></span></button><span class=\"flex h-(--conversation-line-height) shrink-0 items-center pl-1.5\"><span class=\"flex shrink-0 items-center gap-1.5\"><span class=\"inline-flex tracking-[0.02em] shrink-0 text-[0.625rem] tabular-nums text-(--conversation-scaffold-meta)\"><span class=\"inline-block w-[1ch] text-center\">0</span><span class=\"inline-block w-[1ch] text-center\">s</span></span></span></span></div><div class=\"mt-0.5 w-full min-w-0 max-w-full overflow-auto overscroll-x-contain overscroll-y-auto wrap-anywhere pb-1 max-h-40\" data-slot=\"aui_thinking-body\"><div><div data-status=\"running\" data-slot=\"aui_reasoning-text\" class=\"aui-md prose w-full min-w-0 max-w-none overflow-hidden prose-p:leading-(--dt-line-height) prose-li:leading-(--dt-line-height) prose-headings:text-foreground prose-strong:text-foreground prose-pre:text-foreground prose-a:break-words prose-p:[overflow-wrap:anywhere] prose-li:marker:text-muted-foreground/70 prose-code:rounded-[0.25rem] prose-code:px-[0.1875rem] prose-code:py-px prose-code:font-mono prose-code:text-[0.9em] prose-code:font-normal prose-code:before:content-none prose-code:after:content-none [&amp;&gt;*:first-child]:mt-0 [&amp;&gt;*:last-child]:mb-0 [&amp;&gt;*+*]:mt-(--paragraph-gap) text-xs leading-snug text-muted-foreground/85\"><div class=\"space-y-4 whitespace-normal [&amp;&gt;*:first-child]:mt-0 [&amp;&gt;*:last-child]:mb-0\"><p class=\"wrap-anywhere leading-(--dt-line-height)\" node=\"[object Object]\">Synthetic fixture reasoning: compare the authored link label with its destination. Keep URLs in inline code and fenced code literal. This is test content, not a private conversation.</p></div></div></div></div></div>"
+    },
+    "clamp": {
+      "text": "Synthetic prompt line 1: keep the original request readable while the answer scrolls.\nSynthetic prompt line 2: keep the original request readable while the answer scrolls.\nSynthetic prompt line 3: keep the original request readable while the answer scrolls.\nSynthetic prompt line 4: keep the original request readable while the answer scrolls.\nSynthetic prompt line 5: keep the original request readable while the answer scrolls.\nSynthetic prompt line 6: keep the original request readable while the answer scrolls.\nSynthetic prompt line 7: keep the original request readable while the answer scrolls.\nSynthetic prompt line 8: keep the original request readable while the answer scrolls.",
+      "rect": {
+        "x": 197,
+        "y": 429.046875,
+        "width": 582,
+        "height": 70
+      },
+      "color": "oklab(0.205928 0.0016207 -0.00566335 / 0.893)",
+      "opacity": "1",
+      "fontSize": "13px",
+      "lineHeight": "19.5px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "maxHeight": "70px",
+      "scrollHeight": 135,
+      "maskImage": "linear-gradient(rgb(0, 0, 0) 55%, rgba(0, 0, 0, 0))",
+      "dataClamped": "true",
+      "html": "<div class=\"sticky-human-clamp\" data-clamped=\"true\" style=\"--human-msg-full: 136px;\"><div class=\"min-h-[1.25rem]\"><span class=\"block wrap-anywhere\" data-slot=\"aui_user-message-text\"><span class=\"wrap-anywhere block whitespace-pre-line\" data-slot=\"aui_user-inline-text\"><span class=\"whitespace-pre-line\" data-slot=\"aui_directive-text\">Synthetic prompt line 1: keep the original request readable while the answer scrolls.\nSynthetic prompt line 2: keep the original request readable while the answer scrolls.\nSynthetic prompt line 3: keep the original request readable while the answer scrolls.\nSynthetic prompt line 4: keep the original request readable while the answer scrolls.\nSynthetic prompt line 5: keep the original request readable while the answer scrolls.\nSynthetic prompt line 6: keep the original request readable while the answer scrolls.\nSynthetic prompt line 7: keep the original request readable while the answer scrolls.\nSynthetic prompt line 8: keep the original request readable while the answer scrolls.</span></span></span></div></div>"
+    },
+    "separators": 0
+  },
+  "narrowState": {
+    "fixture": {
+      "sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+      "markdown": "Explicit link: [open the sandbox](https://example.com:8782/activity)\n\nBare URL: https://example.com:8782/activity\n\nInline code URL: `https://example.com:8782/activity`\n\nURL-only fenced input (Desktop unwraps it):\n\n```text\nhttps://example.com:8782/activity\n```\n\nURL inside code:\n\n```javascript\nconst sandboxUrl = \"https://example.com:8782/activity\";\n```",
+      "reasoning": "Synthetic fixture reasoning: compare the authored link label with its destination. Keep URLs in inline code and fenced code literal. This is test content, not a private conversation.",
+      "prompt": "Synthetic prompt line 1: keep the original request readable while the answer scrolls.\nSynthetic prompt line 2: keep the original request readable while the answer scrolls.\nSynthetic prompt line 3: keep the original request readable while the answer scrolls.\nSynthetic prompt line 4: keep the original request readable while the answer scrolls.\nSynthetic prompt line 5: keep the original request readable while the answer scrolls.\nSynthetic prompt line 6: keep the original request readable while the answer scrolls.\nSynthetic prompt line 7: keep the original request readable while the answer scrolls.\nSynthetic prompt line 8: keep the original request readable while the answer scrolls.",
+      "kind": "production imports; synthetic inputs; fixture layout only"
+    },
+    "viewport": {
+      "width": 412,
+      "height": 1100
+    },
+    "anchors": [
+      {
+        "text": "open the sandbox",
+        "href": "https://example.com:8782/activity",
+        "title": "https://example.com:8782/activity"
+      },
+      {
+        "text": "https://example.com:8782/activity",
+        "href": "https://example.com:8782/activity",
+        "title": "https://example.com:8782/activity"
+      },
+      {
+        "text": "https://example.com:8782/activity",
+        "href": "https://example.com:8782/activity",
+        "title": "https://example.com:8782/activity"
+      }
+    ],
+    "inlineCode": {
+      "text": "https://example.com:8782/activity",
+      "rect": {
+        "x": 137.9375,
+        "y": 193.375,
+        "width": 237.671875,
+        "height": 18
+      },
+      "color": "color(srgb 0.0784314 0.0784314 0.0784314 / 0.88)",
+      "opacity": "1",
+      "fontSize": "11.7px",
+      "lineHeight": "17.55px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "links": 0
+    },
+    "fencedCode": {
+      "text": "const sandboxUrl = \"https://example.com:8782/activity\";\n",
+      "rect": {
+        "x": 36,
+        "y": 315.171875,
+        "width": 352,
+        "height": 38.203125
+      },
+      "color": "color(srgb 0.0901961 0.0901961 0.101961 / 0.54)",
+      "opacity": "1",
+      "fontSize": "11px",
+      "lineHeight": "16.5px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "links": 0,
+      "html": "<div class=\"group/code relative min-w-0 max-w-full overflow-hidden rounded-[0.625rem] bg-(--ui-bg-editor) [--expandable-fade-from:var(--ui-bg-editor)] text-[length:var(--conversation-tool-font-size)] text-muted-foreground\" data-slot=\"code-card\"><button aria-label=\"Copy code\" class=\"inline-flex items-center py-0.5 text-[0.75rem] text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 absolute right-4 top-1.5 z-10 h-5 gap-0 rounded-md px-1 opacity-0 transition-opacity group-hover/code:opacity-100 focus-visible:opacity-100\" type=\"button\" data-state=\"closed\" data-slot=\"tooltip-trigger\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"tabler-icon tabler-icon-copy size-3\"><path d=\"M7 9.667a2.667 2.667 0 0 1 2.667 -2.667h8.666a2.667 2.667 0 0 1 2.667 2.667v8.666a2.667 2.667 0 0 1 -2.667 2.667h-8.666a2.667 2.667 0 0 1 -2.667 -2.667l0 -8.666\"></path><path d=\"M4.012 16.737a2.005 2.005 0 0 1 -1.012 -1.737v-10c0 -1.1 .9 -2 2 -2h10c.75 0 1.158 .385 1.5 1\"></path></svg></button><div class=\"font-mono text-[length:calc(0.7rem*var(--conversation-text-scale,1))] leading-relaxed text-foreground/90 [&amp;_pre]:m-0 [&amp;_pre]:overflow-x-auto [&amp;_pre]:scrollbar-overlay [&amp;_pre]:bg-transparent! [&amp;_pre]:font-mono [&amp;_pre]:leading-relaxed [&amp;_pre]:px-3 [&amp;_pre]:py-2.5\" data-slot=\"code-card-body\"><div class=\"relative\"><div class=\"scrollbar-overlay overflow-y-auto overflow-x-auto max-h-[7.5rem]\"><pre class=\"aui-shiki m-0 overflow-hidden bg-transparent p-0\"><div class=\"rs-root not-prose\" data-testid=\"shiki-container\"><pre class=\"shiki shiki-themes github-dark-dimmed github-light-default\" style=\"background-color:light-dark(#ffffff, #22272e);--shiki-dark-bg:#22272e;--shiki-light-bg:#ffffff;color:light-dark(#1f2328, #adbac7);--shiki-dark:#adbac7;--shiki-light:#1f2328\" tabindex=\"0\"><code><span class=\"line\"><span style=\"color:light-dark(#CF222E, #F47067);--shiki-dark:#F47067;--shiki-light:#CF222E\">const</span><span style=\"color:light-dark(#0550AE, #6CB6FF);--shiki-dark:#6CB6FF;--shiki-light:#0550AE\"> sandboxUrl</span><span style=\"color:light-dark(#CF222E, #F47067);--shiki-dark:#F47067;--shiki-light:#CF222E\"> =</span><span style=\"color:light-dark(#0A3069, #96D0FF);--shiki-dark:#96D0FF;--shiki-light:#0A3069\"> \"https://example.com:8782/activity\"</span><span style=\"color:light-dark(#1F2328, #ADBAC7);--shiki-dark:#ADBAC7;--shiki-light:#1F2328\">;</span></span>\n<span class=\"line\"></span></code></pre></div></pre></div></div></div></div>"
+    },
+    "thinking": {
+      "text": "Thinking0sSynthetic fixture reasoning: compare the authored link label with its destination. Keep URLs in inline code and fenced code literal. This is test content, not a private conversation.",
+      "rect": {
+        "x": 76,
+        "y": 527.375,
+        "width": 272,
+        "height": 90
+      },
+      "color": "color(srgb 0.0901961 0.0901961 0.101961 / 0.54)",
+      "opacity": "1",
+      "fontSize": "11px",
+      "lineHeight": "16.5px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "expanded": "true",
+      "label": "Thinking",
+      "headerChildren": [
+        {
+          "tag": "SPAN",
+          "text": "Thinking",
+          "rect": {
+            "x": 76,
+            "y": 527.375,
+            "width": 44.921875,
+            "height": 18
+          },
+          "color": "oklab(0.205928 0.0016207 -0.00566335 / 0.94)",
+          "opacity": "1",
+          "fontSize": "11px",
+          "lineHeight": "16.5px",
+          "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+          "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)"
+        },
+        {
+          "tag": "SPAN",
+          "text": "",
+          "rect": {
+            "x": 126.921875,
+            "y": 527.375,
+            "width": 12,
+            "height": 18
+          },
+          "color": "oklab(0.205928 0.0016207 -0.00566335 / 0.94)",
+          "opacity": "0.8",
+          "fontSize": "11px",
+          "lineHeight": "16.5px",
+          "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+          "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)"
+        }
+      ],
+      "html": "<div class=\"text-[length:var(--conversation-tool-font-size)] text-(--ui-text-tertiary)\" data-conversation-scaffold=\"\" data-slot=\"aui_thinking-disclosure\"><div class=\"group/disclosure-row relative flex w-full max-w-full min-w-0 text-(--ui-text-tertiary)\"><button aria-expanded=\"true\" class=\"flex min-w-0 max-w-fit items-start gap-1.5 text-left transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none\" type=\"button\"><span class=\"flex min-w-0 flex-col gap-0.5\"><span class=\"flex min-w-0 items-center gap-1.5\"><span class=\"text-[length:var(--conversation-tool-font-size)] leading-(--conversation-line-height) text-(--conversation-scaffold-text) shimmer\">Thinking</span></span></span><span class=\"flex h-(--conversation-line-height) shrink-0 items-center justify-center transition-opacity duration-150 opacity-80\"><i aria-hidden=\"true\" class=\"codicon codicon-chevron-right shrink-0 transition-transform duration-150 rotate-90\" style=\"font-size: 0.75rem;\"></i></span></button><span class=\"flex h-(--conversation-line-height) shrink-0 items-center pl-1.5\"><span class=\"flex shrink-0 items-center gap-1.5\"><span class=\"inline-flex tracking-[0.02em] shrink-0 text-[0.625rem] tabular-nums text-(--conversation-scaffold-meta)\"><span class=\"inline-block w-[1ch] text-center\">0</span><span class=\"inline-block w-[1ch] text-center\">s</span></span></span></span></div><div class=\"mt-0.5 w-full min-w-0 max-w-full overflow-auto overscroll-x-contain overscroll-y-auto wrap-anywhere pb-1\" data-slot=\"aui_thinking-body\"><div><div data-status=\"running\" data-slot=\"aui_reasoning-text\" class=\"aui-md prose w-full min-w-0 max-w-none overflow-hidden prose-p:leading-(--dt-line-height) prose-li:leading-(--dt-line-height) prose-headings:text-foreground prose-strong:text-foreground prose-pre:text-foreground prose-a:break-words prose-p:[overflow-wrap:anywhere] prose-li:marker:text-muted-foreground/70 prose-code:rounded-[0.25rem] prose-code:px-[0.1875rem] prose-code:py-px prose-code:font-mono prose-code:text-[0.9em] prose-code:font-normal prose-code:before:content-none prose-code:after:content-none [&amp;&gt;*:first-child]:mt-0 [&amp;&gt;*:last-child]:mb-0 [&amp;&gt;*+*]:mt-(--paragraph-gap) text-xs leading-snug text-muted-foreground/85\"><div class=\"space-y-4 whitespace-normal [&amp;&gt;*:first-child]:mt-0 [&amp;&gt;*:last-child]:mb-0\"><p class=\"wrap-anywhere leading-(--dt-line-height)\" node=\"[object Object]\">Synthetic fixture reasoning: compare the authored link label with its destination. Keep URLs in inline code and fenced code literal. This is test content, not a private conversation.</p></div></div></div></div></div>"
+    },
+    "clamp": {
+      "text": "Synthetic prompt line 1: keep the original request readable while the answer scrolls.\nSynthetic prompt line 2: keep the original request readable while the answer scrolls.\nSynthetic prompt line 3: keep the original request readable while the answer scrolls.\nSynthetic prompt line 4: keep the original request readable while the answer scrolls.\nSynthetic prompt line 5: keep the original request readable while the answer scrolls.\nSynthetic prompt line 6: keep the original request readable while the answer scrolls.\nSynthetic prompt line 7: keep the original request readable while the answer scrolls.\nSynthetic prompt line 8: keep the original request readable while the answer scrolls.",
+      "rect": {
+        "x": 77,
+        "y": 447.046875,
+        "width": 234,
+        "height": 70
+      },
+      "color": "oklab(0.205928 0.0016207 -0.00566335 / 0.893)",
+      "opacity": "1",
+      "fontSize": "13px",
+      "lineHeight": "19.5px",
+      "borderTop": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "borderBottom": "0px solid color(srgb 0.0242392 0.262258 0.752927 / 0.2188)",
+      "maxHeight": "70px",
+      "scrollHeight": 405,
+      "maskImage": "linear-gradient(rgb(0, 0, 0) 55%, rgba(0, 0, 0, 0))",
+      "dataClamped": "true",
+      "html": "<div class=\"sticky-human-clamp\" data-clamped=\"true\" style=\"--human-msg-full: 406px;\"><div class=\"min-h-[1.25rem]\"><span class=\"block wrap-anywhere\" data-slot=\"aui_user-message-text\"><span class=\"wrap-anywhere block whitespace-pre-line\" data-slot=\"aui_user-inline-text\"><span class=\"whitespace-pre-line\" data-slot=\"aui_directive-text\">Synthetic prompt line 1: keep the original request readable while the answer scrolls.\nSynthetic prompt line 2: keep the original request readable while the answer scrolls.\nSynthetic prompt line 3: keep the original request readable while the answer scrolls.\nSynthetic prompt line 4: keep the original request readable while the answer scrolls.\nSynthetic prompt line 5: keep the original request readable while the answer scrolls.\nSynthetic prompt line 6: keep the original request readable while the answer scrolls.\nSynthetic prompt line 7: keep the original request readable while the answer scrolls.\nSynthetic prompt line 8: keep the original request readable while the answer scrolls.</span></span></span></div></div>"
+    },
+    "separators": 0
+  },
+  "errors": [],
+  "consoleErrors": [],
+  "blocked": [],
+  "requestCount": 493
+}

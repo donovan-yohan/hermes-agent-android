@@ -7,10 +7,12 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performCustomAccessibilityActionWithLabel
 import androidx.compose.ui.test.performSemanticsAction
+
 import com.hermesagent.mobile.data.session.AssistantTurn
 import com.hermesagent.mobile.data.session.SessionStatus
 import com.hermesagent.mobile.data.session.SessionSummary
 import com.hermesagent.mobile.data.session.TranscriptEntry
+import com.hermesagent.mobile.data.session.TurnTermination
 import com.hermesagent.mobile.data.session.UserTurn
 import com.hermesagent.mobile.ui.chat.ChatScreen
 import com.hermesagent.mobile.ui.chat.ChatUiState
@@ -55,14 +57,46 @@ class PromptReplyGapTest {
         )).fetchSemanticsNodes().isEmpty())
     }
 
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
     @Test fun `consecutive user messages do not invent intervening replies`() {
         launch(listOf(
             UserTurn("first", FIRST, NOW), UserTurn("second", SECOND, NOW),
             AssistantTurn("tail", response(), NOW),
         ))
+        compose.onNodeWithContentDescription("You said: $SECOND")
+            .performCustomAccessibilityActionWithLabel("Return to prompt")
+        scroll(-20f * compose.density.density)
+        compose.onNode(promptContentDescription("Current prompt: $FIRST")).fetchSemanticsNode()
+        compose.onNode(promptContentDescription("You said: $SECOND")).fetchSemanticsNode()
         assertTrue(compose.onAllNodes(androidx.compose.ui.test.hasContentDescription(
             "Assistant replies between these user messages",
         )).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test fun `an empty failed assistant turn is not claimed as an intervening reply`() {
+        assertNoReplyCue(AssistantTurn("placeholder", "", NOW, error = "Synthetic failure"))
+    }
+
+    @Test fun `an empty interrupted assistant turn is not claimed as an intervening reply`() {
+        assertNoReplyCue(AssistantTurn("placeholder", "", NOW, termination = TurnTermination.UserRequested))
+    }
+
+    @Test fun `whitespace assistant content is not claimed as an intervening reply`() {
+        assertNoReplyCue(AssistantTurn("placeholder", " \n ", NOW))
+    }
+
+    @OptIn(androidx.compose.ui.test.ExperimentalTestApi::class)
+    private fun assertNoReplyCue(placeholder: AssistantTurn) {
+        launch(listOf(UserTurn("first", FIRST, NOW), placeholder, UserTurn("second", SECOND, NOW),
+            AssistantTurn("tail", response(), NOW)))
+        compose.onNodeWithContentDescription("You said: $SECOND")
+            .performCustomAccessibilityActionWithLabel("Return to prompt")
+        scroll(-20f * compose.density.density)
+        compose.onNode(promptContentDescription("Current prompt: $FIRST")).fetchSemanticsNode()
+        compose.onNode(promptContentDescription("You said: $SECOND")).fetchSemanticsNode()
+        assertTrue("empty assistant placeholders are not replies", compose.onAllNodes(
+            androidx.compose.ui.test.hasContentDescription("Assistant replies between these user messages"),
+        ).fetchSemanticsNodes().isEmpty())
     }
 
     private fun scroll(pixels: Float) {

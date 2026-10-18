@@ -41,6 +41,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.scrollBy
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -84,7 +87,7 @@ internal fun Modifier.collapsePromptOnOutsideTap(disclosure: FinalPromptDisclosu
             }
         }
 
-/** Same decoration/width as every user turn, with a viewport-bounded body, not a second excerpt. */
+/** Only the sticky copy clips; the selectable source stays complete in the transcript. */
 @Composable
 internal fun FinalUserPromptBubble(
     body: String,
@@ -95,11 +98,13 @@ internal fun FinalUserPromptBubble(
     onScrollTranscript: ((Float) -> Unit)? = null,
 ) {
     val disclosure = LocalFinalPromptDisclosure.current ?: return
-    val expanded by disclosure.expanded
-    val collapsedHeight = minOf(240.dp, viewportHeight * .35f).coerceAtLeast(1.dp)
+    val pinned = onReturn != null
+    val expanded = pinned && disclosure.expanded.value
     val density = LocalDensity.current
-    val capPx = with(density) { collapsedHeight.toPx() }
-    var overflows by remember(body, capPx) { mutableStateOf(false) }
+    val textStyle = HermesTheme.type.body
+    val textMeasurer = rememberTextMeasurer()
+    var collapsedLayout by remember(body, density, textStyle) { mutableStateOf<TextLayoutResult?>(null) }
+    val overflows = pinned && collapsedLayout?.didOverflowHeight == true
     val fill = HermesTheme.tokens.userBubble
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -112,12 +117,12 @@ internal fun FinalUserPromptBubble(
             .then(if (overflows || onReturn != null) Modifier.clickable(
                 role = Role.Button,
                 onClickLabel = if (overflows) { if (expanded) "Collapse prompt" else "Expand prompt" } else "Return to prompt",
-            ) { if (overflows) disclosure.expanded.value = !expanded else onReturn?.invoke() } else Modifier)
+            ) { if (overflows) disclosure.expanded.value = !expanded else onReturn.invoke() } else Modifier)
             .semantics(mergeDescendants = true) {
                 contentDescription = "You said: $body"
                 if (overflows) stateDescription = if (expanded) "Expanded" else "Collapsed"
                 if (onReturn != null) customActions = listOf(CustomAccessibilityAction("Return to prompt") { onReturn(); true })
-                if (expanded || onScrollTranscript != null) scrollBy { _, y ->
+                if (pinned && (expanded || onScrollTranscript != null)) scrollBy { _, y ->
                     if (expanded) scope.launch { scrollState.scrollBy(y) } else onScrollTranscript?.invoke(y)
                     true
                 }
@@ -131,13 +136,27 @@ internal fun FinalUserPromptBubble(
                     contentDescription = null,
                     modifier = modifier.then(if (onReturn == null) Modifier.testTag("Final prompt body") else Modifier),
                     selectable = !hidden && onReturn == null,
-                    textModifier = Modifier
-                        .heightIn(max = if (expanded) (viewportHeight * .8f).coerceAtLeast(1.dp) else collapsedHeight)
-                        .verticalScroll(scrollState, enabled = expanded),
-                    onTextLayout = { overflows = it.size.height > capPx + 1f },
+                    maxLines = if (pinned && !expanded) 3 else Int.MAX_VALUE,
+                    textModifier = if (expanded) Modifier
+                        .heightIn(max = (viewportHeight * .8f).coerceAtLeast(1.dp))
+                        .verticalScroll(scrollState) else Modifier,
+                    onTextLayout = {
+                        if (pinned) {
+                            // Expanded owners can mount or reflow without ever laying out collapsed.
+                            // Measure the cap at the current text constraint, including return-control space.
+                            collapsedLayout = if (expanded) textMeasurer.measure(
+                                text = body,
+                                style = textStyle,
+                                maxLines = 3,
+                                constraints = Constraints(maxWidth = it.layoutInput.constraints.maxWidth),
+                            ) else it
+                        }
+                    },
                     overlay = {
                         if (overflows && !expanded && !hidden) {
-                            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(minOf(32.dp, collapsedHeight * .45f))
+                            val layout = checkNotNull(collapsedLayout)
+                            val fadeHeight = with(density) { (layout.getLineBottom(2) - layout.getLineTop(2)).toDp() }
+                            Box(Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(fadeHeight)
                                 .testTag("Prompt clipping fade")
                                 .drawBehind { drawRect(Brush.verticalGradient(listOf(fill.copy(alpha = 0f), fill))) })
                         }
