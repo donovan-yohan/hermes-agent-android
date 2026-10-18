@@ -1,0 +1,16 @@
+{
+  "baseCommit": "2923f0f2b3d37b7c8bab5cd0edd6173615c64df1",
+  "redRegressionCommit": "55fc228",
+  "mixedContentRedRegressionCommit": "e9bbdfd",
+  "sourceHashes": {
+    "app/src/main/kotlin/com/hermesagent/mobile/data/markdown/Markdown.kt": "815ae3667baf8fa8f809a8d6ee4d96cf7d3ec14e945036fe40ca5ea6652142fb",
+    "app/src/main/kotlin/com/hermesagent/mobile/plugins/groups/GroupsScreen.kt": "d257210ec6f2c437499333cada61be2180c9c15969ccdb8c66c946627dd8d1eb",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt": "2e5f60d493a5ecb9146e6dbe6ac5204a16ccc0a0aaefa56708382aee8c4b3982",
+    "app/src/test/kotlin/com/hermesagent/mobile/data/markdown/MarkdownTest.kt": "67c7322bf3942742082169716e8c12c6cff8f10b0b2b0039f7651ba8c75c02f6",
+    "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/chat/ApkArtifactLinkDiagnosticTest.kt": "4815cc708559d11e97203b617ff150e410cc29b370d3567ae1efc70f65b99b42",
+    "app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/groups/GroupMessageLinkTest.kt": "a2ea7d109197580750a02a60cae97ba71787a2bb0607e5a9305387583c1f1202"
+  },
+  "method": "Synthetic production Compose window draws under Robolectric API 34, 411x891. Coordinate taps assert exact URL handoff using LocalUriHandler. No Gateway, browser network, physical device or installed-app acceptance.",
+  "captureEnvironment": "NATIVE_UI_CAPTURE_DIR=<repo>/build/visual-parity/group-message-links/android",
+  "command": "python3 <scratch>/mobile-gradle-locked.py :app:testDebugUnitTest --tests *ApkArtifactLinkDiagnosticTest* --tests *GroupMessageLinkTest*"
+}

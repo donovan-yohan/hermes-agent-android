@@ -2034,7 +2034,7 @@ private fun String?.jsonStringField(vararg names: String): String? {
 }
 
 @Composable
-private fun MarkdownBlockView(
+internal fun MarkdownBlockView(
     block: MarkdownBlock,
     transcriptDirectiveContributions: List<Contribution> = emptyList(),
 ) {

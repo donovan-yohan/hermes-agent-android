@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Group message links: Desktop and Android</title>
+<style>
+:root { color-scheme: light dark; font: 15px/1.55 system-ui, sans-serif; }
+body { max-width: 1280px; margin: 32px auto; padding: 0 20px; }
+h1 { font-size: 25px; } h2 { margin-top: 36px; font-size: 20px; }
+code { overflow-wrap: anywhere; } .pair { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+figure { margin: 0; width: min(100%, 412px); } img { width: 100%; height: auto; border: 1px solid #8886; }
+figcaption { padding: 8px 0; } table { border-collapse: collapse; } th,td { border: 1px solid #8886; padding: 8px; text-align: left; vertical-align: top; }
+.notice { border-left: 3px solid #888; padding-left: 15px; }
+</style>
+<h1>Group message web links</h1>
+<p>Desktop authority <code>36922ad064d65dcf25f8f48df81e1ccf9a55de67</code>.
+Android starts from <code>2923f0f2b3d37b7c8bab5cd0edd6173615c64df1</code>.
+The exact public download message is a Markdown link, not a file attachment.</p>
+<p class="notice">Desktop is the production GroupChatMainView mounted from its real workspace callback in a synthetic browser fixture.
+Android is the production GroupsScreen drawn by native Robolectric Canvas at API 34, not a physical phone or installed-app capture.
+Only message-body behavior is compared. Desktop is Mono light; Android uses the default Nous light appearance. These are not theme-parity captures.</p>
+<h2>Exact reported link</h2>
+<p><code>[download the latest apk](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983)</code></p>
+<div class="pair">
+<figure><img src="desktop/desktop-labeled-apk-mono-light-412.png" alt="Pinned Desktop exact APK message crop"><figcaption>Desktop production group message. The visible label preserves the authored destination.</figcaption></figure>
+<figure><img src="android/apk-link-group-current.png" alt="Android group message after link fix"><figcaption>Android after the fix. Blue underlined label; existing read-only controls unchanged.</figcaption></figure>
+<figure><img src="android/apk-link-group-baseline.png" alt="Android baseline raw Markdown without action"><figcaption>Android before the fix. Literal Markdown had no link annotation or actionable target.</figcaption></figure>
+</div>
+<h2>Production group surfaces</h2>
+<div class="pair">
+<figure><img src="desktop/desktop-group-mono-light-412.png" alt="Desktop full synthetic group link fixture"><figcaption>Pinned Desktop group view at 412 CSS pixels. Synthetic public link, bare URL, rich Markdown and refused unsafe schemes.</figcaption></figure>
+<figure><img src="android/group-message-links.png" alt="Android group fixture with formatted bare inline and fenced links"><figcaption>Native Android group view at 411 pixels. Public example fixtures exercise labeled, bare, inline-code and fenced-code targets.</figcaption></figure>
+</div>
+<h2>Review</h2>
+<table>
+<tr><th>Aspect</th><th>Result and boundary</th></tr>
+<tr><td>Exact label and destination</td><td>Desktop DOM and trusted touch routing assertions; Android production text-layout annotation and character-position tap assertions. The visible label is not replaced by the URL.</td></tr>
+<tr><td>Code URLs</td><td>Intentional mobile adaptation. Android makes valid web URLs in inline and fenced code tappable. Desktop structured code remains literal at this pin.</td></tr>
+<tr><td>Copy and actions</td><td>No new product strings, action order changes or enabled group mutations. Existing disabled WIP controls remain. No quote-reply capability is invented.</td></tr>
+<tr><td>Layout</td><td>The label is visible without clipping or overlap in the captured state. Native spacing and platform typography differ. This report does not certify the whole group surface.</td></tr>
+<tr><td>Safety</td><td>Only existing HTTP/HTTPS browser actions are reused. No plugin directive contributions, HTML execution, file retrieval or automatic navigation is added.</td></tr>
+<tr><td>Not proven</td><td>No GitHub download, authentication, APK install, physical touch/IME, TalkBack or live-room integration. A successful URI handoff is not proof of any of these.</td></tr>
+</table>
+<h2>Provenance</h2>
+<p><a href="README.md">Packet notes and reproduction</a>, <a href="desktop/capture-manifest.json">Desktop source/capture manifest</a>,
+<a href="android/source-manifest.json">Android source manifest</a>, <a href="hashes.json">Published file digests</a>.</p>
+</html>

@@ -1,0 +1,417 @@
+diff --git a/apps/desktop/ignored/group-message-links/index.html b/apps/desktop/ignored/group-message-links/index.html
+new file mode 100644
+--- /dev/null
++++ b/apps/desktop/ignored/group-message-links/index.html
+@@ -0,0 +1,2 @@
++<!doctype html>
++<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Pinned production Desktop group message evidence — public fixture</title></head><body><div id="root"></div><script type="module" src="/ignored/group-message-links/main.tsx"></script></body></html>
+diff --git a/apps/desktop/ignored/group-message-links/main.tsx b/apps/desktop/ignored/group-message-links/main.tsx
+new file mode 100644
+--- /dev/null
++++ b/apps/desktop/ignored/group-message-links/main.tsx
+@@ -0,0 +1,63 @@
++import { createRoot } from 'react-dom/client'
++import { type ReactNode } from 'react'
++import { atom, host } from '@hermes/plugin-sdk'
++import { I18nProvider } from '@/i18n'
++import { registerPluginLocales } from '@/i18n/plugin-i18n'
++import { ThemeProvider } from '@/themes/context'
++import { $botMeta, $lastRoster } from '@/plugins/hermes-bots/data'
++import { $groupChats } from '@/plugins/hermes-bots/group-chat'
++import { openGroupChat } from '@/plugins/hermes-bots/group-chat-view'
++import { BOTS_LOCALES } from '@/plugins/hermes-bots/i18n'
++import { $previewTabs } from '@/store/preview'
++import '@/styles.css'
++
++const sha = '36922ad064d65dcf25f8f48df81e1ccf9a55de67'
++const url = 'https://github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983'
++const exactSource = `[download the latest apk](${url})`
++const fixtures = [
++  { id: 'labeled-apk', text: exactSource },
++  { id: 'bare-apk', text: url },
++  { id: 'rich-markdown', text: `## APK link checks\n\n- Labeled: ${exactSource}\n- Bare: ${url}\n\nInline literal: \`${url}\`\n\n\`\`\`kotlin\nval apkUrl = "${url}"\n\`\`\`` },
++  { id: 'unsafe-inert', text: '[unsafe javascript](javascript:alert(1))\n\n[unsafe data](data:text/html,unsafe)' }
++]
++const group = 'APK link fixture'
++const at = Date.parse('2026-10-02T12:00:00Z')
++registerPluginLocales('hermes-bots', BOTS_LOCALES)
++$lastRoster.set([{ name: 'builder', title: 'Builder' }] as never)
++$botMeta.set({ builder: { groups: [group], title: 'Builder' } } as never)
++$groupChats.set({ [group]: {
++  roomId: 'public-apk-link-fixture', running: false, epoch: 1, members: [{ name: 'builder' }],
++  sessions: {}, watermarks: {},
++  log: fixtures.map((fixture, index) => ({ id: fixture.id, thread: 'apk-thread', from: { kind: 'member', name: 'builder' }, text: fixture.text, at: at + index }))
++} } as never)
++
++// Only window-host seams are replaced, not group/message/theme components.
++// openGroupChat supplies its own private GroupChatMainView render callback.
++let render: (() => ReactNode) | undefined
++let workspaceId: string | undefined
++host.openWorkspace = ((id: string, options: { render: () => ReactNode }) => {
++  workspaceId = id
++  render = options.render
++  return () => {}
++}) as typeof host.openWorkspace
++host.paneVisibility = (() => atom(true)) as typeof host.paneVisibility
++openGroupChat(group)
++if (!render) throw new Error('Production openGroupChat did not publish GroupChatMainView')
++
++;(window as any).__fixture = {
++  sha, url, exactSource, fixtures, group, workspaceId,
++  kind: 'production GroupChatMainView via openGroupChat callback; synthetic public room data; fixture host window seams only',
++  seams: ['host.openWorkspace captures production render callback', 'host.paneVisibility always visible'],
++  previewTargets: () => $previewTabs.get().map(tab => ({ id: tab.id, target: tab.target }))
++}
++
++createRoot(document.getElementById('root')!).render(
++  <I18nProvider initialLocale="en" configClient={null}><ThemeProvider>
++    <main data-fixture-sha={sha} style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
++      <header style={{ padding: '8px 12px', fontSize: 11, borderBottom: '1px solid var(--ui-stroke-secondary)' }}>
++        Public synthetic room · production GroupChatMainView · {sha.slice(0, 7)}
++      </header>
++      <section id="production-group" style={{ flex: 1, minHeight: 0 }}>{render()}</section>
++    </main>
++  </ThemeProvider></I18nProvider>
++)
+diff --git a/apps/desktop/ignored/group-message-links/capture.mjs b/apps/desktop/ignored/group-message-links/capture.mjs
+new file mode 100644
+--- /dev/null
++++ b/apps/desktop/ignored/group-message-links/capture.mjs
+@@ -0,0 +1,223 @@
++import fs from 'node:fs'
++import path from 'node:path'
++import assert from 'node:assert/strict'
++import { createRequire } from 'node:module'
++import { execFileSync } from 'node:child_process'
++import { createHash } from 'node:crypto'
++import { createServer } from 'vite'
++import { chromium } from '@playwright/test'
++
++const root = path.resolve(import.meta.dirname, '../..')
++const repo = path.resolve(root, '../..')
++const fixtureDir = path.join(root, 'ignored/group-message-links')
++const out = process.env.DESKTOP_LINKS_OUT || path.join(repo, 'build/visual-parity/group-message-links/desktop')
++const sha = '36922ad064d65dcf25f8f48df81e1ccf9a55de67'
++const origin = 'http://127.0.0.1:52762'
++const url = 'https://github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983'
++const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
++const hash = bytes => createHash('sha256').update(bytes).digest('hex')
++const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'"
++assert.equal(git('rev-parse', 'HEAD'), sha)
++assert.equal(git('diff', sha, '--', 'apps/desktop/src', 'apps/desktop/vite.config.ts', 'packages'), '')
++fs.mkdirSync(out, { recursive: true })
++// Explicit ignored cache avoids writing through reused node_modules symlinks.
++const server = await createServer({ root, configFile: path.join(root, 'vite.config.ts'), configLoader: 'runner', envDir: false,
++  cacheDir: path.join(fixtureDir, 'node_modules/.vite'),
++  server: { host: '127.0.0.1', port: 52762, strictPort: true, open: false, hmr: false, watch: null },
++  optimizeDeps: { entries: ['ignored/group-message-links/index.html'] }
++})
++let browser
++const errors = [], consoleErrors = [], blocked = [], requests = [], states = [], taps = [], screenshots = []
++const startedAtUtc = new Date().toISOString()
++const deadline = setTimeout(() => { console.error('capture deadline reached'); process.exit(124) }, 240000)
++try {
++  await server.listen()
++  assert.equal(server.config.envDir, false)
++  assert.equal(server.config.cacheDir, path.join(fixtureDir, 'node_modules/.vite'))
++  browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--disable-background-networking', '--disable-component-update'] })
++  for (const mode of ['light', 'dark']) {
++    const context = await browser.newContext({ viewport: { width: 412, height: 1100 }, deviceScaleFactor: 1, hasTouch: true,
++      locale: 'en-US', timezoneId: 'UTC', reducedMotion: 'reduce', colorScheme: mode, serviceWorkers: 'block' })
++    await context.route('**/*', route => {
++      const href = route.request().url(); requests.push(href)
++      if (new URL(href).origin === origin) return route.continue()
++      blocked.push(href); return route.abort('blockedbyclient')
++    })
++    await context.addInitScript(({ mode }) => {
++      localStorage.setItem('hermes-desktop-theme-v2', 'mono')
++      localStorage.setItem('hermes-desktop-mode-v1', mode)
++    }, { mode })
++    const page = await context.newPage()
++    await page.clock.setFixedTime(new Date('2026-10-02T12:00:00Z'))
++    page.on('pageerror', error => errors.push({ mode, message: error.message }))
++    page.on('console', message => { if (message.type() === 'error') consoleErrors.push({ mode, message: message.text() }) })
++    await page.goto(`${origin}/ignored/group-message-links/index.html`, { waitUntil: 'domcontentloaded', timeout: 120000 })
++    try {
++      await page.waitForSelector('[data-slot="group-chat-message-content"] a', { timeout: 90000 })
++      await page.waitForSelector('[data-slot="code-card"] code', { timeout: 30000 })
++    } catch (error) {
++      fs.writeFileSync(path.join(out, 'capture-failure.json'), JSON.stringify({ errors, consoleErrors, blocked, body: await page.locator('body').innerText(), requests: requests.slice(-15) }, null, 2))
++      throw error
++    }
++    await page.evaluate(() => document.fonts.ready)
++    await page.waitForFunction(mode => document.documentElement.dataset.hermesTheme === 'mono' && document.documentElement.dataset.hermesMode === mode, mode)
++    const body = page.locator('[data-slot="group-chat-message-content"]')
++    assert.equal(await body.count(), 4)
++    // Mark fixtures by their real room arrival order; no renderer mutation.
++    await body.evaluateAll((nodes, ids) => nodes.forEach((node, i) => node.dataset.fixtureId = ids[i]), ['labeled-apk', 'bare-apk', 'rich-markdown', 'unsafe-inert'])
++    const state = await page.evaluate(() => {
++      const metrics = element => {
++        const css = getComputedStyle(element), rect = element.getBoundingClientRect()
++        return { text: element.textContent, color: css.color, background: css.backgroundColor, fontSize: css.fontSize, fontFamily: css.fontFamily,
++          lineHeight: css.lineHeight, x: rect.x, y: rect.y, width: rect.width, height: rect.height, scrollWidth: element.scrollWidth }
++      }
++      const rows = [...document.querySelectorAll('[data-slot="group-chat-message-content"]')].map(row => ({
++        id: row.dataset.fixtureId, ...metrics(row),
++        anchors: [...row.querySelectorAll('a')].map(a => ({ text: a.textContent, href: a.getAttribute('href'), title: a.getAttribute('title'), ...metrics(a) })),
++        inlineCode: [...row.querySelectorAll('p code')].map(code => ({ ...metrics(code), anchors: code.querySelectorAll('a').length })),
++        fencedCode: [...row.querySelectorAll('[data-slot="code-card"]')].map(code => ({ ...metrics(code), anchors: code.querySelectorAll('a').length })),
++        headings: [...row.querySelectorAll('h1,h2,h3')].map(h => h.textContent), listItems: row.querySelectorAll('li').length,
++        unsafeActive: row.querySelectorAll('a[href^="javascript:"],a[href^="data:"]').length,
++        html: row.innerHTML
++      }))
++      return { sha: window.__fixture.sha, kind: window.__fixture.kind, exactSource: window.__fixture.exactSource, workspaceId: window.__fixture.workspaceId,
++        fixtures: window.__fixture.fixtures, seams: window.__fixture.seams, theme: { name: document.documentElement.dataset.hermesTheme, mode: document.documentElement.dataset.hermesMode,
++          colorScheme: getComputedStyle(document.documentElement).colorScheme, background: getComputedStyle(document.body).backgroundColor },
++        viewport: { width: innerWidth, height: innerHeight }, rows }
++    })
++    assert.equal(state.sha, sha)
++    assert.equal(state.exactSource, `[download the latest apk](${url})`)
++    assert.equal(state.workspaceId, 'hermes-bots:group:apk-link-fixture')
++    assert.equal(state.rows[0].anchors.length, 1)
++    assert.equal(state.rows[0].anchors[0].text, 'download the latest apk')
++    assert.equal(state.rows[0].anchors[0].href, url)
++    assert.equal(state.rows[1].anchors.length, 1)
++    assert.equal(state.rows[1].anchors[0].text, url)
++    assert.equal(state.rows[1].anchors[0].href, url)
++    assert.equal(state.rows[2].anchors.length, 2)
++    assert.deepEqual(state.rows[2].headings, ['APK link checks'])
++    assert.equal(state.rows[2].listItems, 2)
++    assert.equal(state.rows[2].inlineCode.length, 1)
++    assert.equal(state.rows[2].inlineCode[0].text, url)
++    assert.equal(state.rows[2].inlineCode[0].anchors, 0)
++    assert.equal(state.rows[2].fencedCode.length, 1)
++    assert.ok(state.rows[2].fencedCode[0].text.includes(`val apkUrl = "${url}"`))
++    assert.equal(state.rows[2].fencedCode[0].anchors, 0)
++    assert.equal(state.rows[3].unsafeActive, 0)
++    states.push(state)
++    // Reset actual room log scroller to the top for the reported historical edge.
++    await page.evaluate(() => {
++      const row = document.querySelector('[data-slot="group-chat-message-content"]')
++      for (let node = row.parentElement; node; node = node.parentElement) {
++        if (['auto', 'scroll'].includes(getComputedStyle(node).overflowY)) node.scrollTop = 0
++      }
++    })
++    for (const [name, locator] of [[`desktop-group-mono-${mode}-412.png`, null], [`desktop-labeled-apk-mono-${mode}-412.png`, body.nth(0)]]) {
++      const file = path.join(out, name)
++      if (locator) await locator.screenshot({ path: file, animations: 'disabled' })
++      else await page.screenshot({ path: file, animations: 'disabled' })
++      screenshots.push({ path: name, sha256: hash(fs.readFileSync(file)) })
++    }
++    // First: trusted physical touch with a one-shot safety barrier. Observe href,
++    // prevent navigation, do not replace anchors or invoke a fake onClick.
++    const beforeRoute = page.url()
++    await page.evaluate(() => {
++      window.__tapEvidence = []
++      const anchor = document.querySelector('[data-fixture-id="labeled-apk"] a')
++      anchor.addEventListener('click', event => {
++        event.preventDefault()
++        window.__tapEvidence.push({ text: anchor.textContent, href: anchor.getAttribute('href'), isTrusted: event.isTrusted,
++          pointerType: event.pointerType, defaultPrevented: event.defaultPrevented, browserRoute: location.href, barrier: 'one-shot target listener preventDefault' })
++      }, { once: true })
++    })
++    await body.nth(0).locator('a').tap()
++    const tap = await page.evaluate(() => window.__tapEvidence)
++    assert.equal(tap.length, 1)
++    assert.equal(tap[0].href, url)
++    assert.equal(tap[0].text, 'download the latest apk')
++    assert.equal(tap[0].isTrusted, true)
++    assert.equal(tap[0].pointerType, 'touch')
++    assert.equal(tap[0].defaultPrevented, true)
++    assert.equal(page.url(), beforeRoute)
++    // Second: production handler unmodified. It prevents native browser navigation
++    // and routes to Desktop's actual preview store; no preview webview is mounted.
++    await body.nth(0).locator('a').tap()
++    await page.waitForFunction(url => window.__fixture.previewTargets().some(tab => tab.target.url === url), url)
++    const productionRouting = await page.evaluate(() => window.__fixture.previewTargets())
++    assert.equal(productionRouting.find(tab => tab.target.url === url)?.target.kind, 'url')
++    assert.equal(page.url(), beforeRoute)
++    taps.push({ mode, safetyBarrierTap: tap[0], productionHandlerTap: { previewTargets: productionRouting, browserRouteBefore: beforeRoute, browserRouteAfter: page.url(), externalNavigation: false } })
++    await context.close()
++  }
++  fs.writeFileSync(path.join(out, 'network-requests.json'), JSON.stringify({ allowedOrigin: origin, requests, blocked, errors, consoleErrors }, null, 2))
++  assert.deepEqual(errors, [])
++  const expectedBlockedFont = 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
++  assert.ok(blocked.every(href => href === expectedBlockedFont), JSON.stringify(blocked))
++  assert.ok(consoleErrors.every(error => error.message === 'Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector'), JSON.stringify(consoleErrors))
++  assert.equal(consoleErrors.length, blocked.length)
++  assert.equal(git('rev-parse', 'HEAD'), sha)
++  assert.equal(git('diff', sha, '--', 'apps/desktop/src', 'apps/desktop/vite.config.ts', 'packages'), '')
++  const sourceSet = new Set(['apps/desktop/src/plugins/hermes-bots/group-chat-view.tsx', 'apps/desktop/src/components/assistant-ui/markdown-text.tsx', 'apps/desktop/src/lib/external-link.tsx', 'apps/desktop/src/styles.css', 'apps/desktop/src/lib/markdown-preprocess.ts', 'apps/desktop/src/themes/context.tsx', 'apps/desktop/src/themes/presets.ts', 'apps/desktop/src/sdk/index.ts', 'apps/desktop/src/store/preview.ts', 'apps/desktop/vite.config.ts'])
++  const tracked = new Set(git('ls-files').split('\n'))
++  for (const request of requests) {
++    const pathname = decodeURIComponent(new URL(request).pathname)
++    const file = pathname.startsWith('/@fs/') ? pathname.slice(4) : path.join(root, pathname)
++    const rel = path.relative(repo, file)
++    if (tracked.has(rel) && fs.statSync(file).isFile()) sourceSet.add(rel)
++  }
++  const sources = [...sourceSet].sort().map(file => {
++    const bytes = fs.readFileSync(path.join(repo, file))
++    const pinned = execFileSync('git', ['-C', repo, 'show', `${sha}:${file}`])
++    assert.equal(hash(bytes), hash(pinned), file)
++    return { path: file, sha256: hash(bytes), gitBlob: git('rev-parse', `${sha}:${file}`), matchesPinnedBlob: true }
++  })
++  const fixtureFiles = ['index.html', 'main.tsx', 'capture.mjs', 'README.md']
++  const harness = fixtureFiles.map(file => { const bytes = fs.readFileSync(path.join(fixtureDir, file)); fs.copyFileSync(path.join(fixtureDir, file), path.join(out, file)); return { path: `apps/desktop/ignored/group-message-links/${file}`, sha256: hash(bytes) } })
++  const captureOnlyDiff = fixtureFiles.map(file => {
++    const lines = fs.readFileSync(path.join(fixtureDir, file), 'utf8').trimEnd().split('\n'), dest = `apps/desktop/ignored/group-message-links/${file}`
++    return `diff --git a/${dest} b/${dest}\nnew file mode 100644\n--- /dev/null\n+++ b/${dest}\n@@ -0,0 +1,${lines.length} @@\n${lines.map(line => '+' + line).join('\n')}\n`
++  }).join('')
++  fs.writeFileSync(path.join(out, 'capture-only.patch'), captureOnlyDiff)
++  const require = createRequire(path.join(root, 'package.json'))
++  const packageVersion = name => {
++    try { return require(`${name}/package.json`).version } catch (error) {
++      if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error
++      const entry = import.meta.resolve(name)
++      let dir = path.dirname(new URL(entry).pathname)
++      for (;;) {
++        const file = path.join(dir, 'package.json')
++        if (fs.existsSync(file)) { const data = JSON.parse(fs.readFileSync(file, 'utf8')); if (data.name === name) return data.version }
++        const parent = path.dirname(dir)
++        if (parent === dir) throw new Error(`Package version not found: ${name}`)
++        dir = parent
++      }
++    }
++  }
++  const versions = Object.fromEntries(['vite', 'react', 'react-dom', '@playwright/test', '@assistant-ui/react', '@assistant-ui/react-streamdown', 'streamdown'].map(name => [name, packageVersion(name)]))
++  const manifest = { pinnedSha: sha, actualHead: git('rev-parse', 'HEAD'), fetchHeadNotUsed: git('rev-parse', 'FETCH_HEAD'), startedAtUtc, capturedAtUtc: new Date().toISOString(),
++    surface: 'production GroupChatMainView through real openGroupChat render callback (not full Electron application)', fixtureOnly: true,
++    fixtureHostSeams: states[0].seams, exactSource: `[download the latest apk](${url})`, versions,
++    browser: { channel: 'chrome', version: browser.version(), headless: true, viewport: { width: 412, height: 1100 }, deviceScaleFactor: 1, hasTouch: true, locale: 'en-US', timezone: 'UTC', reducedMotion: 'reduce', fixedFixtureTime: '2026-10-02T12:00:00Z' },
++    themes: ['mono-light', 'mono-dark'], androidDefault: { themeName: 'nous', mode: 'System', explicitlyOverriddenForPairedMonoEvidence: true,
++      sources: ['app/src/main/kotlin/com/hermesagent/mobile/ui/theme/HermesTheme.kt:26-29', 'app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt:502'] },
++    command: `cd ${shellQuote(root)} && DESKTOP_LINKS_OUT=${shellQuote(out)} node ignored/group-message-links/capture.mjs`, output: out,
++    configuration: { productionViteConfig: true, configLoader: 'runner', envDir: false, cacheDir: server.config.cacheDir, host: server.config.server.host, port: server.config.server.port, strictPort: true, hmr: false,
++      dependencyReuse: ['node_modules', 'apps/desktop/node_modules'].map(file => ({ path: file, resolved: fs.realpathSync(path.join(repo, file)), access: 'read only; all Vite cache inside capture directory' })),
++      noBackend: true, noAuth: true, noElectron: true, noCopiedConfig: true, externalRequestsAborted: true, serviceWorkers: 'block' },
++    checks: { exactLabeledSourceRendered: true, exactAnchorLabelAndHref: true, equivalentBareURL: true, headingAndList: true, inlineAndStructuredFenceRemainLiteral: true, unsafeSchemesNotActive: true,
++      trustedTouchRecordedWithSafetyBarrier: true, productionUnmodifiedTapRoutesExactHrefToPreviewStore: true, browserDocumentRouteUnchanged: true, externalFetches: 0,
++      noRuntimeErrors: true, expectedBlockedFontConsoleErrors: consoleErrors.length, externalRequestsCompleted: 0, sourceBytesEqualPinnedGitBlobs: true, noTrackedProductionChanges: true },
++    limitations: ['Initial two failed attempts used Vite default bundle config loader, which writes and unlinks transient .vite-temp files through reused node_modules into installed upstream. Unintended outside-scope transient writes; no production source edits. Final run uses runner loader.', 'Synthetic public fixtures, not a live authenticated room or private transcript.', 'Actual production group view and message renderer; Electron window/tab shell and pane visibility are capture seams.',
++      'Production preview store routing verified; preview webview, OS browser, remote artifact authentication, artifact availability and downloads deliberately not exercised.',
++      'Production theme inheritance requests Courier Prime CSS; the route guard aborts it before external fetch. Expected blocked-font console messages are recorded, not hidden.',
++      'An authored APK label and GitHub artifact URL are a link, not evidence of a downloadable file or attachment.', 'Mono is an explicit comparison setting; Android default is Nous/System. Platform fonts and web-versus-native layout can differ.'],
++    sources, harness, screenshots, states, taps, errors, consoleErrors, blocked, requestCount: requests.length, productionTrackedDiff: git('diff', sha, '--', 'apps/desktop/src', 'apps/desktop/vite.config.ts', 'packages'), status: git('status', '--porcelain=v1') }
++  fs.writeFileSync(path.join(out, 'capture-manifest.json'), JSON.stringify(manifest, null, 2))
++  fs.writeFileSync(path.join(out, 'network-requests.json'), JSON.stringify({ allowedOrigin: origin, requests, blocked }, null, 2))
++  console.log(JSON.stringify({ out, pinnedSha: manifest.actualHead, fetchHeadNotUsed: manifest.fetchHeadNotUsed, surface: manifest.surface, versions, browser: manifest.browser.version,
++    checks: manifest.checks, sourcesVerified: sources.length, screenshots: screenshots.map(s => s.path), requestCount: requests.length, errors, consoleErrors, blocked }, null, 2))
++} finally {
++  clearTimeout(deadline)
++  if (browser) await browser.close()
++  await server.close()
++}
+diff --git a/apps/desktop/ignored/group-message-links/README.md b/apps/desktop/ignored/group-message-links/README.md
+new file mode 100644
+--- /dev/null
++++ b/apps/desktop/ignored/group-message-links/README.md
+@@ -0,0 +1,109 @@
++# Pinned Desktop group-message link capture
++
++This harness mounts the **production `GroupChatMainView`**, obtained from the
++production `openGroupChat()` → `host.openWorkspace(..., { render })` callback.
++It imports the existing production SDK, group module, `MessageTextContent`,
++ThemeProvider, i18n, and stylesheet. It does not manufacture rendered Markdown,
++copy a Vite configuration, or use HTML approximations of group message bodies.
++Only `host.openWorkspace` (capture its render callback) and `host.paneVisibility`
++(always visible) are fixture window-host seams. Room log/roster/meta are public,
++synthetic in-memory inputs. Nothing reads a private conversation.
++
++## Reproduce
++
++Required checkout HEAD:
++`36922ad064d65dcf25f8f48df81e1ccf9a55de67`.
++Newer `FETCH_HEAD` is recorded but never checked out or used as a source pin.
++
++Place `index.html`, `main.tsx`, `capture.mjs`, and this README at
++`apps/desktop/ignored/group-message-links/` inside a disposable pinned checkout
++(or apply `capture-only.patch` at its root). Reuse compatible installed workspace
++dependencies and a local Google Chrome installation. No installation is performed
++by the harness. From `apps/desktop`:
++
++```sh
++node ignored/group-message-links/capture.mjs
++```
++
++The default packet path is `build/visual-parity/group-message-links/desktop`
++under the disposable pinned upstream checkout root, not the Android worktree.
++Override it with `DESKTOP_LINKS_OUT=/absolute/path` when reproducing elsewhere.
++The recorded capture explicitly writes to the Android worktree's build packet;
++from the disposable checkout's `apps/desktop`, its command is:
++
++```sh
++DESKTOP_LINKS_OUT=/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop node ignored/group-message-links/capture.mjs
++```
++
++The manifest records the resolved output as an explicit `DESKTOP_LINKS_OUT`
++assignment so replay does not depend on an ambient environment override.
++Do not run against or write into `~/.hermes/hermes-agent`.
++
++The existing production Vite config runs on **127.0.0.1:52762**, `strictPort`,
++`envDir:false`, `configLoader:'runner'`, no HMR. Vite's writable cache is explicitly
++under this ignored capture directory. Runner loading avoids Vite's default
++bundled-config `.vite-temp` writes through reused dependency symlinks. Playwright
++uses a fresh headless Chrome context per theme. Every browser request outside the exact
++loopback origin is aborted; service workers are disabled. No backend, auth,
++Electron, Gradle, Android production edit or downloaded artifact is involved.
++
++## Fixtures and verification boundary
++
++The first room message is exactly:
++
++```md
++[download the latest apk](https://github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983)
++```
++
++The second is the equivalent bare URL. Further messages exercise a heading,
++list, inline code, structured Kotlin fence, and unsafe JavaScript/data links.
++The historical labeled-link edge is reproducible as the first room entry:
++its visible label must remain `download the latest apk`, and its anchor href
++must be the full exact URL above, not text with appended Markdown punctuation.
++
++DOM assertions verify exact label/href, bare-URL identity, heading/list structure,
++non-linkified inline/fenced code, and absence of active unsafe-scheme anchors.
++A real Playwright touch tap records a trusted `pointerType=touch` click with a
++one-shot target `preventDefault` safety barrier. A second trusted tap, with that
++barrier removed, runs the **unmodified production click handler** and verifies
++its exact URL in the production preview store. The browser document stays on
++the loopback fixture route, and no preview webview is mounted or fetched.
++This distinguishes anchor destination / Desktop preview routing from browser
++navigation and from an actual file download. **No attachment/download claim.**
++
++Screenshots are at 412 CSS-pixel width, scale factor 1, mono light and dark,
++with reduced motion and a fixed public fixture clock. Production ThemeProvider
++applies the themes, not a palette copied into fixture CSS. Android's inspected
++`AppearanceSelection()` default is **Nous / System**, not Mono; Mono is an
++explicit paired comparison setting. Platform fonts and native layouts may differ.
++
++## Packet
++
++- `desktop-group-mono-{light,dark}-412.png`: actual group UI viewport.
++- `desktop-labeled-apk-mono-{light,dark}-412.png`: real first message crop.
++- `capture-manifest.json`: exact pin, versions, command, source SHA-256 + pinned
++  Git blob IDs (including loaded tracked source), harness hashes, screenshot
++  hashes, theme/DOM measurements, tap/routing records, checks and limitations.
++- `network-requests.json`: allowed origin and actual request/blocked lists.
++- Harness copies and `capture-only.patch`: reproduction without production edits.
++
++### Capture issues
++
++Initial attempts exposed the production theme's inherited remote Courier Prime
++stylesheet request; the allow-only-loopback guard correctly aborted it. The final
++packet retains the expected blocked-font console messages and request records.
++No remote content was fetched. Package versions with hidden `package.json`
++exports are read by resolving and walking to the actual package manifest.
++
++The first two unsuccessful attempts used Vite's default bundled config loader.
++Inspection showed that loader writes then unlinks transient `.vite-temp` config
++files through the reused node_modules symlink into the installed upstream tree.
++That was an unintended write outside scope; no installed production source was
++edited. The final harness switches to `configLoader:'runner'` to prevent that
++write path. This qualification applies to the initial attempts, not just the
++reproducibility recipe, and must not be omitted when reporting scope compliance.
++
++This is a production **group-surface fixture**, not a full installed Desktop /
++Electron screenshot or live-room end-to-end test. It proves rendered semantics
++and local production routing, not artifact availability, GitHub permissions,
++remote browser behavior or APK installability. No private content is captured.

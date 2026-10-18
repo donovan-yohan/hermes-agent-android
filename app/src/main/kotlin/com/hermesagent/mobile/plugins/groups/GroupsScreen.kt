@@ -16,8 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import com.hermesagent.mobile.data.markdown.parseMarkdown
 import com.hermesagent.mobile.data.ssh.redact
 import com.hermesagent.mobile.ui.OverlayScaffold
+import com.hermesagent.mobile.ui.chat.MarkdownBlockView
 import com.hermesagent.mobile.ui.common.*
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -145,7 +147,8 @@ private fun ColumnScope.GroupRoom(transcript: GroupTranscript) {
                 else Modifier,
             )) {
                 label?.let { GroupText(it) }
-                GroupText(event.text)
+                if (event.kind == "message.user" || event.kind == "message.member") GroupMessageBody(event.text)
+                else GroupText(event.text)
                 if (event.kind.startsWith("message.")) ComingSoonAction("Reply in thread")
             }
         }
@@ -156,6 +159,18 @@ private fun ColumnScope.GroupRoom(transcript: GroupTranscript) {
     Row {
         ComingSoonIconAction(HermesIcon.Attach, "Attach files — every responding bot sees them")
         ComingSoonAction("New Thread")
+    }
+}
+
+@Composable
+private fun GroupMessageBody(text: String) {
+    val blocks = remember(text) { parseMarkdown(redact(text)) }
+    if (blocks.isEmpty()) {
+        GroupText(text)
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(HermesTheme.spacing.turnGap)) {
+            for (block in blocks) MarkdownBlockView(block, transcriptDirectiveContributions = emptyList())
+        }
     }
 }
 
