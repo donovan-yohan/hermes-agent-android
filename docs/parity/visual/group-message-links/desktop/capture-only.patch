@@ -77,7 +77,7 @@ diff --git a/apps/desktop/ignored/group-message-links/capture.mjs b/apps/desktop
 new file mode 100644
 --- /dev/null
 +++ b/apps/desktop/ignored/group-message-links/capture.mjs
-@@ -0,0 +1,222 @@
+@@ -0,0 +1,223 @@
 +import fs from 'node:fs'
 +import path from 'node:path'
 +import assert from 'node:assert/strict'
@@ -90,12 +90,13 @@ new file mode 100644
 +const root = path.resolve(import.meta.dirname, '../..')
 +const repo = path.resolve(root, '../..')
 +const fixtureDir = path.join(root, 'ignored/group-message-links')
-+const out = process.env.DESKTOP_LINKS_OUT || '/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop'
++const out = process.env.DESKTOP_LINKS_OUT || path.join(repo, 'build/visual-parity/group-message-links/desktop')
 +const sha = '36922ad064d65dcf25f8f48df81e1ccf9a55de67'
 +const origin = 'http://127.0.0.1:52762'
 +const url = 'https://github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983'
 +const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
 +const hash = bytes => createHash('sha256').update(bytes).digest('hex')
++const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'"
 +assert.equal(git('rev-parse', 'HEAD'), sha)
 +assert.equal(git('diff', sha, '--', 'apps/desktop/src', 'apps/desktop/vite.config.ts', 'packages'), '')
 +fs.mkdirSync(out, { recursive: true })
@@ -279,7 +280,7 @@ new file mode 100644
 +    browser: { channel: 'chrome', version: browser.version(), headless: true, viewport: { width: 412, height: 1100 }, deviceScaleFactor: 1, hasTouch: true, locale: 'en-US', timezone: 'UTC', reducedMotion: 'reduce', fixedFixtureTime: '2026-10-02T12:00:00Z' },
 +    themes: ['mono-light', 'mono-dark'], androidDefault: { themeName: 'nous', mode: 'System', explicitlyOverriddenForPairedMonoEvidence: true,
 +      sources: ['app/src/main/kotlin/com/hermesagent/mobile/ui/theme/HermesTheme.kt:26-29', 'app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt:502'] },
-+    command: `cd ${root} && node ignored/group-message-links/capture.mjs`, output: out,
++    command: `cd ${shellQuote(root)} && DESKTOP_LINKS_OUT=${shellQuote(out)} node ignored/group-message-links/capture.mjs`, output: out,
 +    configuration: { productionViteConfig: true, configLoader: 'runner', envDir: false, cacheDir: server.config.cacheDir, host: server.config.server.host, port: server.config.server.port, strictPort: true, hmr: false,
 +      dependencyReuse: ['node_modules', 'apps/desktop/node_modules'].map(file => ({ path: file, resolved: fs.realpathSync(path.join(repo, file)), access: 'read only; all Vite cache inside capture directory' })),
 +      noBackend: true, noAuth: true, noElectron: true, noCopiedConfig: true, externalRequestsAborted: true, serviceWorkers: 'block' },
@@ -304,7 +305,7 @@ diff --git a/apps/desktop/ignored/group-message-links/README.md b/apps/desktop/i
 new file mode 100644
 --- /dev/null
 +++ b/apps/desktop/ignored/group-message-links/README.md
-@@ -0,0 +1,100 @@
+@@ -0,0 +1,109 @@
 +# Pinned Desktop group-message link capture
 +
 +This harness mounts the **production `GroupChatMainView`**, obtained from the
@@ -332,9 +333,18 @@ new file mode 100644
 +node ignored/group-message-links/capture.mjs
 +```
 +
-+The default packet path is the Android worktree's
-+`build/visual-parity/group-message-links/desktop`.
++The default packet path is `build/visual-parity/group-message-links/desktop`
++under the disposable pinned upstream checkout root, not the Android worktree.
 +Override it with `DESKTOP_LINKS_OUT=/absolute/path` when reproducing elsewhere.
++The recorded capture explicitly writes to the Android worktree's build packet;
++from the disposable checkout's `apps/desktop`, its command is:
++
++```sh
++DESKTOP_LINKS_OUT=/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop node ignored/group-message-links/capture.mjs
++```
++
++The manifest records the resolved output as an explicit `DESKTOP_LINKS_OUT`
++assignment so replay does not depend on an ambient environment override.
 +Do not run against or write into `~/.hermes/hermes-agent`.
 +
 +The existing production Vite config runs on **127.0.0.1:52762**, `strictPort`,

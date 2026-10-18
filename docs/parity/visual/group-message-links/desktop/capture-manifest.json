@@ -2,8 +2,8 @@
   "pinnedSha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
   "actualHead": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
   "fetchHeadNotUsed": "9e01b44dd23978f9ff40b7837467f3a9f1582130",
-  "startedAtUtc": "2026-10-18T13:35:03.419Z",
-  "capturedAtUtc": "2026-10-18T13:35:23.490Z",
+  "startedAtUtc": "2026-10-18T13:53:56.630Z",
+  "capturedAtUtc": "2026-10-18T13:54:13.995Z",
   "surface": "production GroupChatMainView through real openGroupChat render callback (not full Electron application)",
   "fixtureOnly": true,
   "fixtureHostSeams": [
@@ -48,7 +48,7 @@
       "app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt:502"
     ]
   },
-  "command": "cd /Users/donovanyohan/.hermes/profiles/ebi/cache/scratch/hermes-desktop-links-36922/apps/desktop && node ignored/group-message-links/capture.mjs",
+  "command": "cd '/Users/donovanyohan/.hermes/profiles/ebi/cache/scratch/hermes-desktop-links-36922/apps/desktop' && DESKTOP_LINKS_OUT='/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop' node ignored/group-message-links/capture.mjs",
   "output": "/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop",
   "configuration": {
     "productionViteConfig": true,
@@ -3831,11 +3831,11 @@
     },
     {
       "path": "apps/desktop/ignored/group-message-links/capture.mjs",
-      "sha256": "1699cc996c1b4bb730fed4c2f48156ee49675fa3da6941bca7caedc70294ff83"
+      "sha256": "87e1fba4af0460313ed90ba7d6adf6838aca94b0afa63f8e2bf02d9e4c846b9e"
     },
     {
       "path": "apps/desktop/ignored/group-message-links/README.md",
-      "sha256": "7c64658758bda107de43775afde1e1c068a9c024b6e0b5c18d4db857a3e3ebde"
+      "sha256": "eb338cf4d9a26edad219d58a5c3563b22cebb9bb7f46dad0734614ad93cf0414"
     }
   ],
   "screenshots": [
@@ -4311,7 +4311,7 @@
       "productionHandlerTap": {
         "previewTargets": [
           {
-            "id": "url:browser-c8c8198d-9317-4351-aaf6-509e9a3a47e2",
+            "id": "url:browser-4d7b68ec-a60e-4264-a1b6-ee69ebbeac72",
             "target": {
               "kind": "url",
               "label": "github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983",
@@ -4339,7 +4339,7 @@
       "productionHandlerTap": {
         "previewTargets": [
           {
-            "id": "url:browser-f35ffcde-e6e8-4642-b576-4cbfcdcb3a9f",
+            "id": "url:browser-86955e20-6b13-4503-bf10-8b64870598e6",
             "target": {
               "kind": "url",
               "label": "github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983",

@@ -25,9 +25,18 @@ by the harness. From `apps/desktop`:
 node ignored/group-message-links/capture.mjs
 ```
 
-The default packet path is the Android worktree's
-`build/visual-parity/group-message-links/desktop`.
+The default packet path is `build/visual-parity/group-message-links/desktop`
+under the disposable pinned upstream checkout root, not the Android worktree.
 Override it with `DESKTOP_LINKS_OUT=/absolute/path` when reproducing elsewhere.
+The recorded capture explicitly writes to the Android worktree's build packet;
+from the disposable checkout's `apps/desktop`, its command is:
+
+```sh
+DESKTOP_LINKS_OUT=/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop node ignored/group-message-links/capture.mjs
+```
+
+The manifest records the resolved output as an explicit `DESKTOP_LINKS_OUT`
+assignment so replay does not depend on an ambient environment override.
 Do not run against or write into `~/.hermes/hermes-agent`.
 
 The existing production Vite config runs on **127.0.0.1:52762**, `strictPort`,

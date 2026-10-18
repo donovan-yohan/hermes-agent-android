@@ -10,12 +10,13 @@ import { chromium } from '@playwright/test'
 const root = path.resolve(import.meta.dirname, '../..')
 const repo = path.resolve(root, '../..')
 const fixtureDir = path.join(root, 'ignored/group-message-links')
-const out = process.env.DESKTOP_LINKS_OUT || '/Users/donovanyohan/Documents/Programs/personal/hermes-mobile-chat-links/build/visual-parity/group-message-links/desktop'
+const out = process.env.DESKTOP_LINKS_OUT || path.join(repo, 'build/visual-parity/group-message-links/desktop')
 const sha = '36922ad064d65dcf25f8f48df81e1ccf9a55de67'
 const origin = 'http://127.0.0.1:52762'
 const url = 'https://github.com/donovan-yohan/hermes-agent-android/actions/runs/39120359182/artifacts/12134162983'
 const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
+const shellQuote = value => "'" + value.replaceAll("'", "'\\''") + "'"
 assert.equal(git('rev-parse', 'HEAD'), sha)
 assert.equal(git('diff', sha, '--', 'apps/desktop/src', 'apps/desktop/vite.config.ts', 'packages'), '')
 fs.mkdirSync(out, { recursive: true })
@@ -199,7 +200,7 @@ try {
     browser: { channel: 'chrome', version: browser.version(), headless: true, viewport: { width: 412, height: 1100 }, deviceScaleFactor: 1, hasTouch: true, locale: 'en-US', timezone: 'UTC', reducedMotion: 'reduce', fixedFixtureTime: '2026-10-02T12:00:00Z' },
     themes: ['mono-light', 'mono-dark'], androidDefault: { themeName: 'nous', mode: 'System', explicitlyOverriddenForPairedMonoEvidence: true,
       sources: ['app/src/main/kotlin/com/hermesagent/mobile/ui/theme/HermesTheme.kt:26-29', 'app/src/main/kotlin/com/hermesagent/mobile/ui/theme/BuiltinThemes.kt:502'] },
-    command: `cd ${root} && node ignored/group-message-links/capture.mjs`, output: out,
+    command: `cd ${shellQuote(root)} && DESKTOP_LINKS_OUT=${shellQuote(out)} node ignored/group-message-links/capture.mjs`, output: out,
     configuration: { productionViteConfig: true, configLoader: 'runner', envDir: false, cacheDir: server.config.cacheDir, host: server.config.server.host, port: server.config.server.port, strictPort: true, hmr: false,
       dependencyReuse: ['node_modules', 'apps/desktop/node_modules'].map(file => ({ path: file, resolved: fs.realpathSync(path.join(repo, file)), access: 'read only; all Vite cache inside capture directory' })),
       noBackend: true, noAuth: true, noElectron: true, noCopiedConfig: true, externalRequestsAborted: true, serviceWorkers: 'block' },
