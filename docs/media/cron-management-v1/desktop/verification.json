@@ -1,0 +1,14 @@
+{
+  "pin": "5fc490e2b34123212d73ef316086f939567a725a",
+  "trackedFiles": 20366,
+  "changedTrackedSha256": [],
+  "gitDiffHeadExitCode": 0,
+  "gitStatus": "?? apps/desktop/cron-reference.capture.mjs\n?? apps/desktop/cron-reference.html\n?? apps/desktop/cron-reference.tsx\n",
+  "captureFiles": 40,
+  "uniqueStates": 20,
+  "assertions": 340,
+  "browserErrors": 0,
+  "allScreenshotReceiptsAndSourceHashesValid": true,
+  "liveBackend": false,
+  "fullDesktopShell": false
+}

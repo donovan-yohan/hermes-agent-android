@@ -168,6 +168,28 @@ class HermesApplication : Application() {
     }
     internal val gatewayHttp: com.hermesagent.mobile.data.gateway.GatewayHttp? get() = gatewayConnection.gatewayHttp.value
 
+    /** Core scheduler management does not depend on the Bots plugin lifecycle. */
+    internal val cronViewModel by lazy {
+        val connected = gatewayConnection.gatewayHttp.map { it != null }
+            .stateIn(appScope, SharingStarted.Eagerly, gatewayHttp != null)
+        val catalog = com.hermesagent.mobile.data.gateway.GatewayCronModelOptions(
+            gatewayConnection.client, cache.endpointGeneration, endpointDispatchFence,
+        )
+        com.hermesagent.mobile.ui.cron.CronViewModel(
+            api = com.hermesagent.mobile.data.cron.GatewayCronApi(
+                { gatewayHttp }, cache.endpointGeneration, endpointDispatchFence,
+            ),
+            endpoint = cache.endpointGeneration,
+            connected = connected,
+            hints = sessionRepository.globalChangeHints
+                .filter { it.kind == GatewayChangeHintKind.Cron }.map { },
+            ownerScope = CoroutineScope(appScope.coroutineContext + Dispatchers.Main.immediate),
+            loadModels = catalog::load,
+            connectionIdentity = { gatewayConnection.gatewayHttp.value },
+            connectionIdentities = gatewayConnection.gatewayHttp,
+        )
+    }
+
     /**
      * The sign-in hand-off, process-scoped like the connection it opens.
      *

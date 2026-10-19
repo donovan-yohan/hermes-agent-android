@@ -2,6 +2,24 @@
   "schema_version": 1,
   "purpose": "Dispatch catalog for real, synthetic visual-parity captures. A state is one explicit artifact, never a production session.",
   "surfaces": {
+    "cron-management": {
+      "desktop_sha": "5fc490e2b34123212d73ef316086f939567a725a",
+      "fixture_id": "cron-management-synthetic-v1",
+      "android_activity": "com.hermesagent.mobile.debug/com.hermesagent.mobile.CronParityActivity",
+      "desktop_selector": "[data-overlay-surface]",
+      "desktop_selector_note": "Real core Cron components with synthetic data. Editor keeps secure window protection and is not a device screenshot state. No full native shell or live scheduler claim.",
+      "states": {
+        "populated": { "interaction": [], "post_interaction_accessibility": "Scheduled jobs" },
+        "empty": { "interaction": [], "post_interaction_accessibility": "No scheduled jobs yet" },
+        "error": { "interaction": [], "post_interaction_accessibility": "Failed to load cron jobs. Check the connection and refresh." },
+        "detail": { "interaction": [], "post_interaction_accessibility": "Trigger now" },
+        "sidebar": { "interaction": ["tap:SCHEDULED JOBS"], "post_interaction_accessibility": "Run history" },
+        "queued": { "interaction": [], "post_interaction_accessibility": "Queued run" },
+        "delete-confirm": { "interaction": [], "post_interaction_accessibility": "Delete cron job?" },
+        "script": { "interaction": [], "post_interaction_accessibility": "script" },
+        "blueprints": { "interaction": [], "post_interaction_accessibility": "Synthetic Recipe" }
+      }
+    },
     "bot-configured-mcp": {
       "desktop_sha": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
       "fixture_id": "bot-configured-mcp-synthetic-v1",

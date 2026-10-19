@@ -152,12 +152,10 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `the selection highlight is one fixed amber per mode, never the accent`() {
-        // styles.css:382 / :root.dark:564 @ DesktopThemeLedger.PINNED_SHA
-        // (72a3277cd7), where every other expectation in this file is read, pins
+        // styles.css:386,578 @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd pins
         // color-mix(in srgb, #ffd24a 55%|38%, transparent) for every skin, so a
         // highlight cannot vanish into a warm palette or follow the brand hue.
-        // Byte-identical at 72a3277cd7 (styles.css:386 / :root.dark:564), the SHA
-        // the rest of the port cites, so the two pins do not disagree here.
+        // This historical golden does not move with the registry pin.
         for ((dark, expected) in listOf(false to "#8cffd24a", true to "#61ffd24a")) {
             for (preset in BuiltinThemes.ALL) {
                 assertEquals(
@@ -171,8 +169,8 @@ class ThemeSemanticParityTest {
 
     @Test
     fun `the modal scrim is black in every skin and mode, never the foreground`() {
-        // `app/overlays/overlay-view.tsx:77` @ DesktopThemeLedger.PINNED_SHA
-        // (72a3277cd7) paints `bg-black/22 backdrop-blur-[0.125rem]`, and
+        // `app/overlays/overlay-view.tsx:77` @ 72a3277cd7937fd0f0a2a3e3fddbed21d7b1c8bd
+        // paints `bg-black/22 backdrop-blur-[0.125rem]`, and
         // `components/session-picker.tsx:48` `bg-black/15 backdrop-blur-[1px]`:
         // a literal black in both, never a theme variable. Seeding the scrim
         // from `textPrimary` — which every sheet here used to do — makes a dark

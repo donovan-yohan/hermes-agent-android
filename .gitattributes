@@ -1,5 +1,8 @@
 # The Gradle wrapper's Windows batch script is CRLF by contract. Preserve its
 # bytes raw and exempt it from whitespace checking: a text clean filter would
-# normalize the current CRLF blob into an always-dirty LF worktree. Nothing
-# else opts out of normal text handling.
+# normalize the current CRLF blob into an always-dirty LF worktree.
 /gradlew.bat -text -whitespace
+
+# Canonical upstream evidence retains its byte-hashed source, including one
+# whitespace-only line. Do not rewrite a captured source snapshot to lint it.
+/docs/media/cron-management-v1/desktop/source/apps/desktop/src/styles.css -whitespace

@@ -144,6 +144,133 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `cron run handoff preserves ordinary draft stamps owner and never grants Bot Chat privilege`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.setDraft("ordinary draft")
+        val previous = viewModel.uiState.value.activeSessionId!!
+        var opened: Boolean? = null
+        viewModel.openCronRun("local-handoff", "work", cache.endpointGeneration.value,
+            source = "cron", title = "Run title", schedulerOwned = false) { opened = it }
+        runCurrent()
+        assertEquals(true, opened)
+        assertEquals("local-handoff", viewModel.uiState.value.activeSessionId)
+        assertEquals("cron", cache.session("local-handoff")?.source)
+        assertEquals("work", cache.session("local-handoff")?.remoteProfile)
+        assertFalse(viewModel.uiState.value.botChat)
+        viewModel.selectSession(previous)
+        runCurrent()
+        assertEquals("ordinary draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cron handoff keeps edits made to regular draft while run opens`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId!!
+        viewModel.setDraft("before open")
+        repository.botOpenGate = CompletableDeferred()
+        viewModel.openCronRun("local-slow-run", "work", cache.endpointGeneration.value, schedulerOwned = false)
+        runCurrent()
+        viewModel.setDraft("edited while opening")
+        runCurrent()
+        repository.botOpenGate!!.complete(Unit)
+        runCurrent()
+        viewModel.selectSession(previous)
+        runCurrent()
+        assertEquals("edited while opening", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cron final adoption rejects changed profile epoch even if repository completes`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        repository.botOpenGate = CompletableDeferred()
+        var opened: Boolean? = null
+        viewModel.openCronRun("local-held-scope", "work", cache.endpointGeneration.value, schedulerOwned = true) { opened = it }
+        runCurrent()
+        viewModel.showAllProfiles()
+        runCurrent()
+        repository.botOpenGate!!.complete(Unit)
+        runCurrent()
+        assertEquals(false, opened)
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+    }
+
+    @Test
+    fun `cron scope change after resume wire before hydration rejects final adoption and publication`() = runTest(dispatcher) {
+        val id = "local-scope-run"
+        val hydrationEntered = CompletableDeferred<Unit>()
+        val hydrationRelease = CompletableDeferred<Unit>()
+        val wireMethods = mutableListOf<String>()
+        val rpc = object : com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayRpcClient {
+            override val events = kotlinx.coroutines.flow.emptyFlow<com.hermesagent.mobile.data.gateway.GatewayEvent>()
+            override suspend fun request(method: String, params: kotlinx.serialization.json.JsonObject): kotlinx.serialization.json.JsonElement {
+                wireMethods += method
+                val requested = (params["session_id"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: id
+                return kotlinx.serialization.json.Json.parseToJsonElement(if (method == "session.resume")
+                    """{"session_id":"runtime-$requested","session_key":"$requested","running":false}""" else "{}")
+            }
+            override suspend fun requestAtEndpointDispatch(method: String, params: kotlinx.serialization.json.JsonObject,
+                dispatch: (() -> Boolean) -> Boolean): kotlinx.serialization.json.JsonElement {
+                check(dispatch { true })
+                return request(method, params)
+            }
+            override fun close() = Unit
+        }
+        val http = object : GatewayHttp {
+            override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult = when (request.path) {
+                "api/sessions/$id" -> GatewayHttpResult.Success(200,
+                    """{"id":"$id","profile":"work","source":"cron","scheduler_owned":true}""".encodeToByteArray())
+                "api/sessions/$id/messages" -> {
+                    hydrationEntered.complete(Unit)
+                    hydrationRelease.await()
+                    GatewayHttpResult.Success(200,
+                        """{"session_id":"$id","messages":[{"id":1,"role":"user","content":"obsolete hydration"}],"pagination":{"limit":1,"offset":0}}""".encodeToByteArray())
+                }
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val liveRepository = com.hermesagent.mobile.data.gateway.LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<com.hermesagent.mobile.data.gateway.GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = dispatcher) { CLOCK }
+        val subject = ChatViewModel(cache, liveRepository, sidebarStore, clock = { CLOCK }, bucketLabel = stubLabel)
+        collectState(subject)
+        runCurrent()
+        val previous = subject.uiState.value.activeSessionId
+        var opened: Boolean? = null
+        subject.openCronRun(id, "work", cache.endpointGeneration.value, schedulerOwned = true) { opened = it }
+        runCurrent()
+        assertTrue(hydrationEntered.isCompleted)
+        assertTrue("Resume must already have reached the wire", "session.resume" in wireMethods)
+        subject.showAllProfiles()
+        runCurrent()
+        hydrationRelease.complete(Unit)
+        runCurrent()
+        assertEquals(false, opened)
+        assertEquals(previous, subject.uiState.value.activeSessionId)
+        assertTrue("Obsolete hydration must not publish", cache.transcript(id).isEmpty())
+        assertFalse("Obsolete paging state must not publish", id in liveRepository.sessionsWithEarlierMessages.value)
+    }
+
+    @Test
+    fun `cron output and stale endpoint handoffs never navigate`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        val outcomes = mutableListOf<Boolean>()
+        viewModel.openCronRun("local-output", "work", cache.endpointGeneration.value, source = "cron_output") { outcomes += it }
+        viewModel.openCronRun("local-stale", "work", cache.endpointGeneration.value + 1, source = "cron") { outcomes += it }
+        runCurrent()
+        assertEquals(listOf(false, false), outcomes)
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+        assertNull(cache.session("local-output"))
+        assertNull(cache.session("local-stale"))
+    }
+
+    @Test
     fun `cron refusal does not restore a draft the user cleared during admission`() = runTest(dispatcher) {
         val id = "cron_job_20261002_120000"
         cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
@@ -232,9 +359,9 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `cron UI selection carries leases revoked by ABA navigation`() = runTest(dispatcher) {
-        val id = "cron_job_20261002_120000"
-        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+    fun `modern cron UI selection carries leases revoked by ABA navigation`() = runTest(dispatcher) {
+        val id = "local-modern-run"
+        cache.upsertSession(summary(id, 3_000).copy(source = "cron", remoteProfile = "work"))
         collectState()
         runCurrent()
         viewModel.selectSession(id)
@@ -257,9 +384,9 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `cron admission keeps draft visible while pending and after refusal`() = runTest(dispatcher) {
-        val id = "cron_job_20261002_120000"
-        cache.upsertSession(summary(id, 3_000).copy(remoteProfile = "work"))
+    fun `modern cron admission keeps draft visible while pending and after refusal`() = runTest(dispatcher) {
+        val id = "local-modern-run"
+        cache.upsertSession(summary(id, 3_000).copy(source = "cron", remoteProfile = "work"))
         collectState()
         runCurrent()
         viewModel.selectSession(id)
@@ -3766,6 +3893,14 @@ class ChatViewModelTest {
     }
 
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
+        override suspend fun openCronRun(
+            durableId: String, profile: String, expectedEndpointGeneration: Long,
+            source: String, title: String, preview: String,
+            lastActiveSeconds: Double?, endedAtSeconds: Double?, schedulerOwned: Boolean?, isActive: Boolean?,
+        ): String {
+            cache.upsertSession(summary(durableId, CLOCK).copy(source = source, remoteProfile = profile))
+            return openSessionAtEndpoint(durableId, profile, expectedEndpointGeneration)
+        }
         var retainedRetryConfirmed = false
         val retainedRetryCalls = mutableListOf<Triple<String, String, Long>>()
         override suspend fun retryRetainedFailure(durableId: String, text: String, expectedEndpointGeneration: Long): Boolean {

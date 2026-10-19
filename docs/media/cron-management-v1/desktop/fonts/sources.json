@@ -1,0 +1,20 @@
+[
+  {
+    "url": "https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap",
+    "file": "courier-prime.css",
+    "sha256": "160f582559dbd9ed04457f91398e961b95142de8e20e2f672ef432296f28e4f7",
+    "contentType": "text/css"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/courierprime/v11/u-450q2lgwslOqpF_6gQ8kELWwY.ttf",
+    "file": "font-0.ttf",
+    "sha256": "b03b41606b4469bd908aaa83146ba19d34cbeab1ce11fac0074d0d8fe9eba6cc",
+    "contentType": "font/ttf"
+  },
+  {
+    "url": "https://fonts.gstatic.com/s/courierprime/v11/u-4k0q2lgwslOqpF_6gQ8kELY7pMf-c.ttf",
+    "file": "font-1.ttf",
+    "sha256": "79d4be90ecb99d03ca5474a4e688e2fb45abcd4a9c348164c3aa9166c67cd53b",
+    "contentType": "font/ttf"
+  }
+]

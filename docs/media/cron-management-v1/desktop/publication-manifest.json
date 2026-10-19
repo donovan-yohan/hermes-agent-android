@@ -1,0 +1,218 @@
+{
+  "schema_version": 1,
+  "publication_scope": "Curated synthetic Desktop cron component reference; no live backend, full Desktop shell, browser recapture or publication-pass visual judgment.",
+  "source_packet": {
+    "manifest_file": "SHA256SUMS.json",
+    "manifest_sha256": "4dc9b0dea48e9130d36c9010a286a0aa87124f2e1addb314e72b04a1eb49f691",
+    "manifest_entries": 122,
+    "role": "Unchanged original packet manifest, including excluded originals and pre-redaction hashes; not the publication checksum list."
+  },
+  "manifest_self_exclusion": "This file is the sole file excluded from included_files to avoid a recursive self-hash. publication-verification.json is included.",
+  "excluded_groups": {
+    "diagnostics/": "Preliminary noncanonical diagnostics; machine-specific stack paths and failure artifacts.",
+    "vite-log.json": "Machine-specific Vite launcher log.",
+    "server-status.json": "Machine-specific task process and shutdown receipt.",
+    "tracked-before.json, tracked-after.json": "Full upstream inventory exposes unrelated contributor identities/private hostnames; identical original hashes preserved, not edited."
+  },
+  "excluded_files": [
+    {
+      "path": "diagnostics/failure-dom.txt",
+      "sha256": "f4ca7bd7bb9a17cd7ea5dcb10898771d47b24fcbb805df91b0667feffffbbb20"
+    },
+    {
+      "path": "diagnostics/failure.json",
+      "sha256": "91dab6b9571caf50d5f5f2c72284a4e7f1b83a2878faca095aaa7d3dbafec98a"
+    },
+    {
+      "path": "diagnostics/failure.png",
+      "sha256": "ada4b21ae211cd6e0fca9429a659309015dfeb81e00e737e880e6e58cedf6ad3"
+    },
+    {
+      "path": "diagnostics/smoke-dark.png",
+      "sha256": "da52a3e34242d9d4300ef3d20d958aed680ceee9172accbfe6e58ad7ba2acf8b"
+    },
+    {
+      "path": "server-status.json",
+      "sha256": "4de9b0a129ed3fdfd464e6114b26423a7b2b6a6e005318206ab28297084352f4"
+    },
+    {
+      "path": "tracked-after.json",
+      "sha256": "c5a15dd7af8ff1a9551430da3e6e3b174197c4f0c3f2644c4be914dfabefde8a"
+    },
+    {
+      "path": "tracked-before.json",
+      "sha256": "c5a15dd7af8ff1a9551430da3e6e3b174197c4f0c3f2644c4be914dfabefde8a"
+    },
+    {
+      "path": "vite-log.json",
+      "sha256": "365cfd966f10ca795db2ed26553d4bf95fa7818db89e36f0f8caa94597e46d0c"
+    }
+  ],
+  "transformations": [
+    {
+      "path": "commands.jsonl",
+      "original_sha256": "bdfe5819983f82fbf9267bad258b0cf348fbdc2212d3881f42bbad08c6ab52a2",
+      "published_sha256": "c87b1eb65be50c57f95808c5f5cebb495a20117dc1575ed842b82ff3c696bf19",
+      "disclosure": "Redacted machine-root prefixes to <UPSTREAM_ROOT>, <SOURCE_PACKET> and <HOME>; all records, command arguments other than roots, exit codes and remaining output preserved in order."
+    },
+    {
+      "path": "fixture-additions.patch",
+      "original_sha256": "4aaa2445e2d7961723524c496709d491b6604f7f738b9c1132e557cb80bd5bf9",
+      "published_sha256": "f5cddd49fd79664a330da9493a9333310e59554fe40f20b8bc5752e42be87e2b",
+      "disclosure": "Regenerated valid additive patch from published fixture bytes; capture output path is required from the environment; patch blob ids and hunk lengths reflect derivative bytes."
+    },
+    {
+      "path": "fixtures/cron-reference.capture.mjs",
+      "original_sha256": "a9313222033ea998717d28bcc084a49446dfcebf0f57c5072782344889435c89",
+      "published_sha256": "6f0a3769b4eed4fc8f34dcdf12fc7f670beb2c64c07404772b676020539b92f8",
+      "disclosure": "Replaced personal default output directory with required CRON_EVIDENCE_DIR assertion; historical receipts retain the original harness digest."
+    },
+    {
+      "path": "report.md",
+      "original_sha256": "bf37c606a9fbfb3bac7c69d018ccd7bd149c98860158d920b8a0b54ac3c3ac3e",
+      "published_sha256": "57b98520af451bad936c3ef5fbca4727c22f7fe7172b66f1d0c21467713453be",
+      "disclosure": "Added publication disclosure, exclusions and explicit historical/current verification boundaries; replaced machine-specific reproduction instructions with configurable scratch paths."
+    },
+    {
+      "path": "run-capture.py",
+      "original_sha256": "b3f2eccf65463584926cfee0d5bf1022c41df593573813adcf60d37e3c517660",
+      "published_sha256": "b06f2c6a0a89e53e3bedc11dd33b41f6d9f0fc674cf6ba4fee73689e9b459d59",
+      "disclosure": "Replaced machine paths and inferred checkout with explicit ROOT/browser/output/origin configuration, pin/fixture guards, fresh output preparation and no writes to publication."
+    },
+    {
+      "path": "verify-packet.py",
+      "original_sha256": "77c6e5d0ffca4c4832b8e46204bdf67dfe78882b2c03fecdcc8430e93a4334a2",
+      "published_sha256": "d22b581caad07168fcc8a39544a50aa5d9dda33cc9f0d50e01ed1758ded6f821",
+      "disclosure": "Replaced upstream-checkout-mutating verifier with read-only curated-publication hash, provenance, receipt/event and heuristic text privacy checks; no claim to rerun excluded audit."
+    }
+  ],
+  "added_files": [
+    "publication-manifest.json",
+    "publication-verification.json"
+  ],
+  "verification_limits": [
+    "Historical PNG and screenshot receipt bytes are unchanged; publication checks do not restamp their provenance.",
+    "The capture-harness original digest is retained in historical receipts and mapped to the environment-only published derivative; original harness bytes are not included.",
+    "The full tracked-file audit and original excluded files require the immutable source packet; only included bytes are verified here.",
+    "Text privacy checks are heuristic; screenshot pixels were not visually reviewed in this publication pass.",
+    "Capture reproduction helper syntax, guards and additive fixture patch are checked separately; the browser scenario is historical, not rerun for publication."
+  ],
+  "included_files": {
+    "SHA256SUMS.json": "4dc9b0dea48e9130d36c9010a286a0aa87124f2e1addb314e72b04a1eb49f691",
+    "blocked-requests.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "browser-errors.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "build-gallery.py": "15070e1ec3e18f0e0d51b574ec872d033d060ab9eeb7a33c312fd5d2c233bdab",
+    "capture-index.json": "8cefa183e6ea9f1b89bfe1912cbc67c1a32f28a652d68eee53b678f34af2c6c8",
+    "commands.jsonl": "c87b1eb65be50c57f95808c5f5cebb495a20117dc1575ed842b82ff3c696bf19",
+    "execution-summary.json": "68c60a20dca55c0d0cbdb5de810969e57f58f00407595430654ca1363816b7f0",
+    "fixture-additions.patch": "f5cddd49fd79664a330da9493a9333310e59554fe40f20b8bc5752e42be87e2b",
+    "fixtures/cron-reference.capture.mjs": "6f0a3769b4eed4fc8f34dcdf12fc7f670beb2c64c07404772b676020539b92f8",
+    "fixtures/cron-reference.html": "1c35c4057e9ae9f6afff8c4dd78a1d782a419eec4309e1a60bc80416f14ccaa3",
+    "fixtures/cron-reference.tsx": "cc428b775b4afe202ac57ed3cfbea8dcf8d8c5a31ed964f8be6feac59e699727",
+    "fonts/courier-prime.css": "160f582559dbd9ed04457f91398e961b95142de8e20e2f672ef432296f28e4f7",
+    "fonts/font-0.ttf": "b03b41606b4469bd908aaa83146ba19d34cbeab1ce11fac0074d0d8fe9eba6cc",
+    "fonts/font-1.ttf": "79d4be90ecb99d03ca5474a4e688e2fb45abcd4a9c348164c3aa9166c67cd53b",
+    "fonts/sources.json": "71c62b05dc41b83c8bcf9c8e3b2eafa9907dd878c18f9072f009782b73f73526",
+    "gallery.html": "130a215f3081746bcc10a45b775a88edd45375facfd3ed769d042892ae4bab21",
+    "interaction-events.json": "f5adf9d77e409515043df8a66a3bd92f074badf427d9378d71125b07d6f278e5",
+    "publication-verification.json": "dfeb6ef0b7f2823a9110800602bf8f817c230f341c9cbec14a0be4b24498b662",
+    "receipts/dark-blueprint-editor.json": "3d479a1cff464141515a668d74337a20906dba1940cd4dfd625b967af15095b5",
+    "receipts/dark-delete-confirm.json": "493a7a8ebd2907828ed852930a1d5cba46b310ceeb8dd9ae87c02b959a00bb72",
+    "receipts/dark-editor-create.json": "e1cc4735fad714ac953a768d6987a2a9d012345567f48059a361f4ca1980f113",
+    "receipts/dark-editor-custom.json": "568a9ab6c054826ed645c6adf7fa7b08933f9ad4c3787df1b6c3c3c3b36a177c",
+    "receipts/dark-editor-edit.json": "abb8018fc8371cb1b0987046251123d57a46571d6a7712628c24f853135862a8",
+    "receipts/dark-editor-multidelivery.json": "498be3c8780e9554d79677e4ef47d1554b42dcee2c1713c9755de51d1613cb6b",
+    "receipts/dark-editor-validation.json": "3161689c2f622c363ec2ce306a666909c7046ecfbe3414c24fb2615a0bfb4349",
+    "receipts/dark-empty.json": "6c104b3baf1acb2c129b7ce97b1a26c8418904651913514bba61160d32c058b7",
+    "receipts/dark-frequency-options.json": "11a90baea916eaf7e421efaa9a12f64578ac793a7005eb4984d8da14aafbc2c3",
+    "receipts/dark-job-error.json": "7a97c77ef79ec4c5e9a255a068cb41cd7216b5a5b27fabf681a18a646051c13f",
+    "receipts/dark-load-error-notification.json": "94f2a058d2151f4a8ae89a865e3d4bf1b0d2229679fe4eda5b08621d3fd11482",
+    "receipts/dark-manager-menu.json": "f27a4df73f8b04247b9b03ea7c8dce66f1f5885bae5d7d7f68d0ef521102adac",
+    "receipts/dark-model-options.json": "a5a3fc1deb0772c7de6a946c5b6b3a696e409b6afc20fb8aeb2a154f3ba8fee0",
+    "receipts/dark-paused-detail.json": "dc8e1c4b0dc5aae6789ba1f58444e68b235bb186d77dd992291cb89cf2367818",
+    "receipts/dark-populated-detail.json": "d026833ae90d842c998975376f0db8aba3d184d2744a2929cdbbd659c4381383",
+    "receipts/dark-queued-trigger.json": "b4294ebaee58a3eae0ecdf94009e34d3c2e7ec3b67c57a8acc2210cb121e6e2b",
+    "receipts/dark-script-detail.json": "e47ca43be07a5dfa28c47cf3b1d79b9e16cf00bbf1a1920d9b2060ed9b7e4950",
+    "receipts/dark-script-editor.json": "8609e981765b1c7847eff338deb66e2bed88dabb6bd0b5f4b43bbd0578da96bf",
+    "receipts/dark-sidebar-actions.json": "a3792d4beae5361f09d17450546039be0e6e6976d0aa76062ace686c143f26fd",
+    "receipts/dark-sidebar-expanded.json": "7485845c84b88f12ff06f82280de9129cecff3191b8d91283bbeaacbe161efbe",
+    "receipts/light-blueprint-editor.json": "7cc71613c33bb68ec337531f9dce851f9149070de8f89def8a99ff2ee0dec8af",
+    "receipts/light-delete-confirm.json": "711f0da1466b39ded613f926a6fdb023cdf7509a435567ba6c4f685e076d8be3",
+    "receipts/light-editor-create.json": "c86ed7cd14ed35d621bd7c9ea988ff10e1c2eded83e26d00a403d04e59fd3923",
+    "receipts/light-editor-custom.json": "39e2a9c8baf4609fe62510a21d6b54fad5c894b442be58c1623fab02d96df98d",
+    "receipts/light-editor-edit.json": "6d7a0fded979e8b03d448948bae46df9b7a5ea1b8620848bd7ce6fdd1a69f588",
+    "receipts/light-editor-multidelivery.json": "86cd3b16f8400361d18e64933898ea9d4919a7744ee6c1e9455d9a9339193f24",
+    "receipts/light-editor-validation.json": "516eb68b40a9e17f520c742e5b8cf5a2e5da0de353458c0bdcd0463163414539",
+    "receipts/light-empty.json": "c769c70981ac5de517483d31fe8c66cf132c425122173eea373d886a449572b0",
+    "receipts/light-frequency-options.json": "02b3bb91d8d114d9d267a286434aad2171adcded84e59b6bc168960a3b34daad",
+    "receipts/light-job-error.json": "ac0e6a00a175205c0e0a3ef85596d5d6932ab316fe714e14f84516d733ab8b77",
+    "receipts/light-load-error-notification.json": "81d2b0d5fd2595217925da398ee9584e5b3c45ebd25cdc2730015c1a448c4178",
+    "receipts/light-manager-menu.json": "5535531cf8a9011fc728ad35284bb1255a22b5f65b70c813e451a504bd067741",
+    "receipts/light-model-options.json": "32b0a7ffebc72540613238db54dd51be304d2c12ccf5735b3301f44e101b6827",
+    "receipts/light-paused-detail.json": "8fda6af0cff4052ce51a55ac98a82b68c7d8e66642c0bda4b27980e23225cc82",
+    "receipts/light-populated-detail.json": "c0045bbafb66e5b60771e3ec3feba2edb5bb9980e294e93a1dac6611fef8cf7a",
+    "receipts/light-queued-trigger.json": "7211aa2ea5f6cbde82afff0df28193892228babe0084a76a201a1a2071a4d60c",
+    "receipts/light-script-detail.json": "c2c5756c8de5ce0b8757a30a86a62d85de79956e506508015cf8553e3d884cfc",
+    "receipts/light-script-editor.json": "7bd1eb6e6c05b664746494eb311a4bc9e87e5f5b54b521aeaa0b3769d1d93f53",
+    "receipts/light-sidebar-actions.json": "0898b379575c6c73a8f3d6e714436d4a52f41cc3133eb590c505452f9ff71131",
+    "receipts/light-sidebar-expanded.json": "01a00e3899c8ab3e7c4521589760a93226896512a842f95b3b5ccc43441d0b31",
+    "report.md": "57b98520af451bad936c3ef5fbca4727c22f7fe7172b66f1d0c21467713453be",
+    "run-capture.py": "b06f2c6a0a89e53e3bedc11dd33b41f6d9f0fc674cf6ba4fee73689e9b459d59",
+    "screenshots/dark-blueprint-editor.png": "d16e20f2e86ae686973def83a64dba584f2a4902e53b21660f19bf2706e2b2c7",
+    "screenshots/dark-delete-confirm.png": "2f8235261571c302ec58236b4e76b96df35d569da170d5834e3a9777e6c87c74",
+    "screenshots/dark-editor-create.png": "e5d3ab4210f07780db2a10a64f0833f4236bd771da42d7f0e228b9bff77a4b79",
+    "screenshots/dark-editor-custom.png": "9ebc171ee0426cfc30243ffa583927e2cd9f75cc1ba9d835e6519a91951836ff",
+    "screenshots/dark-editor-edit.png": "640e92addba177f88517e648a58131655a80587097e4b8739ce5cba0cf915dbb",
+    "screenshots/dark-editor-multidelivery.png": "a7d5c79add76005efbe3183c37de605bc4537d51e6c49f00c2a57d5c7fcdb575",
+    "screenshots/dark-editor-validation.png": "d5effdfb191fcf49d98f6ee297f98d4945a71c02a4121fdb26f410c6752c80d8",
+    "screenshots/dark-empty.png": "09619951f1ae416502c6bffb7c6de732801eb15b6373fadc4746bf79904cfc87",
+    "screenshots/dark-frequency-options.png": "e5755935608375cc3981798bd8c0c72bac153f84e51ad762561bf53dcfad3da8",
+    "screenshots/dark-job-error.png": "23d0cf568d22be55a910b2056632d26e5efbe3bab90d0283d253804df8efbf39",
+    "screenshots/dark-load-error-notification.png": "01f5c560a86ca2bad98cbbfac9a649dda2dfa4500b00bf88b8cbb4086dd9bbfd",
+    "screenshots/dark-manager-menu.png": "40bea6c319dfcb66bcb4f4de043f457f8dd2c941719d716f9d954732cbb8855f",
+    "screenshots/dark-model-options.png": "3bf88506571b6606230a025ee9882f182ae3d3f396f10d0ad2b556ada07a707f",
+    "screenshots/dark-paused-detail.png": "c30abc3ff1536277cb9af213aeb4644ac0151face8e71f9e7be28bd74c96a80b",
+    "screenshots/dark-populated-detail.png": "3b16f74e81036d639a2d4a76fd0e82b0145f42040e3b3b759f94c8b20ebfe144",
+    "screenshots/dark-queued-trigger.png": "ca0f4bbbbfc124444d958c99c9938c7ec4f62f74378f146512dc8a9195d9c0f4",
+    "screenshots/dark-script-detail.png": "715f0964253a748f7c9a2418de3537aa96e32065d829b887ca59e91176c6f7dc",
+    "screenshots/dark-script-editor.png": "011303fa0d8d4b4d32bfbce9a452d9e0fc77116a568bd7f885d0fe21bedf2555",
+    "screenshots/dark-sidebar-actions.png": "5950954c128fad966c9a6a3e5c3e558ca7d563ed6b56cd38f32784f7f223a307",
+    "screenshots/dark-sidebar-expanded.png": "ada4b21ae211cd6e0fca9429a659309015dfeb81e00e737e880e6e58cedf6ad3",
+    "screenshots/light-blueprint-editor.png": "edccd3c070ddc4ba47c8844b2d4038ff938eab44c715309543f880082f1b2b3f",
+    "screenshots/light-delete-confirm.png": "1094203a916cd79babda179285e7c44bdf79ef8b9aca8bcc9aad5935eba71b09",
+    "screenshots/light-editor-create.png": "e61169fc9393a4f6335ebbd3b4630b5e0b9ca84cfe59cdc61dcc268843f489d3",
+    "screenshots/light-editor-custom.png": "857e961f3842579c46556dc0119bb980ac5a9cdcd500f105418a72d5214ac29d",
+    "screenshots/light-editor-edit.png": "07de8925ceba5b0949742a065ceb20741e8821cc48e225cebcbd1cb6f8b81432",
+    "screenshots/light-editor-multidelivery.png": "b192c591c57f49d0899715909fd35bc506e107c9beb6844642897a6f85a27a46",
+    "screenshots/light-editor-validation.png": "482436a568730747868b767b333e0876419cdae2e67268a2732bf4be556d584c",
+    "screenshots/light-empty.png": "919e57d1ae039a94adbdc6982601f04a3b6509dbc3a6421b16f153d1d2173d77",
+    "screenshots/light-frequency-options.png": "f26afbf9ab397d15b7aeb5a4c462bfa741ad144166f6e12710de2f50af9c07e6",
+    "screenshots/light-job-error.png": "576c7aeb6f5cf147b0c66425a30daf1bad2ade65d53635d9117e1eb37f1774b1",
+    "screenshots/light-load-error-notification.png": "360f60fc59843bbd2b1b5b07c75ac65a70be17d3bdf2fe591b0a960a164e45f7",
+    "screenshots/light-manager-menu.png": "0bd3be1f439c401e71206b5d40c51002abac6eb7800a3a657d22578cd9cce9bb",
+    "screenshots/light-model-options.png": "f4fb8f2bf99a624fee3bfc1ca791c89f4aaf2d20ad2c7b98830fdf2fb8756d38",
+    "screenshots/light-paused-detail.png": "9e2b1ddc65b63647c4f56f1e9145adc207327aaa3f34b7c500569034c1bc81c1",
+    "screenshots/light-populated-detail.png": "a9a24cd8a543e023ee24cd9d1bb98d68bec658c273db814fec025ab9b7bc3038",
+    "screenshots/light-queued-trigger.png": "0b222a56603c1f31f45aa5a91dc05edf30cd7d1373d425181fcbdff90ff2b331",
+    "screenshots/light-script-detail.png": "b5f0dcc6e7b77ce33db3dfe7698aae4f361b00d2c0f2d988129a515561a8dc88",
+    "screenshots/light-script-editor.png": "189fa829cd2aeb7d02ea6db968e9ebfe1b0c9f7b86d904168663c9edd5165942",
+    "screenshots/light-sidebar-actions.png": "6e23b59415abbd1d78838603bf8396bba78f37221da180b46a81ffc7623a0393",
+    "screenshots/light-sidebar-expanded.png": "fb6b82b1e35a132a55409b6ef44041b6fc73560ed2c7e44af53f892ab1a5fd45",
+    "source/apps/desktop/src/api/cron.ts": "fdc941d6419b31a525a79cf138856c80e6f79daabad2d9ae02b77e066858ee32",
+    "source/apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx": "821785056a2a31bbae394cf642c212e1621be9e7c99dabfe9cb624be9923a308",
+    "source/apps/desktop/src/app/cron/blueprints.tsx": "c49e4177594ad0e7f05341ed5354991bde8e82c86e431c1522f24f89702aa7ca",
+    "source/apps/desktop/src/app/cron/cron-actions.ts": "bc4d07671bbd175bcf6671bfaeaa7d2cec2a7776b72b86ae105604a3321e06c8",
+    "source/apps/desktop/src/app/cron/cron-job-model.ts": "c8757a9b9f9e155cfcb2e742eb2dbfd3c821dc5766b0e28f49ea59b7239368be",
+    "source/apps/desktop/src/app/cron/index.tsx": "5c8d68ee70b5f20790adc13535b3f1f15dc6cfce3005e6723e98f20a8cd05ec9",
+    "source/apps/desktop/src/app/cron/job-state.ts": "a00879e21a1280435f4c938a1dfe561c623c21c30f12818f9b8da83303352cc6",
+    "source/apps/desktop/src/app/cron/open-cron-run.ts": "b35bcd6486bc5e16d35d2626cd4d2402c0930fdf0a1286512d88269c70fff277",
+    "source/apps/desktop/src/app/overlays/overlay-view.tsx": "8c00d982af8f3ca4d99245695d08d3d9020eea6298072cd925886fb997444afb",
+    "source/apps/desktop/src/app/overlays/panel.tsx": "4d9bb2479274a0f925168152d2413b4b581e18c1b00f3b9d9c14a260f0a61184",
+    "source/apps/desktop/src/i18n/en.ts": "e26d34483e477a8696d070d1bfa60300900ce8330c6e4ad30e17b941142dcfa3",
+    "source/apps/desktop/src/styles.css": "4dbc9cb59f06fd6be4e5ae6ae4e8b861e8ceb26e2165cbc8bbdab7e2fe7dccaf",
+    "source/apps/desktop/src/themes/context.tsx": "c4c9feea2b7791ec971890df3d7bf22436f9fa29ef92df3142cae553f66afa8a",
+    "source/apps/desktop/src/themes/presets.ts": "be92a1408f3aa0e5c6e8fe5958169f03a910524a4cdfd77f83579794467a908d",
+    "verification.json": "c1b12d08e97f284abe642a5f86c43146b1cd9369df59bb1f80ed76c06b2fa58c",
+    "verify-packet.py": "d22b581caad07168fcc8a39544a50aa5d9dda33cc9f0d50e01ed1758ded6f821"
+  }
+}

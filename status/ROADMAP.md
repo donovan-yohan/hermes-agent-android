@@ -50,6 +50,26 @@ Skills/MCP management remain outside this existing-feature slice.
 
 ## What works now
 
+### Scheduled jobs
+
+- Core **Scheduled jobs**, separate from the Bots Routines pane, reads the
+  selected profile or the Gateway's all-profile listing. It exposes create,
+  edit, pause/resume, confirmed deletion, Trigger now, run history, configured
+  delivery targets, model overrides and backend-provided blueprints.
+- The session rail shows job-first history peeks. Conversation runs open through
+  ordinary owner-aware session admission. Modern `local-*` records with
+  `source=cron`, old execution IDs and remembered owner verdicts all recheck
+  scheduler ownership before a write. Output documents remain non-clickable.
+- Local delivery saves output on the backend, not on the Android handset.
+  Unconfirmed mutations and saved-but-unregistered creates never silently retry.
+  Explicit profile queries, scoped inventory preflight and response checks do
+  not repair upstream's cross-profile item fallback race; see the
+  [contract and evidence](../docs/parity/cron-management.md).
+- New-port and built-in registry targets use upstream
+  `ddabd3837862022a6053331fe3ba97cf9716b9e3`. Older per-surface source, semantic
+  and rendered evidence keeps its own provenance. This is not a blanket app
+  compatibility certification or a backend update.
+
 ### Connection and security
 
 - **Remote Gateway is the default and recommended route.** Mobile accepts an

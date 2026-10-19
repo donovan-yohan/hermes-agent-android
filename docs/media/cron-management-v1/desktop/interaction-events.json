@@ -1,0 +1,2202 @@
+[
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated: fixture disclosure"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated: jobs loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated-detail: copy Scheduled jobs"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated-detail: copy Every 15 minutes"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated-detail: copy Prepare a status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated-detail: copy RUN HISTORY · 2"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated-detail: copy This desktop"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open completed run"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "completed run preserves owner row"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open active run"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "scheduler-owned active run preserves liveness"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open manager menu"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "menu edit"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "manager-menu: copy Edit cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "manager-menu: copy Delete"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "Edit cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor open"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "edit name is exact"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "edit prompt is exact"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-edit: copy Edit cron job"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-edit: copy Every 15 minutes"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-edit: copy Save changes"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "frequency options"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "all seven schedule choices"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Daily"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Weekdays"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Weekly"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Monthly"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Hourly"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Every 15 minutes"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "frequency-options: copy Custom"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "custom schedule"
+  },
+  {
+    "theme": "dark",
+    "kind": "fill",
+    "name": "custom exact cron expression",
+    "value": "*/15 * * * *"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-custom: copy Custom schedule"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-custom: copy Cron expression, or phrases"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "model catalog"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "synthetic catalog model"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "model-options: copy Default (global model)"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "model-options: copy Synthetic fixture provider"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "model-options: copy synthetic-model"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "select synthetic provider/model pair"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "save existing job model choice"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "provider/model submitted together"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open job menu"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "Edit cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "edit dialog"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "model reset options"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "reset global model"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "save reset"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "model/provider reset together"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "pause real manager action"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "pause refreshed to Resume"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "pause readback"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "paused-detail: copy paused"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "paused-detail: copy Resume"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "resume real manager action"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "resume refreshed to Pause"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "resume readback"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "new cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "create dialog"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-create: copy New cron job"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-create: copy Start from"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-create: copy Daily"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-create: copy Default (global model)"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-create: copy Create cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "validate blank prompt"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "prompt required validation"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-validation: copy Prompt is required."
+  },
+  {
+    "theme": "dark",
+    "kind": "fill",
+    "name": "create name",
+    "value": "Synthetic created check"
+  },
+  {
+    "theme": "dark",
+    "kind": "fill",
+    "name": "create prompt",
+    "value": "Synthetic prompt only"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "add Telegram delivery"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-multidelivery: copy This desktop"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-multidelivery: copy Telegram"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "editor-multidelivery: copy Slack — set a home channel first"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "create synthetic job"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "create rendered after refresh"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "multiple delivery payload retained"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "created menu"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "request delete"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "delete confirmation"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "delete-confirm: copy Delete cron job?"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "delete-confirm: copy This will remove"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "delete-confirm: copy Synthetic created check"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "delete-confirm: copy permanently. It will stop firing immediately."
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "cancel dialog"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "cancel delete preserves job"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "created menu for confirmed delete"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "request confirmed delete"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "confirm delete"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "delete readback absent"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "script detail"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script heading"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script body"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-detail: copy Script"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-detail: copy SCRIPT"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-detail: copy printf scheduled"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-detail: copy scheduled"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "cron_output has no navigation button"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "output doc remains inert"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open job menu"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "Edit cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "edit dialog"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-editor: copy Script-only job (no AI prompt). Job id:"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-editor: copy script-check"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-editor: copy Optional"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-editor: copy Save changes"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-only editor omits model picker"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-only prompt stays blank"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "save script with blank prompt"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "script-only identity preserved"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open Synthetic Recipe"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint typed time"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Synthetic Recipe"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Synthetic field-schema example; not a backend recipe."
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Time"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Cadence"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Weekdays"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Topic"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Deliver to"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Schedule it"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint time default"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint origin seeds to local"
+  },
+  {
+    "theme": "dark",
+    "kind": "fill",
+    "name": "blueprint time change",
+    "value": "10:30"
+  },
+  {
+    "theme": "dark",
+    "kind": "fill",
+    "name": "blueprint text change",
+    "value": "Synthetic chosen topic"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "instantiate synthetic blueprint"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint-created job rendered"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "blueprint typed values passed unchanged"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated: fixture disclosure"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated: jobs loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "close manager to actual sidebar"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "expand sidebar Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar closed run timestamp"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-expanded: copy SCHEDULED JOBS"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-expanded: copy Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-expanded: copy Oct 18, 5:01 PM"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "open sidebar completed run"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar opens completed run exact row"
+  },
+  {
+    "theme": "dark",
+    "kind": "contextclick",
+    "name": "sidebar Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Trigger now"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Pause cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Manage"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Delete"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "sidebar Manage focuses manager"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "sidebar Manage opens correct job"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "focused manager row present"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty: fixture disclosure"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty: settled empty"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty: copy Scheduled jobs"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty: copy No scheduled jobs yet"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty: copy Schedule a prompt to run on a cron expression."
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty: copy New cron"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "empty create action"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "empty launches real editor"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "cancel dialog"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "job-error: fixture disclosure"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "job-error: jobs loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "job-error: copy Last run failed:"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "job-error: copy Synthetic fixture: scheduled task failed"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "job-error: copy Edit job"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "job-error: copy Run again"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "load-error: fixture disclosure"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "load-error: settled empty"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "list failure notification"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "load-error-notification: copy Failed to load cron jobs"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "load-error-notification: copy Synthetic fixture: cron list unavailable"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "load-error-notification: copy No scheduled jobs yet"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated: fixture disclosure"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "populated: jobs loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "dark",
+    "kind": "click",
+    "name": "held synthetic trigger"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "optimistic queued run appears"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "trigger duplicate guarded while held"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "only one held trigger dispatched"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "queued-trigger: copy Queued run"
+  },
+  {
+    "theme": "dark",
+    "kind": "assert",
+    "name": "queued-trigger: copy RUN HISTORY · 3"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated: fixture disclosure"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated: jobs loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated-detail: copy Scheduled jobs"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated-detail: copy Every 15 minutes"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated-detail: copy Prepare a status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated-detail: copy RUN HISTORY · 2"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated-detail: copy This desktop"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open completed run"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "completed run preserves owner row"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open active run"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "scheduler-owned active run preserves liveness"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open manager menu"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "menu edit"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "manager-menu: copy Edit cron"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "manager-menu: copy Delete"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "Edit cron"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor open"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "edit name is exact"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "edit prompt is exact"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-edit: copy Edit cron job"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-edit: copy Every 15 minutes"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-edit: copy Save changes"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "frequency options"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "all seven schedule choices"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Daily"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Weekdays"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Weekly"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Monthly"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Hourly"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Every 15 minutes"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "frequency-options: copy Custom"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "custom schedule"
+  },
+  {
+    "theme": "light",
+    "kind": "fill",
+    "name": "custom exact cron expression",
+    "value": "*/15 * * * *"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-custom: copy Custom schedule"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-custom: copy Cron expression, or phrases"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "model catalog"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "synthetic catalog model"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "model-options: copy Default (global model)"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "model-options: copy Synthetic fixture provider"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "model-options: copy synthetic-model"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "select synthetic provider/model pair"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "save existing job model choice"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "provider/model submitted together"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open job menu"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "Edit cron"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "edit dialog"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "model reset options"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "reset global model"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "save reset"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "model/provider reset together"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "pause real manager action"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "pause refreshed to Resume"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "pause readback"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "paused-detail: copy paused"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "paused-detail: copy Resume"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "resume real manager action"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "resume refreshed to Pause"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "resume readback"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "new cron"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "create dialog"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-create: copy New cron job"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-create: copy Start from"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-create: copy Daily"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-create: copy Default (global model)"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-create: copy Create cron"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "validate blank prompt"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "prompt required validation"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-validation: copy Prompt is required."
+  },
+  {
+    "theme": "light",
+    "kind": "fill",
+    "name": "create name",
+    "value": "Synthetic created check"
+  },
+  {
+    "theme": "light",
+    "kind": "fill",
+    "name": "create prompt",
+    "value": "Synthetic prompt only"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "add Telegram delivery"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-multidelivery: copy This desktop"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-multidelivery: copy Telegram"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "editor-multidelivery: copy Slack — set a home channel first"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "create synthetic job"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "create rendered after refresh"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "multiple delivery payload retained"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "created menu"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "request delete"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "delete confirmation"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "delete-confirm: copy Delete cron job?"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "delete-confirm: copy This will remove"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "delete-confirm: copy Synthetic created check"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "delete-confirm: copy permanently. It will stop firing immediately."
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "cancel dialog"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "cancel delete preserves job"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "created menu for confirmed delete"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "request confirmed delete"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "confirm delete"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "delete readback absent"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "script detail"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script heading"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script body"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-detail: copy Script"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-detail: copy SCRIPT"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-detail: copy printf scheduled"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-detail: copy scheduled"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "cron_output has no navigation button"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "output doc remains inert"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open job menu"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "Edit cron"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "edit dialog"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-editor: copy Script-only job (no AI prompt). Job id:"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-editor: copy script-check"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-editor: copy Optional"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-editor: copy Save changes"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-only editor omits model picker"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-only prompt stays blank"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "save script with blank prompt"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "script-only identity preserved"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open Synthetic Recipe"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint typed time"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Synthetic Recipe"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Synthetic field-schema example; not a backend recipe."
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Time"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Cadence"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Weekdays"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Topic"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Deliver to"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-editor: copy Schedule it"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint time default"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint origin seeds to local"
+  },
+  {
+    "theme": "light",
+    "kind": "fill",
+    "name": "blueprint time change",
+    "value": "10:30"
+  },
+  {
+    "theme": "light",
+    "kind": "fill",
+    "name": "blueprint text change",
+    "value": "Synthetic chosen topic"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "instantiate synthetic blueprint"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint-created job rendered"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "blueprint typed values passed unchanged"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated: fixture disclosure"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated: jobs loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "close manager to actual sidebar"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "expand sidebar Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar closed run timestamp"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-expanded: copy SCHEDULED JOBS"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-expanded: copy Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-expanded: copy Oct 18, 5:01 PM"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "open sidebar completed run"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar opens completed run exact row"
+  },
+  {
+    "theme": "light",
+    "kind": "contextclick",
+    "name": "sidebar Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Trigger now"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Pause cron"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Manage"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar-actions: copy Delete"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "sidebar Manage focuses manager"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "sidebar Manage opens correct job"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "focused manager row present"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty: fixture disclosure"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty: settled empty"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty: copy Scheduled jobs"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty: copy No scheduled jobs yet"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty: copy Schedule a prompt to run on a cron expression."
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty: copy New cron"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "empty create action"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "empty launches real editor"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "cancel dialog"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "job-error: fixture disclosure"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "job-error: jobs loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "job-error: copy Last run failed:"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "job-error: copy Synthetic fixture: scheduled task failed"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "job-error: copy Edit job"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "job-error: copy Run again"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "load-error: fixture disclosure"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "load-error: settled empty"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "list failure notification"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "load-error-notification: copy Failed to load cron jobs"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "load-error-notification: copy Synthetic fixture: cron list unavailable"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "load-error-notification: copy No scheduled jobs yet"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated: fixture disclosure"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "populated: jobs loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "fixed clock"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "real ThemeProvider mode"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "select Status report"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "Status report detail"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "active run loaded"
+  },
+  {
+    "theme": "light",
+    "kind": "click",
+    "name": "held synthetic trigger"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "optimistic queued run appears"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "trigger duplicate guarded while held"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "only one held trigger dispatched"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "mono Courier Prime font loaded from verified public cache"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "queued-trigger: copy Queued run"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "queued-trigger: copy RUN HISTORY · 3"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "zero unplanned browser page/console errors; isolation aborts retained"
+  },
+  {
+    "theme": "light",
+    "kind": "assert",
+    "name": "paired capture count matches target"
+  }
+]

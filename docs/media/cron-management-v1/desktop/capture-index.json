@@ -1,0 +1,282 @@
+[
+  {
+    "name": "populated-detail",
+    "theme": "dark",
+    "file": "screenshots/dark-populated-detail.png",
+    "sha256": "3b16f74e81036d639a2d4a76fd0e82b0145f42040e3b3b759f94c8b20ebfe144",
+    "receipt": "receipts/dark-populated-detail.json"
+  },
+  {
+    "name": "manager-menu",
+    "theme": "dark",
+    "file": "screenshots/dark-manager-menu.png",
+    "sha256": "40bea6c319dfcb66bcb4f4de043f457f8dd2c941719d716f9d954732cbb8855f",
+    "receipt": "receipts/dark-manager-menu.json"
+  },
+  {
+    "name": "editor-edit",
+    "theme": "dark",
+    "file": "screenshots/dark-editor-edit.png",
+    "sha256": "640e92addba177f88517e648a58131655a80587097e4b8739ce5cba0cf915dbb",
+    "receipt": "receipts/dark-editor-edit.json"
+  },
+  {
+    "name": "frequency-options",
+    "theme": "dark",
+    "file": "screenshots/dark-frequency-options.png",
+    "sha256": "e5755935608375cc3981798bd8c0c72bac153f84e51ad762561bf53dcfad3da8",
+    "receipt": "receipts/dark-frequency-options.json"
+  },
+  {
+    "name": "editor-custom",
+    "theme": "dark",
+    "file": "screenshots/dark-editor-custom.png",
+    "sha256": "9ebc171ee0426cfc30243ffa583927e2cd9f75cc1ba9d835e6519a91951836ff",
+    "receipt": "receipts/dark-editor-custom.json"
+  },
+  {
+    "name": "model-options",
+    "theme": "dark",
+    "file": "screenshots/dark-model-options.png",
+    "sha256": "3bf88506571b6606230a025ee9882f182ae3d3f396f10d0ad2b556ada07a707f",
+    "receipt": "receipts/dark-model-options.json"
+  },
+  {
+    "name": "paused-detail",
+    "theme": "dark",
+    "file": "screenshots/dark-paused-detail.png",
+    "sha256": "c30abc3ff1536277cb9af213aeb4644ac0151face8e71f9e7be28bd74c96a80b",
+    "receipt": "receipts/dark-paused-detail.json"
+  },
+  {
+    "name": "editor-create",
+    "theme": "dark",
+    "file": "screenshots/dark-editor-create.png",
+    "sha256": "e5d3ab4210f07780db2a10a64f0833f4236bd771da42d7f0e228b9bff77a4b79",
+    "receipt": "receipts/dark-editor-create.json"
+  },
+  {
+    "name": "editor-validation",
+    "theme": "dark",
+    "file": "screenshots/dark-editor-validation.png",
+    "sha256": "d5effdfb191fcf49d98f6ee297f98d4945a71c02a4121fdb26f410c6752c80d8",
+    "receipt": "receipts/dark-editor-validation.json"
+  },
+  {
+    "name": "editor-multidelivery",
+    "theme": "dark",
+    "file": "screenshots/dark-editor-multidelivery.png",
+    "sha256": "a7d5c79add76005efbe3183c37de605bc4537d51e6c49f00c2a57d5c7fcdb575",
+    "receipt": "receipts/dark-editor-multidelivery.json"
+  },
+  {
+    "name": "delete-confirm",
+    "theme": "dark",
+    "file": "screenshots/dark-delete-confirm.png",
+    "sha256": "2f8235261571c302ec58236b4e76b96df35d569da170d5834e3a9777e6c87c74",
+    "receipt": "receipts/dark-delete-confirm.json"
+  },
+  {
+    "name": "script-detail",
+    "theme": "dark",
+    "file": "screenshots/dark-script-detail.png",
+    "sha256": "715f0964253a748f7c9a2418de3537aa96e32065d829b887ca59e91176c6f7dc",
+    "receipt": "receipts/dark-script-detail.json"
+  },
+  {
+    "name": "script-editor",
+    "theme": "dark",
+    "file": "screenshots/dark-script-editor.png",
+    "sha256": "011303fa0d8d4b4d32bfbce9a452d9e0fc77116a568bd7f885d0fe21bedf2555",
+    "receipt": "receipts/dark-script-editor.json"
+  },
+  {
+    "name": "blueprint-editor",
+    "theme": "dark",
+    "file": "screenshots/dark-blueprint-editor.png",
+    "sha256": "d16e20f2e86ae686973def83a64dba584f2a4902e53b21660f19bf2706e2b2c7",
+    "receipt": "receipts/dark-blueprint-editor.json"
+  },
+  {
+    "name": "sidebar-expanded",
+    "theme": "dark",
+    "file": "screenshots/dark-sidebar-expanded.png",
+    "sha256": "ada4b21ae211cd6e0fca9429a659309015dfeb81e00e737e880e6e58cedf6ad3",
+    "receipt": "receipts/dark-sidebar-expanded.json"
+  },
+  {
+    "name": "sidebar-actions",
+    "theme": "dark",
+    "file": "screenshots/dark-sidebar-actions.png",
+    "sha256": "5950954c128fad966c9a6a3e5c3e558ca7d563ed6b56cd38f32784f7f223a307",
+    "receipt": "receipts/dark-sidebar-actions.json"
+  },
+  {
+    "name": "empty",
+    "theme": "dark",
+    "file": "screenshots/dark-empty.png",
+    "sha256": "09619951f1ae416502c6bffb7c6de732801eb15b6373fadc4746bf79904cfc87",
+    "receipt": "receipts/dark-empty.json"
+  },
+  {
+    "name": "job-error",
+    "theme": "dark",
+    "file": "screenshots/dark-job-error.png",
+    "sha256": "23d0cf568d22be55a910b2056632d26e5efbe3bab90d0283d253804df8efbf39",
+    "receipt": "receipts/dark-job-error.json"
+  },
+  {
+    "name": "load-error-notification",
+    "theme": "dark",
+    "file": "screenshots/dark-load-error-notification.png",
+    "sha256": "01f5c560a86ca2bad98cbbfac9a649dda2dfa4500b00bf88b8cbb4086dd9bbfd",
+    "receipt": "receipts/dark-load-error-notification.json"
+  },
+  {
+    "name": "queued-trigger",
+    "theme": "dark",
+    "file": "screenshots/dark-queued-trigger.png",
+    "sha256": "ca0f4bbbbfc124444d958c99c9938c7ec4f62f74378f146512dc8a9195d9c0f4",
+    "receipt": "receipts/dark-queued-trigger.json"
+  },
+  {
+    "name": "populated-detail",
+    "theme": "light",
+    "file": "screenshots/light-populated-detail.png",
+    "sha256": "a9a24cd8a543e023ee24cd9d1bb98d68bec658c273db814fec025ab9b7bc3038",
+    "receipt": "receipts/light-populated-detail.json"
+  },
+  {
+    "name": "manager-menu",
+    "theme": "light",
+    "file": "screenshots/light-manager-menu.png",
+    "sha256": "0bd3be1f439c401e71206b5d40c51002abac6eb7800a3a657d22578cd9cce9bb",
+    "receipt": "receipts/light-manager-menu.json"
+  },
+  {
+    "name": "editor-edit",
+    "theme": "light",
+    "file": "screenshots/light-editor-edit.png",
+    "sha256": "07de8925ceba5b0949742a065ceb20741e8821cc48e225cebcbd1cb6f8b81432",
+    "receipt": "receipts/light-editor-edit.json"
+  },
+  {
+    "name": "frequency-options",
+    "theme": "light",
+    "file": "screenshots/light-frequency-options.png",
+    "sha256": "f26afbf9ab397d15b7aeb5a4c462bfa741ad144166f6e12710de2f50af9c07e6",
+    "receipt": "receipts/light-frequency-options.json"
+  },
+  {
+    "name": "editor-custom",
+    "theme": "light",
+    "file": "screenshots/light-editor-custom.png",
+    "sha256": "857e961f3842579c46556dc0119bb980ac5a9cdcd500f105418a72d5214ac29d",
+    "receipt": "receipts/light-editor-custom.json"
+  },
+  {
+    "name": "model-options",
+    "theme": "light",
+    "file": "screenshots/light-model-options.png",
+    "sha256": "f4fb8f2bf99a624fee3bfc1ca791c89f4aaf2d20ad2c7b98830fdf2fb8756d38",
+    "receipt": "receipts/light-model-options.json"
+  },
+  {
+    "name": "paused-detail",
+    "theme": "light",
+    "file": "screenshots/light-paused-detail.png",
+    "sha256": "9e2b1ddc65b63647c4f56f1e9145adc207327aaa3f34b7c500569034c1bc81c1",
+    "receipt": "receipts/light-paused-detail.json"
+  },
+  {
+    "name": "editor-create",
+    "theme": "light",
+    "file": "screenshots/light-editor-create.png",
+    "sha256": "e61169fc9393a4f6335ebbd3b4630b5e0b9ca84cfe59cdc61dcc268843f489d3",
+    "receipt": "receipts/light-editor-create.json"
+  },
+  {
+    "name": "editor-validation",
+    "theme": "light",
+    "file": "screenshots/light-editor-validation.png",
+    "sha256": "482436a568730747868b767b333e0876419cdae2e67268a2732bf4be556d584c",
+    "receipt": "receipts/light-editor-validation.json"
+  },
+  {
+    "name": "editor-multidelivery",
+    "theme": "light",
+    "file": "screenshots/light-editor-multidelivery.png",
+    "sha256": "b192c591c57f49d0899715909fd35bc506e107c9beb6844642897a6f85a27a46",
+    "receipt": "receipts/light-editor-multidelivery.json"
+  },
+  {
+    "name": "delete-confirm",
+    "theme": "light",
+    "file": "screenshots/light-delete-confirm.png",
+    "sha256": "1094203a916cd79babda179285e7c44bdf79ef8b9aca8bcc9aad5935eba71b09",
+    "receipt": "receipts/light-delete-confirm.json"
+  },
+  {
+    "name": "script-detail",
+    "theme": "light",
+    "file": "screenshots/light-script-detail.png",
+    "sha256": "b5f0dcc6e7b77ce33db3dfe7698aae4f361b00d2c0f2d988129a515561a8dc88",
+    "receipt": "receipts/light-script-detail.json"
+  },
+  {
+    "name": "script-editor",
+    "theme": "light",
+    "file": "screenshots/light-script-editor.png",
+    "sha256": "189fa829cd2aeb7d02ea6db968e9ebfe1b0c9f7b86d904168663c9edd5165942",
+    "receipt": "receipts/light-script-editor.json"
+  },
+  {
+    "name": "blueprint-editor",
+    "theme": "light",
+    "file": "screenshots/light-blueprint-editor.png",
+    "sha256": "edccd3c070ddc4ba47c8844b2d4038ff938eab44c715309543f880082f1b2b3f",
+    "receipt": "receipts/light-blueprint-editor.json"
+  },
+  {
+    "name": "sidebar-expanded",
+    "theme": "light",
+    "file": "screenshots/light-sidebar-expanded.png",
+    "sha256": "fb6b82b1e35a132a55409b6ef44041b6fc73560ed2c7e44af53f892ab1a5fd45",
+    "receipt": "receipts/light-sidebar-expanded.json"
+  },
+  {
+    "name": "sidebar-actions",
+    "theme": "light",
+    "file": "screenshots/light-sidebar-actions.png",
+    "sha256": "6e23b59415abbd1d78838603bf8396bba78f37221da180b46a81ffc7623a0393",
+    "receipt": "receipts/light-sidebar-actions.json"
+  },
+  {
+    "name": "empty",
+    "theme": "light",
+    "file": "screenshots/light-empty.png",
+    "sha256": "919e57d1ae039a94adbdc6982601f04a3b6509dbc3a6421b16f153d1d2173d77",
+    "receipt": "receipts/light-empty.json"
+  },
+  {
+    "name": "job-error",
+    "theme": "light",
+    "file": "screenshots/light-job-error.png",
+    "sha256": "576c7aeb6f5cf147b0c66425a30daf1bad2ade65d53635d9117e1eb37f1774b1",
+    "receipt": "receipts/light-job-error.json"
+  },
+  {
+    "name": "load-error-notification",
+    "theme": "light",
+    "file": "screenshots/light-load-error-notification.png",
+    "sha256": "360f60fc59843bbd2b1b5b07c75ac65a70be17d3bdf2fe591b0a960a164e45f7",
+    "receipt": "receipts/light-load-error-notification.json"
+  },
+  {
+    "name": "queued-trigger",
+    "theme": "light",
+    "file": "screenshots/light-queued-trigger.png",
+    "sha256": "0b222a56603c1f31f45aa5a91dc05edf30cd7d1373d425181fcbdff90ff2b331",
+    "receipt": "receipts/light-queued-trigger.json"
+  }
+]

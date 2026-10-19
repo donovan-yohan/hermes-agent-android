@@ -164,6 +164,8 @@ fun ChatScreen(
     sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution> = emptyList(),
     routeContent: (@Composable () -> Unit)? = null,
     onLeaveRoute: () -> Unit = {},
+    onOpenCron: (() -> Unit)? = null,
+    cronSection: @Composable (onChosen: () -> Unit) -> Unit = {},
 ) {
     // Derived once, here, because this is where the policy lives: which
     // connection states are a door, and which surface that door opens. Both
@@ -195,9 +197,9 @@ fun ChatScreen(
     androidx.compose.runtime.CompositionLocalProvider(LocalFinalPromptDisclosure provides promptDisclosure) {
     BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).collapsePromptOnOutsideTap(promptDisclosure)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
-            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute)
+            WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute, onOpenCron, cronSection)
         } else {
-            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute)
+            CompactLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute, onOpenCron, cronSection)
         }
     }
     }
@@ -257,10 +259,13 @@ private fun CompactLayout(
     onOpenContextUsage: () -> Unit = {},
     routeContent: (@Composable () -> Unit)? = null,
     onLeaveRoute: () -> Unit = {},
+    onOpenCron: (() -> Unit)?,
+    cronSection: @Composable (onChosen: () -> Unit) -> Unit,
 ) {
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val pluginNavigation = com.hermesagent.mobile.ui.LocalPluginNavigation.current
+    val cronDrawerState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -312,6 +317,12 @@ private fun CompactLayout(
                     onManageProfiles = {
                         onOpenProfiles()
                         scope.launch { drawerState.close() }
+                    },
+                    onOpenCron = onOpenCron,
+                    cronSection = {
+                        if (drawerState.isOpen) cronDrawerState.SaveableStateProvider("cron-drawer") {
+                            cronSection { scope.launch { drawerState.close() } }
+                        }
                     },
                 )
                 }
@@ -401,6 +412,8 @@ private fun WideLayout(
     onOpenContextUsage: () -> Unit = {},
     routeContent: (@Composable () -> Unit)? = null,
     onLeaveRoute: () -> Unit = {},
+    onOpenCron: (() -> Unit)?,
+    cronSection: @Composable (onChosen: () -> Unit) -> Unit,
 ) {
     Row(Modifier.fillMaxSize().statusBarsPadding()) {
         // The rail owns its bottom edge in the wide layout. Keep its surface
@@ -425,6 +438,8 @@ private fun WideLayout(
             onManageProfiles = onOpenProfiles,
             onSelectSession = { onLeaveRoute(); actions.onSelectSession(it) },
             onCreateSession = { onLeaveRoute(); actions.onCreateSession() },
+            onOpenCron = onOpenCron,
+            cronSection = { cronSection {} },
         )
         VerticalHairline(Modifier.fillMaxHeight())
         Column(Modifier.weight(1f)) {
@@ -494,6 +509,8 @@ private fun SessionsPane(
     onCreateSession: () -> Unit = actions.onCreateSession,
     onManageProfiles: () -> Unit = {},
     compactActions: Boolean = false,
+    onOpenCron: (() -> Unit)? = null,
+    cronSection: @Composable () -> Unit = {},
 ) {
     SessionList(
         rows = state.sessionRows,
@@ -518,6 +535,8 @@ private fun SessionsPane(
         onSelect = onSelectSession,
         onCreate = onCreateSession,
         compactActions = compactActions,
+        onOpenCron = onOpenCron,
+        cronSection = cronSection,
         modifier = modifier,
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,

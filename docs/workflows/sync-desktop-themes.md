@@ -49,8 +49,9 @@ literals, which upstream extracted into the shared package in September 2026
 2. `app/src/main/kotlin/com/hermesagent/mobile/ui/theme/HermesTokens.kt` — the meaning.
 3. `app/src/test/kotlin/com/hermesagent/mobile/ui/theme/DesktopThemeLedger.kt` — the offline record, including `PINNED_SHA`.
 
-A sync that touches 1 without 3 fails `ThemeParityTest`; a sync that touches 3
-without 1 fails it too. That is the point.
+Registry/data changes must keep 1 and 3 consistent; semantic changes belong in 2.
+A registry-only repin may change 3 alone when a source audit proves the existing
+data unchanged. The identity test cannot prove that audit or new semantics.
 
 ## 4. Colour expressions
 
@@ -94,7 +95,7 @@ changes which face `.wordmark` names.
 ## 6. Verify
 
 ```bash
-./gradlew :app:testDebugUnitTest --tests '*ThemeParityTest*' --tests '*ColorMathTest*'
+./gradlew :app:testDebugUnitTest --tests '*ThemeParityTest*' --tests '*ThemeSemanticParityTest*' --tests '*ClassicThemeTest*' --tests '*ColorMathTest*'
 ./gradlew check
 ```
 
@@ -141,3 +142,12 @@ instance: filtering only in memory is not a boot migration. Keep reserved
 persisted/backend names separate from command-only aliases, and trace Android's
 actual command transport before proposing local interception. See the
 [36922 audit](../spikes/upstream-36922-2026-10-02.md).
+
+The [5fc490e2 registry-only audit](../spikes/upstream-5fc490e2-2026-10-19.md)
+proves unchanged twelve-preset data and light synthesis. It does not port saved
+accent retints, new profile inheritance, custom typography overrides or mode
+requests. Keep those source-inspected gaps separate from passing identity tests,
+and keep semantic goldens pinned to the sources that actually produced them.
+
+The [ddabd383 follow-up](../spikes/upstream-ddabd383-2026-10-19.md) advances
+the registry target again with zero Desktop/shared/Cron source changes.

@@ -198,6 +198,9 @@ fun SessionList(
     nowMillis: Long,
     /** Drawer-only adaptation; the persistent Desktop-like rail keeps every action open. */
     compactActions: Boolean = false,
+    /** Core Scheduled jobs is independent of bundled plugin activation. */
+    onOpenCron: (() -> Unit)? = null,
+    cronSection: @Composable () -> Unit = {},
 ) {
     val tokens = HermesTheme.tokens
     val showingProjectOverview = sidebarGrouping == SidebarGrouping.Project &&
@@ -304,7 +307,7 @@ fun SessionList(
             SidebarNavRow("Capabilities", HermesIcon.SymbolMisc, false, {}, "sidebar-action-capabilities", showWip = true)
             SidebarNavRow("Messaging", HermesIcon.Comment, false, {}, "sidebar-action-messaging", showWip = true)
             SidebarNavRow("Artifacts", HermesIcon.Files, false, {}, "sidebar-action-artifacts", showWip = true)
-            SidebarNavRow("Scheduled jobs", HermesIcon.Watch, false, {}, "sidebar-action-scheduled-jobs", showWip = true)
+            SidebarNavRow("Scheduled jobs", HermesIcon.Watch, onOpenCron != null, onOpenCron ?: {}, "sidebar-action-scheduled-jobs", showWip = onOpenCron == null)
             sidebarNavigation
                 .sortedWith(compareBy<com.hermesagent.mobile.plugins.Contribution> { it.order ?: Int.MAX_VALUE })
                 .forEach { contribution -> contribution.render?.invoke() }
@@ -454,6 +457,11 @@ fun SessionList(
                 )
             }
 
+            }
+            if (query.isBlank() && sidebarGrouping != SidebarGrouping.Project && !archivedVisible) {
+                Column(Modifier.fillMaxWidth().heightIn(max = 288.dp).verticalScroll(rememberScrollState())) {
+                    cronSection()
+                }
             }
             when {
                 showingProjectOverview && projectsAvailable == true && projects.isEmpty() -> EmptyState(
