@@ -59,6 +59,7 @@ class VisualParityWorkflowTest(unittest.TestCase):
         self.assertEqual("cron-management-synthetic-v1", spec["fixture_id"])
         self.assertNotIn("editor", spec["states"])
         self.assertEqual(9, len(spec["states"]))
+        self.assertEqual(["tap:SCHEDULED JOBS"], spec["states"]["sidebar"]["interaction"])
         for state in spec["states"]:
             self.assertIn("          - " + state, self.text)
             self.assertTrue(spec["states"][state]["post_interaction_accessibility"])

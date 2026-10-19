@@ -48,7 +48,8 @@ directory and still require installed-byte/signature, focused-activity and
 bracketed accessibility checks. The shell wrapper remains the CI entry point.
 For the sidebar, do not wait for Run history before its expansion tap; that
 heading is inside the collapsed content. The reference script checks it after
-the catalogued tap.
+the catalogued tap on the rendered `SCHEDULED JOBS` text. The legacy single-tap
+capture matches visible text, not the `Cron jobs` content description.
 
 ## Desktop
 

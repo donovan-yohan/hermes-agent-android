@@ -13,7 +13,7 @@
         "empty": { "interaction": [], "post_interaction_accessibility": "No scheduled jobs yet" },
         "error": { "interaction": [], "post_interaction_accessibility": "Failed to load cron jobs. Check the connection and refresh." },
         "detail": { "interaction": [], "post_interaction_accessibility": "Trigger now" },
-        "sidebar": { "interaction": ["tap:Cron jobs"], "post_interaction_accessibility": "Run history" },
+        "sidebar": { "interaction": ["tap:SCHEDULED JOBS"], "post_interaction_accessibility": "Run history" },
         "queued": { "interaction": [], "post_interaction_accessibility": "Queued run" },
         "delete-confirm": { "interaction": [], "post_interaction_accessibility": "Delete cron job?" },
         "script": { "interaction": [], "post_interaction_accessibility": "script" },
