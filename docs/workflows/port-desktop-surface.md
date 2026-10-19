@@ -11,13 +11,16 @@ Every step here earned its place by being something a port gets wrong.
 
 ```bash
 HERMES_AGENT_UPSTREAM="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
-git -C "$HERMES_AGENT_UPSTREAM" rev-parse HEAD
-git -C "$HERMES_AGENT_UPSTREAM" status --porcelain   # must be empty
+pin=5fc490e2b34123212d73ef316086f939567a725a # current target for new ports
+# Create a disposable clone at $pin as in review-desktop-parity.md §2.
+# For an existing surface, use its declared pin instead, not an automatic restamp.
+git -C "${export:?set export to the disposable pinned checkout}" rev-parse HEAD # must equal $pin
+git -C "$export" status --porcelain   # must be empty before fixture patches
 ```
 
-Record the SHA in the change. Every `path:line` you cite is meaningless without
-it, because upstream moves. The checkout is **read-only**: no fetch, no
-checkout, no stash.
+Record the inspected SHA in the change. Every `path:line` you cite is meaningless
+without it, because upstream moves. The installed reference is **read-only**:
+no fetch, checkout or stash. Historical source and capture pins stay historical.
 
 ## 1. Read the source, then its tests
 
@@ -38,8 +41,8 @@ disagree, the component is the current contract and the doc is a bug.
 
 | Surface | Upstream path | What it settles |
 |---|---|---|
-| Theme registry | `apps/desktop/src/themes/presets.ts` (+ palettes in `apps/shared/src/theme-presets.ts`) | The built-in presets (eleven at the pin), labels, descriptions, default skin |
-| Theme resolution | `apps/desktop/src/themes/context.tsx:84-129` | `getBaseColors` + `synthLightColors` — dark-first presets synthesise their light half |
+| Theme registry | `apps/desktop/src/themes/presets.ts:444-468` (+ palettes in `apps/shared/src/theme-presets.ts`) @ `5fc490e2b34123212d73ef316086f939567a725a` | Twelve built-ins, labels, descriptions, default skin and retired names; Classic seeds are local to `presets.ts` |
+| Theme resolution | `apps/desktop/src/themes/context.tsx:151-198` @ `5fc490e2b34123212d73ef316086f939567a725a` | `getBaseColors`, `paletteFor` + `synthLightColors` — dark-first presets synthesise their light half; not a new Android semantic audit |
 | Colour maths | `apps/desktop/src/themes/color.ts` | `mix`, `readableOn`, WCAG luminance |
 | Derived tokens | `apps/desktop/src/styles.css:183-370,440-447` | Text/hairline ladders, conversation type scale, widget fill |
 | User message | `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:67` | The user bubble is the *only* bubble |
@@ -113,19 +116,35 @@ target surface into a temporary local-only seeded state containing no private
 session text, host, fingerprint, path, token, or credential. Do not add a
 production demo session to obtain evidence.
 
+Choose `surface`, `fixture`, `state`, `theme`, `activity`, `selector`, exact
+interaction flags and `expected_accessibility` from
+`docs/parity/visual-capture-surfaces.json`; `pin` is that surface's declared
+Desktop SHA. Set `android_sha` to the commit that built the installed APK, not
+an uncommitted working tree. This is a template, not an already executed capture:
+
 ```bash
+name="${surface:?catalog surface}--${state:?catalog state}"
 node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
-  --name projects-overview \
-  --selector '[data-slot="sidebar"]' \
-  --expect-sha 3ca096de5f8183cb2e0ec23673f294d5978656a3 \
-  --match 5174
+  --name "$name" --selector "${selector:?catalog selector}" \
+  --upstream "${export:?disposable pinned checkout}" --expect-sha "${pin:?surface pin}" \
+  --fixture-id "${fixture:?catalog fixture}" --state "$state" --theme "${theme:?light or dark}" \
+  --match "${match:?renderer URL match}"
 
+# Add the catalog's exact interaction flags (ordered actions/tap/swipe) when needed.
 python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
-  --name projects-overview
+  --name "$name" --fixture-id "$fixture" --state "$state" --theme "$theme" \
+  --git-sha "${android_sha:?APK source commit}" --apk "${apk:?installed APK file}" \
+  --apk-kind "${apk_kind:?debug or androidTest}" --activity "${activity:?catalog activity class}" \
+  --expected-accessibility "${expected_accessibility:?catalog assertion}" --launch-fixture
 
-python3 .chalk/skills/port-hermes-desktop-surface/scripts/build-visual-report.py \
-  --name projects-overview
+python3 .chalk/skills/port-hermes-desktop-surface/scripts/build-visual-report.py --name "$name"
 ```
+
+`activity` above is the class name; pass `--package` too if it is not the debug
+default. If the catalog has no accessibility assertion, omit that flag. If the
+surface/state has no fixture yet, add one rather than inventing a receipt. Run
+both capture scripts with `--help` before use; passing report generation alone
+does not validate receipts or establish rendered parity.
 
 The Desktop capture writes `reference.png` plus `contract.json`. The JSON is
 not a DOM dump: it records the selected subtree's rendered rectangles,
@@ -272,6 +291,18 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 `### Moving a pin`, for what each finding means.
 
 ## 6. Capture what you learned
+
+Core Cron uses full REST job records, not the lossy `cron.manage` preview.
+Readback must account for the server's normalized names and natural-language
+schedules, and a finite run may remain as a disabled completed record. A profile
+query on an item route is only a hint at the current pin; client inventory
+preflight does not create an atomic backend owner precondition. Modern Cron
+conversations are recognized by authoritative source, not only historical ID
+shape. Preserve owner/runtime isolation when the same raw ID appears twice.
+The [Cron capture workflow](cron-management-capture.md) separates unchanged
+Desktop component references, synthetic Android fixtures and actual-router
+Kotlin acceptance. Run Gradle serially per checkout; concurrent builds can
+overwrite test classes and reports even when source ownership is disjoint.
 
 Core HTTP mutations need a typed host capability rather than an escape from
 plugin REST namespaces. Bind transport and explicit profile before suspension;

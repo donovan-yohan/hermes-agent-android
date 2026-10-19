@@ -155,6 +155,16 @@ internal class OkHttpGatewayHttp(
                     retryOnConnectionFailure(false)
                     authenticator(okhttp3.Authenticator.NONE)
                     proxyAuthenticator(okhttp3.Authenticator.NONE)
+                    // Body-less DELETE cannot carry RequestBody.isOneShot. OkHttp
+                    // can still follow a 503/421 independently of connection retries.
+                    // Guard each actual exchange, not merely the initial enqueue.
+                    val exchanged = java.util.concurrent.atomic.AtomicBoolean(false)
+                    addNetworkInterceptor { chain ->
+                        if (!exchanged.compareAndSet(false, true)) {
+                            throw IOException("Guarded Gateway request cannot be replayed.")
+                        }
+                        chain.proceed(chain.request())
+                    }
                 }
             }
             .callTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)

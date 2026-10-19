@@ -43,4 +43,18 @@ class CronSessionAdmissionTest {
         assertEquals(CronSessionVerdict.Writable, gate.record(key, row("\"source\":\"cli\",\"scheduler_owned\":false"), 1_000_000))
         assertEquals(CronSessionVerdict.ViewOnly, gate.record(key, row("\"source\":\"\",\"scheduler_owned\":false"), 1_000_000))
     }
+
+    @Test fun `remembered modern verdict and owner recovery never cross endpoint or profile`() {
+        val gate = CronSessionAdmission()
+        val key = CronSessionOwner(1, "work", "local-run")
+        assertFalse(gate.hasVerdict(key))
+        gate.record(key, null, 1_000_000)
+        assertTrue(gate.hasVerdict(key))
+        assertFalse(gate.hasVerdict(key.copy(profile = "other")))
+        assertFalse(gate.hasVerdict(key.copy(endpointGeneration = 2)))
+        assertEquals("work", gate.rememberedProfile(1, "local-run"))
+        assertNull(gate.rememberedProfile(2, "local-run"))
+        gate.record(key.copy(profile = "other"), null, 1_000_000)
+        assertNull(gate.rememberedProfile(1, "local-run"))
+    }
 }

@@ -18,14 +18,14 @@ citation is worthless without saying which one it is against.
 
 | Surface | Pin | Where it is recorded |
 |---|---|---|
-| UI structure, behaviour and copy — target for new ports | `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | `AGENTS.md` |
-| Built-in theme registry and palette sync target | `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
+| UI structure, behaviour and copy — target for new ports | `5fc490e2b34123212d73ef316086f939567a725a` | `AGENTS.md` |
+| Built-in theme registry target (not a full semantic/render repin) | `5fc490e2b34123212d73ef316086f939567a725a` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
 | A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/approval-mode.md` pins its Desktop source at `3ca096de` |
 
 Use the UI target for new ports and the theme target for registry/palette syncs.
 Neither target retroactively certifies per-surface evidence or historical token
 citations: keep those on the SHA actually inspected until their own audit moves
-them. The [36922 target audit](../spikes/upstream-36922-2026-10-02.md)
+them. The [5fc490e2 target audit](../spikes/upstream-5fc490e2-2026-10-19.md)
 records this refresh and its limits. Write that inspected SHA next to every
 `path:line`.
 
@@ -60,7 +60,7 @@ Desktop needs a dev renderer with CDP, run from a **disposable pinned export**
 so no real config, `.env` or auth is in reach:
 
 ```bash
-pin=36922ad064d65dcf25f8f48df81e1ccf9a55de67
+pin=5fc490e2b34123212d73ef316086f939567a725a # new ports; use the declared surface pin for recaptures
 export="${TMPDIR:?set TMPDIR to your scratch directory}/hermes-desktop-$pin"
 git clone --no-hardlinks --quiet --no-checkout \
   "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" "$export"
@@ -80,18 +80,11 @@ synthetic state: no host, fingerprint, credential, filesystem path or private
 session text may appear in a capture. Never run bare `npm run perf:serve`, and
 never relaunch or kill the user's own Hermes to free a port.
 
-```bash
-node .chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs \
-  --name session-actions-open \
-  --selector '[data-slot="dropdown-menu-content"]' \
-  --upstream "$export" --expect-sha "$pin" --match 5174
-
-python3 .chalk/skills/port-hermes-desktop-surface/scripts/capture-android-reference.py \
-  --name session-actions-open
-
-python3 .chalk/skills/port-hermes-desktop-surface/scripts/build-visual-report.py \
-  --name session-actions-open
-```
+Use the capture template in [port-desktop-surface.md §2](port-desktop-surface.md#2-freeze-the-rendered-visual-contract).
+Both scripts require `--fixture-id`, `--state` and `--theme`; Android also
+requires the exact APK, kind and source SHA. Resolve the catalog's own surface
+pin, activity, selector, interactions and accessibility assertion first. A new
+repo target does not authorize relabelling an existing catalog fixture.
 
 Everything lands under the untracked `build/visual-parity/<name>/`. Open
 `report.html` and judge both surfaces together. Copy the packet into
@@ -101,7 +94,7 @@ points at something a later reader can still open.
 **What a browser-hosted Desktop capture cannot see.** The dev renderer runs in
 Chrome, not Electron, so `window.hermesDesktop` does not exist and every control
 gated on it is simply not built into the tree. `New window` and `Open in
-terminal` in the session actions menu are two (`apps/desktop/src/store/windows.ts:169-171,186-188`,
+terminal` in the session actions menu are two (`apps/desktop/src/store/windows.ts:169-171,186-188` @ `e27448b231498e79ade668d68c0b6c6206951206`,
 consumed at `apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:297,313`
 @ `e27448b231498e79ade668d68c0b6c6206951206`); anything else reached through
 that bridge behaves the same way. **A control missing from a Desktop capture is
@@ -261,6 +254,9 @@ python3 scripts/verify-pin-citations.py \
   --upstream "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" \
   --repo .
 ```
+
+For uncommitted edits use `--check-range HEAD..WORKTREE` with `--upstream`
+pointing at the disposable audited checkout. `HEAD..HEAD` checks none of them.
 
 The gate reads the citations **out of the diff**, so a file whose stamp you have
 already rewritten is still checked — the `grep <old-sha>` scan the tool also

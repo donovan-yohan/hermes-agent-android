@@ -97,9 +97,10 @@ are in [Status and roadmap](status/ROADMAP.md).
 | Profiles | Full profile management and the SOUL editor | **Partial** — a profile rail that scopes the session list, an all-profiles view, and a read-only roster; no creating, renaming, deleting or editing |
 | Notifications | Desktop notifications from a persistent process | **Partial** — approvals, questions, sudo/secret prompts and finished turns while a Gateway socket is live, answerable from the shade; nothing arrives once the socket is gone |
 | System panel and updates | Gateway status, restart, backend update, and logs | **Partial** — status, messaging-gateway restart and `hermes update` with a grouped changelog; `Recent logs` ships disabled, and none of it has run against a real host yet |
-| Appearance | Built-in and custom themes plus Desktop chrome | **Partial** — all eleven built-in themes at the pinned Desktop authority, system/light/dark mode, and mobile chat chrome; no custom themes |
+| Scheduled jobs | Cron list, job settings, blueprints, run history and conversations | **Supported** — core job management and sidebar history over the Gateway, including source-aware read-only protection for unfinished scheduler runs; [evidence and limits](docs/parity/cron-management.md) |
+| Appearance | Built-in and custom themes plus Desktop chrome | **Partial** — all twelve built-in themes at the registry pin, system/light/dark mode, mobile chat chrome and bounded backend themes; new accent/typography controls retain separate parity limits |
 | Desktop workbench | Multi-pane files, terminal/PTY, review, and desktop window workflows | **Not yet** — the changed-file sheet is the only native workspace view |
-| Other management surfaces | Bots, schedules, memory, knowledge, workflows, tools/skills/MCP, plugins, Kanban, and messaging settings | **Not yet** — no dedicated mobile screens; agents can still use Gateway-exposed capabilities in chat |
+| Other management surfaces | Bots, memory, knowledge, workflows, tools/skills/MCP, plugins, Kanban, and messaging settings | **Partial** — bounded Bots and plugin surfaces have separate parity ledgers; this is not complete Desktop management parity |
 | Background lifecycle | Persistent desktop process | **Partial** — reconnect, a turn-scoped foreground service and a wake-word service exist, but uninterrupted background connectivity is not claimed |
 
 Where Desktop has a control this app does not implement yet, the control is

@@ -51,6 +51,24 @@ class VisualParityWorkflowTest(unittest.TestCase):
         self.assertIn('--ordered-actions', self.capture_script)
         self.assertIn('legacy capture supports only one tap', self.capture_script)
 
+    def test_core_cron_capture_keeps_secure_editor_out_of_device_states(self) -> None:
+        import json
+        catalog = json.loads((ROOT / "docs/parity/visual-capture-surfaces.json").read_text())
+        spec = catalog["surfaces"]["cron-management"]
+        self.assertEqual("5fc490e2b34123212d73ef316086f939567a725a", spec["desktop_sha"])
+        self.assertEqual("cron-management-synthetic-v1", spec["fixture_id"])
+        self.assertNotIn("editor", spec["states"])
+        self.assertEqual(9, len(spec["states"]))
+        for state in spec["states"]:
+            self.assertIn("          - " + state, self.text)
+            self.assertTrue(spec["states"][state]["post_interaction_accessibility"])
+        self.assertIn("cron-management", self.text)
+
+    def test_tapping_state_does_not_wait_for_content_hidden_behind_its_tap(self) -> None:
+        # Run history is not published until the sidebar disclosure is tapped.
+        # The reference capture performs the catalogued tap before its own check.
+        self.assertIn('-z "$tap_text"', self.capture_script)
+
     def test_is_manual_immutable_ref_and_artifact_only(self) -> None:
         for required in ("workflow_dispatch:", "Exact immutable 40-character", "contents: read", "Upload Android packet only", "^[0-9a-f]{40}$", "CHECKED_OUT_REF"):
             self.assertIn(required, self.text)

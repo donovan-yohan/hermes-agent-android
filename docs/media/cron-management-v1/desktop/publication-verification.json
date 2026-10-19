@@ -1,0 +1,77 @@
+{
+  "status": "passed",
+  "scope": "Read-only publication integrity and heuristic text privacy scan; no browser recapture or visual judgment",
+  "sourceManifestEntries": 122,
+  "publishedFiles": 117,
+  "publicationManifestHashEntries": 116,
+  "unchangedOriginalFiles": 108,
+  "transformedAuxiliaryFiles": 6,
+  "excludedOriginalFiles": 8,
+  "canonicalScreenshotsUnchanged": 40,
+  "canonicalReceiptsUnchanged": 40,
+  "pairedStates": 20,
+  "historicalAssertionsCorroboratedByEvents": 340,
+  "historicalFinalBrowserErrors": 0,
+  "receiptSourceFilesByteVerified": 16,
+  "historicalSourceHashMappingsNotOriginalBytes": [
+    "fixtures/cron-reference.capture.mjs"
+  ],
+  "fontFilesByteVerified": 3,
+  "historicalTrackedFileAudit": "Recorded only; original before/after manifests excluded with identical SHA-256; no checkout re-audit",
+  "textFilesScannedIncludingPatch": 75,
+  "privacyScanRules": [
+    "absolute_user_path",
+    "credential_token",
+    "email_address",
+    "nonloopback_ipv4",
+    "private_hostname",
+    "private_key"
+  ],
+  "privacyFindings": [],
+  "privacyBenignSourceMatches": [
+    {
+      "file": "source/apps/desktop/src/app/cron/index.tsx",
+      "line": 1151,
+      "rule": "private_hostname",
+      "explanation": "TypeScript property access, not a hostname"
+    },
+    {
+      "file": "source/apps/desktop/src/i18n/en.ts",
+      "line": 4909,
+      "rule": "email_address",
+      "explanation": "Reserved example-domain UI placeholder, not personal data"
+    }
+  ],
+  "liveBackend": false,
+  "fullDesktopShell": false,
+  "visualReviewPerformed": false,
+  "auxiliaryChecks": {
+    "helperPreflightExitCode": 0,
+    "helperPreflightOutput": "PASS: additive fixture exists",
+    "patchApplyCheckExitCode": 0,
+    "patchAppliedFixtureBytesExact": true,
+    "sourceManifestEntriesRevalidated": 122,
+    "upstreamSourceSnapshotsUnchanged": true,
+    "historicalCommandRecords": 11,
+    "historicalExitCodes": [
+      1,
+      1,
+      0,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0,
+      0
+    ],
+    "redactedCommandsEqualOriginalExceptRootSubstitutions": true,
+    "originalManifestBytesUnchanged": true,
+    "liveBrowserLaunched": false,
+    "missingEnvironmentRejected": true,
+    "publicationAsCaptureOutputRejected": true,
+    "rejectionGuardsWroteNoPublicationFiles": true,
+    "immutableSourceFilesUnchanged": 123
+  }
+}

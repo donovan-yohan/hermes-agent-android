@@ -162,9 +162,12 @@ tasks.named("check") {
  */
 val liveGatewayOptIn: String? = System.getProperty("hermes.liveGateway")
     ?: (project.findProperty("hermes.liveGateway") as String?)
+// Only the non-secret opt-in URL's presence controls caching. The run-scoped
+// credential stays in the inherited environment, never a task input or property.
+val liveCronOptIn = providers.environmentVariable("HM_CRON_SMOKE_URL").isPresent
 
 tasks.withType<Test>().configureEach {
-    if (!liveGatewayOptIn.isNullOrBlank()) {
+    if (!liveGatewayOptIn.isNullOrBlank() || liveCronOptIn) {
         outputs.upToDateWhen { false }
         outputs.cacheIf { false }
     }

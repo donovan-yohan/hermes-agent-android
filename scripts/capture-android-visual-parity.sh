@@ -114,11 +114,9 @@ dismiss_system_dialog() {
 # capture re-checks the same description itself and still fails if it never
 # appears.
 #
-# A swiping state is deliberately excluded: its subject is below the phone's
-# fold until the real drag moves it into view, so waiting here would spend the
-# whole budget on a row that cannot be published yet. The reference capture owns
-# that wait, bounded, on the far side of the swipe.
-if [[ -n "$expected_accessibility" && -z "$swipe_list_up" && ${#ordered_args[@]} -eq 0 ]]; then
+# Interaction states are excluded: their subject may be below the fold or
+# behind a disclosure. The reference capture waits after the real action.
+if [[ -n "$expected_accessibility" && -z "$swipe_list_up" && -z "$tap_text" && ${#ordered_args[@]} -eq 0 ]]; then
   published=""
   for _ in $(seq 1 20); do
     if adb shell uiautomator dump /sdcard/window.xml >/dev/null 2>&1; then

@@ -11,12 +11,20 @@ on:
         description: Catalogued parity surface
         required: true
         type: choice
-        options: [bot-configured-mcp, bot-installed-skills, composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, sidebar-projection, bot-management, bot-model-config, bot-avatar-editor, bot-steer, notification-latest]
+        options: [cron-management, bot-configured-mcp, bot-installed-skills, composer-status-stack, composer-url-chip, composer-add-sheet, session-list-sections, tool-name-aliases, bot-routines, bot-routine-inspector, bot-group-chat, profile-avatars, desktop-sidebar, sidebar-projection, bot-management, bot-model-config, bot-avatar-editor, bot-steer, notification-latest]
       state:
         description: Catalogued synthetic state (one artifact per dispatch)
         required: true
         type: choice
         options:
+          - empty
+          - error
+          - detail
+          - sidebar
+          - queued
+          - delete-confirm
+          - script
+          - blueprints
           - mcp-loaded
           - mcp-disabled
           - mcp-plugin

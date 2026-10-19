@@ -338,6 +338,25 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val chatState by chatViewModel.uiState.collectAsStateWithLifecycle()
+            val cronState by app.cronViewModel.state.collectAsStateWithLifecycle()
+            androidx.compose.runtime.LaunchedEffect(chatState.profileRail.scope.key) {
+                app.cronViewModel.show(
+                    if (chatState.profileRail.scope.isAll) "all" else chatState.profileRail.scope.activeProfile,
+                )
+            }
+            fun openCronRunFrom(run: com.hermesagent.mobile.data.cron.CronRun, onOpened: () -> Unit = {}) {
+                chatViewModel.openCronRun(
+                    run.id, run.profile, cronState.endpoint, run.source, run.title, run.preview,
+                    run.lastActive ?: run.startedAt, run.endedAt, run.schedulerOwned, run.isActive,
+                ) { opened ->
+                    if (opened) {
+                        onOpened()
+                        navigationAsk = HermesNavigationAsk(com.hermesagent.mobile.ui.HermesDestination.Chat, System.nanoTime())
+                    }
+                    else app.cronViewModel.reportRunOpenFailure()
+                }
+            }
+            val openCronRun: (com.hermesagent.mobile.data.cron.CronRun) -> Unit = { run -> openCronRunFrom(run) }
             val gatewayState by gatewaySettingsViewModel.uiState.collectAsStateWithLifecycle()
             val sshState by sshViewModel.uiState.collectAsStateWithLifecycle()
             val appearance by preferences.appearance.collectAsStateWithLifecycle(AppearanceSelection())
@@ -566,6 +585,22 @@ class MainActivity : ComponentActivity() {
                 notificationsState = notificationsState,
                 notificationsActions = notificationsActions,
                 navigationAsk = navigationAsk,
+                cronContent = {
+                    com.hermesagent.mobile.ui.cron.CronScreen(cronState, app.cronViewModel, openCronRun)
+                },
+                cronSection = { onChosen ->
+                    if (cronState.jobs.isNotEmpty()) {
+                        com.hermesagent.mobile.ui.cron.CronSidebarSection(
+                            cronState, app.cronViewModel,
+                            onManage = {
+                                onChosen()
+                                navigationAsk = HermesNavigationAsk(com.hermesagent.mobile.ui.HermesDestination.Cron, System.nanoTime())
+                            },
+                            onOpenRun = { run -> openCronRunFrom(run, onChosen) },
+                            visible = true,
+                        )
+                    }
+                },
                 onSignInOriginChange = { signInOrigin = it },
                 sshActions = SshActions(
                     onDestinationChange = sshViewModel::setDestination,

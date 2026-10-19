@@ -94,6 +94,7 @@ sealed interface HermesDestination {
     data object Notifications : HermesDestination
     data object Plugins : HermesDestination
     data object Profiles : HermesDestination
+    data object Cron : HermesDestination
     data class Route(val id: String) : HermesDestination
 }
 
@@ -108,6 +109,7 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             HermesDestination.Notifications -> "Notifications"
             HermesDestination.Plugins -> "Plugins"
             HermesDestination.Profiles -> "Profiles"
+            HermesDestination.Cron -> "Cron"
             is HermesDestination.Route -> "Route:${destination.id}"
         }
     },
@@ -121,6 +123,7 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
             value == "Notifications" -> HermesDestination.Notifications
             value == "Plugins" -> HermesDestination.Plugins
             value == "Profiles" -> HermesDestination.Profiles
+            value == "Cron" -> HermesDestination.Cron
             value.startsWith("Route:") -> HermesDestination.Route(value.removePrefix("Route:"))
             else -> HermesDestination.Chat
         }
@@ -188,6 +191,8 @@ fun HermesApp(
      * and the entry points are inside it.
      */
     onSignInOriginChange: (SignInOrigin) -> Unit = {},
+    cronContent: (@Composable () -> Unit)? = null,
+    cronSection: @Composable (onChosen: () -> Unit) -> Unit = {},
 ) {
     var destination by rememberSaveable(stateSaver = HermesDestinationSaver) {
         mutableStateOf<HermesDestination>(HermesDestination.Chat)
@@ -217,6 +222,15 @@ fun HermesApp(
     }
     val onBack = {
         destination = if (destination is HermesDestination.Route) routeOrigin else destination.backDestination()
+    }
+    // The Cron surface owns its header. A second shell title would duplicate it
+    // and make the phone spend two rows saying the same destination.
+    val cronDestination: @Composable () -> Unit = {
+        CompositionLocalProvider(LocalCronBackAction provides onBack) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().windowInsetsPadding(WindowInsets.ime).navigationBarsPadding()) {
+                cronContent?.invoke()
+            }
+        }
     }
     // Three surfaces name this one destination: the sidebar's "Manage gateways…",
     // Settings, and the chat chrome's connection line. They divide by
@@ -283,7 +297,11 @@ fun HermesApp(
                     sidebarNavigation = sidebarNavContributions,
                     routeContent = sidebarRoute,
                     onLeaveRoute = { destination = HermesDestination.Chat },
+                    onOpenCron = cronContent?.let { { destination = HermesDestination.Cron } },
+                    cronSection = cronSection,
                 )
+
+                HermesDestination.Cron -> cronDestination()
 
                 // "Manage profiles…" is a sidebar affordance, so its back goes home
                 // rather than through Settings.
@@ -483,10 +501,14 @@ internal fun OverlayScaffold(
 /** The retained compact shell lends its drawer action to the route's own header. */
 internal val LocalRouteDrawerAction = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
 
+/** Core Cron supplies its own header and uses this to leave its phone destination. */
+internal val LocalCronBackAction = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
 internal fun HermesDestination.backDestination(): HermesDestination = when (this) {
     HermesDestination.Chat -> HermesDestination.Chat
     HermesDestination.Settings -> HermesDestination.Chat
     HermesDestination.Profiles -> HermesDestination.Chat
+    HermesDestination.Cron -> HermesDestination.Chat
     HermesDestination.Appearance,
     HermesDestination.Gateways,
     HermesDestination.System,

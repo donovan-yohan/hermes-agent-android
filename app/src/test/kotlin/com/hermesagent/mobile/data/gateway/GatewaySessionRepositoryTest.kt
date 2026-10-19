@@ -86,6 +86,494 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `modern selected zombie owner outranks an ordinary prior owner runtime`() = runTest {
+        val id = "local-selected-collision"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            when (request.path) {
+                "api/sessions/$id" -> restPage("""{"id":"$id","profile":"other","source":"cron","scheduler_owned":false}""")
+                "api/sessions/$id/messages" -> if (request.query["profile"] == "work")
+                    restPage("""{"session_id":"$id","messages":[{"id":1,"role":"user","content":"foreign prefix"},{"id":2,"role":"user","content":"foreign tail"}],"pagination":{"limit":120,"offset":0}}""")
+                else restPage("""{"session_id":"$id","messages":[{"id":2,"role":"user","content":"other history"}],"pagination":{"limit":120,"offset":0}}""")
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary(id, "Ordinary", "", CLOCK, source = "desktop", remoteProfile = "work"))
+        repository.openSession(id, "work")
+        rpc.calls.clear()
+        cache.upsertSession(SessionSummary(id, "Other run", "", CLOCK, source = "cron", remoteProfile = "other"))
+        repository.openSession(id)
+        assertTrue("Selecting another owner's zombie must not activate the old runtime",
+            rpc.calls.none { it.method in setOf("session.resume", "session.activate") })
+        assertEquals("other", cache.session(id)?.remoteProfile)
+        assertEquals("cron", cache.session(id)?.source)
+        assertTrue(repository.sessionReadOnlyReason(id)!!.contains("view-only"))
+        assertEquals(listOf("other history"), cache.transcript(id).filterIsInstance<UserTurn>().map { it.text })
+    }
+
+    @Test
+    fun `selected owner resume cannot relabel a runtime already bound to another profile`() = runTest {
+        val id = "local-returned-collision"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession(id, "work")
+        cache.upsertSession(SessionSummary(id, "Other chat", "", CLOCK, source = "desktop", remoteProfile = "other"))
+        val result = runCatching { repository.openSession(id) }
+        assertTrue("A returned foreign runtime must not be relabelled", result.isFailure)
+        assertEquals("other", cache.session(id)?.remoteProfile)
+        assertEquals("other", rpc.calls.last { it.method == "session.resume" }.params.string("profile"))
+        assertTrue(rpc.calls.none { it.method == "session.activate" })
+    }
+
+    @Test
+    fun `modern raw owner handoff isolates late transcript status and pending input events`() = runTest {
+        val contaminated = mutableListOf<String>()
+        for (family in listOf("transcript", "status", "pending")) {
+            val id = "local-handoff-collision"
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+            val http = FakeGatewayRest { request ->
+                when (request.path) {
+                    "api/sessions/$id" -> restPage("""{"id":"$id","profile":"other","source":"cron","scheduler_owned":false}""")
+                    "api/sessions/$id/messages" -> if (request.query["profile"] == "work")
+                        restPage("""{"session_id":"$id","messages":[{"id":1,"role":"user","content":"foreign prefix"},{"id":2,"role":"user","content":"foreign tail"}],"pagination":{"limit":120,"offset":0}}""")
+                    else restPage("""{"session_id":"$id","messages":[{"id":2,"role":"user","content":"other history"}],"pagination":{"limit":120,"offset":0}}""")
+                    else -> GatewayHttpResult.Rejected(404, "unavailable")
+                }
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+                http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            cache.upsertSession(SessionSummary(id, "Ordinary", "", CLOCK, source = "desktop", remoteProfile = "work"))
+            repository.openSession(id, "work")
+            repository.submit(id, "background work")
+            // Another session's background work must survive targeted retirement.
+            repository.openSession("durable-b")
+            repository.submit("durable-b", "independent work")
+            rpc.emit("message.start", "runtime-a", """{"id":"old","role":"assistant","content":"old partial"}""")
+            rpc.emitCanonical("approval.request", "runtime-a", """{"prompt_id":"old-question","kind":"approval","choices":["allow","deny"],"command":"synthetic command"}""")
+            runCurrent()
+            assertTrue(repository.pendingInputs.value.isNotEmpty())
+            repository.openCronRun(id, "other", 0, schedulerOwned = false)
+            assertEquals(listOf("other history"), cache.transcript(id).filterIsInstance<UserTurn>().map { it.text })
+            val row = cache.session(id)
+            val transcript = cache.transcript(id)
+            when (family) {
+                "transcript" -> {
+                    rpc.emit("message.start", "runtime-a", """{"id":"foreign","role":"assistant","content":"foreign start"}""")
+                    rpc.emit("message.delta", "runtime-a", """{"delta":"foreign delta"}""")
+                }
+                "status" -> rpc.emit("session.info", "runtime-a", """{"running":true,"status":"working"}""")
+                "pending" -> rpc.emitCanonical("approval.request", "runtime-a", """{"prompt_id":"late-question","kind":"approval","choices":["allow","deny"],"command":"late synthetic command"}""")
+            }
+            runCurrent()
+            if (row != cache.session(id) || transcript != cache.transcript(id) || repository.pendingInputs.value.isNotEmpty()) {
+                contaminated += family
+            }
+            assertEquals("other", cache.session(id)?.remoteProfile)
+            assertTrue("Other background turn must remain live", "durable-b" in repository.activeTurns.value)
+            assertTrue(rpc.calls.none { it.method == "session.interrupt" })
+        }
+        assertEquals("Foreign runtime must lose all local projection doors", emptyList<String>(), contaminated)
+    }
+
+    @Test
+    fun `cron public handoff rejects malformed and sentinel profile before any side effect`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        val accepted = mutableListOf<String>()
+        for (profile in listOf("current", "all", " work", "work ", "Work", "../work", "work.name", "a".repeat(65))) {
+            runCatching { repository.openCronRun("local-invalid", profile, 0, schedulerOwned = false) }
+            if (cache.session("local-invalid") != null) accepted += profile
+            cache.removeSession("local-invalid")
+        }
+        assertEquals(emptyList<String>(), accepted)
+        assertTrue(rpc.calls.none { it.method in setOf("session.resume", "session.activate", "profiles.list") })
+    }
+
+    @Test
+    fun `cron history handoff requires literal source even for a legacy shaped id`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        val accepted = mutableListOf<String>()
+        for (source in listOf("", "desktop", "cron_output", "Cron", "cron ")) {
+            val id = "cron_job_20261002_120000"
+            runCatching { repository.openCronRun(id, "work", 0, source = source, schedulerOwned = false) }
+            if (cache.session(id) != null) accepted += source
+            cache.removeSession(id)
+        }
+        assertEquals(emptyList<String>(), accepted)
+        assertTrue(rpc.calls.none { it.method in setOf("session.resume", "session.activate") })
+    }
+
+    @Test
+    fun `cron handoff rejects nonfinite timestamps without seeding writable fallback`() = runTest {
+        val accepted = mutableListOf<String>()
+        for (field in listOf("ended", "lastActive")) for (invalid in listOf(Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            val id = "local-invalid-time"
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+            val http = FakeGatewayRest { request ->
+                if (request.path == "api/sessions/$id/messages")
+                    restPage("""{"session_id":"$id","messages":[],"pagination":{"limit":120,"offset":0}}""")
+                else GatewayHttpResult.Rejected(503, "unavailable")
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+                http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            val result = runCatching { repository.openCronRun(id, "work", 0,
+                endedAtSeconds = invalid.takeIf { field == "ended" },
+                lastActiveSeconds = invalid.takeIf { field == "lastActive" }, schedulerOwned = false) }
+            if (result.isSuccess || cache.session(id) != null) accepted += "$field:$invalid"
+            assertTrue(rpc.calls.none { it.method in setOf("session.resume", "session.activate") })
+        }
+        assertEquals(emptyList<String>(), accepted)
+    }
+
+    @Test
+    fun `modern source cron zombie opens stored history and cannot submit`() = runTest {
+        val id = "local-modern-run"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            when (request.path) {
+                "api/sessions/$id" -> restPage("""{"id":"$id","profile":"work","source":"cron","scheduler_owned":false,"is_active":true}""")
+                "api/sessions/$id/messages" -> restPage("""{"session_id":"$id","messages":[{"id":1,"role":"user","content":"stored run"}],"pagination":{"limit":120,"offset":0}}""")
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        assertEquals(id, repository.openCronRun(id, "work", cache.endpointGeneration.value,
+            source = "cron", title = "Scheduled run", schedulerOwned = false))
+        assertEquals("cron", cache.session(id)?.source)
+        assertEquals("work", cache.session(id)?.remoteProfile)
+        assertTrue(rpc.calls.none { it.method in setOf("session.resume", "session.activate", "session.history") })
+        assertTrue(repository.sessionReadOnlyReason(id)!!.contains("view-only"))
+        assertTrue(cache.transcript(id).filterIsInstance<UserTurn>().any { it.text == "stored run" })
+        assertTrue(runCatching { repository.submit(id, "keep draft") }.exceptionOrNull()!!.message!!.contains("view-only"))
+        assertTrue(rpc.calls.none { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `modern cron stale RPC hydration preserves paging and REST capability`() = runTest {
+        val id = "local-stale-history-run"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        var messagesAvailable = true
+        val http = FakeGatewayRest { request ->
+            when (request.path) {
+                "api/sessions/$id" -> restPage("""{"id":"$id","profile":"work","source":"cron","scheduler_owned":true}""")
+                "api/sessions/$id/messages" -> if (messagesAvailable)
+                    restTranscript(id, (101..220).toList(), limit = 120, offset = 0)
+                else GatewayHttpResult.Rejected(404, "unavailable")
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        repository.openCronRun(id, "work", 0, schedulerOwned = true)
+        assertTrue(id in repository.sessionsWithEarlierMessages.value)
+        val transcript = cache.transcript(id)
+        messagesAvailable = false
+        val history = CompletableDeferred<JsonElement>()
+        rpc.historyResponse = history
+        val selection = SessionSelectionFence()
+        val reopen = async(selection.capture(0, id, "work")) {
+            runCatching { repository.openSession(id, "work") }
+        }
+        runCurrent()
+        assertTrue(rpc.calls.any { it.method == "session.history" })
+        selection.invalidate() // The selected profile/session scope was left.
+        history.complete(json("""{"messages":[{"role":"user","content":"stale RPC history"}],"count":1}"""))
+        assertTrue(reopen.await().isFailure)
+        assertTrue("Stale whole-history hydration must not retire the existing window",
+            id in repository.sessionsWithEarlierMessages.value)
+        assertEquals(transcript, cache.transcript(id))
+
+        messagesAvailable = true
+        rpc.historyResponse = null
+        val readsBefore = http.requests.count { it.path.endsWith("/messages") }
+        repository.openSession(id, "work")
+        assertEquals("Stale history must not demote the REST route", readsBefore + 1,
+            http.requests.count { it.path.endsWith("/messages") })
+        assertTrue(id in repository.sessionsWithEarlierMessages.value)
+    }
+
+    @Test
+    fun `cron handoff qualifies colliding raw ids through normal authority identity`() = runTest {
+        val raw = "local-shared-run"
+        val identity = GatewaySessionIdentity().apply {
+            bind("work", "synthetic-work-owner")
+            bind("other", "synthetic-other-owner")
+        }
+        val rpc = FakeRpc()
+        val authority = object : EndpointDispatchingGatewayRpcClient by rpc, AuthorityGatewayRpcClient {
+            override val authoritySessionIdentity = identity
+            override suspend fun request(method: String, params: JsonObject): JsonElement =
+                if (method == "profiles.list") json("{}") else rpc.request(method, params)
+            override fun bindSessionEndpoint(namespace: String) = Unit
+            override fun bindSessionOwner(profile: String, identity: GatewaySessionIdentity) = Unit
+        }
+        val cache = SessionCache()
+        val http = FakeGatewayRest { request ->
+            val profile = request.query["profile"]
+            when (request.path) {
+                "api/sessions/$raw" -> restPage("""{"id":"$raw","profile":"$profile","source":"cron","scheduler_owned":false}""")
+                "api/sessions/$raw/messages" -> restPage("""{"session_id":"$raw","messages":[],"pagination":{"limit":120,"offset":0}}""")
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(authority), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val a = repository.openCronRun(raw, "work", 0, schedulerOwned = false)
+        val b = repository.openCronRun(raw, "other", 0, schedulerOwned = false)
+        assertTrue(a != b && a != raw && b != raw)
+        assertEquals("work", cache.session(a)?.remoteProfile)
+        assertEquals("other", cache.session(b)?.remoteProfile)
+        assertEquals(raw, cache.session(a)?.backendSessionId)
+        assertTrue(repository.sessionReadOnlyReason(a)!!.contains("view-only"))
+        assertTrue(repository.sessionReadOnlyReason(b)!!.contains("view-only"))
+        assertTrue(http.requests.filter { it.path.startsWith("api/sessions/") }.all {
+            it.path.startsWith("api/sessions/$raw") && it.query["profile"] in setOf("work", "other")
+        })
+        assertTrue(rpc.calls.none { it.method in setOf("session.resume", "session.activate", "prompt.submit") })
+    }
+
+    @Test
+    fun `modern cron wire dispatch revokes selection ABA newer verdict and cache owner replacement`() = runTest {
+        for (revoke in listOf("selection", "verdict", "owner")) {
+            val id = "local-wire-run"
+            var owned = true
+            val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+            val http = FakeGatewayRest { request ->
+                when (request.path) {
+                    "api/sessions/$id" -> restPage("""{"id":"$id","profile":"work","source":"cron","scheduler_owned":$owned}""")
+                    "api/sessions/$id/messages" -> restPage("""{"session_id":"$id","messages":[],"pagination":{"limit":120,"offset":0}}""")
+                    else -> GatewayHttpResult.Rejected(404, "unavailable")
+                }
+            }
+            val cache = SessionCache()
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+                http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            repository.openCronRun(id, "work", 0, schedulerOwned = true)
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            rpc.beforeEndpointWire = { method ->
+                if (method == "prompt.submit") { entered.complete(Unit); release.await() }
+            }
+            val selection = SessionSelectionFence()
+            val attempt = async(selection.capture(0, id, "work")) { runCatching { repository.submit(id, "not sent") } }
+            entered.await()
+            if (revoke == "selection") {
+                selection.invalidate()
+                selection.invalidate()
+            } else if (revoke == "owner") {
+                cache.upsertSession(SessionSummary(id, "Ordinary", "", CLOCK, source = "desktop", remoteProfile = "other"))
+                cache.setTranscript(id, listOf(UserTurn("other-user", "other history", CLOCK)))
+            } else {
+                owned = false
+                repository.openSession(id, "work")
+            }
+            release.complete(Unit)
+            assertTrue(attempt.await().isFailure)
+            assertTrue(rpc.calls.none { it.method == "prompt.submit" })
+            assertTrue(cache.transcript(id).filterIsInstance<UserTurn>().none { it.text == "not sent" })
+            if (revoke == "owner") {
+                assertEquals("other", cache.session(id)?.remoteProfile)
+                assertEquals(listOf("other history"), cache.transcript(id).filterIsInstance<UserTurn>().map { it.text })
+            }
+        }
+    }
+
+    @Test
+    fun `modern cron with unstamped cached owner still gates an explicit owner open`() = runTest {
+        val id = "local-unstamped-run"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            when (request.path) {
+                "api/sessions/$id" -> restPage("""{"id":"$id","profile":"work","source":"cron","scheduler_owned":false}""")
+                "api/sessions/$id/messages" -> restPage("""{"session_id":"$id","messages":[],"pagination":{"limit":120,"offset":0}}""")
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary(id, "Run", "", CLOCK, source = "cron"))
+        repository.openSession(id, "work")
+        assertTrue(rpc.calls.none { it.method == "session.resume" })
+        assertTrue(repository.sessionReadOnlyReason(id)!!.contains("view-only"))
+    }
+
+    @Test
+    fun `modern remembered colliding owners fail closed rather than borrow either verdict`() = runTest {
+        val id = "local-ambiguous-run"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            if (request.path == "api/sessions/$id/messages")
+                restPage("""{"session_id":"$id","messages":[],"pagination":{"limit":120,"offset":0}}""")
+            else GatewayHttpResult.Rejected(503, "unavailable")
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        repository.openCronRun(id, "work", 0, schedulerOwned = false)
+        repository.openCronRun(id, "other", 0, schedulerOwned = false)
+        cache.removeSession(id)
+        assertTrue(repository.cronWriteGateApplies(id))
+        assertTrue(repository.sessionReadOnlyReason(id)!!.contains("Could not check"))
+        assertTrue(runCatching { repository.submit(id, "not sent") }.isFailure)
+        assertTrue(rpc.calls.none { it.method in setOf("session.resume", "prompt.submit") })
+    }
+
+    @Test
+    fun `modern cache owner outranks an older runtimes cron verdict on profile collision`() = runTest {
+        val id = "local-owned-collision"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            if (request.path == "api/sessions/$id")
+                restPage("""{"id":"$id","profile":"work","source":"cron","scheduler_owned":true}""")
+            else GatewayHttpResult.Rejected(404, "unavailable")
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        repository.openCronRun(id, "work", 0, schedulerOwned = true)
+        cache.upsertSession(SessionSummary(id, "Ordinary", "", CLOCK, source = "desktop", remoteProfile = "other"))
+        assertFalse(repository.cronWriteGateApplies(id))
+        assertEquals("other", repository.cronSessionProfile(id))
+        assertNull(repository.sessionReadOnlyReason(id))
+        assertTrue(runCatching { repository.submit(id, "never borrow work runtime") }.isFailure)
+        assertTrue(rpc.calls.none { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `modern unknown cron stays gated after its cache row disappears`() = runTest {
+        val id = "local-unknown-run"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            if (request.path == "api/sessions/$id/messages")
+                restPage("""{"session_id":"$id","messages":[],"pagination":{"limit":120,"offset":0}}""")
+            else GatewayHttpResult.Rejected(503, "unavailable")
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary(id, "Scheduled run", "", CLOCK, source = "cron", remoteProfile = "work"))
+        repository.openSession(id, "work")
+        cache.removeSession(id)
+        assertTrue(repository.cronWriteGateApplies(id))
+        assertTrue(repository.sessionReadOnlyReason(id)!!.contains("Could not check"))
+        assertTrue(runCatching { repository.submit(id, "keep") }.exceptionOrNull()!!.message!!.contains("Could not check"))
+        assertTrue(rpc.calls.none { it.method in setOf("session.resume", "prompt.submit") })
+    }
+
+    @Test
+    fun `modern writable verdict survives source loss and rechecks a dead scheduler before send`() = runTest {
+        val id = "local-writable-run"
+        for (fields in listOf("\"scheduler_owned\":true,\"is_active\":false", "\"ended_at\":0,\"scheduler_owned\":false")) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+            var liveness = fields
+            val http = FakeGatewayRest { request ->
+                if (request.path == "api/sessions/$id")
+                    restPage("""{"id":"$id","profile":"work","source":"cron",$liveness}""")
+                else GatewayHttpResult.Rejected(404, "unavailable")
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+                http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            cache.upsertSession(SessionSummary(id, "Scheduled run", "", CLOCK, source = "cron", remoteProfile = "work"))
+            repository.openSession(id, "work")
+            assertNull(repository.sessionReadOnlyReason(id))
+            cache.removeSession(id)
+            assertTrue(repository.cronWriteGateApplies(id))
+            liveness = "\"scheduler_owned\":false,\"is_active\":true"
+            assertTrue(runCatching { repository.submit(id, "not sent") }.exceptionOrNull()!!.message!!.contains("view-only"))
+            assertTrue(rpc.calls.none { it.method == "prompt.submit" })
+        }
+    }
+
+    @Test
+    fun `modern ordinary local session does not inherit another profiles cron verdict`() = runTest {
+        val id = "local-colliding-run"
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { resumeA = RESUME_A.replace("durable-a", id) }
+        val http = FakeGatewayRest { request ->
+            when (request.path) {
+                "api/sessions/$id" -> restPage("""{"id":"$id","profile":"work","source":"cron","scheduler_owned":false}""")
+                "api/sessions/$id/messages" -> restPage("""{"session_id":"$id","messages":[],"pagination":{"limit":120,"offset":0}}""")
+                else -> GatewayHttpResult.Rejected(404, "unavailable")
+            }
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary(id, "Run", "", CLOCK, source = "cron", remoteProfile = "work"))
+        repository.openSession(id, "work")
+        cache.upsertSession(SessionSummary(id, "Ordinary", "", CLOCK, source = "desktop", remoteProfile = "other"))
+        http.requests.clear()
+        assertFalse(repository.cronWriteGateApplies(id))
+        assertNull(repository.sessionReadOnlyReason(id))
+        repository.openSession(id, "other")
+        assertTrue(http.requests.none { it.path == "api/sessions/$id" })
+        assertEquals("other", rpc.calls.last { it.method == "session.resume" }.params.string("profile"))
+        cache.resetForEndpointSwitch()
+        assertFalse(repository.cronWriteGateApplies(id))
+    }
+
+    @Test
     fun `unowned cron opens stored transcript without writable resume and refuses send`() = runTest {
         val id = "cron_job_20261002_120000"
         val cache = SessionCache()
@@ -9278,6 +9766,11 @@ class GatewaySessionRepositoryTest {
             if (eventChannel.trySend(GatewayEvent(type, runtimeId, payload, seq)).isFailure) {
                 eventOverflowed = true
             }
+        }
+
+        fun emitCanonical(type: String, runtimeId: String, payload: String) {
+            check(eventChannel.trySend(GatewayEvent(type, runtimeId, json(payload),
+                executionGeneration = 1, canonical = true)).isSuccess)
         }
 
         fun emit(type: String, runtimeId: String?, payload: String) = emit(type, runtimeId, json(payload))

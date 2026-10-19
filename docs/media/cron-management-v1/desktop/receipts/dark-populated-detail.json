@@ -1,0 +1,308 @@
+{
+  "file": "screenshots/dark-populated-detail.png",
+  "sha256": "3b16f74e81036d639a2d4a76fd0e82b0145f42040e3b3b759f94c8b20ebfe144",
+  "pin": "5fc490e2b34123212d73ef316086f939567a725a",
+  "synthetic": true,
+  "liveBackend": false,
+  "scope": "Unchanged real CronView + SidebarCronJobsSection, fixture framing; NOT full Desktop shell",
+  "theme": "dark",
+  "skin": "mono",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "viewport": {
+    "width": 1280,
+    "height": 960,
+    "deviceScaleFactor": 1
+  },
+  "browserVersion": "153.0.8010.12",
+  "sourceHashes": {
+    "apps/desktop/src/app/cron/index.tsx": "5c8d68ee70b5f20790adc13535b3f1f15dc6cfce3005e6723e98f20a8cd05ec9",
+    "apps/desktop/src/app/cron/blueprints.tsx": "c49e4177594ad0e7f05341ed5354991bde8e82c86e431c1522f24f89702aa7ca",
+    "apps/desktop/src/app/cron/cron-job-model.ts": "c8757a9b9f9e155cfcb2e742eb2dbfd3c821dc5766b0e28f49ea59b7239368be",
+    "apps/desktop/src/app/cron/open-cron-run.ts": "b35bcd6486bc5e16d35d2626cd4d2402c0930fdf0a1286512d88269c70fff277",
+    "apps/desktop/src/app/cron/job-state.ts": "a00879e21a1280435f4c938a1dfe561c623c21c30f12818f9b8da83303352cc6",
+    "apps/desktop/src/app/cron/cron-actions.ts": "bc4d07671bbd175bcf6671bfaeaa7d2cec2a7776b72b86ae105604a3321e06c8",
+    "apps/desktop/src/app/chat/sidebar/cron-jobs-section.tsx": "821785056a2a31bbae394cf642c212e1621be9e7c99dabfe9cb624be9923a308",
+    "apps/desktop/src/app/overlays/panel.tsx": "4d9bb2479274a0f925168152d2413b4b581e18c1b00f3b9d9c14a260f0a61184",
+    "apps/desktop/src/app/overlays/overlay-view.tsx": "8c00d982af8f3ca4d99245695d08d3d9020eea6298072cd925886fb997444afb",
+    "apps/desktop/src/styles.css": "4dbc9cb59f06fd6be4e5ae6ae4e8b861e8ceb26e2165cbc8bbdab7e2fe7dccaf",
+    "apps/desktop/src/themes/context.tsx": "c4c9feea2b7791ec971890df3d7bf22436f9fa29ef92df3142cae553f66afa8a",
+    "apps/desktop/src/themes/presets.ts": "be92a1408f3aa0e5c6e8fe5958169f03a910524a4cdfd77f83579794467a908d",
+    "apps/desktop/src/i18n/en.ts": "e26d34483e477a8696d070d1bfa60300900ce8330c6e4ad30e17b941142dcfa3",
+    "apps/desktop/src/api/cron.ts": "fdc941d6419b31a525a79cf138856c80e6f79daabad2d9ae02b77e066858ee32",
+    "apps/desktop/cron-reference.html": "1c35c4057e9ae9f6afff8c4dd78a1d782a419eec4309e1a60bc80416f14ccaa3",
+    "apps/desktop/cron-reference.tsx": "cc428b775b4afe202ac57ed3cfbea8dcf8d8c5a31ed964f8be6feac59e699727",
+    "apps/desktop/cron-reference.capture.mjs": "a9313222033ea998717d28bcc084a49446dfcebf0f57c5072782344889435c89"
+  },
+  "fontSources": [
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap",
+      "file": "courier-prime.css",
+      "sha256": "160f582559dbd9ed04457f91398e961b95142de8e20e2f672ef432296f28e4f7",
+      "contentType": "text/css"
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/courierprime/v11/u-450q2lgwslOqpF_6gQ8kELWwY.ttf",
+      "file": "font-0.ttf",
+      "sha256": "b03b41606b4469bd908aaa83146ba19d34cbeab1ce11fac0074d0d8fe9eba6cc",
+      "contentType": "font/ttf"
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/courierprime/v11/u-4k0q2lgwslOqpF_6gQ8kELY7pMf-c.ttf",
+      "file": "font-1.ttf",
+      "sha256": "79d4be90ecb99d03ca5474a4e688e2fb45abcd4a9c348164c3aa9166c67cd53b",
+      "contentType": "font/ttf"
+    }
+  ],
+  "trackedBeforeManifestSha256": "c5a15dd7af8ff1a9551430da3e6e3b174197c4f0c3f2644c4be914dfabefde8a",
+  "selector": "[data-overlay-surface]",
+  "requiredCopy": [
+    "Scheduled jobs",
+    "Every 15 minutes",
+    "Prepare a status report",
+    "RUN HISTORY · 2",
+    "This desktop"
+  ],
+  "visibleCopy": "SYNTHETIC FIXTURE — no live backend\nmono · dark · en-US · UTC · 2026-10-19 09:00\nSCHEDULED JOBS\nScript check\ntomorrow\nStatus report\ntomorrow\nFixture: open real CronView\nScheduled jobs\n\n2 jobs\n\nScript check\nStatus report\nBLUEPRINTS\nSynthetic Recipe\nStatus report\nScheduled\nPause\nTrigger now\nFrequency\nEvery 15 minutes\nLast\n—\nNext\n10/20/2026, 9:00:00 AM\nDeliver to\nThis desktop\nPROMPT\nPrepare a status report\nRUN HISTORY · 2\nStatus report — active\n10/19/2026, 8:00:00 AM\nStatus report\n10/18/2026, 5:01:00 PM\nActual unchanged CronView + SidebarCronJobsSection · fixture framing only, not full Desktop shell",
+  "controls": [
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Scheduled jobs",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Show runs",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": "false"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Show runs",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": "false"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Fixture: open real CronView",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Close cron",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "INPUT",
+      "role": null,
+      "label": "Search cron jobs...",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Script check",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Manage",
+      "id": "radix-_r_c_",
+      "value": "",
+      "disabled": false,
+      "expanded": "false"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Status report",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Manage",
+      "id": "radix-_r_e_",
+      "value": "",
+      "disabled": false,
+      "expanded": "false"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "New cron",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Synthetic Recipe",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Pause",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Trigger now",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Status report — active10/19/2026, 8:00:00 AM",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Status report10/18/2026, 5:01:00 PM",
+      "id": "",
+      "value": "",
+      "disabled": false,
+      "expanded": null
+    }
+  ],
+  "target": [
+    {
+      "selector": "[data-overlay-surface]",
+      "text": "Scheduled jobs2 jobsScript checkStatus reportBlueprintsSynthetic RecipeStatus reportscheduledPauseTrigger nowFrequencyEvery 15 minutesLast—Next10/20/2026, 9:00:00 AMDeliver toThis desktopPromptPrepare a status reportRun history · 2Status report — active10/19/2026, 8:00:00 AMStatus report10/18/2026, 5:01:00 PM",
+      "rect": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 960,
+        "top": 0,
+        "right": 1280,
+        "bottom": 960,
+        "left": 0
+      }
+    }
+  ],
+  "appearance": {
+    "className": "dark",
+    "theme": {
+      "hermesGlassOn": "",
+      "hermesGlass": "",
+      "hermesGlassScope": "sidebar",
+      "hermesTheme": "mono",
+      "hermesMode": "dark"
+    },
+    "background": "rgba(0, 0, 0, 0)",
+    "foreground": "color(srgb 0.917647 0.917647 0.917647 / 0.94)",
+    "font": "\"Segoe WPC\", \"Segoe UI\", -apple-system, \"system-ui\", \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\", emoji"
+  },
+  "fixture": {
+    "state": "populated",
+    "theme": "dark",
+    "clock": "2026-10-19T09:00:00Z"
+  },
+  "backend": {
+    "jobs": [
+      {
+        "profile": "default",
+        "enabled": true,
+        "state": "scheduled",
+        "last_run_at": null,
+        "next_run_at": "2026-10-20T09:00:00Z",
+        "last_error": null,
+        "deliver": "local",
+        "id": "report-daily",
+        "name": "Status report",
+        "prompt": "Prepare a status report",
+        "schedule": {
+          "expr": "*/15 * * * *",
+          "display": "Every 15 minutes"
+        },
+        "schedule_display": "Every 15 minutes"
+      },
+      {
+        "profile": "default",
+        "enabled": true,
+        "state": "scheduled",
+        "last_run_at": null,
+        "next_run_at": "2026-10-20T09:00:00Z",
+        "last_error": null,
+        "deliver": "local",
+        "id": "script-check",
+        "name": "Script check",
+        "prompt": "",
+        "script": "printf scheduled",
+        "no_agent": true,
+        "schedule": {
+          "expr": "0 9 * * *",
+          "display": "Every day at 9:00 AM"
+        },
+        "schedule_display": "Every day at 9:00 AM"
+      }
+    ],
+    "calls": [
+      {
+        "profile": "default",
+        "path": "/api/cron/jobs?profile=default",
+        "timeoutMs": 60000
+      },
+      {
+        "profile": "default",
+        "path": "/api/cron/blueprints?profile=default",
+        "timeoutMs": 60000
+      },
+      {
+        "profile": "default",
+        "path": "/api/cron/jobs/script-check/runs?limit=20"
+      },
+      {
+        "profile": "default",
+        "path": "/api/cron/jobs/report-daily/runs?limit=20"
+      }
+    ],
+    "opened": []
+  }
+}

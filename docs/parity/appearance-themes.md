@@ -139,3 +139,29 @@ seed/apply/repeat and matched phone/wide viewport coverage remain **pending: #29
 The existing e05 report is unchanged historical evidence, not evidence for Classic.
 Independent review verified the bounded observational packet and its immutable
 artifacts; full parity remains unverified and the ceiling remains **Concern**.
+
+## Current registry-only source target (5fc490e2, 2026-10-19)
+
+The new implementation/registry target is
+`5fc490e2b34123212d73ef316086f939567a725a`. The 36922 section and every source,
+semantic golden and rendered packet above retain their historical provenance;
+this appendix does not restamp or supersede their evidence.
+
+The immutable Git blobs for `apps/desktop/src/themes/presets.ts`,
+`apps/shared/src/theme-presets.ts`, `apps/shared/src/color.ts` and Desktop's
+`themes/color.ts`, `themes/skin.ts`, `themes/backend-sync.ts` and
+`themes/use-skin-command.ts` match the previous target. The light-synthesis body
+is also byte-identical, now at `apps/desktop/src/themes/context.tsx:151-185`.
+The twelve built-ins, order, descriptions, default, Classic seeds and built-in
+typography therefore need no Android production-data edit. The ledger's color
+interface citation moves to `apps/desktop/src/themes/types.ts:15-50`.
+
+The [source audit](../spikes/upstream-5fc490e2-2026-10-19.md) records changed
+saved-accent retints, profile inheritance, optional typography knobs and mode
+requests. These paths were source-inspected to bound the repin, not fully audited
+end to end, executed or ported on Android. CSS and other surfaces also changed;
+registry parity is not semantic or appearance parity for those changes.
+
+Focused theme tests and the live inventory gate passed. No new paired captures,
+device acceptance, backend deployment or new appearance-behavior acceptance were
+performed. **pending: #292** and the **Concern** ceiling remain unchanged.

@@ -1,0 +1,31 @@
+{
+  "assertions": 340,
+  "captures": 40,
+  "errors": 0,
+  "states": [
+    "populated-detail",
+    "manager-menu",
+    "editor-edit",
+    "frequency-options",
+    "editor-custom",
+    "model-options",
+    "paused-detail",
+    "editor-create",
+    "editor-validation",
+    "editor-multidelivery",
+    "delete-confirm",
+    "script-detail",
+    "script-editor",
+    "blueprint-editor",
+    "sidebar-expanded",
+    "sidebar-actions",
+    "empty",
+    "job-error",
+    "load-error-notification",
+    "queued-trigger"
+  ],
+  "themes": [
+    "dark",
+    "light"
+  ]
+}

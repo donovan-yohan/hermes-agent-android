@@ -2139,6 +2139,54 @@ internal class ChatViewModel(
         }
     }
 
+    /** Owner-aware Cron navigation; deliberately not a Bot Chat capability. */
+    fun openCronRun(
+        durableId: String,
+        profile: String,
+        expectedEndpointGeneration: Long,
+        source: String = "cron",
+        title: String = "",
+        preview: String = "",
+        lastActiveSeconds: Double? = null,
+        endedAtSeconds: Double? = null,
+        schedulerOwned: Boolean? = null,
+        isActive: Boolean? = null,
+        onFinished: (Boolean) -> Unit = {},
+    ) {
+        if (durableId.isBlank() || !com.hermesagent.mobile.data.gateway.isConcreteCronProfile(profile) || source != "cron" ||
+            lastActiveSeconds?.isFinite() == false || endedAtSeconds?.isFinite() == false ||
+            expectedEndpointGeneration != cache.endpointGeneration.value) {
+            onFinished(false)
+            return
+        }
+        val generation = ++navigationGeneration
+        val connection = connectionGeneration()
+        val profileGeneration = profileScopeGeneration
+        flushDraft()
+        sessionSelectionFence.invalidate()
+        val selection = sessionSelectionFence.capture(expectedEndpointGeneration, durableId, profile)
+        fun stillOwns() = generation == navigationGeneration && connection == connectionGeneration() &&
+            profileGeneration == profileScopeGeneration && expectedEndpointGeneration == cache.endpointGeneration.value
+        viewModelScope.launch(selection) {
+            try {
+                val canonicalId = repository.openCronRun(durableId, profile, expectedEndpointGeneration,
+                    source, title, preview, lastActiveSeconds, endedAtSeconds, schedulerOwned, isActive)
+                if (!stillOwns()) { onFinished(false); return@launch }
+                clearBotChatCapability()
+                rehome(canonicalId, applyOpenSideEffects = false)
+                repository.sessionReadOnlyReason(canonicalId)?.let { noticeLine = it }
+                    ?: refreshComposer(canonicalId)
+                onFinished(true)
+            } catch (cancelled: CancellationException) {
+                onFinished(false)
+                throw cancelled
+            } catch (_: Throwable) {
+                if (stillOwns()) noticeLine = "This scheduled run could not be opened. Try again."
+                onFinished(false)
+            }
+        }
+    }
+
     fun selectSession(id: String) {
         if (activeSessionId.value != id) {
             navigationGeneration += 1
@@ -2871,8 +2919,8 @@ internal class ChatViewModel(
         val originalSubmittedDraft = draft.value
         val compactBotChat = botChatSessionId == sessionId && prompt in setOf("/new", "/reset")
         val submittedPrompt = if (compactBotChat) "/compact" else prompt
-        val cronSendKey = if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(cache.session(sessionId)?.backendSessionId ?: sessionId)) {
-            Triple(cache.endpointGeneration.value, cache.session(sessionId)?.remoteProfile, sessionId)
+        val cronSendKey = if (cronWriteGateApplies(sessionId)) {
+            Triple(cache.endpointGeneration.value, cache.session(sessionId)?.remoteProfile ?: repository.cronSessionProfile(sessionId), sessionId)
         } else null
         if (cronSendKey != null && !pendingCronSends.add(cronSendKey)) return
         val claimedIds = outgoing.mapTo(mutableSetOf()) { it.draft.occurrenceId }
@@ -4171,9 +4219,14 @@ internal class ChatViewModel(
         return revision
     }
 
+    private fun cronWriteGateApplies(id: String): Boolean = cache.session(id)?.let {
+        it.source == "cron" || com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(it.backendSessionId ?: id)
+    } == true || repository.cronWriteGateApplies(id)
+
     private fun captureSessionSelection(id: String): kotlin.coroutines.CoroutineContext =
-        if (com.hermesagent.mobile.data.gateway.isCronExecutionSessionId(cache.session(id)?.backendSessionId ?: id)) {
-            sessionSelectionFence.capture(cache.endpointGeneration.value, id, cache.session(id)?.remoteProfile)
+        if (cronWriteGateApplies(id)) {
+            sessionSelectionFence.capture(cache.endpointGeneration.value, id,
+                cache.session(id)?.remoteProfile ?: repository.cronSessionProfile(id))
         } else kotlin.coroutines.EmptyCoroutineContext
 
     private suspend fun openAndAdopt(id: String) {
