@@ -83,8 +83,8 @@ navigation. A run opener never receives Bot Chat privileges.
   passed 594 tests, one opt-in live test skipped in the non-opted run.
 
 The integrated working-tree `check assembleDebug :app:assembleDebugAndroidTest`
-gate passed with 3,816 debug and 2,865 release test cases, zero failures/errors,
-and three opt-in skips across those variants. Lint and repo invariants passed.
+gate passed with 3,817 debug and 2,992 release test cases, zero failures/errors,
+and four opt-in skips across those variants. Lint and repo invariants passed.
 The existing instrumented lane also passed eight tests on a dedicated local
 API34 arm64 emulator. This is not the CI x86_64/KVM lane or physical acceptance.
 Exact committed-head rendering and rolling distribution remain separate gates.
@@ -108,10 +108,19 @@ Exact committed-head rendering and rolling distribution remain separate gates.
 
 ## Visual report
 
-- pending: #191
+- report: [Paired rendering](../media/cron-management-v1/paired/report.html)
+- commit: 64d7cf1cbc208e912e5e801c3671ae0b643c6798
 
-Desktop references are captured and verified. Android exploration includes all
-nine non-editor states in dark/light, but is not immutable-commit evidence.
-Final source-bound capture and paired review must be recorded before this page
-claims rendered acceptance. The editor remains SecureOn and has no screenshot
-bypass; its coverage is Compose journeys and source comparison, not device pixels.
+The packet holds 18 Android device captures across nine paired non-editor
+states, from a clean committed source and one installed APK. Each receipt binds
+installed bytes/signature, focused fixture Activity and bracketed accessibility.
+The paired index names each actual Desktop image, both source SHAs, and hashes.
+The phone list/detail split and different selected delete fixture are explicit,
+not identical-viewport claims. These are synthetic APIs on both sides.
+
+The editor remains SecureOn and has no screenshot bypass; its coverage is
+Compose journeys and source comparison, not device pixels. Loading, paused,
+last-error and editor device states are not in these nine captures. Overall
+visual verdict remains **Concern**, including the existing theme/deployment
+ceiling [#292](https://github.com/donovan-yohan/hermes-agent-android/issues/292),
+not full rendered editor or authenticated scheduler acceptance.

@@ -1,0 +1,700 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-19T07:21:44.763295+00:00",
+  "surface": "cron-management",
+  "state": "empty",
+  "fixture_id": "cron-management-synthetic-v1",
+  "theme": "light",
+  "android_git_sha": "64d7cf1cbc208e912e5e801c3671ae0b643c6798",
+  "apk_sha256": "79ed45e0f0df3a5954699ccd06cc6e699061e89ee6733097e9f36ef1329e61ab",
+  "installed_apk_sha256": "79ed45e0f0df3a5954699ccd06cc6e699061e89ee6733097e9f36ef1329e61ab",
+  "apk_kind": "debug",
+  "interactions": [],
+  "ordered_action_evidence": [],
+  "viewport": {
+    "size": "Physical size: 1080x2400",
+    "density": "Physical density: 420"
+  },
+  "application": {
+    "package_name": "com.hermesagent.mobile.debug",
+    "component": "com.hermesagent.mobile.debug/com.hermesagent.mobile.CronParityActivity",
+    "resolved_activity": "priority=0 preferredOrder=0 match=0x0 specificIndex=-1 isDefault=false\ncom.hermesagent.mobile.debug/com.hermesagent.mobile.CronParityActivity",
+    "focused_window": "mCurrentFocus=Window{f050f77 u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.CronParityActivity}\nmFocusedApp=ActivityRecord{86d28fd u0 com.hermesagent.mobile.debug/com.hermesagent.mobile.CronParityActivity t53}",
+    "version_code": "2",
+    "version_name": "0.2.0-phase2",
+    "signing_certificate_sha256": "46f6aaaa3788ee5b1a8ec1ca78eb70cd2308d908dd805d8fe78679de434c575c"
+  },
+  "accessibility": {
+    "expected_description": "No scheduled jobs yet",
+    "nodes": [
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2400]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,0][1080,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][1080,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][1080,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[0,128][1080,2337]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,170][1038,2295]"
+      },
+      {
+        "text": "Scheduled jobs",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,196][268,230]"
+      },
+      {
+        "text": "0 jobs",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,230][133,270]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[912,170][1038,296]"
+      },
+      {
+        "text": "",
+        "content_description": "Refresh",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[912,170][1038,296]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[957,215][993,252]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[912,170][1038,296]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,235][1038,299]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,299][1038,2295]"
+      },
+      {
+        "text": "SEARCH CRON JOBS...",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,336][377,370]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,381][1038,507]"
+      },
+      {
+        "text": "",
+        "content_description": "Search cron jobs...",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,381][1038,507]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[74,381][1006,507]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[74,374][354,500]"
+      },
+      {
+        "text": "No scheduled jobs yet",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,539][374,579]"
+      },
+      {
+        "text": "Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,611][1038,699]"
+      },
+      {
+        "text": "",
+        "content_description": "",
+        "enabled": true,
+        "clickable": true,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,731][270,857]"
+      },
+      {
+        "text": "New cron",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[84,774][228,814]"
+      },
+      {
+        "text": "BLUEPRINTS",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,889][230,923]"
+      },
+      {
+        "text": "Ready-made automations",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,955][430,995]"
+      },
+      {
+        "text": "No blueprints available",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1027][386,1067]"
+      },
+      {
+        "text": "No automation blueprints are available on this backend.",
+        "content_description": "",
+        "enabled": true,
+        "clickable": false,
+        "package": "com.hermesagent.mobile.debug",
+        "bounds": "[42,1099][880,1139]"
+      }
+    ]
+  },
+  "screenshot_bracket": {
+    "before": {
+      "expected_description": "No scheduled jobs yet",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,170][1038,2295]"
+        },
+        {
+          "text": "Scheduled jobs",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,196][268,230]"
+        },
+        {
+          "text": "0 jobs",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,230][133,270]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[912,170][1038,296]"
+        },
+        {
+          "text": "",
+          "content_description": "Refresh",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[912,170][1038,296]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[957,215][993,252]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[912,170][1038,296]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,235][1038,299]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,299][1038,2295]"
+        },
+        {
+          "text": "SEARCH CRON JOBS...",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,336][377,370]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,381][1038,507]"
+        },
+        {
+          "text": "",
+          "content_description": "Search cron jobs...",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,381][1038,507]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[74,381][1006,507]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[74,374][354,500]"
+        },
+        {
+          "text": "No scheduled jobs yet",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,539][374,579]"
+        },
+        {
+          "text": "Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,611][1038,699]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,731][270,857]"
+        },
+        {
+          "text": "New cron",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,774][228,814]"
+        },
+        {
+          "text": "BLUEPRINTS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,889][230,923]"
+        },
+        {
+          "text": "Ready-made automations",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,955][430,995]"
+        },
+        {
+          "text": "No blueprints available",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1027][386,1067]"
+        },
+        {
+          "text": "No automation blueprints are available on this backend.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1099][880,1139]"
+        }
+      ]
+    },
+    "after": {
+      "expected_description": "No scheduled jobs yet",
+      "nodes": [
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2400]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,0][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[0,128][1080,2337]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,170][1038,2295]"
+        },
+        {
+          "text": "Scheduled jobs",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,196][268,230]"
+        },
+        {
+          "text": "0 jobs",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,230][133,270]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[912,170][1038,296]"
+        },
+        {
+          "text": "",
+          "content_description": "Refresh",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[912,170][1038,296]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[957,215][993,252]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[912,170][1038,296]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,235][1038,299]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,299][1038,2295]"
+        },
+        {
+          "text": "SEARCH CRON JOBS...",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,336][377,370]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,381][1038,507]"
+        },
+        {
+          "text": "",
+          "content_description": "Search cron jobs...",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,381][1038,507]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[74,381][1006,507]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[74,374][354,500]"
+        },
+        {
+          "text": "No scheduled jobs yet",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,539][374,579]"
+        },
+        {
+          "text": "Schedule a prompt to run on a cron expression. Hermes will run it and deliver results to the destination you pick.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,611][1038,699]"
+        },
+        {
+          "text": "",
+          "content_description": "",
+          "enabled": true,
+          "clickable": true,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,731][270,857]"
+        },
+        {
+          "text": "New cron",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[84,774][228,814]"
+        },
+        {
+          "text": "BLUEPRINTS",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,889][230,923]"
+        },
+        {
+          "text": "Ready-made automations",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,955][430,995]"
+        },
+        {
+          "text": "No blueprints available",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1027][386,1067]"
+        },
+        {
+          "text": "No automation blueprints are available on this backend.",
+          "content_description": "",
+          "enabled": true,
+          "clickable": false,
+          "package": "com.hermesagent.mobile.debug",
+          "bounds": "[42,1099][880,1139]"
+        }
+      ]
+    },
+    "timing": {}
+  },
+  "device": {
+    "model": "sdk_gphone64_arm64",
+    "manufacturer": "Google",
+    "android": "14",
+    "sdk": "34",
+    "font_scale": "null"
+  }
+}
