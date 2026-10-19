@@ -4,7 +4,7 @@ package com.hermesagent.mobile.ui.theme
  * The Desktop theme registry as it stands at the pinned upstream SHA.
  *
  * **Provenance:** `NousResearch/hermes-agent` @
- * `5fc490e2b34123212d73ef316086f939567a725a`. Identity, registry and built-in typography
+ * `ddabd3837862022a6053331fe3ba97cf9716b9e3`. Identity, registry and built-in typography
  * come from `apps/desktop/src/themes/presets.ts`; the palette literals moved to
  * `apps/shared/src/theme-presets.ts` (upstream's September 2026 shared-package
  * extraction). Classic is the exception: presets.ts:342-384 converts explicit
@@ -13,7 +13,7 @@ package com.hermesagent.mobile.ui.theme
  * color maths and the light-synthesis body are unchanged from
  * 36922ad064d65dcf25f8f48df81e1ccf9a55de67. New accent persistence, per-profile
  * inheritance, typography overrides and mode requests are not ported or certified
- * by this registry-only repin; see docs/spikes/upstream-5fc490e2-2026-10-19.md.
+ * by this registry-only repin; see docs/spikes/upstream-ddabd383-2026-10-19.md.
  * Entry sourceLines below identify this target's preset declarations; historical
  * production palette citations and visual reports retain their inspected pins.
  * This ledger certifies registry identity, not fresh rendered parity.
@@ -31,7 +31,7 @@ package com.hermesagent.mobile.ui.theme
  */
 object DesktopThemeLedger {
 
-    const val PINNED_SHA = "5fc490e2b34123212d73ef316086f939567a725a"
+    const val PINNED_SHA = "ddabd3837862022a6053331fe3ba97cf9716b9e3"
     const val SOURCE_PATH = "apps/desktop/src/themes/presets.ts"
 
     /** Where the palettes live since upstream's shared-package extraction. */

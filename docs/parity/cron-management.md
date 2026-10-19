@@ -12,6 +12,11 @@ Routines pane. Historical [Bot Routines evidence](bot-routines.md) retains its
 own source pins and delete/create behavior. Desktop has no dedicated Cron page
 inside Settings. Job settings live in the Scheduled jobs editor.
 
+The final repo-wide new-port/registry target is `ddabd3837862022a6053331fe3ba97cf9716b9e3`.
+The [follow-up audit](../spikes/upstream-ddabd383-2026-10-19.md) proves Desktop,
+shared theme and core Cron sources unchanged. This page and its receipts retain
+the exact source actually executed rather than restamping historical captures.
+
 ## Source contract
 
 All upstream paths in this section name the exact Desktop/Gateway pin above.

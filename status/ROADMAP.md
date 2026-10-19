@@ -66,7 +66,7 @@ Skills/MCP management remain outside this existing-feature slice.
   not repair upstream's cross-profile item fallback race; see the
   [contract and evidence](../docs/parity/cron-management.md).
 - New-port and built-in registry targets use upstream
-  `5fc490e2b34123212d73ef316086f939567a725a`. Older per-surface source, semantic
+  `ddabd3837862022a6053331fe3ba97cf9716b9e3`. Older per-surface source, semantic
   and rendered evidence keeps its own provenance. This is not a blanket app
   compatibility certification or a backend update.
 

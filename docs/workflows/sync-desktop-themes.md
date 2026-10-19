@@ -148,3 +148,6 @@ proves unchanged twelve-preset data and light synthesis. It does not port saved
 accent retints, new profile inheritance, custom typography overrides or mode
 requests. Keep those source-inspected gaps separate from passing identity tests,
 and keep semantic goldens pinned to the sources that actually produced them.
+
+The [ddabd383 follow-up](../spikes/upstream-ddabd383-2026-10-19.md) advances
+the registry target again with zero Desktop/shared/Cron source changes.

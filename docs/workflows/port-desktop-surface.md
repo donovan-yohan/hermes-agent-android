@@ -11,7 +11,7 @@ Every step here earned its place by being something a port gets wrong.
 
 ```bash
 HERMES_AGENT_UPSTREAM="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
-pin=5fc490e2b34123212d73ef316086f939567a725a # current target for new ports
+pin=ddabd3837862022a6053331fe3ba97cf9716b9e3 # current target for new ports
 # Create a disposable clone at $pin as in review-desktop-parity.md §2.
 # For an existing surface, use its declared pin instead, not an automatic restamp.
 git -C "${export:?set export to the disposable pinned checkout}" rev-parse HEAD # must equal $pin
@@ -41,8 +41,8 @@ disagree, the component is the current contract and the doc is a bug.
 
 | Surface | Upstream path | What it settles |
 |---|---|---|
-| Theme registry | `apps/desktop/src/themes/presets.ts:444-468` (+ palettes in `apps/shared/src/theme-presets.ts`) @ `5fc490e2b34123212d73ef316086f939567a725a` | Twelve built-ins, labels, descriptions, default skin and retired names; Classic seeds are local to `presets.ts` |
-| Theme resolution | `apps/desktop/src/themes/context.tsx:151-198` @ `5fc490e2b34123212d73ef316086f939567a725a` | `getBaseColors`, `paletteFor` + `synthLightColors` — dark-first presets synthesise their light half; not a new Android semantic audit |
+| Theme registry | `apps/desktop/src/themes/presets.ts:444-468` (+ palettes in `apps/shared/src/theme-presets.ts`) @ `ddabd3837862022a6053331fe3ba97cf9716b9e3` | Twelve built-ins, labels, descriptions, default skin and retired names; Classic seeds are local to `presets.ts` |
+| Theme resolution | `apps/desktop/src/themes/context.tsx:151-198` @ `ddabd3837862022a6053331fe3ba97cf9716b9e3` | `getBaseColors`, `paletteFor` + `synthLightColors` — dark-first presets synthesise their light half; not a new Android semantic audit |
 | Colour maths | `apps/desktop/src/themes/color.ts` | `mix`, `readableOn`, WCAG luminance |
 | Derived tokens | `apps/desktop/src/styles.css:183-370,440-447` | Text/hairline ladders, conversation type scale, widget fill |
 | User message | `apps/desktop/src/components/assistant-ui/thread/user-message.tsx:67` | The user bubble is the *only* bubble |

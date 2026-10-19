@@ -140,7 +140,7 @@ The existing e05 report is unchanged historical evidence, not evidence for Class
 Independent review verified the bounded observational packet and its immutable
 artifacts; full parity remains unverified and the ceiling remains **Concern**.
 
-## Current registry-only source target (5fc490e2, 2026-10-19)
+## Registry-only source audit (5fc490e2, 2026-10-19)
 
 The new implementation/registry target is
 `5fc490e2b34123212d73ef316086f939567a725a`. The 36922 section and every source,
@@ -165,3 +165,12 @@ registry parity is not semantic or appearance parity for those changes.
 Focused theme tests and the live inventory gate passed. No new paired captures,
 device acceptance, backend deployment or new appearance-behavior acceptance were
 performed. **pending: #292** and the **Concern** ceiling remain unchanged.
+
+## Final latest-main target (ddabd383, 2026-10-19)
+
+The target advanced to `ddabd3837862022a6053331fe3ba97cf9716b9e3` during
+delivery. The [follow-up audit](../spikes/upstream-ddabd383-2026-10-19.md)
+proves no Desktop/shared source changes since the preceding audit. All twelve
+registry entries match the new target, the focused theme tests passed again,
+and no historical rendered or semantic evidence was restamped. #292 and the
+Concern ceiling remain unchanged.
