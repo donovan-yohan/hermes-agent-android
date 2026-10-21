@@ -77,6 +77,7 @@ class SidebarProjectionParityActivity : ComponentActivity() {
                         onSelectProject = model::selectProject,
                         onExitProject = model::exitProject,
                         onSelectSession = model::selectSession,
+                        onSelectProjectSession = model::selectProjectSession,
                     ),
                     onOpenSettings = {},
                     modifier = Modifier.fillMaxSize().safeDrawingPadding(),
@@ -102,11 +103,15 @@ internal class SidebarProjectionFixtureOwner : ViewModel() {
 internal class SidebarProjectionParityFixture {
     val cache = SessionCache().apply {
         upsertSessions(sessions)
+        activateProjectScope("default")
         replaceProjectOverview(projects, activeProjectId = "synthetic-project")
     }
     private val repository = object : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
+        override fun setProfileRouting(routing: com.hermesagent.mobile.data.gateway.ProfileRouting) {
+            cache.activateProjectScope(routing.activeProfile)
+        }
         override suspend fun refreshSessions() = Unit
         override suspend fun openProject(projectId: String) {
             check(projectId == "synthetic-project")
@@ -169,8 +174,8 @@ internal class SidebarProjectionParityFixture {
         const val CLOCK = 1_789_654_800_000L
         val states = setOf("projection-overview", "projection-selected", "projection-search-match", "projection-search-miss", "projection-draft-reuse")
         private val sessions = listOf(
-            SessionSummary("synthetic-design", "Synthetic design review", "Synthetic capture session", CLOCK - 720_000L),
-            SessionSummary("synthetic-release", "Synthetic release checklist", "Synthetic capture session", CLOCK - 1_200_000L),
+            SessionSummary("synthetic-design", "Synthetic design review", "Synthetic capture session", CLOCK - 720_000L, remoteProfile = "default"),
+            SessionSummary("synthetic-release", "Synthetic release checklist", "Synthetic capture session", CLOCK - 1_200_000L, remoteProfile = "default"),
         )
         private val projects = listOf(ProjectSummary(
             "synthetic-project", "Synthetic project", "/synthetic/project", sessionCount = 2, previewSessions = sessions,

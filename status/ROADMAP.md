@@ -135,6 +135,13 @@ lifecycle.
 - Project overview, project creation, authoritative project membership, and
   project-specific session creation when the Gateway exposes the project RPCs.
   Older Gateways retain the flat session view.
+- In-memory project catalogs and hydrated membership are cached per exact
+  profile route. Returning to a visited profile restores its snapshot before
+  background revalidation, and warm project details keep their rows visible.
+  First visits still wait for the Gateway; reconnects and endpoint changes
+  discard all project snapshots. Virtual-time and Compose regressions cover
+  restoration and stale-response isolation; physical switching latency has not
+  been measured.
 - Date or project grouping, unread/running state, and session search over the
   Gateway's own index: loaded rows match instantly on id, lineage root, title,
   preview, working directory, git branch and source, and a 200 ms debounced
@@ -274,6 +281,11 @@ lifecycle.
 - Full task-list rows and completion counts, goals, subagents, background
   processes, previews, generic progress, compaction, and queued prompts in the
   composer status stack.
+- Goal hydration uses the structured `session.control.read` endpoint, with
+  legacy slash fallback only for a missing method. Explicit absence clears
+  only the goal. Automatic reads are silent, skipped offline and fenced against
+  stale navigation/connection responses. This is a goal-only projection, not
+  support for structured loop/heartbeat controls or a full control editor.
 - Gateway-supplied inline diffs render in transcript tool rows: the terminal
   chrome the Gateway renders them with — the `review diff` banner, the colour
   escapes, the file headers and the `@@` hunk lines — is stripped, each changed

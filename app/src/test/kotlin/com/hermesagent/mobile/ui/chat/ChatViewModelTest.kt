@@ -120,6 +120,7 @@ class ChatViewModelTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         cache = SessionCache().apply {
+            activateProjectScope("default")
             upsertSessions(listOf(summary("session-a", 2_000), summary("session-b", 1_000)))
         }
         repository = FakeRepository(cache)
@@ -1153,7 +1154,7 @@ class ChatViewModelTest {
 
     @Test
     fun `fresh project draft path completion uses the selected remote project cwd`() = runTest(dispatcher) {
-        val emptyCache = SessionCache()
+        val emptyCache = SessionCache().apply { activateProjectScope("default") }
         val project = ProjectSummary("project-b", "B", "/work/b", sessionCount = 0)
         emptyCache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
         val freshRepository = FakeRepository(emptyCache).apply { projectSessions[project.id] = emptyList() }
@@ -2518,6 +2519,24 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `reselecting current chat retires a held colliding preview open`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        val preview = summary("collision", CLOCK).copy(remoteProfile = "alpha")
+        cache.upsertSession(preview.copy(remoteProfile = "beta"))
+        repository.botOpenGate = CompletableDeferred()
+        viewModel.selectProjectSession(preview)
+        runCurrent()
+        assertEquals("A foreign raw-id slot must not become the pane while opening", previous, viewModel.uiState.value.activeSessionId)
+        viewModel.selectSession(previous)
+        runCurrent()
+        repository.botOpenGate!!.complete(Unit)
+        runCurrent()
+        assertEquals("A newer selection must retire preview adoption", previous, viewModel.uiState.value.activeSessionId)
+    }
+
+    @Test
     fun `project previews omit cached hidden chats without discarding their owner`() = runTest(dispatcher) {
         val visible = summary("session-a", 2_000)
         val hidden = summary("bot-chat", 1_000).copy(hidden = true)
@@ -2600,6 +2619,176 @@ class ChatViewModelTest {
         runCurrent()
         assertEquals("replacement", viewModel.uiState.value.activeSession?.id)
         assertEquals("replacement draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `requested profile availability and detail do not read another active catalog`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val project = ProjectSummary("p", "Project", "/synthetic/p")
+        cache.replaceProjectOverview(listOf(project), "p")
+        repository.projectSessions["p"] = emptyList()
+        viewModel.selectProject("p")
+        runCurrent()
+        cache.activateProjectScope("beta")
+        cache.markProjectsUnavailable()
+        runCurrent()
+        assertEquals(true, viewModel.uiState.value.projectsAvailable)
+        assertEquals("p", viewModel.uiState.value.selectedProject?.id)
+        cache.replaceProjectOverview(emptyList(), null)
+        runCurrent()
+        assertEquals("p", viewModel.uiState.value.selectedProject?.id)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `slow session refresh does not delay project refresh or subsequent routing installs`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.sessionRefreshGate = CompletableDeferred()
+        repository.projectRefreshGate = CompletableDeferred()
+        viewModel.selectProfile("alpha")
+        runCurrent()
+        assertEquals("alpha", repository.installedProfiles.last())
+        assertEquals("alpha", repository.projectRefreshes.last())
+        viewModel.selectProfile("beta")
+        runCurrent()
+        assertEquals("beta", repository.installedProfiles.last())
+        assertEquals("beta", repository.projectRefreshes.last())
+        viewModel.selectProfile("alpha")
+        runCurrent()
+        assertEquals(listOf("alpha", "beta", "alpha"), repository.installedProfiles.takeLast(3))
+        repository.sessionRefreshGate!!.complete(Unit)
+        repository.projectRefreshGate!!.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `old same id detail completion cannot clear newer loading or publish failure`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val project = ProjectSummary("p", "Project", "/synthetic/p")
+        cache.replaceProjectOverview(listOf(project), "p")
+        val old = CompletableDeferred<Unit>()
+        repository.openProjectGate = old
+        repository.openProjectFailure = GatewayRpcException("old failure")
+        viewModel.selectProject("p")
+        runCurrent()
+        viewModel.exitProject()
+        val newer = CompletableDeferred<Unit>()
+        repository.openProjectGate = newer
+        viewModel.selectProject("p")
+        runCurrent()
+        assertTrue(viewModel.uiState.value.projectLoading)
+        old.complete(Unit)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.projectLoading)
+        assertNull(viewModel.uiState.value.notice)
+        newer.complete(Unit)
+        runCurrent()
+        assertFalse(viewModel.uiState.value.projectLoading)
+    }
+
+    @Test
+    fun `detail failure from previous profile or endpoint cannot annotate a newer same id selection`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val project = ProjectSummary("p", "Project", "/synthetic/p")
+        for (endpointSwitch in listOf(false, true)) {
+            cache.replaceProjectOverview(listOf(project), "p")
+            val old = CompletableDeferred<Unit>()
+            repository.openProjectGate = old
+            repository.openProjectFailure = GatewayRpcException("old failure")
+            viewModel.selectProject("p")
+            runCurrent()
+            if (endpointSwitch) {
+                cache.resetForEndpointSwitch()
+                cache.activateProjectScope("default")
+            } else {
+                viewModel.selectProfile("beta")
+                runCurrent()
+                viewModel.selectProfile("default")
+            }
+            runCurrent()
+            cache.replaceProjectOverview(listOf(project), "p")
+            val newer = CompletableDeferred<Unit>()
+            repository.openProjectGate = newer
+            viewModel.selectProject("p")
+            runCurrent()
+            old.complete(Unit)
+            runCurrent()
+            assertTrue(viewModel.uiState.value.projectLoading)
+            assertNull(viewModel.uiState.value.notice)
+            newer.complete(Unit)
+            runCurrent()
+            viewModel.exitProject()
+            runCurrent()
+        }
+    }
+
+    @Test
+    fun `old drawer refresh failure cannot annotate newer project navigation`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.projectRefreshGate = gate
+        repository.projectRefreshFailure = GatewayRpcException("old failure")
+        viewModel.refreshSessionNavigation()
+        runCurrent()
+        viewModel.exitProject()
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `cold project loading ends after unified scope changes during detail read`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val project = ProjectSummary("cold", "Cold", "/synthetic/cold")
+        cache.replaceProjectOverview(listOf(project), project.id)
+        repository.projectSessions[project.id] = listOf(summary("session-a", 2_000))
+        val response = CompletableDeferred<Unit>()
+        repository.openProjectGate = response
+        viewModel.selectProject(project.id)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.projectLoading)
+
+        viewModel.showAllProfiles()
+        runCurrent()
+        assertEquals(project.id, viewModel.uiState.value.selectedProject?.id)
+        response.complete(Unit)
+        runCurrent()
+
+        assertTrue(project.id in cache.state.value.projects.hydratedProjectIds)
+        assertFalse(viewModel.uiState.value.projectLoading)
+        assertEquals(listOf("session-a"), viewModel.uiState.value.sessionRows.rowIds())
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `hydrated detail including known empty stays visible during failed refresh`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val project = ProjectSummary("warm", "Warm", "/synthetic/warm")
+        for (rows in listOf(listOf(summary("session-a", 2_000).copy(remoteProfile = "default")), emptyList())) {
+            cache.replaceProjectOverview(listOf(project), project.id)
+            cache.replaceProjectDetails(project, rows)
+            repository.openProjectGate = CompletableDeferred()
+            repository.openProjectFailure = GatewayRpcException("synthetic failure")
+            viewModel.selectProject(project.id)
+            runCurrent()
+            assertEquals(project.id, viewModel.uiState.value.selectedProject?.id)
+            assertFalse(viewModel.uiState.value.projectLoading)
+            assertEquals(rows.map { it.id }, viewModel.uiState.value.sessionRows.rowIds())
+            repository.openProjectGate!!.complete(Unit)
+            runCurrent()
+            assertFalse(viewModel.uiState.value.projectLoading)
+            assertEquals(rows.map { it.id }, viewModel.uiState.value.sessionRows.rowIds())
+            assertEquals("This project could not be opened. Check the Gateway and try again.", viewModel.uiState.value.notice?.text)
+            viewModel.exitProject()
+            runCurrent()
+        }
     }
 
     @Test
@@ -3892,7 +4081,118 @@ class ChatViewModelTest {
         }
     }
 
+    @Test
+    fun `automatic goal reads skip offline chats`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        viewModel.composerStatusOpened()
+        runCurrent()
+        assertTrue(repository.goalCalls.isEmpty())
+    }
+
+    @Test
+    fun `automatic optional goal failure does not publish a global warning`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.goalOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Failed
+        viewModel.composerStatusOpened()
+        runCurrent()
+        assertEquals(listOf("session-a"), repository.goalCalls)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `automatic goal publication is fenced across navigation A B A`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.goalGate = CompletableDeferred()
+        repository.goalOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Available(
+            com.hermesagent.mobile.data.session.ComposerGoalStatus("Stale goal", com.hermesagent.mobile.data.session.ComposerGoalState.Active))
+        viewModel.composerStatusOpened()
+        runCurrent()
+        viewModel.selectSession("session-b")
+        runCurrent()
+        viewModel.selectSession("session-a")
+        runCurrent()
+        repository.goalGate!!.complete(Unit)
+        runCurrent()
+        assertNull(cache.session("session-a")!!.composerStatus?.goal)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `automatic goal publication is fenced across reconnect even when session id stays the same`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.goalGate = CompletableDeferred()
+        repository.goalOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Available(
+            com.hermesagent.mobile.data.session.ComposerGoalStatus("Before reconnect", com.hermesagent.mobile.data.session.ComposerGoalState.Active))
+        viewModel.composerStatusOpened()
+        runCurrent()
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        repository.goalGate!!.complete(Unit)
+        runCurrent()
+        assertNull(cache.session("session-a")!!.composerStatus?.goal)
+    }
+
+    @Test
+    fun `automatic goal read only publishes newest request on the same session`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val old = CompletableDeferred<Unit>()
+        repository.goalGate = old
+        repository.goalOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Available(
+            com.hermesagent.mobile.data.session.ComposerGoalStatus("Old request", com.hermesagent.mobile.data.session.ComposerGoalState.Active))
+        viewModel.composerStatusOpened()
+        runCurrent()
+        repository.goalGate = null
+        repository.goalOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Available(
+            com.hermesagent.mobile.data.session.ComposerGoalStatus("Newest request", com.hermesagent.mobile.data.session.ComposerGoalState.Paused))
+        viewModel.composerStatusOpened()
+        runCurrent()
+        old.complete(Unit)
+        runCurrent()
+        assertEquals("Newest request", cache.session("session-a")!!.composerStatus?.goal?.rawText)
+        assertEquals(listOf("session-a", "session-a"), repository.goalCalls)
+    }
+
+    @Test
+    fun `automatic goal read cannot publish into recycled id on new endpoint`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.goalGate = CompletableDeferred()
+        repository.goalOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Available(
+            com.hermesagent.mobile.data.session.ComposerGoalStatus("Old endpoint", com.hermesagent.mobile.data.session.ComposerGoalState.Active))
+        viewModel.composerStatusOpened()
+        runCurrent()
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(summary("session-a", 2_000))
+        runCurrent()
+        repository.goalGate!!.complete(Unit)
+        runCurrent()
+        assertNull(cache.session("session-a")!!.composerStatus?.goal)
+    }
+
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
+        val goalCalls = mutableListOf<String>()
+        var goalOutcome: com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Unsupported
+        var goalGate: CompletableDeferred<Unit>? = null
+        override suspend fun goalStatus(durableId: String): com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome {
+            goalCalls += durableId
+            val lease = kotlinx.coroutines.currentCoroutineContext()[com.hermesagent.mobile.data.gateway.GoalStatusReadLease]
+            val result = goalOutcome
+            goalGate?.await()
+            if (lease?.isCurrent() != false && result is com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Available) {
+                cache.session(durableId)?.let { cache.upsertSession(it.copy(composerStatus =
+                    (it.composerStatus ?: ComposerStatusState()).copy(goal = result.goal))) }
+            }
+            return result
+        }
         override suspend fun openCronRun(
             durableId: String, profile: String, expectedEndpointGeneration: Long,
             source: String, title: String, preview: String,
@@ -4078,7 +4378,27 @@ class ChatViewModelTest {
             check(composerControlEvents.tryEmit(event))
         }
 
-        override suspend fun refreshSessions() = Unit
+        val installedProfiles = mutableListOf<String?>()
+        var routingProfile: String? = null
+        val sessionRefreshes = mutableListOf<String?>()
+        val projectRefreshes = mutableListOf<String?>()
+        var sessionRefreshGate: CompletableDeferred<Unit>? = null
+        var projectRefreshGate: CompletableDeferred<Unit>? = null
+        var projectRefreshFailure: Throwable? = null
+        override fun setProfileRouting(routing: com.hermesagent.mobile.data.gateway.ProfileRouting) {
+            routingProfile = routing.activeProfile
+            installedProfiles += routing.activeProfile
+            cache.activateProjectScope(routing.activeProfile)
+        }
+        override suspend fun refreshSessions() {
+            sessionRefreshes += routingProfile
+            sessionRefreshGate?.await()
+        }
+        override suspend fun refreshProjects() {
+            projectRefreshes += routingProfile
+            projectRefreshGate?.await()
+            projectRefreshFailure?.let { throw it }
+        }
 
         /** Every flag write this fake was asked for, in order. */
         val flagWrites = mutableListOf<Triple<String, String, Boolean>>()
@@ -4147,10 +4467,14 @@ class ChatViewModelTest {
             cache.upsertSessions(archivedPoolRows)
         }
 
+        var openProjectGate: CompletableDeferred<Unit>? = null
+        var openProjectFailure: Throwable? = null
         override suspend fun openProject(projectId: String) {
             openedProjects += projectId
+            openProjectGate?.await()
+            openProjectFailure?.let { throw it }
             val project = requireNotNull(cache.state.value.projects.projects[projectId])
-            cache.replaceProjectDetails(project, projectSessions[projectId].orEmpty())
+            cache.replaceProjectDetails(project, projectSessions[projectId].orEmpty().map { it.copy(remoteProfile = routingProfile) })
         }
 
         override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {
@@ -5786,6 +6110,51 @@ class ChatViewModelTest {
         assertEquals(listOf("session-z", "session-z"), repository.opened.takeLast(2))
         assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
         assertEquals("keep this draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `same id preview recovery clears failed open while preserving draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val target = "session-b"
+        val gate = CompletableDeferred<Unit>()
+        repository.openGates[target] = gate
+        viewModel.selectSession(target)
+        runCurrent()
+        viewModel.setDraft("keep preview draft")
+        gate.completeExceptionally(IllegalStateException("ordinary open failed"))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.sessionOpen is SessionOpenState.Failed)
+
+        repository.openGates.remove(target)
+        viewModel.selectProjectSession(requireNotNull(cache.session(target)).copy(remoteProfile = "default"))
+        runCurrent()
+
+        assertEquals(target, viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertEquals("keep preview draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `preview success retires an older same id ordinary open failure`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val target = "session-b"
+        val gate = CompletableDeferred<Unit>()
+        repository.openGates[target] = gate
+        viewModel.selectSession(target)
+        runCurrent()
+        assertEquals(SessionOpenState.Opening(target), viewModel.uiState.value.sessionOpen)
+        repository.openGates.remove(target)
+
+        viewModel.selectProjectSession(requireNotNull(cache.session(target)).copy(remoteProfile = "default"))
+        runCurrent()
+        gate.completeExceptionally(IllegalStateException("obsolete ordinary failure"))
+        runCurrent()
+
+        assertEquals(target, viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertNull(viewModel.uiState.value.notice)
     }
 
     @Test

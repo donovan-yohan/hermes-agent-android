@@ -28,6 +28,8 @@ class ChatActions(
     val onExitProject: () -> Unit = {},
     val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
     val onSelectSession: (String) -> Unit = {},
+    /** Project previews can outlive the global raw-id slot's profile owner. */
+    val onSelectProjectSession: (com.hermesagent.mobile.data.session.SessionSummary) -> Unit = {},
     /**
      * Re-run the open for the session the chat pane says failed.
      *

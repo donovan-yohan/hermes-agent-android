@@ -403,6 +403,7 @@ class ProfileRailJourneyTest {
                     onSelectProject = viewModel::selectProject,
                     onExitProject = viewModel::exitProject,
                     onSelectSession = viewModel::selectSession,
+                    onSelectProjectSession = viewModel::selectProjectSession,
                     onSelectProfile = viewModel::selectProfile,
                     onShowAllProfiles = viewModel::showAllProfiles,
                 ),
@@ -439,6 +440,14 @@ class ProfileRailJourneyTest {
 
         override fun setProfileRouting(routing: ProfileRouting) {
             this.routing = routing
+            cache.activateProjectScope(routing.activeProfile)
+        }
+
+        override suspend fun refreshProjects() {
+            cache.replaceProjectOverview(
+                listOf(ProjectSummary("project-mobile", "Hermes mobile", "/work/mobile", sessionCount = 1)),
+                activeProjectId = null,
+            )
         }
 
         override suspend fun refreshSessions() = Unit

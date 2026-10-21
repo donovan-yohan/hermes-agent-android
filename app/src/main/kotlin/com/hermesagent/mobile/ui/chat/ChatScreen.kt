@@ -309,6 +309,11 @@ private fun CompactLayout(
                         actions.onSelectSession(id)
                         scope.launch { drawerState.close() }
                     },
+                    onSelectProjectSession = { session ->
+                        onLeaveRoute()
+                        actions.onSelectProjectSession(session)
+                        scope.launch { drawerState.close() }
+                    },
                     onCreateSession = {
                         onLeaveRoute()
                         actions.onCreateSession()
@@ -437,6 +442,7 @@ private fun WideLayout(
                 .windowInsetsPadding(railInsets.union(imeInsets)),
             onManageProfiles = onOpenProfiles,
             onSelectSession = { onLeaveRoute(); actions.onSelectSession(it) },
+            onSelectProjectSession = { onLeaveRoute(); actions.onSelectProjectSession(it) },
             onCreateSession = { onLeaveRoute(); actions.onCreateSession() },
             onOpenCron = onOpenCron,
             cronSection = { cronSection {} },
@@ -506,6 +512,7 @@ private fun SessionsPane(
     sidebarNavigation: List<com.hermesagent.mobile.plugins.Contribution> = emptyList(),
     modifier: Modifier = Modifier,
     onSelectSession: (String) -> Unit = actions.onSelectSession,
+    onSelectProjectSession: (com.hermesagent.mobile.data.session.SessionSummary) -> Unit = actions.onSelectProjectSession,
     onCreateSession: () -> Unit = actions.onCreateSession,
     onManageProfiles: () -> Unit = {},
     compactActions: Boolean = false,
@@ -533,6 +540,7 @@ private fun SessionsPane(
         onExitProject = actions.onExitProject,
         onCreateProject = actions.onCreateProject,
         onSelect = onSelectSession,
+        onSelectProjectSession = onSelectProjectSession,
         onCreate = onCreateSession,
         compactActions = compactActions,
         onOpenCron = onOpenCron,

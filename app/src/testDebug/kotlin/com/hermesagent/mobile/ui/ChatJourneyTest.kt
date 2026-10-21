@@ -91,8 +91,8 @@ class ChatJourneyTest {
         if (withSessions) {
             cache.upsertSessions(
                 listOf(
-                    SessionSummary("live-a", "Remote planning", "Gateway preview", NOW),
-                    SessionSummary("live-b", "Second remote session", "Other preview", NOW - 86_400_000),
+                    SessionSummary("live-a", "Remote planning", "Gateway preview", NOW, remoteProfile = "default"),
+                    SessionSummary("live-b", "Second remote session", "Other preview", NOW - 86_400_000, remoteProfile = "default"),
                 ),
             )
             cache.setTranscript(
@@ -142,6 +142,7 @@ class ChatJourneyTest {
                         onExitProject = viewModel::exitProject,
                         onCreateProject = viewModel::createProject,
                         onSelectSession = viewModel::selectSession,
+                        onSelectProjectSession = viewModel::selectProjectSession,
                         onCreateSession = viewModel::createSession,
                         onSend = viewModel::submit,
                         onStop = viewModel::stop,
@@ -229,6 +230,42 @@ class ChatJourneyTest {
 
         compose.onNodeWithText("Second live transcript").assertIsDisplayed()
         assertEquals(listOf("project-mobile", "project-mobile"), repository.openedProjects)
+    }
+
+    @Test
+    fun `warm project keeps its session rows visible while detail refresh waits`() {
+        launch()
+        val session = requireNotNull(cache.session("live-b"))
+        val project = ProjectSummary(
+            id = "project-mobile",
+            label = "Hermes mobile",
+            path = "/work/hermes-mobile",
+            sessionCount = 1,
+            previewSessions = listOf(session),
+        )
+        cache.replaceProjectOverview(listOf(project), activeProjectId = project.id)
+        cache.replaceProjectDetails(project, listOf(session))
+        repository.projectSessions[project.id] = listOf(session)
+        val refresh = CompletableDeferred<Unit>()
+        repository.projectOpenResponse = refresh
+        compose.waitForIdle()
+
+        try {
+            compose.onNodeWithContentDescription("Open sessions").performClick()
+            compose.onNodeWithContentDescription("Filters").performClick()
+            compose.onNodeWithContentDescription("Project grouping").performClick()
+            compose.onNodeWithContentDescription("Open project Hermes mobile. 1 session").performClick()
+            compose.waitForIdle()
+
+            assertEquals(listOf(project.id), repository.openedProjects)
+            assertFalse(refresh.isCompleted)
+            compose.onNodeWithText("Opening project…").assertDoesNotExist()
+            compose.onNodeWithText("Second remote session").assertIsDisplayed()
+            compose.onNodeWithText("All projects").assertIsDisplayed()
+        } finally {
+            refresh.complete(Unit)
+            compose.waitForIdle()
+        }
     }
 
     @Test
@@ -693,6 +730,9 @@ class ChatJourneyTest {
         val submittedAttachments = mutableListOf<Pair<String, List<OutgoingAttachment>>>()
         val queuedSubmissions = mutableListOf<Pair<String, Boolean>>()
 
+        override fun setProfileRouting(routing: com.hermesagent.mobile.data.gateway.ProfileRouting) {
+            cache.activateProjectScope(routing.activeProfile)
+        }
         override suspend fun refreshSessions() = Unit
         override suspend fun openProject(projectId: String) {
             openedProjects += projectId

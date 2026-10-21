@@ -51,6 +51,38 @@ When a parsed goal crosses the known/unknown boundary, the Android group reacts
 without remounting: an automatically opened unknown closes once the state is
 known again, while an expansion the reader chose survives the round trip.
 
+## Goal hydration compatibility
+
+This scoped follow-up reads Desktop's
+`apps/desktop/src/store/session-control.ts:753-816` and
+`apps/desktop/src/store/goals.ts:166-188` at
+`ddabd3837862022a6053331fe3ba97cf9716b9e3`. It does not repin the historical
+layout evidence above. Desktop reads `session.control.read` first, falls back
+to the legacy slash command only for a missing method, and treats legacy
+background hydration as best-effort.
+
+Android now follows that read order. An explicit `control.goal: null` clears
+only the cached goal; malformed responses, permission refusals and transport
+failures remain failed repository reads rather than invented absence. The
+projection handles goal state and display text, not loop/heartbeat controls or
+the complete structured-control schema. At backend
+`046094df28b712f62a5e3c728a9e59da05dcbf1e`,
+`gateway/session_ancillary.py:192-207,334-362` supplies this read. The old
+`slash.exec` path requires a local source even for `goal status`
+(`gateway/session_commands.py:240-249`), so using it automatically on every
+chat can fail without any goal having existed.
+
+Automatic hydration is silent and does not run offline. A request carries its
+navigation, profile, endpoint and connection lifetime through cache publication;
+a late response cannot overwrite a replacement chat's goal. Goal readbacks
+also share the runtime's progress revision: a newer streamed update wins over
+an older read, and session-open history reconciliation preserves a goal read
+that completed while history was pending. No UI labels,
+menus, action order or glyphs changed. `GoalStatusRepositoryTest`,
+`CanonicalGatewayRpcTest` and `ChatViewModelTest` cover the read contract and
+automatic refresh. These are synthetic JVM/Robolectric checks, not a read from
+the reported phone's Gateway.
+
 ## Silent exits
 
 A background process started without `notify_on_complete` emits no event when
@@ -84,7 +116,7 @@ on the Compose test clock.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
-| The goal group's label comes from a typed `goalStatus`, and a status it cannot name falls through to `Goal active` (`.../status-stack/index.tsx:59-70`) | mobile-adaptation | A goal state parsed out of the Gateway's text status line; `Unknown` keeps the bare word `Goal` and is the one group left open by default | The parser is deliberately neutral rather than fabricating an active goal (`GatewaySessionRepository.kt:5458-5463`). On a phone the collapsed header is all that is left of the group, so a header that cannot name the state cannot replace the body: the unrecognised line stays on screen instead of being hidden behind a word that says nothing. Every state the parser *can* name collapses exactly as Desktop does |
+| The goal group's label comes from a typed `goalStatus`, and a status it cannot name falls through to `Goal active` (`.../status-stack/index.tsx:59-70`) | mobile-adaptation | Structured goal reads supply known states; older Gateways retain the text parser, whose `Unknown` keeps the bare word `Goal` and is the one group left open by default | `GatewayGoalStatus.kt` projects the structured goal; the compatibility parser remains neutral rather than fabricating an active state. On a phone the collapsed header is all that is left of the group, so an unrecognised legacy line stays visible rather than hiding behind a label that cannot name its state. Every known state collapses as Desktop does |
 | Group labels read `${count} Subagent${count === 1 ? '' : 's'}`, `${count} Background`, `${count} Queued`, `${count} Queued — paused` (`apps/desktop/src/i18n/en.ts:2793-2795,2891-2900`) | drift | `Subagents · 1`, `Background · 1`, `Queue · 1`, `Queue · 1 · parked` | Count-last and not Desktop's wording; `Tasks 0/1` and the four goal labels are verbatim. #245 |
 | Preview rows are a bare always-visible block in the stack, with no `StatusSection` and no collapse (`.../status-stack/index.tsx:260-262`) | mobile-adaptation | A `Previews` group with a count, collapsed by default | The Android stack is a bounded 240dp scroll region that must not push the editor below the IME (`ComposerStatusStack.kt`), so a status kind that is not a disclosure spends that budget on itself whether or not it is being read. #232 deliberately did not change this group's default, because `5b181e511a` says nothing about a group Desktop has no section for |
 | No `StatusSection` for prompts the Gateway itself is holding; Desktop's stack renders only the client-side queue (`apps/desktop/src/app/chat/composer/queue-panel.tsx:49-67`) | drift | A `Queued next` group, collapsed by default with the other non-task groups | Android-only group with no upstream equivalent; collapsing it preserves the shared rule that only the task list opens itself. #246 |

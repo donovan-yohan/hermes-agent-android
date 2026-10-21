@@ -9,13 +9,44 @@ import org.junit.Test
 import java.util.Locale
 
 class SidebarCatalogProjectionTest {
-    private val a = SessionSummary("a", "Alpha", "", 2_000)
+    private val a = SessionSummary("a", "Alpha", "", 2_000, remoteProfile = "default")
     private val b = SessionSummary("b", "Beta", "", 1_000, remoteProfile = "work")
     private val project = ProjectSummary("p", "Project", "/synthetic/p", previewSessions = listOf(a, b))
 
     @Test
+    fun `conflicting omitted-launch preview waits for revalidation rather than offering an ambiguous click`() {
+        val cache = SessionCache()
+        val launchRow = a.copy(remoteProfile = null)
+        cache.replaceProjectOverview(listOf(project.copy(previewSessions = listOf(launchRow))), null)
+        cache.activateProjectScope("beta")
+        cache.upsertSession(a.copy(remoteProfile = "beta"))
+        val result = SidebarCatalogProjection().derive(cache.state.value, 0, ProfileScope(activeProfile = ""), null, "")
+        assertEquals("The cached project stays visible", "p", result.projects.single().id)
+        assertTrue("An omitted launch owner cannot be resumed with an explicit-profile overload",
+            result.projects.single().previewSessions.isEmpty())
+    }
+
+    @Test
+    fun `requested catalog scope never paints active foreign catalog even in unified view`() {
+        val cache = SessionCache()
+        cache.activateProjectScope("alpha")
+        val alphaRow = a.copy(remoteProfile = "alpha")
+        cache.replaceProjectOverview(listOf(project.copy(label = "Alpha project", previewSessions = listOf(alphaRow))), "p")
+        cache.replaceProjectDetails(project.copy(label = "Alpha project", previewSessions = listOf(alphaRow)), listOf(alphaRow))
+        cache.activateProjectScope("beta")
+        cache.replaceProjectOverview(listOf(project.copy(label = "Beta project", previewSessions = listOf(a.copy(remoteProfile = "beta")))), "p")
+        val projection = SidebarCatalogProjection()
+        val alpha = ProfileScope("alpha", showAllProfiles = true)
+        val overview = projection.derive(cache.state.value, 0, alpha, null, "")
+        assertEquals("Alpha project", overview.projects.single().label)
+        assertEquals("alpha", overview.projects.single().previewSessions.single().remoteProfile)
+        assertTrue(projection.derive(cache.state.value, 0, alpha, "p", "").scopedSessions.isEmpty())
+        assertTrue(projection.derive(cache.state.value, 0, ProfileScope("cold"), null, "").projects.isEmpty())
+    }
+
+    @Test
     fun `transcript snapshots reuse scoped list and catalog but authoritative inputs invalidate`() {
-        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val cache = SessionCache().apply { activateProjectScope("default"); replaceProjectOverview(listOf(project), "p") }
         val projection = SidebarCatalogProjection()
         fun derive(scope: ProfileScope = ProfileScope(), id: String? = null, query: String = "",
             endpoint: Long = 0, locale: Locale = Locale.US) =
@@ -52,7 +83,7 @@ class SidebarCatalogProjectionTest {
 
     @Test
     fun `warmed profile scope changes alone expose the correct sessions`() {
-        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val cache = SessionCache().apply { activateProjectScope("default"); replaceProjectOverview(listOf(project), "p") }
         val projection = SidebarCatalogProjection()
         fun derive(scope: ProfileScope) = projection.derive(cache.state.value, 0, scope, null, "", Locale.US)
         val default = derive(ProfileScope())
@@ -67,7 +98,7 @@ class SidebarCatalogProjectionTest {
 
     @Test
     fun `archive alone updates a warmed preview without hiding it`() {
-        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val cache = SessionCache().apply { activateProjectScope("default"); replaceProjectOverview(listOf(project), "p") }
         val projection = SidebarCatalogProjection()
         fun derive() = projection.derive(cache.state.value, 0, ProfileScope(), null, "", Locale.US)
         val before = derive()
@@ -82,7 +113,7 @@ class SidebarCatalogProjectionTest {
 
     @Test
     fun `rehome alone replaces a warmed selected membership`() {
-        val cache = SessionCache().apply { replaceProjectOverview(listOf(project), "p") }
+        val cache = SessionCache().apply { activateProjectScope("default"); replaceProjectOverview(listOf(project), "p") }
         val projection = SidebarCatalogProjection()
         fun derive() = projection.derive(cache.state.value, 0, ProfileScope(), "p", "", Locale.US)
         val before = derive()
@@ -96,6 +127,7 @@ class SidebarCatalogProjectionTest {
     @Test
     fun `locale alone invalidates matching and ordering`() {
         val cache = SessionCache().apply {
+            activateProjectScope("default")
             replaceProjectOverview(listOf(
                 ProjectSummary("i", "I", "/synthetic/i"),
                 ProjectSummary("z", "Z", "/synthetic/z"),
