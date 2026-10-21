@@ -6715,13 +6715,16 @@ internal class LiveGatewaySessionRepository(
 
     private fun rehomeDurableSession(fromId: String, targetId: String, runtimeId: String): String {
         if (fromId == targetId) return fromId
-        val existing = cache.session(targetId) ?: cache.session(fromId)
+        val source = cache.session(fromId)
+        val existing = cache.session(targetId) ?: source
+        val profile = if (runtimeProfiles.containsKey(runtimeId)) runtimeProfiles[runtimeId]
+            else source?.remoteProfile ?: existing?.remoteProfile
         val entries = mergeHistoryWithLiveEntries(
             cache.transcript(fromId),
             cache.transcript(targetId),
         )
-        val row = existing?.copy(id = targetId)
-            ?: SessionSummary(targetId, "New session", "", clock())
+        val row = existing?.copy(id = targetId, remoteProfile = profile)
+            ?: SessionSummary(targetId, "New session", "", clock(), remoteProfile = profile)
         rehomeLiveNotificationMessage(fromId, targetId)
         cache.rehomeSession(fromId, row, entries)
         if (ephemeralSessions.remove(fromId)) ephemeralSessions += targetId

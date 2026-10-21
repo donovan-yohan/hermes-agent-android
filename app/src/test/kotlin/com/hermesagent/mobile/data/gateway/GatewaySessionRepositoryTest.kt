@@ -4976,6 +4976,38 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `event rehome retains runtime owner over an unstamped target and updates inactive projects`() = runTest {
+        for (reclaimed in listOf(false, true)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc()
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a", "research")
+            val source = requireNotNull(cache.session("durable-a"))
+            cache.activateProjectScope(null)
+            val project = ProjectSummary("p-launch", "Launch", "/synthetic/launch", previewSessions = listOf(source))
+            cache.replaceProjectOverview(listOf(project), project.id)
+            cache.replaceProjectDetails(project, listOf(source))
+            cache.activateProjectScope("other")
+            cache.upsertSession(source.copy(id = "continuation-tip", remoteProfile = null))
+
+            if (reclaimed) rpc.emit("session.reclaimed", null,
+                """{"session_id":"runtime-a","stored_session_id":"continuation-tip","reason":"idle_timeout"}""")
+            else rpc.emit("session.info", "runtime-a", """{"stored_session_id":"continuation-tip"}""")
+            runCurrent()
+
+            assertEquals("research", cache.session("continuation-tip")?.remoteProfile)
+            val catalog = cache.state.value.projectsForScope(null)
+            assertEquals(listOf("continuation-tip"), catalog.memberships[project.id])
+            assertEquals(listOf("continuation-tip"), catalog.projects.getValue(project.id).previewSessions.map { it.id })
+            assertEquals("research", catalog.sessionProfiles["continuation-tip"])
+            assertFalse(catalog.sessionProfiles.containsKey("durable-a"))
+        }
+    }
+
+    @Test
     fun `session reclaimed drops only the dead runtime mapping and resumes the durable row`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
