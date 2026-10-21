@@ -6288,8 +6288,8 @@ class GatewaySessionRepositoryTest {
         assertEquals("runtime-a", rpc.call("process.kill").params.string("session_id"))
 
         val goal = repository.goalStatus("durable-a") as GatewayGoalStatusOutcome.Available
-        assertEquals(ComposerGoalState.Active, goal.goal.state)
-        assertEquals("Ship the mobile composer", goal.goal.title)
+        assertEquals(ComposerGoalState.Active, goal.goal?.state)
+        assertEquals("Ship the mobile composer", goal.goal?.title)
         assertEquals("goal status", rpc.call("slash.exec").params.string("command"))
         assertEquals("runtime-a", rpc.call("slash.exec").params.string("session_id"))
 
@@ -9705,6 +9705,7 @@ class GatewaySessionRepositoryTest {
                     }
                     json(processKillResult)
                 }
+                "session.control.read" -> throw GatewayRpcError(-32601, "Method not found")
                 "slash.exec" -> {
                     goalStatusFailure?.let { throw it }
                     json(goalStatusResult)

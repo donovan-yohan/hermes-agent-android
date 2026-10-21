@@ -508,7 +508,7 @@ sealed interface GatewayProcessKillOutcome {
 }
 
 sealed interface GatewayGoalStatusOutcome {
-    data class Available(val goal: ComposerGoalStatus) : GatewayGoalStatusOutcome
+    data class Available(val goal: ComposerGoalStatus?) : GatewayGoalStatusOutcome
     data object Unsupported : GatewayGoalStatusOutcome
     data object Failed : GatewayGoalStatusOutcome
 }
@@ -1352,12 +1352,11 @@ internal class LiveGatewaySessionRepository(
             if (profileRouting == routing) return
             profileRouting = routing
             if (previous == routing.activeProfile) return
-            // The catalog and its hydrated membership are one profile's
-            // authoritative snapshot. Unlike session rows they must never
-            // merge across profiles; clear before a new request can publish.
+            // Activate cached backend truth synchronously; subsequent reads
+            // revalidate it without clearing known catalog or hydration.
             projectScopeRevision++
             lastHydratedProjectId = null
-            cache.clearProjects()
+            cache.activateProjectScope(routing.activeProfile)
             approvalModeRevision++
             confirmedApprovalMode = null
             approvalModeFlow.value = ApprovalModeState()
@@ -2141,9 +2140,10 @@ internal class LiveGatewaySessionRepository(
         )
 
     override suspend fun refreshProjects() {
+        val connection = connectionSnapshot()
+        val scope = projectScopeSnapshot(connection)
         val rehydrate = projectMutex.withLock {
-            val connection = connectionSnapshot()
-            val scope = projectScopeSnapshot(connection)
+            synchronized(stateLock) { ensureCurrentProject(connection, scope) }
             val payload = try {
                 connection.client.request(
                     "projects.tree",
@@ -2176,15 +2176,21 @@ internal class LiveGatewaySessionRepository(
             }
         }
         rehydrate?.let { projectId ->
-            runCatching { openProject(projectId) }
+            runCatching { openProject(projectId, connection, scope) }
                 .onFailure { failure -> if (failure is CancellationException) throw failure }
         }
     }
 
-    override suspend fun openProject(projectId: String) = projectMutex.withLock {
-        require(projectId.isNotBlank())
+    override suspend fun openProject(projectId: String) {
         val connection = connectionSnapshot()
         val scope = projectScopeSnapshot(connection)
+        openProject(projectId, connection, scope)
+    }
+
+    private suspend fun openProject(
+        projectId: String, connection: ConnectionSnapshot, scope: ProjectScopeSnapshot,
+    ) = projectMutex.withLock {
+        require(projectId.isNotBlank())
         synchronized(stateLock) {
             ensureCurrentProject(connection, scope)
             if (cache.state.value.projects.available == true &&
@@ -4451,6 +4457,8 @@ internal class LiveGatewaySessionRepository(
     }
 
     override suspend fun goalStatus(durableId: String): GatewayGoalStatusOutcome {
+        val lease = currentCoroutineContext()[GoalStatusReadLease]
+        if (lease?.isCurrent() == false) return GatewayGoalStatusOutcome.Failed
         val binding = try {
             ensureRuntime(durableId)
         } catch (failure: Throwable) {
@@ -4461,36 +4469,73 @@ internal class LiveGatewaySessionRepository(
         } catch (failure: Throwable) {
             return goalStatusPreflightFailureOutcome(failure)
         }
+        if (lease?.isCurrent() == false) return GatewayGoalStatusOutcome.Failed
         if (isCapabilityUnsupported(GatewayOptionalCapability.Goals, connection)) {
             return GatewayGoalStatusOutcome.Unsupported
         }
         return try {
-            val result = connection.client.request(
-                "slash.exec",
-                buildJsonObject {
+            val progressRevision = synchronized(stateLock) {
+                ensureCurrent(connection)
+                runtimeEventRevision(binding.runtimeId).progress
+            }
+            val goal = try {
+                val result = connection.client.request(
+                    "session.control.read",
+                    buildJsonObject { put("session_id", JsonPrimitive(binding.runtimeId)) },
+                ).asObject("session.control.read")
+                parseGatewayControlGoal(result) ?: return GatewayGoalStatusOutcome.Failed
+            } catch (failure: GatewayRpcError) {
+                // Compatibility is a missing method, never a refusal or a broken read.
+                if (failure.code != JSON_RPC_METHOD_NOT_FOUND) throw failure
+                synchronized(stateLock) {
+                    if (lease?.isCurrent() == false) return GatewayGoalStatusOutcome.Failed
+                    ensureCurrent(connection)
+                    if (identities.runtimeFor(binding.durableId) != binding.runtimeId) {
+                        return GatewayGoalStatusOutcome.Failed
+                    }
+                }
+                val result = connection.client.request("slash.exec", buildJsonObject {
                     put("command", JsonPrimitive("goal status"))
                     put("session_id", JsonPrimitive(binding.runtimeId))
-                },
-            ).asObject("slash.exec")
-            val rawText = result.jsonString("output") ?: return GatewayGoalStatusOutcome.Failed
-            val safeText = safeGatewayStatusText(rawText).takeIf(String::isNotEmpty)
-                ?: return GatewayGoalStatusOutcome.Failed
-            val goal = synchronized(stateLock) {
+                }).asObject("slash.exec")
+                val text = result.jsonString("output")?.let(::safeGatewayStatusText)?.takeIf(String::isNotBlank)
+                    ?: return GatewayGoalStatusOutcome.Failed
+                val previous = synchronized(stateLock) { cache.session(binding.durableId)?.composerStatus?.goal }
+                val parsed = parseGatewayGoalStatus(text, previous)
+                GatewayGoalStatusOutcome.Available(parsed.takeUnless { it.state == ComposerGoalState.None })
+            }
+            synchronized(stateLock) {
+                if (lease?.isCurrent() == false) return GatewayGoalStatusOutcome.Failed
                 ensureCurrent(connection)
                 if (identities.runtimeFor(binding.durableId) != binding.runtimeId) {
                     return GatewayGoalStatusOutcome.Failed
                 }
-                val parsed = parseGatewayGoalStatus(safeText, cache.session(binding.durableId)?.composerStatus?.goal)
-                updateComposerStatus(binding.durableId, binding.runtimeId) { status -> status.copy(goal = parsed) }
-                parsed
+                // Streamed progress or a newer readback owns the composer now.
+                if (runtimeEventRevision(binding.runtimeId).progress != progressRevision) {
+                    return GatewayGoalStatusOutcome.Failed
+                }
+                updateComposerStatus(binding.durableId, binding.runtimeId) { status -> status.copy(goal = goal.goal) }
+                // A readback is newer progress too: an open awaiting history must
+                // not clear it with its earlier resume/activate snapshot.
+                advanceProgressEventRevision(binding.runtimeId)
             }
-            GatewayGoalStatusOutcome.Available(goal)
+            goal
         } catch (failure: Throwable) {
-            if (failure.isUnsupportedGatewayCapability()) {
-                markCapabilityUnsupported(GatewayOptionalCapability.Goals, connection)
-                GatewayGoalStatusOutcome.Unsupported
-            } else {
-                GatewayGoalStatusOutcome.Failed
+            if (failure is CancellationException) throw failure
+            synchronized(stateLock) {
+                if (lease?.isCurrent() == false) return GatewayGoalStatusOutcome.Failed
+                try {
+                    ensureCurrent(connection)
+                } catch (_: GatewayRpcException) {
+                    return GatewayGoalStatusOutcome.Failed
+                }
+                if (identities.runtimeFor(binding.durableId) != binding.runtimeId) return GatewayGoalStatusOutcome.Failed
+                if (failure is GatewayRpcError && failure.code == JSON_RPC_METHOD_NOT_FOUND) {
+                    markCapabilityUnsupported(GatewayOptionalCapability.Goals, connection)
+                    GatewayGoalStatusOutcome.Unsupported
+                } else {
+                    GatewayGoalStatusOutcome.Failed
+                }
             }
         }
     }
@@ -6836,6 +6881,7 @@ internal class LiveGatewaySessionRepository(
         reset.ephemeralDurableIds.forEach(cache::removeSession)
         if (reset.clearProjects) {
             cache.clearProjects()
+            cache.activateProjectScope(profileRouting.activeProfile)
             cache.clearConnectionScopedFields(
                 preserveGatewayQueue = reset.reconnectDurableIds.isNotEmpty(),
             )
@@ -7043,6 +7089,7 @@ internal class LiveGatewaySessionRepository(
         connection != null &&
             connection.generation == connectionGeneration &&
             clientFlow.value === connection.client &&
+            connection.endpointGeneration == cache.endpointGeneration.value &&
             scope.revision == projectScopeRevision &&
             scope.profile == profileRouting.activeProfile
 

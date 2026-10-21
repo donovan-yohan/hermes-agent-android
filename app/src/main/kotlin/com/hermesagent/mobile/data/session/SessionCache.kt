@@ -11,8 +11,18 @@ data class SessionCacheState(
     val transcripts: Map<String, List<TranscriptEntry>> = emptyMap(),
     /** Canonical durable-id aliases published atomically with a re-home. */
     val rehomes: Map<String, String> = emptyMap(),
-    val projects: ProjectCatalogState = ProjectCatalogState(),
-)
+    /** Exact RPC route: omitted launch (null) is not literal "default". */
+    val activeProjectScope: String? = null,
+    val projectSnapshots: Map<String?, ProjectCatalogState> = emptyMap(),
+) {
+    val projects: ProjectCatalogState get() = projectsForScope(activeProjectScope)
+    fun projectsForScope(profile: String?): ProjectCatalogState = projectSnapshots[profile] ?: UNKNOWN_PROJECTS
+
+    internal fun withProjects(catalog: ProjectCatalogState): SessionCacheState =
+        if (catalog == projects) this else copy(projectSnapshots = projectSnapshots + (activeProjectScope to catalog))
+}
+
+private val UNKNOWN_PROJECTS = ProjectCatalogState()
 
 /**
  * The cache of backend truth.
@@ -115,7 +125,7 @@ class SessionCache {
             if (sessions == current.sessions && catalog == current.projects) {
                 current
             } else {
-                current.copy(sessions = sessions, projects = catalog)
+                current.withProjects(catalog).copy(sessions = sessions)
             }
         }
     }
@@ -169,7 +179,7 @@ class SessionCache {
             if (mergedSessions == current.sessions && catalog == current.projects) {
                 current
             } else {
-                current.copy(sessions = mergedSessions, projects = catalog)
+                current.withProjects(catalog).copy(sessions = mergedSessions)
             }
         }
     }
@@ -189,10 +199,17 @@ class SessionCache {
         _endpointGeneration.update { it + 1 }
     }
 
-    /** A new Gateway generation must not paint the previous profile's project catalog. */
+    /** Restore backend project truth only; live sessions/transcripts and UI selection never rewind. */
+    fun activateProjectScope(profile: String?) {
+        _state.update { current ->
+            if (current.activeProjectScope == profile) current else current.copy(activeProjectScope = profile)
+        }
+    }
+
+    /** Reconnect invalidates every transport-owned catalog, not just the visible one. */
     fun clearProjects() {
         _state.update { current ->
-            if (current.projects == ProjectCatalogState()) current else current.copy(projects = ProjectCatalogState())
+            if (current.projectSnapshots.isEmpty()) current else current.copy(projectSnapshots = emptyMap())
         }
     }
 
@@ -221,27 +238,36 @@ class SessionCache {
     fun markProjectsUnavailable() {
         _state.update { current ->
             val unavailable = ProjectCatalogState(available = false)
-            if (current.projects == unavailable) current else current.copy(projects = unavailable)
+            current.withProjects(unavailable)
         }
     }
 
     /** Explicit tombstone. The only way a session leaves the cache. */
     fun removeSession(id: String) {
         _state.update { current ->
-            if (!current.sessions.containsKey(id) && !current.transcripts.containsKey(id)) {
+            val hasMembership = current.projectSnapshots.values.any { catalog ->
+                catalog.memberships.values.any { id in it } ||
+                    catalog.projects.values.any { project -> project.previewSessions.any { it.id == id } }
+            }
+            if (!current.sessions.containsKey(id) && !current.transcripts.containsKey(id) && !hasMembership &&
+                current.rehomes.none { (from, to) -> from == id || to == id }
+            ) {
                 current
             } else {
-                val projects = current.projects.copy(
-                    projects = current.projects.projects.mapValues { (_, project) ->
-                        project.copy(previewSessions = project.previewSessions.filterNot { it.id == id })
-                    },
-                    memberships = current.projects.memberships.mapValues { (_, ids) -> ids.filterNot { it == id } },
-                )
+                val snapshots = current.projectSnapshots.mapValues { (_, catalog) ->
+                    val next = catalog.copy(
+                        projects = catalog.projects.mapValues { (_, project) ->
+                            project.copy(previewSessions = project.previewSessions.filterNot { it.id == id })
+                        },
+                        memberships = catalog.memberships.mapValues { (_, ids) -> ids.filterNot { it == id } },
+                    )
+                    if (next == catalog) catalog else next
+                }
                 current.copy(
                     sessions = current.sessions - id,
                     transcripts = current.transcripts - id,
                     rehomes = current.rehomes.filter { (from, to) -> from != id && to != id },
-                    projects = projects,
+                    projectSnapshots = snapshots,
                 )
             }
         }
@@ -319,24 +345,28 @@ class SessionCache {
                     remove(targetId)
                     if (fromId != targetId) this[fromId] = targetId
                 }
-            val projects = current.projects.copy(
-                projects = current.projects.projects.mapValues { (_, project) ->
-                    project.copy(
-                        previewSessions = project.previewSessions
-                            .map { preview -> if (preview.id == fromId || preview.id == targetId) canonical else preview }
-                            .distinctBy(SessionSummary::id),
-                    )
-                },
-                memberships = current.projects.memberships.mapValues { (_, ids) ->
-                    ids.map { id -> if (id == fromId) targetId else id }.distinct()
-                },
-            )
+            val snapshots = current.projectSnapshots.mapValues { (profile, catalog) ->
+                if (profile != canonical.remoteProfile) return@mapValues catalog
+                val next = catalog.copy(
+                    projects = catalog.projects.mapValues { (_, project) ->
+                        project.copy(
+                            previewSessions = project.previewSessions
+                                .map { preview -> if (preview.id == fromId || preview.id == targetId) canonical else preview }
+                                .distinctBy(SessionSummary::id),
+                        )
+                    },
+                    memberships = catalog.memberships.mapValues { (_, ids) ->
+                        ids.map { id -> if (id == fromId) targetId else id }.distinct()
+                    },
+                )
+                if (next == catalog) catalog else next
+            }
             if (sessions == current.sessions && transcripts == current.transcripts &&
-                rehomes == current.rehomes && projects == current.projects
+                rehomes == current.rehomes && snapshots == current.projectSnapshots
             ) {
                 current
             } else {
-                current.copy(sessions = sessions, transcripts = transcripts, rehomes = rehomes, projects = projects)
+                current.copy(sessions = sessions, transcripts = transcripts, rehomes = rehomes, projectSnapshots = snapshots)
             }
         }
     }

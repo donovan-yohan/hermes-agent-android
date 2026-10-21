@@ -334,6 +334,22 @@ class CanonicalGatewayRpcTest {
         peer.rpc.close()
     }
 
+    @Test
+    fun `repository goal read uses canonical raw session id and retained owning profile without slash`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        assertNotEquals("canonical-public", key)
+        assertEquals(GatewayGoalStatusOutcome.Available(null), repository.goalStatus(key))
+        val read = peer.frames.single { it["method"] == JsonPrimitive("session.control.read") }.getValue("params").jsonObject
+        assertEquals(buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") }, read)
+        assertFalse(peer.frames.any { it["method"] == JsonPrimitive("slash.exec") })
+        peer.rpc.close()
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
         var refuseRegistryAfterCreate = false
@@ -366,6 +382,7 @@ class CanonicalGatewayRpcTest {
                         created = true
                         snapshot()
                     }
+                    "session.control.read" -> """{"control":{"goal":null,"loop":null,"heartbeat":null,"revision":"","updated_at":0}}"""
                     "session.info" -> confirmationOwner?.let { """{"profile_id":"$it","desktop_protocol":"hermes-gateway-v1"}""" } ?: "{}"
                     "session.resume" -> snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
                     "session.list" -> {

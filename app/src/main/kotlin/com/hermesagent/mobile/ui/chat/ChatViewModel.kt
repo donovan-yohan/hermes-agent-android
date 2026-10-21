@@ -73,7 +73,6 @@ import com.hermesagent.mobile.data.gateway.SessionListPaging
 import com.hermesagent.mobile.data.gateway.ProfileRouting
 import com.hermesagent.mobile.data.gateway.GatewayRpcException
 import com.hermesagent.mobile.data.gateway.GatewayConnectionStatus
-import com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessKillOutcome
 import com.hermesagent.mobile.data.gateway.GatewayProcessListOutcome
 import com.hermesagent.mobile.data.gateway.BranchPlan
@@ -661,6 +660,7 @@ internal class ChatViewModel(
         }
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
+    private var projectLoadGeneration = 0L
     private var pendingProfileUnavailableNotice = false
     private val sidebarGrouping = MutableStateFlow(SidebarGrouping.Date)
 
@@ -693,6 +693,7 @@ internal class ChatViewModel(
     private val createdProjectBySession = mutableMapOf<String, String>()
     @Volatile private var navigationGeneration = 0L
         set(value) { field = value; gatewayLogsController.dismiss() }
+    @Volatile private var goalStatusReadGeneration = 0L
     /**
      * The newest session-open request. `repository.openSession` waits on the
      * Gateway, so a tap can outlive the chat it named; the completion carries
@@ -916,6 +917,7 @@ internal class ChatViewModel(
         // profile-scoped and reject unknown profiles. Catalog state therefore
         // belongs only to the profile it was read from.
         val profileScopeState = navigation.sidebarView.profileScope
+        val projectCatalog = cacheState.projectsForScope(profileScopeState.sessionProfileParam)
         val projectScope = projectProfileScopeOf(profileScopeState)
         val sidebarCatalog = sidebarCatalogProjection.derive(
             cacheState, cacheAndEndpoint.second, profileScopeState, navigation.projectId, searchState.query,
@@ -1052,7 +1054,7 @@ internal class ChatViewModel(
             // matching it is the point.
             sessionsLoading = bundle.second.sessionPaging.loading && scopedSessions.isEmpty(),
             projects = projects,
-            projectsAvailable = cacheState.projects.available,
+            projectsAvailable = projectCatalog.available,
             sidebarGrouping = navigation.sidebarView.grouping,
             profileRail = ProfileRailState(
                 profiles = navigation.sidebarView.roster.profiles,
@@ -1074,8 +1076,9 @@ internal class ChatViewModel(
             // opened from its project and is null otherwise. That is the
             // honest answer: the catalog has not been asked.
             activeSessionProject = displayedActiveId?.let { id ->
-                cacheState.projects.projects.values.firstOrNull { project ->
-                    id in cacheState.projects.memberships[project.id].orEmpty()
+                projectCatalog.projects.values.firstOrNull { project ->
+                    active?.remoteProfile == profileScopeState.sessionProfileParam &&
+                        id in projectCatalog.memberships[project.id].orEmpty()
                 }
             },
             diagnosticsEndpointGeneration = cacheAndEndpoint.second,
@@ -1334,11 +1337,17 @@ internal class ChatViewModel(
         viewModelScope.launch {
             var seenRouting = false
             var projectSubject: String? = null
+            var sessionRefresh: Job? = null
+            var projectRefresh: Job? = null
+            var approvalRefresh: Job? = null
             combine(profileScope, profileRepository.roster) { scope, roster ->
                 ProfileRouting(scope.sessionProfileParam, sessionListProfiles(scope, roster.profiles))
             }
                 .distinctUntilChanged()
                 .collect { routing ->
+                    sessionRefresh?.cancel()
+                    projectRefresh?.cancel()
+                    approvalRefresh?.cancel()
                     val first = !seenRouting
                     seenRouting = true
                     val projectSubjectChanged = projectSubject != routing.activeProfile
@@ -1348,7 +1357,7 @@ internal class ChatViewModel(
                     if (!first && projectSubjectChanged) {
                         // A project detail, its loading marker and a failure are
                         // UI state about the scope just left. The repository
-                        // clears backend snapshots above; this clears the rest
+                        // activates backend snapshots above; this clears the rest
                         // before a new profile can paint.
                         selectedProjectId.value = null
                         projectLoadingId.value = null
@@ -1372,7 +1381,11 @@ internal class ChatViewModel(
                     if (!first &&
                         repository.connectionState.value.status == GatewayConnectionStatus.Connected
                     ) {
-                        launch { runCatching { repository.refreshApprovalMode() } }
+                        approvalRefresh = launch {
+                            if (profileScope.value.sessionProfileParam != routing.activeProfile) return@launch
+                            runCatching { repository.refreshApprovalMode() }
+                                .onFailure { if (it is CancellationException) throw it }
+                        }
                     }
                     // A scope that has not moved off the Gateway's own profile
                     // is what the connection's own bootstrap already listed;
@@ -1380,8 +1393,19 @@ internal class ChatViewModel(
                     // session.list for the same rows.
                     if (first && routing == ProfileRouting()) return@collect
                     if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return@collect
-                    runCatching { repository.refreshSessions() }
-                    runCatching { repository.refreshProjects() }
+                    val endpoint = cache.endpointGeneration.value
+                    sessionRefresh = launch {
+                        if (profileScope.value.sessionProfileParam != routing.activeProfile ||
+                            cache.endpointGeneration.value != endpoint) return@launch
+                        runCatching { repository.refreshSessions() }
+                            .onFailure { if (it is CancellationException) throw it }
+                    }
+                    projectRefresh = launch {
+                        if (profileScope.value.sessionProfileParam != routing.activeProfile ||
+                            cache.endpointGeneration.value != endpoint) return@launch
+                        runCatching { repository.refreshProjects() }
+                            .onFailure { if (it is CancellationException) throw it }
+                    }
                 }
         }
         // The other half of the archived pool's scope: which backend it came
@@ -1435,6 +1459,7 @@ internal class ChatViewModel(
                 }
                 if (connection.status == observedConnectionStatus) return@collect
                 observedConnectionStatus = connection.status
+                goalStatusReadGeneration += 1
                 invalidateComposerRuntimeState()
                 val connected = connection.status == GatewayConnectionStatus.Connected
                 profileRepository.connectionChanged(
@@ -1459,7 +1484,8 @@ internal class ChatViewModel(
         viewModelScope.launch {
             cache.state.collect { state ->
                 val projectId = selectedProjectId.value
-                if (state.projects.available == true && projectId != null && projectId !in state.projects.projects) {
+                val catalog = state.projectsForScope(profileScope.value.sessionProfileParam)
+                if (catalog.available == true && projectId != null && projectId !in catalog.projects) {
                     navigationGeneration += 1
                     invalidateCompletionState()
                     selectedProjectId.value = null
@@ -2067,7 +2093,7 @@ internal class ChatViewModel(
     }
 
     fun selectProject(id: String) {
-        if (cache.state.value.projects.projects[id] == null) return
+        if (cache.state.value.projectsForScope(profileScope.value.sessionProfileParam).projects[id] == null) return
         navigationGeneration += 1
         invalidateCompletionState()
         selectedProjectId.value = id
@@ -2115,27 +2141,52 @@ internal class ChatViewModel(
     /** Refresh when the compact drawer opens; the wide rail stays live through Gateway events. */
     fun refreshSessionNavigation() {
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return
+        val navigation = navigationGeneration
+        val profile = profileScopeGeneration
+        val endpoint = cache.endpointGeneration.value
+        val connection = connectionGeneration()
+        fun stillOwns() = navigation == navigationGeneration && profile == profileScopeGeneration &&
+            endpoint == cache.endpointGeneration.value && connection == connectionGeneration()
         viewModelScope.launch {
+            if (!stillOwns()) return@launch
             runCatching { repository.refreshProjects() }
                 .onFailure { failure ->
                     if (failure is CancellationException) throw failure
-                    noticeLine = "Projects could not be refreshed. Try opening Sessions again."
+                    if (stillOwns()) noticeLine = "Projects could not be refreshed. Try opening Sessions again."
                 }
         }
     }
 
     private fun loadProject(id: String) {
-        projectLoadingId.value = id
+        val request = ++projectLoadGeneration
+        val navigation = navigationGeneration
+        val profile = profileScopeGeneration
+        val endpoint = cache.endpointGeneration.value
+        val connection = connectionGeneration()
+        val route = profileScope.value.sessionProfileParam
+        fun stillOwns() = navigationGeneration == navigation && profileScopeGeneration == profile &&
+            cache.endpointGeneration.value == endpoint && connectionGeneration() == connection &&
+            profileScope.value.sessionProfileParam == route && selectedProjectId.value == id
+        projectLoadingId.value = id.takeUnless {
+            it in cache.state.value.projectsForScope(route).hydratedProjectIds
+        }
         noticeLine = null
         viewModelScope.launch {
-            runCatching { repository.openProject(id) }
-                .onFailure { failure ->
-                    if (failure is CancellationException) throw failure
-                    if (selectedProjectId.value == id) {
-                        noticeLine = "This project could not be opened. Check the Gateway and try again."
+            try {
+                if (!stillOwns()) return@launch
+                runCatching { repository.openProject(id) }
+                    .onFailure { failure ->
+                        if (failure is CancellationException) throw failure
+                        if (stillOwns()) {
+                            noticeLine = "This project could not be opened. Check the Gateway and try again."
+                        }
                     }
+            } finally {
+                // Navigation can revoke feedback without replacing this request's spinner.
+                if (request == projectLoadGeneration && projectLoadingId.value == id) {
+                    projectLoadingId.value = null
                 }
-            if (projectLoadingId.value == id) projectLoadingId.value = null
+            }
         }
     }
 
@@ -2187,9 +2238,50 @@ internal class ChatViewModel(
         }
     }
 
+    /** Keep the displayed preview's owner through resume, even if its raw id now belongs to another profile. */
+    fun selectProjectSession(session: SessionSummary) {
+        val profile = session.remoteProfile
+        // An omitted launch owner cannot be expressed by the explicit-profile
+        // resume overload. Do not infer it from a foreign global slot.
+        if (profile == null) {
+            if (cache.session(session.id)?.remoteProfile == null) selectSession(session.id)
+            return
+        }
+        val generation = ++navigationGeneration
+        val endpoint = cache.endpointGeneration.value
+        val selection = if (session.source == "cron" || cronWriteGateApplies(session.id)) {
+            sessionSelectionFence.capture(endpoint, session.id, profile)
+        } else kotlin.coroutines.EmptyCoroutineContext
+        viewModelScope.launch(selection) {
+            try {
+                // Until the owner-aware open succeeds, leave the current pane
+                // alone: homing the raw id first would paint the foreign row
+                // and run its mark-read/queue side effects.
+                val canonicalId = repository.openSessionAtEndpoint(session.id, profile, endpoint)
+                if (navigationGeneration != generation || cache.endpointGeneration.value != endpoint) return@launch
+                // Retire an older ordinary open only once this owner-aware open
+                // succeeds; a failed preview must not strand the current pane.
+                sessionOpenGeneration += 1
+                if (activeSessionId.value != canonicalId) {
+                    flushDraft()
+                    clearBotChatCapability()
+                    rehome(canonicalId)
+                }
+                sessionOpen.value = SessionOpenState.Idle
+                refreshComposer(canonicalId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                if (navigationGeneration == generation && cache.endpointGeneration.value == endpoint) {
+                    noticeLine = SESSION_OPEN_FAILED_COPY
+                }
+            }
+        }
+    }
+
     fun selectSession(id: String) {
+        navigationGeneration += 1
         if (activeSessionId.value != id) {
-            navigationGeneration += 1
             flushDraft()
             clearBotChatCapability()
             rehome(id)
@@ -4007,17 +4099,24 @@ internal class ChatViewModel(
         historyRevision.value += 1
     }
 
-    /** Optional status capabilities remain explicitly unavailable on older Gateways. */
+    /** Automatic hydration is best-effort, like Desktop's background goal refresh. */
     fun composerStatusOpened() {
+        val request = ++goalStatusReadGeneration
+        if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return
         val sessionId = activeSessionId.value ?: return
+        val endpoint = cache.endpointGeneration.value
+        val connection = connectionGeneration()
+        val navigation = navigationGeneration
+        val profile = profileScopeGeneration
+        val lease = com.hermesagent.mobile.data.gateway.GoalStatusReadLease {
+            request == goalStatusReadGeneration && endpoint == cache.endpointGeneration.value &&
+                connection == connectionGeneration() && navigation == navigationGeneration &&
+                profile == profileScopeGeneration && activeSessionId.value == sessionId &&
+                repository.connectionState.value.status == GatewayConnectionStatus.Connected
+        }
         refreshProcesses(sessionId, showFailure = false)
-        viewModelScope.launch {
-            when (repository.goalStatus(sessionId)) {
-                GatewayGoalStatusOutcome.Failed -> if (activeSessionId.value == sessionId) {
-                    noticeLine = "Goal status could not be refreshed. Try again."
-                }
-                else -> Unit
-            }
+        viewModelScope.launch(lease) {
+            if (lease.isCurrent()) repository.goalStatus(sessionId)
         }
     }
 

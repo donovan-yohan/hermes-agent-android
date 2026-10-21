@@ -83,7 +83,7 @@ including the Default badge living on the detail rather than the row.
 | Per-profile Electron backend pool (`store/profile.ts:303`) | The `profile` parameter on the session RPCs | Electron-only; the parameter is the portable equivalent |
 | Cross-profile union via `GET /api/profiles/sessions?profile=all` | A bounded `session.list` fan-out: the launch profile plus each named profile | The JSON-RPC lane has no twin for that REST route. Rows land in the backend-authoritative cache, which merges and never drops |
 | Session rows carry `profile` (`/api/profiles/sessions`) | Rows out of a named profile's leg are stamped with the profile that was asked for, except any row the launch leg already answered with, and nothing at all when a requested launch leg failed | `session.list`'s compact rows carry no profile at the pin (`methods_session.py:267-282`). The launch-profile leg is left unstamped, which is the `default` bucket by the filter's own rule (`profile-scope.ts:12`); a profile a `session.info` event named authoritatively is never taken away by a later listing. A profile the Gateway cannot resolve is not an error there — `_profile_home` answers None and `_profile_db` hands back the launch handle (`server.py:1476-1491,1519-1533`) — so the named leg can return the launch profile's own rows, and the fan-out asks the launch profile first precisely so those rows can be left alone |
-| Per-profile project catalog (its backend resolves `projects.tree` under that profile's home) | Named scopes send that explicit profile to `projects.tree`, `projects.project_sessions`, and `projects.create`; switching scope clears catalog, membership, drill-in, notices and loading before the new snapshot answers | `projects.tree` and `projects.project_sessions` are `@_profile_scoped` (`tui_gateway/methods_config.py:15-24,85-113` @ `564aef2946c436500a5e80ee117b66b789b3f99a`); `projects.create` is likewise profile-scoped (`tui_gateway/methods_projects.py:27-45,91-99` @ the same pin). Tree rows are stamped with the resolved response profile (`methods_config.py:77-82`). Blank/omitted remains the Gateway launch profile |
+| Per-profile project catalog (its backend resolves `projects.tree` under that profile's home) | Named scopes send that explicit profile to `projects.tree`, `projects.project_sessions`, and `projects.create`; switching restores that profile's cached catalog and membership while clearing drill-in, notices and loading, then revalidates in the background | `projects.tree` and `projects.project_sessions` are `@_profile_scoped` (`tui_gateway/methods_config.py:15-24,85-113` @ `564aef2946c436500a5e80ee117b66b789b3f99a`); `projects.create` is likewise profile-scoped (`tui_gateway/methods_projects.py:27-45,91-99` @ the same pin). Blank/omitted remains the Gateway launch profile and is cached separately from literal `default`. See the scoped caching follow-up below |
 | Roster is `$profiles`, a renderer atom | `ProfileRosterCache`, with the same epoch guard | Same invariant, this app's authority model |
 | `plug` pill beside Manage deep-linking to the Gateways page while only one connection exists (`profile-switcher.tsx:334-341`) | Not ported | Gateway identity is a separate surface here: PR #76 owns the connections registry and its switcher at the sidebar head. A second route to it from the foot would give this app two answers to "where do I change Gateway" |
 | — | One `profiles.list` answer replaces the roster; a failed one keeps the last good | `profiles.list` enumerates every profile and emits every field of each row (`methods_profiles.py:203-255`), so layering fields could only resurrect a model, colour or display name the host cleared. The "merge, never clobber" rule is carried by the failure path and the epoch guard, which is where it is actually load-bearing |
@@ -137,9 +137,10 @@ profile that does not exist.
 *Reason:* mobile persists the scope. At the Project-contract pin, profile-scoped
 handlers reject an unknown name while blank still means the launch profile
 (`tui_gateway/server.py:1556-1583,1599-1613` @
-`564aef2946c436500a5e80ee117b66b789b3f99a`). Project snapshots are cleared
-before the scoped read and its failure leaves them empty; it can never paint the
-launch profile's catalog under a deleted name. A loaded roster still returns the
+`564aef2946c436500a5e80ee117b66b789b3f99a`). A first visit has no cached
+snapshot; a failed read never substitutes the launch profile's catalog. A
+previously visited scope can retain its last known snapshot until revalidation
+or the roster confirms removal. A loaded roster still returns the
 scope to the Gateway profile with `That profile is no longer available.`
 
 **Leaving a profile leaves the project drill-in too.**
@@ -148,6 +149,33 @@ that profile's `HERMES_HOME`.
 *Reason:* keeping another profile's project open while scoped elsewhere would
 show a membership list that cannot contain a visible row. The switch exits to the
 profile's own session list, which is where Desktop lands too.
+
+**Project snapshots survive profile switches, not endpoint changes.**
+This follow-up inspected Desktop `apps/desktop/src/store/projects.ts:60-86,417-443`
+at `ddabd3837862022a6053331fe3ba97cf9716b9e3`: backend membership is authoritative,
+and a transient refresh failure retains cached rows. Android's in-memory
+per-profile snapshot map is the requested mobile implementation, not a claim
+about Desktop's internal cache structure. Catalogs and hydrated memberships
+restore synchronously while session and project reads run independently in
+the background. A warm detail view, including a known empty project, does not
+replace its rows with a loading screen during revalidation. First visits still
+wait for backend truth.
+
+Snapshots do not restore old session or transcript maps. Tombstones and rehomes
+update retained memberships; a row owned by another profile cannot satisfy a
+cached membership. Preview clicks retain their displayed profile through
+resume, without adopting a conflicting raw-id slot before the open succeeds.
+An omitted-launch preview that conflicts with a named owner's live slot waits
+for revalidation rather than offering an ambiguous click. The actual rendered
+preview-to-resume path is covered by `CachedProjectPreviewJourneyTest`.
+Endpoint switches and transport replacement clear every
+snapshot. Request fences reject delayed and queued reads after profile ABA,
+connection or endpoint changes. `ProfileProjectCacheRepositoryTest`,
+`ProfileProjectSnapshotTest`, `SidebarCatalogProjectionTest` and
+`ChatViewModelTest` exercise these boundaries. `ChatJourneyTest` checks that
+warm rows remain rendered while a detail refresh is held. Injected virtual
+delays demonstrate network-independent warm restoration, not physical latency
+measurements. Existing visual capture debt remains below.
 
 **The composer queue's third key component is appended, not always present.**
 `ComposerQueueScope.forConnectionProfile` adds a `hermes:<name>` component only
@@ -220,6 +248,7 @@ app-wide `HermesTokens.overlayScrim`, classified once on
 | The condensed `ProfileDropdown` radio group lists named profiles only (`profile-switcher.tsx:722-829`) | mobile-adaptation | The sheet pins the roster's flagged default row at its head, home mark and all, selected while the scope is default; with no flagged row it heads nothing | Desktop's own fleet groups head a gateway's list with its default agent (`profile-switcher.tsx:808-824`). The pill the strip collapsed away from reads the scope rather than the action, so in the unified view the only route back to the default profile wears a `layers` glyph with no tooltip a touch reader can hover; the head row is the visible affordance. Its presence rule is the rail's own (`profile-switcher.tsx:407-444`): where the rail has no default row to render it shows the layers pill alone, so a head row there would offer a switch the rail does not. Rendered side-by-side: pending: #147 |
 | Manage is always rendered, because the renderer only runs inside a connected app | mobile-adaptation | The rail is absent until a Gateway answers, and stays after that | This app can be looking at no Gateway at all, and before the first answer a rail has nothing to switch between; once one `profiles.list` has answered it stays, because it is the only way out of a profile scope |
 | The `.env` pill reads `profile.has_env`, served only by the REST route (`hermes_cli/web_server.py:14498`) | mobile-adaptation | Parsed and rendered when a Gateway offers it; dark at this pin | Reading the roster over REST would tie the surface to a route only one of this app's two connection legs reaches |
+| Backend-authoritative project rows remain cached on transient refresh failure (`apps/desktop/src/store/projects.ts:60-86,417-443` @ `ddabd3837862022a6053331fe3ba97cf9716b9e3`) | mobile-adaptation | Per-profile in-memory catalogs and hydrated membership restore immediately, then revalidate without hiding warm rows | One shared mobile transport serves several profiles, so retained snapshots avoid repeated blank/loading states without replaying old live sessions. Exact nullable routing and endpoint fences prevent cross-owner reuse; `ProfileProjectCacheRepositoryTest`, `ProfileProjectSnapshotTest`, `ChatViewModelTest`, `ChatJourneyTest`. Rendered side-by-side remains pending: #262 |
 | Scope follows a live gateway, so it cannot name a profile that does not exist | drift | A stale persisted scope stamps the launch profile's rows with the missing name until each is opened | #81 |
 | Profile create, rename, delete, export/import, and the SOUL.md editor | omission | Absent | non-goal: the roster is read-only |
 | Avatars (`profiles.get_asset`) | omission | `has_avatar` is parsed; the asset is never fetched | non-goal: a read-only roster does not fetch profile assets |

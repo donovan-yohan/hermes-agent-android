@@ -153,6 +153,7 @@ fun SessionList(
     onSelect: (String) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
+    onSelectProjectSession: (SessionSummary) -> Unit = {},
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
     /** Not `suspend`: the row that owns the press leaves the list it was on. */
@@ -484,7 +485,7 @@ fun SessionList(
                             activeSessionId = activeSessionId,
                             nowMillis = nowMillis,
                             onOpen = { onSelectProject(project.id) },
-                            onSelectSession = onSelect,
+                            onSelectSession = onSelectProjectSession,
                             canCreate = canCreate,
                             onCreate = { onSelectProject(project.id); onCreate() },
                         )
@@ -983,7 +984,7 @@ private fun ProjectRow(
     activeSessionId: String?,
     nowMillis: Long,
     onOpen: () -> Unit,
-    onSelectSession: (String) -> Unit,
+    onSelectSession: (SessionSummary) -> Unit,
     canCreate: Boolean,
     onCreate: () -> Unit,
 ) {
@@ -1052,7 +1053,7 @@ private fun ProjectRow(
             SessionRow(
                 session = session,
                 active = session.id == activeSessionId,
-                onClick = { onSelectSession(session.id) },
+                onClick = { onSelectSession(session) },
                 nowMillis = nowMillis,
             )
         }
