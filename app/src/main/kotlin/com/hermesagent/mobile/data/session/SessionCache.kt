@@ -83,9 +83,9 @@ class SessionCache {
      * Replace the authoritative project overview and merge its preview rows.
      *
      * [authoritativeSessionProfiles] says whether the caller's read was scoped
-     * by the request it made, so a preview's absent profile is a positive
-     * "the launch profile owns this" rather than missing metadata. Only the
-     * request-scoped project RPCs can claim that.
+     * by the request it made. A stamped concrete owner stays concrete; an absent
+     * stamp is authoritative legacy launch ownership, not missing metadata.
+     * Only the request-scoped project RPCs can claim that.
      */
     fun replaceProjectOverview(
         rows: List<ProjectSummary>,
@@ -121,6 +121,11 @@ class SessionCache {
                 memberships = memberships,
                 hydratedProjectIds = existingHydrated,
                 available = true,
+                sessionProfiles = buildMap {
+                    val retainedIds = memberships.values.flatten().toSet()
+                    putAll(current.projects.sessionProfiles.filterKeys { it in retainedIds })
+                    rows.flatMap(ProjectSummary::previewSessions).forEach { put(it.id, it.remoteProfile) }
+                },
             )
             if (sessions == current.sessions && catalog == current.projects) {
                 current
@@ -135,7 +140,7 @@ class SessionCache {
      *
      * [authoritativeSessionProfiles] carries the same meaning as in
      * [replaceProjectOverview]: a request-scoped read's absent profile is
-     * launch ownership, and it replaces the row's previous owner.
+     * legacy launch ownership, and a concrete stamp replaces the previous owner.
      */
     fun replaceProjectDetails(
         project: ProjectSummary,
@@ -175,6 +180,7 @@ class SessionCache {
                 memberships = current.projects.memberships + (project.id to sessions.map(SessionSummary::id)),
                 hydratedProjectIds = current.projects.hydratedProjectIds + project.id,
                 available = true,
+                sessionProfiles = current.projects.sessionProfiles + sessions.associate { it.id to it.remoteProfile },
             )
             if (mergedSessions == current.sessions && catalog == current.projects) {
                 current
@@ -260,6 +266,7 @@ class SessionCache {
                             project.copy(previewSessions = project.previewSessions.filterNot { it.id == id })
                         },
                         memberships = catalog.memberships.mapValues { (_, ids) -> ids.filterNot { it == id } },
+                        sessionProfiles = catalog.sessionProfiles - id,
                     )
                     if (next == catalog) catalog else next
                 }
@@ -346,7 +353,9 @@ class SessionCache {
                     if (fromId != targetId) this[fromId] = targetId
                 }
             val snapshots = current.projectSnapshots.mapValues { (profile, catalog) ->
-                if (profile != canonical.remoteProfile) return@mapValues catalog
+                val owner = if (catalog.sessionProfiles.containsKey(fromId)) catalog.sessionProfiles[fromId]
+                    else profile
+                if (owner != canonical.remoteProfile) return@mapValues catalog
                 val next = catalog.copy(
                     projects = catalog.projects.mapValues { (_, project) ->
                         project.copy(
@@ -358,6 +367,9 @@ class SessionCache {
                     memberships = catalog.memberships.mapValues { (_, ids) ->
                         ids.map { id -> if (id == fromId) targetId else id }.distinct()
                     },
+                    sessionProfiles = if (catalog.sessionProfiles.containsKey(fromId)) {
+                        catalog.sessionProfiles - fromId + (targetId to canonical.remoteProfile)
+                    } else catalog.sessionProfiles,
                 )
                 if (next == catalog) catalog else next
             }

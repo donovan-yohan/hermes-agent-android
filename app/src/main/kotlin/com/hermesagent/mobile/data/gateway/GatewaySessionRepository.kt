@@ -2212,20 +2212,19 @@ internal class LiveGatewaySessionRepository(
             lastHydratedProjectId = projectId
             cache.replaceProjectDetails(
                 details.project.inRequestProfile(scope.profile),
-                details.sessions.map { it.copy(remoteProfile = scope.profile) },
+                details.sessions.map { it.copy(remoteProfile = it.remoteProfile ?: scope.profile) },
                 authoritativeSessionProfiles = true,
             )
         }
     }
 
     /**
-     * Project RPCs stamp the actual launch profile even when the request omitted
-     * it. The mobile rail calls that scope `default`, represented by null so
-     * subsequent RPC and REST calls still omit the profile. Cache publication
-     * marks this ownership authoritative, not missing metadata.
+     * Preserve the producer's actual owner, including on the omitted launch
+     * route. Only older unstamped rows need the explicit request as a fallback.
+     * The catalog's route key stays separate from session ownership.
      */
     private fun ProjectSummary.inRequestProfile(profile: String?): ProjectSummary = copy(
-        previewSessions = previewSessions.map { it.copy(remoteProfile = profile) },
+        previewSessions = previewSessions.map { it.copy(remoteProfile = it.remoteProfile ?: profile) },
     )
 
     override suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome {

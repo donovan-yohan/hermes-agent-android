@@ -163,7 +163,11 @@ wait for backend truth.
 
 Snapshots do not restore old session or transcript maps. Tombstones and rehomes
 update retained memberships; a row owned by another profile cannot satisfy a
-cached membership. Preview clicks retain their displayed profile through
+cached membership. Catalog route keys and session owners are separate: an
+omitted launch route can return a concrete named owner. Project publications
+retain that producer stamp and membership records its owner, so a later REST
+session refresh cannot make valid launch-project rows disappear. Preview
+clicks retain their displayed profile through
 resume, without adopting a conflicting raw-id slot before the open succeeds.
 An omitted-launch preview that conflicts with a named owner's live slot waits
 for revalidation rather than offering an ambiguous click. The actual rendered
@@ -185,8 +189,11 @@ while text parked under one Hermes profile can never be presented under another.
 
 **`Profile: {name}`, not `Owned by {profile}`.**
 Issue #61's acceptance names the *i18n key* (`sidebar.row.ownedByProfile`); the
-value at the pin is `Profile: ${profile}` (`i18n/en.ts:2175`), asserted verbatim
-by Desktop's own `profile-tag.test.tsx:27,34,47`.
+value at the original pin is `Profile: ${profile}`
+(`apps/desktop/src/i18n/en.ts:2175` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`),
+asserted verbatim by Desktop's own
+`apps/desktop/src/app/chat/profile-tag.test.tsx:27,34,47` @
+`3ca096de5f8183cb2e0ec23673f294d5978656a3`.
 *Reason:* the rule is copy verbatim from the pin, and the pinned string wins over
 a key name transcribed into the issue.
 

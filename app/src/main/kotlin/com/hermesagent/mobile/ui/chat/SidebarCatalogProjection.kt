@@ -1,5 +1,6 @@
 package com.hermesagent.mobile.ui.chat
 
+import com.hermesagent.mobile.data.profiles.ALL_PROFILES
 import com.hermesagent.mobile.data.profiles.ProfileScope
 import com.hermesagent.mobile.data.profiles.filterSessionsByProfileScope
 import com.hermesagent.mobile.data.session.ProjectCatalogState
@@ -39,12 +40,17 @@ internal class SidebarCatalogProjection {
         }
         val showsCatalog = projectProfileScopeOf(scope).showsCatalog
         val selected = projectId?.takeIf { showsCatalog }?.let(requestedCatalog.projects::get)
+        // An omitted route can serve a named launch profile. Its project reply
+        // already scopes membership; never erase the producer's concrete owner.
+        val omittedRoute = scope.sessionProfileParam == null
         val scoped = filterSessionsByProfileScope(
             selected?.id?.let { requestedCatalog.memberships[it].orEmpty() }
                 ?.mapNotNull { id ->
-                    state.sessions[id]?.takeIf { it.remoteProfile == scope.sessionProfileParam }
+                    val owner = if (requestedCatalog.sessionProfiles.containsKey(id)) requestedCatalog.sessionProfiles[id]
+                        else scope.sessionProfileParam
+                    state.sessions[id]?.takeIf { it.remoteProfile == owner }
                 } ?: state.sessions.values.toList(),
-            scope.key,
+            if (selected != null && omittedRoute) ALL_PROFILES else scope.key,
         )
         val projects = if (selected == null && showsCatalog) {
             sortProjectsForOverview(requestedCatalog.projects.values, requestedCatalog.activeProjectId, locale)
@@ -58,7 +64,7 @@ internal class SidebarCatalogProjection {
                             if (preview.remoteProfile == null && live?.remoteProfile != null) null
                             else live?.takeIf { it.remoteProfile == preview.remoteProfile } ?: preview
                         }.filter { it.hidden != true },
-                        scope.key,
+                        if (omittedRoute) ALL_PROFILES else scope.key,
                     ))
                 }.filter { it.matchesProjectQuery(query, locale) }
         } else emptyList()

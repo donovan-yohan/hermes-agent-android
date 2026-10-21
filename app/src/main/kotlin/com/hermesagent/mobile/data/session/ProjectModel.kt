@@ -27,4 +27,6 @@ data class ProjectCatalogState(
     val hydratedProjectIds: Set<String> = emptySet(),
     /** Null until probed, false only when this Gateway lacks the projects RPCs. */
     val available: Boolean? = null,
+    /** Actual session owners from this route's project replies; null is legacy unstamped. */
+    val sessionProfiles: Map<String, String?> = emptyMap(),
 )

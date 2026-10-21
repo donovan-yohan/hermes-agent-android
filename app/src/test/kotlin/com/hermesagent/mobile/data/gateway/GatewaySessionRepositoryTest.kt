@@ -3002,7 +3002,7 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
-    fun `stamped project sessions stay visible in launch scope in either load order`() = runTest {
+    fun `stamped launch project sessions preserve actual owner in either load order`() = runTest {
         for (sessionsFirst in listOf(true, false)) {
             val cache = SessionCache()
             val rpc = FakeRpc().apply {
@@ -3019,22 +3019,22 @@ class GatewaySessionRepositoryTest {
             runCurrent()
 
             val preview = cache.state.value.projects.projects.getValue("project-mobile").previewSessions
-            assertEquals(listOf("durable-a"), filterSessionsByProfileScope(preview, DEFAULT_PROFILE).map { it.id })
-            assertEquals(listOf("home-a"), filterSessionsByProfileScope(listOf(cache.session("home-a")!!), DEFAULT_PROFILE).map { it.id })
+            assertEquals(listOf("durable-a"), filterSessionsByProfileScope(preview, "research").map { it.id })
+            assertEquals(listOf("home-a"), filterSessionsByProfileScope(listOf(cache.session("home-a")!!), "research").map { it.id })
 
             repository.openProject("project-mobile")
             rpc.sessionListResult = SESSION_LIST
             repository.refreshSessions()
             val members = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
-            assertEquals(listOf("durable-a", "durable-b"), filterSessionsByProfileScope(members, DEFAULT_PROFILE).map { it.id })
+            assertEquals(listOf("durable-a", "durable-b"), filterSessionsByProfileScope(members, "research").map { it.id })
             assertTrue(filterSessionsByProfileScope(members, "other").isEmpty())
             repository.openSession("durable-a")
-            assertNull(rpc.call("session.resume").params["profile"])
+            assertEquals("research", rpc.call("session.resume").params.string("profile"))
         }
     }
 
     @Test
-    fun `project scope changes replace ownership without losing cached live state`() = runTest {
+    fun `omitted project route retains stamped ownership without losing cached live state`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {
             projectTreeResult = PROJECT_TREE.replace("\"title\":", "\"profile\":\"research\",\"title\":")
@@ -3058,11 +3058,11 @@ class GatewaySessionRepositoryTest {
 
         repository.setProfileRouting(ProfileRouting())
         repository.refreshProjects()
-        assertEquals(live.copy(remoteProfile = null), cache.session("durable-a"))
+        assertEquals(live, cache.session("durable-a"))
         repository.openProject("project-mobile")
         val launchMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
-        assertEquals(2, filterSessionsByProfileScope(launchMembers, DEFAULT_PROFILE).size)
-        assertTrue(filterSessionsByProfileScope(launchMembers, "research").isEmpty())
+        assertEquals(2, filterSessionsByProfileScope(launchMembers, "research").size)
+        assertTrue(filterSessionsByProfileScope(launchMembers, DEFAULT_PROFILE).isEmpty())
         assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
     }
 
