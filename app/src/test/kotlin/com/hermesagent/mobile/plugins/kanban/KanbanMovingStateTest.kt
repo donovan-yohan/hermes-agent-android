@@ -20,16 +20,16 @@ class KanbanMovingStateTest {
         val api = object : KanbanMove {
             override fun open(expectedEndpoint: Long) = object : KanbanMoveScope {
                 override suspend fun prepare(task: KanbanTask) = KanbanMoveChoices("design", task, listOf("done"))
-                override suspend fun move(status: String): KanbanTask? { writes++; return held.await() }
+                override suspend fun move(status: String, summary: String): KanbanTask? { assertEquals("Evidence", summary); writes++; return held.await() }
                 override fun close() { closed = true }
             }
         }
         val vm = KanbanViewModel(KanbanPluginRepository { path, _ -> PluginRestResult.Success(200,
-            (if (path == "board") """{"columns":[]}""" else wire).toByteArray()) },
+            (if (path == "boards") """{"current":"design"}""" else if (path == "board") """{"columns":[]}""" else wire).toByteArray()) },
             MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, api)
         vm.openTask(task); runCurrent(); vm.openMove(); runCurrent()
         vm.moveTask("running"); assertEquals(0, writes)
-        vm.moveTask("done"); vm.moveTask("done"); runCurrent()
+        vm.moveTask("done", "Evidence"); vm.moveTask("done", "Evidence"); runCurrent()
         assertEquals(1, writes); assertTrue(vm.uiState.value.move!!.loading)
         held.complete(task.copy(status = "done")); runCurrent()
         assertTrue(closed); assertNull(vm.uiState.value.move)
@@ -37,12 +37,35 @@ class KanbanMovingStateTest {
         assertEquals("Task moved.", vm.uiState.value.moveNotice)
     }
 
+    @Test fun `unavailable background board closes scope and ignores late move failure`() = runTest {
+        val board = CompletableDeferred<PluginRestResult>()
+        val result = CompletableDeferred<KanbanTask?>()
+        var closed = false
+        val api = object : KanbanMove {
+            override fun open(expectedEndpoint: Long) = object : KanbanMoveScope {
+                override suspend fun prepare(task: KanbanTask) = KanbanMoveChoices("design", task, listOf("blocked"))
+                override suspend fun move(status: String, summary: String) = result.await()
+                override fun close() { closed = true }
+            }
+        }
+        val vm = KanbanViewModel(KanbanPluginRepository { path, _ ->
+            if (path == "boards") board.await() else PluginRestResult.Success(200, wire.toByteArray())
+        }, MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, api)
+        vm.openTask(task); runCurrent(); vm.refreshBoard(); runCurrent(); vm.openMove(); runCurrent()
+        vm.moveTask("blocked"); runCurrent()
+        board.complete(PluginRestResult.UnavailableOnGateway); runCurrent()
+        assertTrue(closed); assertNull(vm.uiState.value.move)
+        result.complete(null); runCurrent()
+        assertNull(vm.uiState.value.move)
+        assertEquals(KanbanPhase.Unavailable, vm.uiState.value.phase)
+    }
+
     @Test fun `close invalidates late prepare without opening another surface`() = runTest {
         val held = CompletableDeferred<KanbanMoveChoices?>(); var closed = false
         val api = object : KanbanMove {
             override fun open(expectedEndpoint: Long) = object : KanbanMoveScope {
                 override suspend fun prepare(task: KanbanTask) = held.await()
-                override suspend fun move(status: String): KanbanTask? = error("not submitted")
+                override suspend fun move(status: String, summary: String): KanbanTask? = error("not submitted")
                 override fun close() { closed = true }
             }
         }

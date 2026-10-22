@@ -1,4 +1,5 @@
 package com.hermesagent.mobile.plugins.kanban
+import androidx.compose.ui.test.performTextInput
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -182,7 +183,7 @@ class KanbanPluginJourneyTest {
         compose.setContent { HermesTheme {
             KanbanScreen(state, {}, {}, {}, {},
                 onMoveTask = { state = state.copy(move = KanbanMoving(KanbanMoveChoices("design", task, listOf("ready", "done")))) },
-                onCloseMove = { state = state.copy(move = null) }, onConfirmMove = { moved = it })
+                onCloseMove = { state = state.copy(move = null) }, onConfirmMove = { status, _ -> moved = status })
         } }
         compose.onNodeWithTag("Kanban Task actions").performClick()
         compose.onNodeWithText("Move to").performClick()
@@ -194,6 +195,23 @@ class KanbanPluginJourneyTest {
         compose.onAllNodesWithTag("Kanban WIP Move to").assertCountEquals(0)
         compose.onNodeWithContentDescription("Back to task").performClick()
         compose.onNodeWithTag("Kanban detail").assertExists()
+    }
+
+    @Test fun `move confirmation redacts backend semantics and collects required Done evidence`() {
+        val task = KanbanTask("x", "password=title-demo", "ready")
+        var submitted: Pair<String, String>? = null
+        compose.setContent { HermesTheme {
+            KanbanMoveScreen(KanbanMoving(KanbanMoveChoices("password=board-demo", task, listOf("done"))), {},
+                { status, summary -> submitted = status to summary })
+        } }
+        compose.onNodeWithText("password=title-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Board: password=board-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("password=<redacted>", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithTag("Kanban confirm move").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Completion summary").performTextInput("Verified the work")
+        compose.onNodeWithTag("Kanban confirm move").performClick()
+        compose.runOnIdle { assertEquals("done" to "Verified the work", submitted) }
     }
 
     private fun assertWipOrder(vararg labels: String) {

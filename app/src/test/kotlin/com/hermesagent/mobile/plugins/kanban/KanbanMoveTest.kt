@@ -11,14 +11,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class KanbanMoveTest {
-    private val task = KanbanTask("t /+", "Pearl", "todo")
+    private val task = KanbanTask("t /+", "Pearl", "todo", boardSlug = "design")
     @Test fun `production transport preserves namespace board encoding allowed lanes and readback`() = runTest {
         val calls = mutableListOf<Request>()
         var status = "todo"
         val http = OkHttpGatewayHttp(OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request(); synchronized(calls) { calls += request }
             if (request.method == "PATCH") {
-                assertEquals("""{"status":"done"}""", Buffer().also { request.body!!.writeTo(it) }.readUtf8())
+                assertEquals("""{"status":"done","result":"Verified synthetic work","summary":"Verified synthetic work"}""", Buffer().also { request.body!!.writeTo(it) }.readUtf8())
                 status = "done"
             }
             val body = when {
@@ -33,13 +33,31 @@ class KanbanMoveTest {
         val choices = scope.prepare(task)!!
         assertEquals(listOf("ready", "done"), choices.statuses)
         assertNull(scope.move("running"))
-        assertEquals("done", scope.move("done")!!.status)
+        assertNull(scope.move("done"))
+        assertEquals("done", scope.move("done", "Verified synthetic work")!!.status)
         assertNull(scope.move("ready"))
-        assertEquals(listOf("GET", "GET", "GET", "PATCH", "GET", "POST"), calls.map { it.method })
-        calls.drop(1).forEach { assertEquals("design", it.url.queryParameter("board")) }
-        assertTrue(calls[3].url.encodedPath.endsWith("t%20%2F%2B"))
+        assertEquals(listOf("GET", "GET", "PATCH", "GET", "POST"), calls.map { it.method })
+        calls.forEach { assertEquals("design", it.url.queryParameter("board")) }
+        assertTrue(calls[2].url.encodedPath.endsWith("t%20%2F%2B"))
         assertTrue(calls.all { it.header("X-Hermes-Session-Token") == "synthetic" })
         scope.close()
+    }
+
+    @Test fun `review approval omits invented evidence and retains source identity`() = runTest {
+        var status = "review"
+        var payload = ""
+        val scope = fakeScope { request ->
+            if (request.method == "PATCH") {
+                payload = Buffer().also { request.body!!.writeTo(it) }.readUtf8()
+                status = "done"
+            }
+            assertEquals("design", request.query["board"])
+            if (request.path.endsWith("board")) successFor(request)
+            else GatewayHttpResult.Success(200, """{"task":{"id":"t /+","title":"Renamed","status":"$status"}}""".toByteArray())
+        }
+        assertNotNull(scope.prepare(task))
+        assertEquals("done", scope.move("done")?.status)
+        assertEquals("""{"status":"done"}""", payload)
     }
 
     @Test fun `close during production credential wait revokes admission`() = runTest {
@@ -61,7 +79,7 @@ class KanbanMoveTest {
             else successFor(request)
         }
         assertNotNull(scope.prepare(task))
-        assertNull(scope.move("done")); assertNull(scope.move("done"))
+        assertNull(scope.move("done", "Evidence")); assertNull(scope.move("done", "Evidence"))
         assertEquals(1, writes)
     }
 
@@ -75,7 +93,7 @@ class KanbanMoveTest {
             }
         }
         scope.prepare(task)
-        assertNull(scope.move("done")); assertEquals(0, nudges)
+        assertNull(scope.move("done", "Evidence")); assertEquals(0, nudges)
     }
 
     @Test fun `endpoint invalidation blocks prepared move`() = runTest {

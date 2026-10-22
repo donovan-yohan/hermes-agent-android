@@ -32,7 +32,7 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 
 ## Visual report
 
-- pending: #261 (implementation issue is the required evidence issue; no separate issue is necessary).
+- pending: #73. Historical implementation issue #261 is closed; its [explicit evidence-debt comment](https://github.com/donovan-yohan/hermes-agent-android/issues/261#issuecomment-5656598661) is not rendered approval. The open migration epic owns the pending comparison.
 
 ## Move to source audit (2026-10-22)
 
@@ -45,9 +45,13 @@ Movement was additionally inspected at `NousResearch/hermes-agent@81a55437f3f31a
 - `hermes_cli/web_server.py:412-439,456-493`: authenticated plugin routing.
 - `apps/desktop/src/plugins/kanban/i18n.ts:233-241,280`: verbatim status labels and Move to.
 
-The typed host scope resolves the current board, reads its lane list and selected task with an explicit `board` query, checks task id/title against selection, and shows the named board before confirmation. It does not switch the server-wide pointer. It captures the endpoint/transport before suspension, uses the existing dispatch fence and a close/enqueue lock, disables replay/redirect, and never automatically retries a refused or uncertain mutation. Success requires both the PATCH receipt and fresh named-task readback to match id/status. Existing board/detail reads remain the baseline snapshot contract; the action confirms a freshly resolved board rather than silently mutating through a current-board alias.
+The repository resolves a named board before fetching the snapshot. That slug travels with board tasks, detail and selection. The typed move scope uses only this source slug for lane/task reads and mutation, never a later current pointer or a title as identity. Renaming does not change identity. Missing source identity refuses preparation. This follows `apps/desktop/src/plugins/kanban/api.ts:358-395` and `plugins/kanban/dashboard/plugin_api.py:1411-1427` at the inspected SHA. Confirmation labels use `redact()` while raw source board/task/status identities remain unchanged for dispatch.
 
-The backend offers no version/compare-and-set precondition: a worker may change status after preparation, and a fresh read is not an atomic lock. The server remains authoritative; conflicts or rapid post-write transitions show fixed unconfirmed/recovery copy, not fabricated success or raw backend exceptions. The extra confirmation is a touch/error-recovery adaptation. Tests exercise production authenticated transport, encoded id, explicit board, legal lane exclusion, credential-wait close, endpoint invalidation, conflict and readback mismatch. Rendered/native/live-Gateway acceptance remains Concern, pending #261.
+Done exposes a completion-summary field. Fresh non-review tasks without a stored result require nonblank human evidence; Android sends that text in both `result` and `summary`. Review approvals may omit new evidence; the client invents none. The actual packaged plugin collects evidence in `plugins/kanban/dashboard/dist/index.js:939-979`; the real router forwards fields in `plugins/kanban/dashboard/plugin_api.py:594-614,638-716`, and the gate is `hermes_cli/kanban_db.py:2639-2668,2772-2807`, tested by `tests/hermes_cli/test_kanban_empty_completion.py:32-69`, all at `81a55437f3f31a9f12a30c53b6c5d49d420898aa`. A bare status-only fake response does not prove fresh Done works.
+
+The scope captures endpoint/transport before suspension, uses the existing dispatch fence and a close/enqueue lock, disables replay/redirect, and never automatically retries a refused or uncertain mutation. A board-unavailable result removing the form irrevocably closes its scope and invalidates pending detail work. Success requires both the PATCH receipt and fresh named-task readback to match id/status.
+
+The backend offers no version/compare-and-set precondition: a worker may change status after preparation, and a fresh read is not an atomic lock. The server remains authoritative; conflicts or rapid post-write transitions show fixed unconfirmed/recovery copy, not fabricated success or raw backend exceptions. The extra confirmation and inline evidence field are touch/error-recovery adaptations. Tests exercise production authenticated transport, encoded id, source-board identity across pointer change/rename, legal lane exclusion, Done evidence/review approval, background-failure credential admission revocation, late-response invalidation, endpoint invalidation, conflict and readback mismatch. Compose covers redacted semantics and required evidence input. Rendered/native/live-Gateway acceptance remains Concern, pending #73.
 
 ## Executable evidence
 

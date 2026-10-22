@@ -44,7 +44,7 @@ fun KanbanScreen(
     onCloseDetail: () -> Unit,
     onMoveTask: () -> Unit = {},
     onCloseMove: () -> Unit = {},
-    onConfirmMove: (String) -> Unit = {},
+    onConfirmMove: (String, String) -> Unit = { _, _ -> },
 ) {
     state.move?.let { moving ->
         BackHandler { onCloseMove() }

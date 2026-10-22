@@ -11,7 +11,7 @@ interface KanbanMove {
 }
 interface KanbanMoveScope : AutoCloseable {
     suspend fun prepare(task: KanbanTask): KanbanMoveChoices?
-    suspend fun move(status: String): KanbanTask?
+    suspend fun move(status: String, summary: String = ""): KanbanTask?
     override fun close()
 }
 data class KanbanMoveChoices(val board: String, val task: KanbanTask, val statuses: List<String>)
@@ -48,23 +48,29 @@ private class BoundMove(
 
     override suspend fun prepare(task: KanbanTask): KanbanMoveChoices? {
         if (task.id.isBlank() || task.id == "." || task.id == "..") return null
-        val board = exchange("boards")?.text("current")?.takeIf { it.isNotBlank() } ?: return null
+        val board = task.boardSlug?.takeIf { it.isNotBlank() } ?: return null
         val snapshot = exchange("board", board = board) ?: return null
         val columns = snapshot["columns"] as? JsonArray ?: return null
         val named = exchange("tasks/${encodeMoveId(task.id)}", board = board)?.get("task") as? JsonObject ?: return null
-        val fresh = parseMoved(named)?.takeIf { it.id == task.id && it.title == task.title } ?: return null
+        val fresh = parseMoved(named)?.takeIf { it.id == task.id }?.copy(boardSlug = board) ?: return null
         // Server enumerates the lanes. Desktop ui.tsx:48-55 forbids system-owned targets.
         val statuses = columns.mapNotNull { (it as? JsonObject)?.text("name") }
             .filter { it != fresh.status && it !in listOf("running", "review", "scheduled") }.distinct()
         return if (current()) KanbanMoveChoices(board, fresh, statuses).also { choices = it } else null
     }
 
-    override suspend fun move(status: String): KanbanTask? {
+    override suspend fun move(status: String, summary: String): KanbanTask? {
         val held = choices ?: return null
         if (status !in held.statuses || !current()) return null
+        if (status == "done" && held.task.status != "review" && held.task.result.isNullOrBlank() && summary.isBlank()) return null
         synchronized(lock) { if (submitted || closed) return null; submitted = true }
         val path = "tasks/${encodeMoveId(held.task.id)}"
-        val reply = exchange(path, "PATCH", held.board, buildJsonObject { put("status", status) }) ?: return null
+        val reply = exchange(path, "PATCH", held.board, buildJsonObject {
+            put("status", status)
+            if (status == "done" && summary.isNotBlank()) {
+                put("result", summary.trim()); put("summary", summary.trim())
+            }
+        }) ?: return null
         val receipt = parseMoved(reply["task"] as? JsonObject ?: return null)
             ?.takeIf { it.id == held.task.id && it.status == status } ?: return null
         val fresh = exchange(path, board = held.board)?.get("task") as? JsonObject ?: return null
@@ -97,5 +103,6 @@ private fun parseMoved(row: JsonObject): KanbanTask? = KanbanTask(
     status = row.text("status")?.takeIf { it.isNotBlank() } ?: return null,
     assignee = row.text("assignee"), body = row.text("body"),
     priority = (row["priority"] as? JsonPrimitive)?.intOrNull,
+    result = row.text("result"),
 )
 private fun encodeMoveId(id: String) = java.net.URLEncoder.encode(id, Charsets.UTF_8.name()).replace("+", "%20")

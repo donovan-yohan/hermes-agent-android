@@ -77,13 +77,15 @@ class KanbanViewModel(
         _uiState.update { it.copy(move = null) }
     }
 
-    fun moveTask(status: String) {
+    fun moveTask(status: String, summary: String = "") {
         val dialog = _uiState.value.move ?: return
         val bound = moveScope ?: return
         if (dialog.loading || dialog.submitted || status !in dialog.choices?.statuses.orEmpty()) return
+        if (status == "done" && dialog.choices?.task?.status != "review" &&
+            dialog.choices?.task?.result.isNullOrBlank() && summary.isBlank()) return
         _uiState.update { it.copy(move = dialog.copy(loading = true, submitted = true)) }
         scope.launch {
-            val result = bound.move(status)
+            val result = bound.move(status, summary)
             if (moveScope !== bound) return@launch
             if (result == null) _uiState.update { it.copy(move = dialog.copy(submitted = true,
                 error = "Task move could not be confirmed. Close and refresh before trying again.")) }
@@ -137,6 +139,8 @@ class KanbanViewModel(
                 }
             }
             KanbanRead.Unavailable -> if (acceptBoard(endpointAtStart, operation)) {
+                closeMove()
+                detailOperation++
                 _uiState.value = KanbanUiState(KanbanPhase.Unavailable)
             }
             else -> if (acceptBoard(endpointAtStart, operation)) {
@@ -157,7 +161,7 @@ class KanbanViewModel(
         val held = (_uiState.value.detail as? KanbanDetail.Value)?.detail
         _uiState.update { it.copy(detail = KanbanDetail.Loading(task)) }
 
-        when (val read = repository.task(task.id)) {
+        when (val read = repository.task(task.id, task.boardSlug)) {
             is KanbanRead.Value -> if (acceptDetail(endpointAtStart, operation)) {
                 _uiState.update { it.copy(detail = KanbanDetail.Value(read.value)) }
             }
