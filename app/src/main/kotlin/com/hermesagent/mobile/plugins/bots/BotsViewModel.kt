@@ -352,6 +352,28 @@ class BotsViewModel(
         }
     }
 
+    /** Ordinary side conversation, never the canonical Bot Chat registry.
+     * Desktop data.ts:1297-1325 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa. */
+    fun newChat(
+        row: BotRosterRow,
+        origin: BotsRosterUiState,
+        onCreate: (String, Long, (Boolean) -> Unit) -> Unit,
+    ) {
+        val endpoint = endpointGeneration.value
+        if (origin !== _uiState.value || origin.endpoint != endpoint || !connected.value ||
+            origin.openingBotKey != null || origin.managementRows.none { it == row } ||
+            !validBotId(row.name) || row.connectionId != null) return
+        _uiState.update { it.copy(openingBotKey = row.rosterKey, botChatMessage = null) }
+        var completed = false
+        onCreate(row.name, endpoint) { opened ->
+            if (completed) return@onCreate
+            completed = true
+            if (endpoint != endpointGeneration.value) return@onCreate
+            _uiState.update { it.copy(openingBotKey = null,
+                botChatMessage = if (opened) null else "A new chat could not be started. Try again.") }
+        }
+    }
+
     /** Most recent LISTED conversation, not canonical-session/worker activity.
      * Desktop recent-session.ts:24-78 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa. */
     fun openRecent(row: BotRosterRow, origin: BotsRosterUiState,

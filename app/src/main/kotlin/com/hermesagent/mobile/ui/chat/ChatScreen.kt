@@ -284,6 +284,12 @@ private fun CompactLayout(
                             pluginNavigation.onNavigate(target)
                             scope.launch { drawerState.close() }
                         },
+                        onNewBotSession = { profile, endpoint, onFinished ->
+                            pluginNavigation.onNewBotSession(profile, endpoint) { opened ->
+                                if (opened) scope.launch { drawerState.close() }
+                                onFinished(opened)
+                            }
+                        },
                         onOpenBotRecentSession = { profile, durableId, endpoint, onFinished ->
                             pluginNavigation.onOpenBotRecentSession(profile, durableId, endpoint) { opened ->
                                 if (opened) scope.launch { drawerState.close() }

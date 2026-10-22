@@ -574,6 +574,151 @@ class ChatProfileScopeTest {
         assertEquals(listOf(false), outcomes)
     }
 
+    @Test
+    fun `bot side chat uses explicit roster owner without inherited project or model`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        repository.onSessionCreated = { cache.upsertSession(row("created", CLOCK, "work")) }
+        val results = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        assertEquals("work", repository.createdProfile)
+        assertNull(repository.createdWorkspace)
+        assertNull(repository.createdOverrides)
+        assertEquals("created", viewModel.uiState.value.activeSession?.id)
+        assertEquals(listOf(true), results)
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `bot side chat completion cannot hijack newer profile navigation`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        val results = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.setDraft("newer draft")
+        gate.complete(Unit); runCurrent()
+        assertEquals(listOf(false), results)
+        assertNull(viewModel.uiState.value.activeSession)
+        assertEquals("newer draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `stale bot endpoint and unknown profile create nothing`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val results = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value - 1) { results += it }
+        viewModel.newBotSession("missing", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        assertEquals(listOf(false, false), results)
+        assertNull(repository.createdProfile)
+    }
+
+    @Test
+    fun `new bot ordinary conversation binds queue to owner instead of browsing profile`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.newBotSession("work", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueScope.forConnectionProfile(
+            "transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `new bot revoked shell lifetime leaves foreground and draft untouched`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectSession("lab-row"); runCurrent()
+        viewModel.setDraft("preserve foreground")
+        val before = viewModel.uiState.value.activeSessionId
+        val gate = CompletableDeferred<Unit>(); repository.sessionCreateGate = gate
+        var current = true
+        val result = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value, { current }) { result += it }
+        runCurrent(); current = false; gate.complete(Unit); runCurrent()
+        assertEquals(before, viewModel.uiState.value.activeSessionId)
+        assertEquals("preserve foreground", viewModel.uiState.value.draft)
+        assertEquals(listOf(false), result)
+    }
+
+    @Test
+    fun `failed ordinary create preserves open conversation queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        viewModel.setDraft("keep work draft")
+        val scopesBefore = queueScopes.toList()
+        repository.onSessionCreated = { error("create refused") }
+
+        viewModel.createSession(); runCurrent()
+
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals("keep work draft", viewModel.uiState.value.draft)
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals("lab", repository.createdProfile)
+    }
+
+    @Test
+    fun `disconnected ordinary create preserves open conversation queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        viewModel.setDraft("offline work draft")
+        runCurrent()
+        val scopesBefore = queueScopes.toList()
+        val composerBefore = viewModel.uiState.value.composer
+
+        viewModel.createSession(); runCurrent()
+
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals(composerBefore, viewModel.uiState.value.composer)
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals("offline work draft", viewModel.uiState.value.draft)
+        assertNull(repository.createdProfile)
+    }
+
+    @Test
+    fun `pending and stale ordinary create preserve current queue owner until accepted rehome`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        viewModel.setDraft("work draft")
+        val scopesBefore = queueScopes.toList()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        repository.onSessionCreated = { cache.upsertSession(row("created", 4_000, "lab")) }
+
+        viewModel.createSession(); runCurrent()
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        // Same-row navigation revokes creation without replacing its owner.
+        viewModel.selectSession("work-row"); runCurrent()
+        gate.complete(Unit); runCurrent()
+
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals("work draft", viewModel.uiState.value.draft)
+        assertEquals("lab", cache.session("created")?.remoteProfile)
+    }
+
+    @Test
+    fun `successful ordinary create rehomes queue to authoritative new row owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        repository.onSessionCreated = { cache.upsertSession(row("created", 4_000, "lab")) }
+
+        viewModel.createSession(); runCurrent()
+
+        assertEquals("created", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "lab"), queueScopes.last())
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
@@ -613,6 +758,9 @@ class ChatProfileScopeTest {
 
         var sessionCreateGate: CompletableDeferred<Unit>? = null
         var sessionCreateJob: kotlinx.coroutines.Job? = null
+        var onSessionCreated: () -> Unit = {}
+        var createdWorkspace: String? = null
+        var createdOverrides: com.hermesagent.mobile.data.composer.NewSessionComposerOverrides? = null
         var sessionCreateFailure = false
         var createdProfile: String? = null
         override suspend fun createSession(workspacePath: String?): String {
@@ -628,9 +776,12 @@ class ChatProfileScopeTest {
             expectedEndpointGeneration: Long,
         ): String {
             createdProfile = profile
+            createdWorkspace = workspacePath
+            createdOverrides = overrides
             sessionCreateJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             sessionCreateGate?.await()
             check(!sessionCreateFailure)
+            onSessionCreated()
             return "created"
         }
 
