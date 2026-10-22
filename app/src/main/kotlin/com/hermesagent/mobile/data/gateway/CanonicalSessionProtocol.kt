@@ -32,6 +32,9 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private data class ModelConfirmation(val token: String, var sent: Boolean = false)
     private val mutations = mutableMapOf<MutationKey, JsonObject>()
     private val modelConfirmations = mutableMapOf<Pair<Owner, JsonObject>, ModelConfirmation>()
+    private data class DeferredConfirmation(val payload: JsonObject, val token: String, val generation: Long)
+    private val deferredConfirmations = mutableMapOf<Owner, DeferredConfirmation>()
+    private val latestModelPicks = mutableMapOf<Owner, JsonObject>()
     private val mutationLocks = KeyedMutex<Owner>()
     private val preSnapshotEvents = mutableListOf<GatewayEvent>()
     private val admissionStatuses = linkedMapOf<Pair<Owner, String>, String>()
@@ -187,6 +190,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             value?.let { put(field, it) }
         }
         return when (method) {
+            "session.model" -> "model" to (params["payload"] as? JsonObject ?: unusable())
             "session.title" -> payload("rename", "title", params["title"])
             "session.archive" -> payload("archive", "archived", params["archived"])
             "session.delete" -> "delete" to buildJsonObject { }
@@ -233,12 +237,25 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         val owner = owner(params.text("profile").orEmpty(), sid)
         return mutationLocks.withLock(owner) {
             val payload = synchronized(stateLock) {
-                val confirmation = modelConfirmations[owner to suppliedPayload]
-                if (operation == "model" && confirmation != null &&
-                    (params["confirm_expensive_model"] == JsonPrimitive(true) || confirmation.sent)) {
-                    confirmation.sent = true
-                    JsonObject(suppliedPayload + ("confirm" to JsonPrimitive(confirmation.token)))
-                } else suppliedPayload
+                if (method == "session.model") {
+                    val ask = deferredConfirmations[owner]
+                    if (ask == null || ask.payload != suppliedPayload || ask.token != params.text("confirm") ||
+                        ask.generation != snapshots[owner]?.generation)
+                        throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
+                    deferredConfirmations.remove(owner)
+                    JsonObject(ask.payload + ("confirm" to JsonPrimitive(ask.token)))
+                } else {
+                    if (operation == "model") {
+                        deferredConfirmations.remove(owner)
+                        latestModelPicks[owner] = suppliedPayload
+                    }
+                    val confirmation = modelConfirmations[owner to suppliedPayload]
+                    if (operation == "model" && confirmation != null &&
+                        (params["confirm_expensive_model"] == JsonPrimitive(true) || confirmation.sent)) {
+                        confirmation.sent = true
+                        JsonObject(suppliedPayload + ("confirm" to JsonPrimitive(confirmation.token)))
+                    } else suppliedPayload
+                }
             }
             val key = MutationKey(owner, operation, payload)
             val prepared = synchronized(stateLock) {
@@ -284,6 +301,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 projected.forEach { (key, item) -> put(key, item) }
                 if (value.text("status") == "confirmation_required") put("confirm_required", true)
                 else put("ok", true)
+                if (value.text("status") == "deferred") put("deferred", true)
                 if (operation == "reasoning") value["effort"]?.let { put("value", it) }
                 if (operation == "branch") {
                     val child = value.text("branched_session_id")?.takeIf(String::isNotBlank) ?: unusable()
@@ -412,6 +430,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             snapshots[key] = if (stale) previous.copy(subscriptionId = subscription) else
                 Snapshot(revision, generation, epoch, sequence, subscription, stored, authority, retired)
             if (!stale) {
+                deferredConfirmations.remove(key)
                 reconcilePending(key, value["pending"] as? JsonArray ?: unusable())
                 prompts.keys.removeAll { it.first == key }
                 (value["prompts"] as? JsonArray).orEmpty().forEach { element ->
@@ -459,7 +478,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     /** Applies per-owner execution/replay fences before any consumer sees a frame. */
     fun event(event: GatewayEvent): GatewayEvent? {
         if (!announced || event.runtimeSessionId == null) return event
-        val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
+        var payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
         return synchronized(stateLock) {
             val matching = snapshots.keys.filter { it.sessionId == event.runtimeSessionId }
             val owner = matching.singleOrNull()
@@ -480,6 +499,37 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                         runtimeSessionId = sessionIdentity.qualify(event.runtimeSessionId, route), canonical = true)
                 }
                 if (event.seq?.let { it <= previous.lastSequence } == true) return@synchronized null
+
+                // Whole-payload consent, scoped to this ordered owner stream and turn.
+                // gateway/session_deferred_pick.py:111-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+                if (generation != null && generation > previous.generation) deferredConfirmations.remove(owner)
+                if (event.type == "session.info") latestModelPicks[owner]?.let { pick ->
+                    if (payload.text("model") == pick.text("model") &&
+                        (pick.text("provider") == null || payload.text("provider") == pick.text("provider")))
+                        latestModelPicks.remove(owner)
+                }
+                if (event.type == "session.updated" && payload.text("operation") == "model" &&
+                    payload.text("status") in setOf("confirmation_required", "refused")) {
+                    val pick = payload["payload"] as? JsonObject
+                    val token = payload.text("confirm")
+                    val latest = latestModelPicks[owner]
+                    val obsolete = if (payload.text("status") == "refused")
+                        latest != null && latest.text("model") != payload.text("target_model")
+                    else latest != null && latest != pick
+                    if (obsolete || payload.text("session_id") != owner.sessionId ||
+                        payload.text("profile_id")?.let { it != descriptors[owner.profile]?.ownerId } == true)
+                        payload = JsonObject(emptyMap())
+                    else {
+                        deferredConfirmations.remove(owner)
+                        if (payload.text("status") == "refused") latestModelPicks.remove(owner)
+                        if (payload.text("status") == "confirmation_required") {
+                            if (event.seq == null || event.replayEpoch == null || generation == null ||
+                                pick?.text("model").isNullOrBlank() || token.isNullOrBlank() ||
+                                payload.text("session_id") != owner.sessionId) payload = JsonObject(emptyMap())
+                            else deferredConfirmations[owner] = DeferredConfirmation(pick!!, token, generation)
+                        }
+                    }
+                }
                 (payload["pending"] as? JsonArray)?.let { reconcilePending(owner, it) }
                 if (generation != null && generation > previous.generation) prompts.keys.removeAll { it.first == owner }
                 snapshots[owner] = previous.copy(generation = generation ?: previous.generation,

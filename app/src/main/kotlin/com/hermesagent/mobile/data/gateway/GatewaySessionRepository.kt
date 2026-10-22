@@ -123,6 +123,7 @@ interface GatewaySessionRepository {
     val imageLoader: StateFlow<GatewayImageLoader?> get() = NO_IMAGE_LOADER
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
     val composerControls: Flow<SessionComposerControls> get() = emptyFlow()
+    val deferredModelPicks: Flow<com.hermesagent.mobile.data.composer.DeferredModelPick> get() = emptyFlow()
     /** Live required-action requests, keyed by generation/runtime/request/kind. */
     val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>
         get() = error("Pending inputs are not implemented by this repository.")
@@ -894,6 +895,8 @@ internal class LiveGatewaySessionRepository(
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
     private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
     override val composerControls: Flow<SessionComposerControls> = composerControlEvents
+    private val deferredModelEvents = MutableSharedFlow<com.hermesagent.mobile.data.composer.DeferredModelPick>(extraBufferCapacity = 16)
+    override val deferredModelPicks: Flow<com.hermesagent.mobile.data.composer.DeferredModelPick> = deferredModelEvents
     /**
      * Buffered and dropping: emitted from under `stateLock`, so it must never
      * suspend, and a follower slow enough to lose one has lost a notification
@@ -5297,7 +5300,40 @@ internal class LiveGatewaySessionRepository(
                 if (!hasPendingInput(runtimeId)) setStatus(durableId, if (runtimeId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle)
                 false
             }
-            "session.updated" -> true
+            "session.updated" -> {
+                if (event.canonical && payload.string("operation") == "model") {
+                    val connection = connectionSnapshot()
+                    val endpoint = cache.endpointGeneration.value
+                    val pick = payload.obj("payload")
+                    val token = payload.string("confirm")
+                    val target = pick?.string("model")?.let { ComposerModelSelection(it, pick.string("provider").orEmpty()) }
+                    val ask = payload.string("status") == "confirmation_required" && target != null && !token.isNullOrBlank()
+                    if (ask || payload.string("status") == "refused") {
+                        if (!ask) projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
+                        deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+                            durableId, endpoint, target,
+                            if (ask) redact(payload.string("confirm_message") ?: "This model switch needs confirmation.")
+                            else controlFailureMessage("model"),
+                            if (!ask) null else suspend {
+                                try {
+                                    val result = requestAtEndpointDispatch(connection, endpoint, "session.model", buildJsonObject {
+                                        put("session_id", JsonPrimitive(runtimeId)); put("payload", pick!!); put("confirm", JsonPrimitive(token!!))
+                                    }).asObject("session.model")
+                                    when {
+                                        result.boolean("deferred") == true -> ControlMutationResult.Deferred
+                                        result.boolean("ok") == true && result.string("status") != "refused" -> ControlMutationResult.Applied
+                                        else -> ControlMutationResult.Rejected(controlFailureMessage("model"))
+                                    }
+                                } catch (failure: Throwable) {
+                                    if (failure is CancellationException) throw failure
+                                    ControlMutationResult.Rejected(controlFailureMessage("model"))
+                                }
+                            },
+                        ))
+                    }
+                }
+                true
+            }
             "session.replay_gap" -> {
                 if (event.canonical && replayReconciliations.add(runtimeId)) {
                     val endpoint = cache.endpointGeneration.value

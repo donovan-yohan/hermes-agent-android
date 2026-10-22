@@ -183,6 +183,7 @@ data class CompletionUiState(
 data class ComposerUiState(
     val catalog: ComposerCatalogUiState = ComposerCatalogUiState.Loading,
     val controls: ModelControlsSnapshot = ModelControlsSnapshot(),
+    val pendingModel: ComposerModelSelection? = null,
     val isLiveSession: Boolean = false,
     val isManualNewDraft: Boolean = false,
     val mutation: ComposerMutationUiState = ComposerMutationUiState.Idle,
@@ -730,6 +731,7 @@ internal class ChatViewModel(
         val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
         val request: suspend () -> ControlMutationResult)
     private var modelConsent: ModelConsent? = null
+    private var liveControlBefore: ModelControlsSnapshot? = null
     private val supersededModelConsentEndpoints = linkedMapOf<Long, Long>()
     private val gatewayAdmissionActions = mutableSetOf<com.hermesagent.mobile.data.gateway.GatewayAdmissionKey>()
     /** Latest authoritative partial session.info controls for the active durable session. */
@@ -1449,6 +1451,23 @@ internal class ChatViewModel(
             repository.composerControls.collect(::applyComposerControls)
         }
         viewModelScope.launch {
+            repository.deferredModelPicks.collect { event ->
+                if (activeSessionId.value != event.durableId || cache.endpointGeneration.value != event.endpointGeneration) return@collect
+                val key = ++liveMutationGeneration
+                modelConsent = null
+                if (composer.value.mutation is ComposerMutationUiState.Saving) {
+                    composer.value = composer.value.copy(controls = liveControlBefore ?: composer.value.controls)
+                }
+                val confirm = event.confirm
+                if (confirm != null && event.target != null) {
+                    modelConsent = ModelConsent(key, event.durableId, composerGeneration, event.endpointGeneration,
+                        { it }, confirm)
+                    composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.ConfirmationRequired(
+                        key, event.target.model, event.safeMessage))
+                } else composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.Error(event.safeMessage))
+            }
+        }
+        viewModelScope.launch {
             observeComposerScope()
         }
         viewModelScope.launch {
@@ -1970,9 +1989,11 @@ internal class ChatViewModel(
         val generation = composerGeneration
         val endpoint = cache.endpointGeneration.value
         val mutationGeneration = ++liveMutationGeneration
+        liveControlBefore = before.controls
         composerLoad?.cancel()
         composer.value = before.copy(
             controls = update(before.controls),
+            pendingModel = null,
             isLiveSession = true,
             isManualNewDraft = false,
             mutation = ComposerMutationUiState.Saving,
@@ -1995,7 +2016,8 @@ internal class ChatViewModel(
                     composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
                 }
                 ControlMutationResult.Deferred -> {
-                    composer.value = composer.value.copy(mutation = ComposerMutationUiState.Deferred)
+                    composer.value = composer.value.copy(controls = before.controls,
+                        pendingModel = update(before.controls).selection, mutation = ComposerMutationUiState.Deferred)
                 }
                 is ControlMutationResult.ConfirmationRequired -> {
                     if (confirmRequest != null) {
@@ -3075,7 +3097,7 @@ internal class ChatViewModel(
                         composerHistoryController.reset(sessionId)
                         invalidateHistory()
                         if (composer.value.mutation is ComposerMutationUiState.Deferred) {
-                            composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
+                            composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.Idle)
                         }
                         val projectId = createdProjectBySession.remove(sessionId) ?: selectedProjectId.value
                         if (projectId != null) runCatching { repository.refreshProjects() }
@@ -4426,6 +4448,7 @@ internal class ChatViewModel(
             controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
             else if (live) liveComposerControls?.applyTo(ModelControlsSnapshot()) ?: ModelControlsSnapshot()
             else freshDraftControls(),
+            pendingModel = null,
             isLiveSession = live,
             isManualNewDraft = !live && hasManualNewDraftChoice(),
             mutation = ComposerMutationUiState.Idle,
@@ -4505,15 +4528,16 @@ internal class ChatViewModel(
         val keepDeferred = current.mutation is ComposerMutationUiState.Deferred
         val authoritative = event.applyTo(current.controls)
         composer.value = composer.value.copy(
-            // Modern Gateways report the pending model in session.info; older
-            // busy-refusal Gateways report the still-running model. In both
-            // cases the local deferred pick remains the next-turn contract
-            // until an accepted submit crosses that boundary.
-            controls = if (keepDeferred) authoritative.copy(selection = current.controls.selection)
-            else authoritative,
+            // Effective controls always follow session.info; next-turn intent is separate.
+            controls = authoritative,
+            pendingModel = current.pendingModel.takeUnless { event.hasSelection &&
+                it?.model == event.selection?.model && it?.provider == event.selection?.provider },
             isLiveSession = true,
             isManualNewDraft = false,
-            mutation = if (keepDeferred) ComposerMutationUiState.Deferred else ComposerMutationUiState.Idle,
+            mutation = if (keepDeferred && (!event.hasSelection || current.pendingModel?.model != event.selection?.model ||
+                    current.pendingModel?.provider != event.selection?.provider)) ComposerMutationUiState.Deferred
+                else if (current.mutation is ComposerMutationUiState.ConfirmationRequired) current.mutation
+                else ComposerMutationUiState.Idle,
         )
     }
 
