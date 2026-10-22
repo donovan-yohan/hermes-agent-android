@@ -304,7 +304,7 @@ class CronJourneyTest {
         val newer = compose.onNodeWithText("Newer run").fetchSemanticsNode().boundsInRoot
         val older = compose.onNodeWithText("Older run").fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertTrue(newer.top < older.top)
-        org.junit.Assert.assertEquals("10/20/2026, 9:00:00 AM", clock.displayTime("2026-10-20T09:00:00Z"))
+        org.junit.Assert.assertEquals("10/20/2026, 9:00:00 AM", clock.displayTime("2026-10-20T09:00:00Z").replace('\u202f', ' '))
         org.junit.Assert.assertEquals("tomorrow", clock.relativeTime(java.time.Instant.parse("2026-10-20T09:00:00Z").toEpochMilli(), java.time.Instant.parse("2026-10-19T09:00:00Z").toEpochMilli()))
         org.junit.Assert.assertEquals(locale, java.util.Locale.getDefault())
         org.junit.Assert.assertEquals(zone, java.util.TimeZone.getDefault())

@@ -8,6 +8,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import com.hermesagent.mobile.plugins.bots.BotsRoutinesCopy
 import com.hermesagent.mobile.ui.theme.AppearanceSelection
 import com.hermesagent.mobile.ui.theme.HermesTheme
@@ -84,7 +87,13 @@ class BotsRoutinesCaptureTest {
         Locale.setDefault(Locale.FRANCE)
         TimeZone.setDefault(TimeZone.getTimeZone("America/New_York"))
         show(BotsRoutinesFixtureState.Inspector)
-        compose.onNodeWithText("in 17 hr · 9/18/26, 9:00 AM").assertIsDisplayed()
+        // CLDR/JDK versions use either regular or narrow nonbreaking space
+        // before AM. Only that typography varies; date, time and UTC stay exact.
+        compose.onNode(SemanticsMatcher("fixed UTC routine timestamp") { node ->
+            node.config.getOrNull(SemanticsProperties.Text)?.any {
+                it.text.replace('\u202f', ' ') == "in 17 hr · 9/18/26, 9:00 AM"
+            } == true
+        }).assertIsDisplayed()
         org.junit.Assert.assertEquals(Locale.FRANCE, Locale.getDefault())
         org.junit.Assert.assertEquals("America/New_York", TimeZone.getDefault().id)
     }
