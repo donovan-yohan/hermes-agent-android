@@ -356,6 +356,96 @@ class ChatProfileScopeTest {
         assertEquals("lab draft", viewModel.uiState.value.draft)
     }
 
+    @Test
+    fun `recent bot session resumes explicit owner and never creates or grants canonical capability`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        repository.onRecentOpened = { cache.upsertSession(row("recent", CLOCK, "work")) }
+        val results = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        assertEquals("work" to "recent", repository.openedRecent)
+        assertEquals("recent", viewModel.uiState.value.activeSession?.id)
+        assertEquals(listOf(true), results)
+        assertTrue(!viewModel.uiState.value.botChat)
+        assertNull(repository.createdProfile)
+    }
+
+    @Test
+    fun `recent bot resume cannot take over newer navigation`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val gate = CompletableDeferred<Unit>(); repository.recentOpenGate = gate
+        val results = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.setDraft("newer draft")
+        gate.complete(Unit); runCurrent()
+        assertEquals(listOf(false), results)
+        assertNull(viewModel.uiState.value.activeSession)
+        assertEquals("newer draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `recent bot stale endpoint cannot resume`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val results = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value - 1) { results += it }
+        runCurrent()
+        assertEquals(listOf(false), results)
+        assertNull(repository.openedRecent)
+    }
+
+    @Test
+    fun `bot ordinary conversation binds queue to owner instead of browsing profile`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueScope.forConnectionProfile(
+            "transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `opening idle recent session preserves ready queue without sending`() = runTest(dispatcher) {
+        val store = com.hermesagent.mobile.data.composer.TransientComposerQueueStore()
+        val sends = mutableListOf<String>()
+        val controller = com.hermesagent.mobile.data.composer.ComposerQueueController(store,
+            object : com.hermesagent.mobile.data.composer.ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): com.hermesagent.mobile.data.composer.QueueSubmissionOutcome {
+                    sends += text
+                    return com.hermesagent.mobile.data.composer.QueueSubmissionOutcome.Accepted
+                }
+            })
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles,
+            composerQueueController = controller, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        controller.enqueue("recent", "do not send on open")
+        repository.onRecentOpened = { cache.upsertSession(row("recent", CLOCK, "work")) }
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertTrue(sends.isEmpty())
+        assertEquals(1, controller.queue("recent").size)
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected); runCurrent()
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Connected); runCurrent()
+        assertTrue(sends.isEmpty())
+    }
+
+    @Test
+    fun `compressed recent session migrates stored draft to canonical tip`() = runTest(dispatcher) {
+        val drafts = com.hermesagent.mobile.data.draft.TransientSessionDraftStore()
+        drafts.replace("recent", "keep my work")
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles, draftStore = drafts, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        repository.recentResult = "tip"
+        repository.onRecentOpened = { cache.upsertSession(row("tip", CLOCK, "work")) }
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertEquals("tip", subject.uiState.value.activeSessionId)
+        assertEquals("keep my work", subject.uiState.value.draft)
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
@@ -380,6 +470,16 @@ class ChatProfileScopeTest {
             archivedReads += routing
         }
 
+        var recentResult: String? = null
+        var onRecentOpened: () -> Unit = {}
+        var openedRecent: Pair<String, String>? = null
+        var recentOpenGate: CompletableDeferred<Unit>? = null
+        override suspend fun openSessionAtEndpoint(durableId: String, profile: String, expectedEndpointGeneration: Long): String {
+            openedRecent = profile to durableId
+            recentOpenGate?.await()
+            onRecentOpened()
+            return recentResult ?: durableId
+        }
         override suspend fun openSession(durableId: String): String = durableId
         override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
