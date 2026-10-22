@@ -2,7 +2,6 @@
 import hashlib
 import json
 from pathlib import Path
-import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,11 +35,16 @@ class SettingsDepthInventoryTest(unittest.TestCase):
         cls.new = cls.data['controls'][295:375]
 
     def test_original_295_serialized_objects_and_ids_are_unchanged(self):
-        original = subprocess.check_output(
-            ['git', '-C', str(ROOT), 'show', f'{START}:{RECORDS}'], text=True)
-        self.assertEqual(len(serialized_controls(original)), 295)
-        self.assertEqual(serialized_controls(self.raw)[:295], serialized_controls(original))
-        self.assertEqual(self.data['controls'][:295], json.loads(original)['controls'])
+        # Frozen from the 295 objects at START, not generated from current data.
+        # NUL framing is unambiguous for JSON object bytes. This preserves order,
+        # IDs, values AND exact serialization while allowing later append-only work.
+        original = serialized_controls(self.raw)[:295]
+        self.assertEqual(len(original), 295)
+        self.assertEqual(hashlib.sha256(b'\0'.join(original)).hexdigest(),
+                         '323ff72cc405464cd75d89b108b557a3b8992b0d05ebb65158bc890eb00fde6e')
+        semantic = json.dumps(self.data['controls'][:295], sort_keys=True, separators=(',', ':')).encode()
+        self.assertEqual(hashlib.sha256(semantic).hexdigest(),
+                         '57b479380744a28e8a06688b50643fa29fd0af1d9a3b528a641166d967a18886')
 
     def test_exact_bounded_count_and_no_whole_tree_promotion(self):
         self.assertEqual(len(self.new), 80)
@@ -57,10 +61,12 @@ class SettingsDepthInventoryTest(unittest.TestCase):
             self.assertTrue(all(c['sha'] == BASE for c in row['android_evidence']))
 
     def test_syntax_and_source_ownership_snapshots_remain_byte_identical(self):
-        for path in ('docs/parity/desktop-control-candidates.json',
-                     'docs/parity/desktop-source-ownership.json'):
-            original = subprocess.check_output(['git', '-C', str(ROOT), 'show', f'{START}:{path}'])
-            self.assertEqual((ROOT / path).read_bytes(), original)
+        # SHA256 of the original full blob bytes at START, including whitespace.
+        for path, expected in {
+            'docs/parity/desktop-control-candidates.json': '3576657d662098e0a2c87b2997871876f7bb1d2539487419c8f13caf0bd1fe81',
+            'docs/parity/desktop-source-ownership.json': '03de2e01075f20207399820d108d5747e56a0c4f740a492352fbe6caafb196ee',
+        }.items():
+            self.assertEqual(hashlib.sha256((ROOT / path).read_bytes()).hexdigest(), expected, path)
         ledger = json.loads((ROOT / 'docs/parity/desktop-control-candidates.json').read_text())
         self.assertEqual(len(ledger['candidates']), 3283)
         self.assertEqual(len(ledger['registries']), 21)

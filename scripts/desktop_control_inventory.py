@@ -140,7 +140,7 @@ def validate_controls(data, repo, upstream=None):
             errors.append('malformed test-reading span')
         else:
             all_citations.append(('test-reading', s))
-    android_sources = {}
+    android_bounds = family.android_baseline_bounds()
     for c in data.get('controls', []):
         if not c.get('android_evidence'):
             errors.append(c['id'] + ': missing Android evidence')
@@ -148,13 +148,10 @@ def validate_controls(data, repo, upstream=None):
             if s.get('sha') != family.BASE or not s.get('path', '').startswith('app/src/main/') or '..' in s.get('path', '').split('/') or type(s.get('start')) is not int or type(s.get('end')) is not int or not 0 < s['start'] <= s['end']:
                 errors.append(c['id'] + ': invalid Android citation')
                 continue
-            if s['path'] not in android_sources:
-                try:
-                    android_sources[s['path']] = family.git(repo, 'show', f'{family.BASE}:{s["path"]}').splitlines()
-                except subprocess.CalledProcessError:
-                    errors.append(c['id'] + ': Android baseline file missing')
-                    continue
-            if s['end'] > len(android_sources[s['path']]):
+            if s['path'] not in android_bounds:
+                errors.append(c['id'] + ': Android baseline file missing')
+                continue
+            if s['end'] > android_bounds[s['path']]:
                 errors.append(c['id'] + ': Android span out of bounds')
     if upstream:
         if family.git(upstream, 'rev-parse', 'HEAD').strip() != family.PIN:

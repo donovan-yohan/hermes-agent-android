@@ -88,6 +88,15 @@ class ControlInventoryTest(unittest.TestCase):
         self.assertEqual(controls.validate_controls(data, ROOT), [])
         self.assertFalse(data['semantic_complete'])
 
+    def test_android_bounds_reject_unknown_source_and_one_line_overflow(self):
+        data = json.loads((ROOT / 'docs/parity/desktop-control-records.json').read_text())
+        data['controls'] = [copy.deepcopy(data['controls'][0])]
+        citation = data['controls'][0]['android_evidence'][0]
+        citation['end'] = controls.family.android_baseline_bounds()[citation['path']] + 1
+        self.assertTrue(any('Android span out of bounds' in e for e in controls.validate_controls(data, ROOT)))
+        citation['path'] = 'app/src/main/Unknown.kt'
+        self.assertTrue(any('Android baseline file missing' in e for e in controls.validate_controls(data, ROOT)))
+
     def test_reject_complete_claim_duplicate_unsafe_and_nonshipping(self):
         data = json.loads((ROOT / 'docs/parity/desktop-control-records.json').read_text())
         data['semantic_complete'] = True

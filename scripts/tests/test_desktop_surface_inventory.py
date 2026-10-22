@@ -119,9 +119,18 @@ class InventoryTest(unittest.TestCase):
 
     def test_android_citation_uses_frozen_base_not_worktree(self):
         self.data['families'][0]['android_evidence'] = [{'path': 'app/src/main/File.kt', 'start': 1, 'end': 2}]
-        with patch.object(inventory, 'git', return_value='one\n') as git:
+        with patch.object(inventory, 'android_baseline_bounds', return_value={'app/src/main/File.kt': 1}):
             self.assertEqual(inventory.validate_android_citations(self.data, self.repo), ['one: Android citation exceeds baseline'])
-            git.assert_called_once_with(self.repo, 'show', inventory.BASE + ':app/src/main/File.kt')
+
+    def test_frozen_android_bounds_need_no_git_or_current_source(self):
+        with patch.object(inventory, 'git', side_effect=AssertionError('history is not a prerequisite')):
+            bounds = inventory.android_baseline_bounds()
+        self.assertEqual(bounds['app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt'], 898)
+        self.assertEqual(len(bounds), 34)
+
+    def test_unknown_android_baseline_path_fails_closed(self):
+        self.data['families'][0]['android_evidence'] = [{'path': 'app/src/main/Unknown.kt', 'start': 1, 'end': 2}]
+        self.assertEqual(inventory.validate_android_citations(self.data, self.repo), ['one: missing Android baseline source'])
 
     def test_path_traversal_in_citation_is_rejected(self):
         self.data['families'][0]['desktop'][0]['path'] = 'apps/desktop/../../outside'

@@ -115,18 +115,29 @@ def validate(data, repo, upstream=None):
     return errors
 
 
+def android_baseline_bounds():
+    """Read checked-in historical bounds; a depth-one checkout needs no history."""
+    path = Path(__file__).resolve().parent / 'fixtures/android-audit-baseline.json'
+    data = json.loads(path.read_text())
+    if data['android_sha'] != BASE:
+        raise ValueError('wrong Android bounds baseline')
+    if any(type(n) is not int or n < 1 for n in data['files'].values()):
+        raise ValueError('invalid Android baseline bounds')
+    return data['files']
+
+
 def validate_android_citations(data, repo):
     errors = []
+    bounds = android_baseline_bounds()
     for record in data['families']:
         for c in record.get('android_evidence', []):
             if not c['path'].startswith('app/src/') or '..' in c['path'].split('/') or not 0 < c['start'] <= c['end']:
                 errors.append(record['id'] + ': malformed Android citation')
                 continue
-            try:
-                if c['end'] > len(git(repo, 'show', f'{BASE}:{c["path"]}').splitlines()):
-                    errors.append(record['id'] + ': Android citation exceeds baseline')
-            except subprocess.CalledProcessError:
+            if c['path'] not in bounds:
                 errors.append(record['id'] + ': missing Android baseline source')
+            elif c['end'] > bounds[c['path']]:
+                errors.append(record['id'] + ': Android citation exceeds baseline')
     return errors
 
 
