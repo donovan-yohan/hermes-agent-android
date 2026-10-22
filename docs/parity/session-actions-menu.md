@@ -13,7 +13,10 @@ view's separate `Unarchive` row action is covered by #138. Branch, Export and
 Move to project were empty slots in the historical implementation described below.
 Export is now live through the native document flow; see [session-export.md](session-export.md)
 for the inspected behavior pin, regression evidence and pending rendered acceptance.
-References below to four unbuilt verbs describe the historical captures, not current Export.
+Branch is now live through the existing repository path; see [session-branch.md](session-branch.md)
+for the new behavior pin, regression evidence and pending visual acceptance.
+References below to four unavailable verbs describe the historical captures,
+not the current Branch and Export capabilities. Move to project remains unavailable.
 
 ## Pin
 

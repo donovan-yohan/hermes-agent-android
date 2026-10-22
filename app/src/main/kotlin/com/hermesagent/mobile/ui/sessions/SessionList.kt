@@ -158,6 +158,8 @@ fun SessionList(
     onDeleteSession: (suspend (String) -> Unit)? = null,
     onExportSession: (suspend (String) -> PreparedSessionExport)? = null,
     onExportProjectSession: (suspend (SessionSummary) -> PreparedSessionExport)? = null,
+    onBranchSession: ((String) -> Unit)? = null,
+    onBranchProjectSession: ((SessionSummary) -> Unit)? = null,
     /** Not `suspend`: the row that owns the press leaves the list it was on. */
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
@@ -489,6 +491,7 @@ fun SessionList(
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelectProjectSession,
                             onExportSession = onExportProjectSession,
+                            onBranchSession = onBranchProjectSession,
                             canCreate = canCreate,
                             onCreate = { onSelectProject(project.id); onCreate() },
                         )
@@ -680,6 +683,7 @@ fun SessionList(
                                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(row.session.id, newTitle) } },
                                     onDelete = onDeleteSession?.let { delete -> { delete(row.session.id) } },
                                     onExport = onExportSession?.let { export -> { export(row.session.id) } },
+                                    onBranch = onBranchSession?.let { branch -> { branch(row.session.id) } },
                                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(row.session.id, pinned) } },
                                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(row.session.id, unread) } },
                                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(row.session.id, archived) } },
@@ -990,6 +994,7 @@ private fun ProjectRow(
     onOpen: () -> Unit,
     onSelectSession: (SessionSummary) -> Unit,
     onExportSession: (suspend (SessionSummary) -> PreparedSessionExport)?,
+    onBranchSession: ((SessionSummary) -> Unit)?,
     canCreate: Boolean,
     onCreate: () -> Unit,
 ) {
@@ -1061,6 +1066,7 @@ private fun ProjectRow(
                 onClick = { onSelectSession(session) },
                 nowMillis = nowMillis,
                 onExport = onExportSession?.let { export -> { export(session) } },
+                onBranch = onBranchSession?.let { branch -> { branch(session) } },
             )
         }
     }
@@ -1399,6 +1405,7 @@ private fun SessionRow(
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
     onExport: (suspend () -> PreparedSessionExport)? = null,
+    onBranch: (() -> Unit)? = null,
     onSetPinned: ((Boolean) -> Unit)? = null,
     onSetUnread: ((Boolean) -> Unit)? = null,
     onSetArchived: ((Boolean) -> Unit)? = null,
@@ -1575,6 +1582,7 @@ private fun SessionRow(
             onRename = onRename,
             onDelete = onDelete,
             onExport = onExport,
+            onBranch = onBranch,
             onSetPinned = onSetPinned,
             onSetUnread = onSetUnread,
             onSetArchived = onSetArchived,

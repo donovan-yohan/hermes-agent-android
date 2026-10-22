@@ -472,6 +472,8 @@ class MainActivity : ComponentActivity() {
                     onDeleteSession = chatViewModel::deleteSessionAsync,
                     onExportSession = chatViewModel::exportSession,
                     onExportProjectSession = chatViewModel::exportProjectSession,
+                    onBranchSession = chatViewModel::branchSession,
+                    onBranchProjectSession = chatViewModel::branchProjectSession,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,
                     onSetSessionUnread = chatViewModel::setSessionUnreadAsync,
                     onSetSessionArchived = chatViewModel::setSessionArchivedAsync,

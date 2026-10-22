@@ -147,6 +147,27 @@ class ChatViewModelTest {
         owned.bytes.fill(0)
     }
 
+    @Test
+    fun `menu branch copies whole backend history and opens child once`() = runTest(dispatcher) {
+        viewModel.branchSession("session-b")
+        viewModel.branchSession("session-b")
+        runCurrent()
+        assertEquals(listOf("session-b" to null), repository.branchCalls)
+        assertTrue(repository.opened.contains(repository.branchResult))
+    }
+
+    @Test
+    fun `menu branch does not steal a newer selection`() = runTest(dispatcher) {
+        repository.menuBranchGate = CompletableDeferred()
+        viewModel.branchSession("session-a")
+        runCurrent()
+        viewModel.selectSession("session-b")
+        runCurrent()
+        repository.menuBranchGate!!.complete(Unit)
+        runCurrent()
+        assertFalse(repository.opened.contains(repository.branchResult))
+    }
+
     private class LogsHttp(private val text: String) : GatewayHttp {
         val requests = mutableListOf<GatewayHttpRequest>()
         var release: CompletableDeferred<Unit>? = null
@@ -4545,12 +4566,14 @@ class ChatViewModelTest {
 
 
         var branchResult = "new-durable"
+        var menuBranchGate: CompletableDeferred<Unit>? = null
         var historyResult = emptyList<TranscriptEntry>()
         var historyGate: CompletableDeferred<List<TranscriptEntry>>? = null
         val branchCalls = mutableListOf<Pair<String, Int?>>()
 
         override suspend fun branchSession(durableId: String, count: Int?): String {
             branchCalls.add(durableId to count)
+            menuBranchGate?.await()
             cache.upsertSession(summary(branchResult, CLOCK).copy(title = "Branched from $durableId"))
             return branchResult
         }

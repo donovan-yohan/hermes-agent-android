@@ -255,6 +255,7 @@ fun sessionActionItems(
     /** Either unread source: the backend's durable watermark or this client's finished-turn dot. */
     unread: Boolean = false,
     exportAvailable: Boolean = false,
+    branchAvailable: Boolean = false,
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
@@ -270,7 +271,7 @@ fun sessionActionItems(
             SessionIdCopyStatus.Copied -> CopyIdCopied
             SessionIdCopyStatus.Failed -> CopyIdFailed
         },
-        Branch,
+        Branch.copy(available = branchAvailable),
         Export.copy(available = exportAvailable),
         MoveToProject,
         Archive,
@@ -406,6 +407,7 @@ internal fun SessionActionsControl(
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
     onExport: (suspend () -> PreparedSessionExport)? = null,
+    onBranch: (() -> Unit)? = null,
     /**
      * Pin, read-state and archive, all deliberately **not** `suspend`.
      *
@@ -472,7 +474,8 @@ internal fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, copyStatus, pinned, unread, exportAvailable = onExport != null) },
+            items = { sessionActionItems(sessionId, copyStatus, pinned, unread,
+                exportAvailable = onExport != null, branchAvailable = onBranch != null) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
@@ -482,6 +485,10 @@ internal fun SessionActionsControl(
                     Export.copy(available = true) -> {
                         expanded = false
                         exportSession()
+                    }
+                    Branch.copy(available = true) -> {
+                        expanded = false
+                        onBranch?.invoke()
                     }
                     Rename -> {
                         expanded = false

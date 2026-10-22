@@ -248,6 +248,12 @@ interface GatewaySessionRepository {
     ): String = createSession(workspacePath, overrides)
     suspend fun branchSession(durableId: String, count: Int?): String =
         error("Branching is not implemented by this repository.")
+    suspend fun branchSessionAtEndpoint(durableId: String, expectedEndpointGeneration: Long): String =
+        branchSession(durableId, null)
+    suspend fun branchProjectSessionAtEndpoint(durableId: String, profile: String, expectedEndpointGeneration: Long): String {
+        val resolved = openSessionAtEndpoint(durableId, profile, expectedEndpointGeneration)
+        return branchSessionAtEndpoint(resolved, expectedEndpointGeneration)
+    }
     /** Preserve the exact row selected in the same authoritative visible history used for count. */
     suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long? = null): String =
         branchSession(durableId, count)
@@ -2668,21 +2674,37 @@ internal class LiveGatewaySessionRepository(
         parseHistory(historyResult, binding.runtimeId, clock())
     }
 
+    private data class WholeBranchAttempt(val connectionGeneration: Long, val key: String)
+    private val wholeBranchRequests = mutableMapOf<Pair<Long, String>, WholeBranchAttempt>()
+
+    override suspend fun branchSessionAtEndpoint(durableId: String, expectedEndpointGeneration: Long): String =
+        branchSessionInternal(durableId, null, null, fromReply = false, expectedEndpointGeneration)
+
+    override suspend fun branchProjectSessionAtEndpoint(durableId: String, profile: String, expectedEndpointGeneration: Long): String {
+        val resolved = openSessionAtEndpoint(durableId, profile, expectedEndpointGeneration)
+        return branchSessionInternal(resolved, null, null, fromReply = false, expectedEndpointGeneration, profile)
+    }
+
     override suspend fun branchSession(durableId: String, count: Int?): String =
         branchSessionInternal(durableId, count, null, fromReply = false)
 
     override suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long?): String =
         branchSessionInternal(durableId, count, selectedRow, fromReply = true, expectedEndpointGeneration)
 
-    private suspend fun branchSessionInternal(durableId: String, count: Int?, selectedRow: TranscriptRowId?, fromReply: Boolean, expectedEndpointGeneration: Long? = null): String = navigationMutex.withLock {
+    private suspend fun branchSessionInternal(durableId: String, count: Int?, selectedRow: TranscriptRowId?, fromReply: Boolean, expectedEndpointGeneration: Long? = null, expectedProfile: String? = null): String {
         requireEndpoint(expectedEndpointGeneration)
-        val binding = ensureRuntime(durableId)
+        // Resuming an unopened row takes navigationMutex itself.
+        val binding = ensureRuntime(durableId, expectedEndpointGeneration)
+        return navigationMutex.withLock {
         requireEndpoint(expectedEndpointGeneration)
         val connection = connectionSnapshot(binding)
         val canonical = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
         val endpoint = connection.endpointGeneration.takeIf { canonical ||
             (expectedEndpointGeneration != null && connection.client is EndpointDispatchingGatewayRpcClient) }
         val profile = synchronized(stateLock) { runtimeProfiles[binding.runtimeId] }
+        if (expectedProfile != null && profile != expectedProfile) {
+            throw GatewayRpcException("The selected session changed. Reopen it before branching.")
+        }
         fun unsaved(): Nothing = throw GatewayRpcException("This message is not saved yet; wait for it to settle, then branch from it again.")
         val boundary = if (!canonical) null else if (fromReply) {
             selectedRow?.value?.takeIf { it > 0 } ?: unsaved()
@@ -2697,16 +2719,37 @@ internal class LiveGatewaySessionRepository(
             if (visible.count { it.rowId?.value == row } != 1) unsaved()
             row
         } else null
-        val result = requestAtEndpointDispatch(connection, endpoint,
-            "session.branch",
-            buildJsonObject {
+        val branchParams = buildJsonObject {
                 put("session_id", JsonPrimitive(binding.runtimeId))
+                if (count == null) {
+                    val key = synchronized(stateLock) {
+                        wholeBranchRequests.keys.removeAll { it.first != connection.endpointGeneration }
+                        val attempt = wholeBranchRequests.getOrPut(connection.endpointGeneration to binding.durableId) {
+                            WholeBranchAttempt(connection.generation, java.util.UUID.randomUUID().toString())
+                        }
+                        // Canonical prepared revision/generation belongs to the old socket adapter.
+                        // Until a retained receipt can be reconciled, never blindly create a second child.
+                        if (attempt.connectionGeneration != connection.generation) {
+                            throw GatewayRpcException("Branch outcome is unknown. Check the session list before branching again.", requestMayHaveBeenAccepted = true)
+                        }
+                        attempt.key
+                    }
+                    put("idempotency_key", JsonPrimitive(key))
+                }
                 count?.let {
                     put("count", JsonPrimitive(it))
                     if (canonical) put("through_message_id", JsonPrimitive(boundary ?: unsaved()))
                 }
-            },
-        ).asObject("session.branch")
+            }
+        // Desktop whole-session handler avoids echoing the copied transcript.
+        // use-session-actions/index.ts:2686-2719 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+        val method = if (count == null) "session.branch_whole" else "session.branch"
+        val result = try {
+            requestAtEndpointDispatch(connection, endpoint, method, branchParams)
+        } catch (failure: GatewayRpcError) {
+            if (method != "session.branch_whole" || failure.code != JSON_RPC_METHOD_NOT_FOUND) throw failure
+            requestAtEndpointDispatch(connection, endpoint, "session.branch", branchParams)
+        }.asObject(method)
         val newRuntimeId = result.string("session_id")
             ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
         val newDurableId = result.string("stored_session_id")
@@ -2720,6 +2763,7 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.bind(newDurableId, newRuntimeId)
+            if (count == null) wholeBranchRequests.remove(connection.endpointGeneration to binding.durableId)
             runtimeProfiles[newRuntimeId] = profile
             // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
             cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId).let { row ->
@@ -2743,6 +2787,7 @@ internal class LiveGatewaySessionRepository(
             }
         }
         newDurableId
+    }
     }
     override suspend fun loadModelOptions(durableId: String?): ModelCatalog {
         val binding = durableId?.trim()?.takeIf(String::isNotEmpty)?.let { ensureRuntime(it) }
