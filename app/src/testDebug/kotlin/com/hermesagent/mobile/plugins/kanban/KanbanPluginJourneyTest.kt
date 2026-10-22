@@ -15,6 +15,8 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.PluginAreas
@@ -119,7 +121,8 @@ class KanbanPluginJourneyTest {
 
         compose.onNodeWithTag("Kanban Board controls").performClick()
         compose.waitForIdle()
-        assertWipOrder("Board switcher", "Filters", "Filter cards…", "Orchestration settings", "New task")
+        assertWipOrder("Board switcher", "Orchestration settings", "New task")
+        compose.onNodeWithText("Filters").assertIsDisplayed()
         compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(1)
         compose.onNodeWithTag("Kanban Board controls").performClick()
         compose.waitForIdle()
@@ -172,6 +175,33 @@ class KanbanPluginJourneyTest {
         compose.runOnIdle { state = KanbanUiState(KanbanPhase.Refused) }
         compose.onNodeWithText("Board could not be loaded").assertIsDisplayed()
         compose.onNodeWithTag("Kanban refresh").assertIsDisplayed()
+    }
+
+    @Test
+    fun `search and profile filters hide cards without changing board snapshot`() {
+        val tasks = listOf(
+            KanbanTask("a", "Pearl", "todo", assignee = "alpha"),
+            KanbanTask("b", "Shell", "todo", assignee = "beta"),
+        )
+        var state by mutableStateOf(KanbanUiState(
+            KanbanPhase.Ready, listOf(KanbanColumn("todo", tasks)),
+            assignees = listOf("alpha", "beta"),
+        ))
+        compose.setContent { HermesTheme {
+            KanbanScreen(state, {}, {}, {}, {}, onFilters = { state = state.copy(filters = it) })
+        } }
+        compose.onNodeWithContentDescription("Filter cards…").performTextInput("pearl")
+        compose.onNodeWithTag("Kanban task a").assertExists()
+        compose.onNodeWithTag("Kanban task b").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter cards…").performTextClearance()
+        compose.onNodeWithTag("Kanban Board controls").performClick()
+        compose.onNodeWithText("Filters").performClick()
+        compose.onNodeWithText("beta").performClick()
+        compose.onNodeWithTag("Kanban task a").assertDoesNotExist()
+        compose.onNodeWithTag("Kanban task b").assertExists()
+        compose.onNodeWithContentDescription("Filter cards…").performTextInput("missing")
+        compose.onNodeWithText("No tasks match the filters").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(tasks, state.columns.single().tasks) }
     }
 
     private fun assertWipOrder(vararg labels: String) {

@@ -22,7 +22,8 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 |---|---|---|---|
 | Horizontally interactive lanes | mobile-adaptation | Vertically grouped, tap-only cards | Desktop `board.tsx:1390-1415`; Android `KanbanScreen.kt:141-179`; phone one-pane adaptation |
 | Board switcher | mobile-adaptation | `Board controls` menu shows disabled `Board switcher` with `WIP` | Desktop titlebar `board.tsx:1326-1328`, control `board-switcher.tsx:1-6`; Android `KanbanScreen.kt`; current-board-only snapshot, no board selection read or write |
-| Filters and search | mobile-adaptation | `Board controls` menu shows disabled `Filters`, then `Filter cards…`, with `WIP` | Phone slice prioritizes a readable current-board snapshot; Desktop `apps/desktop/src/plugins/kanban/i18n.ts:240,261`, header `board.tsx:1335-1346`; Android `KanbanScreen.kt` |
+| Filters and search | mobile-adaptation | Enabled `Filters` menu and `Filter cards…` search over title/body/id, exact profile/tenant intersection; Show archived reloads the snapshot | Phone keeps the search field visible and puts filters in Board controls; source audit below; no task mutation |
+| Group Running by profile | omission | Visible disabled WIP in Filters | coming soon; vertical status groups do not yet subgroup by profile |
 | Orchestration settings and New task | mobile-adaptation | `Board controls` menu keeps both after filtering controls, disabled with `WIP` | Desktop `apps/desktop/src/plugins/kanban/i18n.ts:238-239`, header `board.tsx:1347-1362`; Android `KanbanScreen.kt`; orchestration and task creation are excluded |
 | Lane collapse, bulk selection, drag/drop | omission | Not rendered | out-of-scope: #261; the read-only vertical snapshot has no mutable board model or write API; Desktop `board.tsx:240-301, 945-1078, 1310-1321` |
 | Status and task actions | mobile-adaptation | Detail `Task actions` combines disabled `Move to`, `Copy task id`, `Copy title`, `Archive`, and `Delete` groups with `WIP` | Phone combines Desktop's adjacent status and actions controls while preserving their order and separators; Desktop status transition `ui.tsx:190-228` (`i18n.ts:267` `Move to`, `board.tsx:1017`), `drawer.tsx:680-731`, `i18n.ts:270,372-374`; Android `KanbanScreen.kt`; all actions remain inert in this snapshot |
@@ -32,6 +33,17 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 ## Visual report
 
 - pending: #261 (implementation issue is the required evidence issue; no separate issue is necessary).
+
+## Filtering source audit (2026-10-22)
+
+New filtering behavior was inspected at `NousResearch/hermes-agent@81a55437f3f31a9f12a30c53b6c5d49d420898aa`:
+
+- `apps/desktop/src/plugins/kanban/board.tsx:880-953,1183-1197`: menu order, exact profile/tenant equality, trimmed case-insensitive title/body/id search. Filters are UI-only; unfiltered task records remain authoritative.
+- `apps/desktop/src/plugins/kanban/api.ts:388-389`: archived snapshot query.
+- `plugins/kanban/dashboard/plugin_api.py:291-370`: board inventory and `include_archived` read contract.
+- `apps/desktop/src/plugins/kanban/i18n.ts:252-278`: verbatim labels and no-match copy.
+
+The historical Pin table and visual provenance above are unchanged. `KanbanFiltersTest` covers intersection, inventory parsing, archived query, endpoint clearing and obsolete snapshot rejection. The Compose journey exercises text search, profile choice and no-match recovery. No rendered approval is claimed: Concern, pending #261 (its existing comment explicitly retains visual-evidence debt).
 
 ## Executable evidence
 
