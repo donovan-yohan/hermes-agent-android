@@ -14,13 +14,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 
-/** Compiled Kanban snapshot and task movement. */
+/** Compiled Kanban snapshot, filtering, task creation and movement. */
 class KanbanPlugin(
     private val scope: CoroutineScope? = null,
 ) : HermesPlugin {
     override val id = "kanban"
     override val name = "Kanban"
-    override val description = "Board snapshot and task movement"
+    override val description = "Board snapshot, task creation and movement"
 
     override fun register(ctx: PluginContext) {
         val pluginScope = scope ?: CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -32,8 +32,9 @@ class KanbanPlugin(
             endpointGeneration = ctx.host.endpointGeneration,
             pluginScope = pluginScope,
             move = ctx.host.kanbanMove,
+            create = ctx.host.kanbanCreate,
         )
-        ctx.onDispose { viewModel.closeMove() }
+        ctx.onDispose { viewModel.closeMove(); viewModel.closeCreate() }
 
         ctx.registerMany(
             listOf(
@@ -53,6 +54,10 @@ class KanbanPlugin(
                             onMoveTask = viewModel::openMove,
                             onCloseMove = viewModel::closeMove,
                             onConfirmMove = viewModel::moveTask,
+                            onNewTask = viewModel::openCreate,
+                            onCloseCreate = viewModel::closeCreate,
+                            onSubmitTask = viewModel::submitTask,
+                            onFilters = viewModel::setFilters,
                         )
                     },
                 ),

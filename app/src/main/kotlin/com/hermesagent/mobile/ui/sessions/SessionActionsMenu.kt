@@ -254,6 +254,7 @@ fun sessionActionItems(
     pinned: Boolean = false,
     /** Either unread source: the backend's durable watermark or this client's finished-turn dot. */
     unread: Boolean = false,
+    branchAvailable: Boolean = false,
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
@@ -269,7 +270,7 @@ fun sessionActionItems(
             SessionIdCopyStatus.Copied -> CopyIdCopied
             SessionIdCopyStatus.Failed -> CopyIdFailed
         },
-        Branch,
+        Branch.copy(available = branchAvailable),
         Export,
         MoveToProject,
         Archive,
@@ -404,6 +405,7 @@ internal fun SessionActionsControl(
     unread: Boolean = false,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
+    onBranch: (() -> Unit)? = null,
     /**
      * Pin, read-state and archive, all deliberately **not** `suspend`.
      *
@@ -469,13 +471,17 @@ internal fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, copyStatus, pinned, unread) },
+            items = { sessionActionItems(sessionId, copyStatus, pinned, unread, branchAvailable = onBranch != null) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
             },
             onSelect = { item ->
                 when (item) {
+                    Branch.copy(available = true) -> {
+                        expanded = false
+                        onBranch?.invoke()
+                    }
                     Rename -> {
                         expanded = false
                         renameOpen = true

@@ -19,10 +19,16 @@ data class KanbanTask(
     val latestSummary: String? = null,
     val result: String? = null,
     val boardSlug: String? = null,
+    val tenant: String? = null,
 )
 
 data class KanbanColumn(val name: String, val tasks: List<KanbanTask>)
-data class KanbanBoard(val columns: List<KanbanColumn>, val boardSlug: String? = null)
+data class KanbanBoard(
+    val columns: List<KanbanColumn>,
+    val assignees: List<String> = emptyList(),
+    val tenants: List<String> = emptyList(),
+    val boardSlug: String? = null,
+)
 data class KanbanTaskDetail(
     val task: KanbanTask,
     val parentIds: List<String>,
@@ -41,7 +47,7 @@ sealed interface KanbanRead<out T> {
 class KanbanPluginRepository(
     private val rest: suspend (String, PluginRestOptions) -> PluginRestResult,
 ) {
-    suspend fun board(): KanbanRead<KanbanBoard> {
+    suspend fun board(includeArchived: Boolean = false): KanbanRead<KanbanBoard> {
         val selected = decode(rest("boards", options())) { bytes ->
             objectOf(bytes)?.string("current")?.takeIf { it.isNotBlank() }
         }
@@ -50,11 +56,14 @@ class KanbanPluginRepository(
             else -> KanbanRead.Refused
         }
         val slug = selected.value
-        return decode(rest("board", options().copy(query = mapOf("board" to slug)))) { bytes ->
+        val query = mapOf("board" to slug) +
+            if (includeArchived) mapOf("include_archived" to "true") else emptyMap()
+        return decode(rest("board", options().copy(query = query))) { bytes ->
             parseBoard(bytes)?.let { board -> board.copy(boardSlug = slug,
                 columns = board.columns.map { column -> column.copy(tasks = column.tasks.map { it.copy(boardSlug = slug) }) }) }
         }
     }
+
 
     suspend fun task(id: String, boardSlug: String? = null): KanbanRead<KanbanTaskDetail> {
         if (id.isBlank()) return KanbanRead.Refused
@@ -103,7 +112,7 @@ private fun parseBoard(bytes: ByteArray): KanbanBoard? {
             parseTask(task as? JsonObject ?: return null) ?: return null
         } ?: return null
         KanbanColumn(name, tasks)
-    })
+    }, assignees = root.stringList("assignees"), tenants = root.stringList("tenants"))
 }
 
 private fun parseDetail(bytes: ByteArray): KanbanTaskDetail? {
@@ -142,6 +151,7 @@ private fun parseTask(row: JsonObject): KanbanTask? = KanbanTask(
     body = row.string("body"),
     latestSummary = row.string("latest_summary"),
     result = row.string("result"),
+    tenant = row.string("tenant"),
 )
 
 private fun objectOf(bytes: ByteArray): JsonObject? = runCatching {
