@@ -2434,6 +2434,48 @@ internal class ChatViewModel(
         }
     }
 
+    private val branchingSessions = mutableSetOf<String>()
+
+    /** Whole-history branching uses the repository's backend-owned copy, never the visible page. */
+    fun branchSession(id: String) {
+        branchSessionInternal(id, null)
+    }
+
+    fun branchProjectSession(session: SessionSummary) {
+        val owner = session.remoteProfile
+        if (owner == null && cache.session(session.id)?.remoteProfile != null) return
+        branchSessionInternal(session.id, owner)
+    }
+
+    private fun branchSessionInternal(id: String, owner: String?) {
+        if (refuseBotChatMutation(id) != null) return
+        if (id.isBlank() || !branchingSessions.add(id)) return
+        val endpoint = cache.endpointGeneration.value
+        val selected = activeSessionId.value
+        val navigation = navigationGeneration
+        val profile = profileScopeGeneration
+        viewModelScope.launch {
+            try {
+                val child = if (owner == null) repository.branchSessionAtEndpoint(id, endpoint)
+                    else repository.branchProjectSessionAtEndpoint(id, owner, endpoint)
+                if (cache.endpointGeneration.value == endpoint && activeSessionId.value == selected &&
+                    navigationGeneration == navigation && profileScopeGeneration == profile) {
+                    selectSession(child)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                if (cache.endpointGeneration.value == endpoint) {
+                    noticeLine = if ((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+                        "Branch outcome is unknown. Check the session list before branching again."
+                    else "Branch failed. Check the Gateway and try again."
+                }
+            } finally {
+                branchingSessions.remove(id)
+            }
+        }
+    }
+
     fun branchFromReply(entryId: String) {
         if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value

@@ -3,8 +3,10 @@ package com.hermesagent.mobile.ui.chat
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -38,7 +40,12 @@ class CachedProjectPreviewJourneyTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = runTest {
+    fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = previewJourney(branch = false)
+
+    @Test
+    fun `cached alpha preview branch preserves alpha owner over beta raw id`() = previewJourney(branch = true)
+
+    private fun previewJourney(branch: Boolean) = runTest {
         val frames = mutableListOf<JsonObject>()
         val heldTrees = mutableListOf<JsonObject>()
         val heldResumes = mutableListOf<JsonObject>()
@@ -65,6 +72,7 @@ class CachedProjectPreviewJourneyTest {
                     "projects.tree" -> """{"projects":[{"id":"p","label":"$profile project","sessionCount":1,"previewSessions":[{"id":"s","title":"$profile preview"}]}]}"""
                     "session.resume" -> """{"session_id":"runtime-$profile","session_key":"${params["session_id"]!!.jsonPrimitive.content}","title":"$profile opened","running":false}"""
                     "session.history" -> """{"messages":[],"count":0}"""
+                    "session.branch_whole" -> """{"session_id":"runtime-child","stored_session_id":"child","title":"Child"}"""
                     else -> "{}"
                 }
                 rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":$result}""")
@@ -94,6 +102,8 @@ class CachedProjectPreviewJourneyTest {
                     onSidebarGroupingChange = viewModel::setSidebarGrouping,
                     onSelectSession = viewModel::selectSession,
                     onSelectProjectSession = viewModel::selectProjectSession,
+                    onBranchSession = viewModel::branchSession,
+                    onBranchProjectSession = viewModel::branchProjectSession,
                     onSelectProfile = viewModel::selectProfile,
                 ), onOpenSettings = {})
             }
@@ -133,11 +143,15 @@ class CachedProjectPreviewJourneyTest {
         compose.onNodeWithText("alpha preview").assertIsDisplayed()
         val beforeClick = frames.size
         holdResume = true
-        compose.onNodeWithTag("Session row s").performClick()
+        if (branch) {
+            compose.onAllNodesWithContentDescription("Session actions")[0].performClick()
+            compose.onNodeWithText("Branch").performClick()
+        } else compose.onNodeWithTag("Session row s").performClick()
         runCurrent()
         compose.waitForIdle()
 
         val resumes = frames.drop(beforeClick).filter { it["method"] == JsonPrimitive("session.resume") }
+        if (branch) compose.onNodeWithTag("Session row s").assertIsNotDisplayed()
         assertEquals("The displayed alpha preview must never resume beta", listOf(JsonPrimitive("alpha")),
             resumes.map { it.getValue("params").jsonObject["profile"] })
         assertEquals("Do not paint the foreign slot while the intended resume waits", null, viewModel.uiState.value.activeSessionId)
@@ -147,7 +161,12 @@ class CachedProjectPreviewJourneyTest {
         runCurrent()
         compose.waitForIdle()
         assertEquals("alpha", cache.session("s")?.remoteProfile)
-        assertEquals("s", viewModel.uiState.value.activeSessionId)
+        assertEquals(if (branch) "child" else "s", viewModel.uiState.value.activeSessionId)
+        if (branch) {
+            assertEquals(listOf(JsonPrimitive("runtime-alpha-s")), frames.filter {
+                it["method"] == JsonPrimitive("session.branch_whole")
+            }.map { it.getValue("params").jsonObject["session_id"] })
+        }
         compose.onNodeWithText("Beta private reply").assertDoesNotExist()
         rpc.close()
     }
