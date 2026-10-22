@@ -585,12 +585,18 @@ def _revision_tokens(line: str, cited: str | None = None, *, full: bool = False)
         return pattern.findall(line) if full else _sha_tokens(line)
     result = []
     eligible = set(pattern.findall(line) if full else _sha_tokens(line))
-    labels = list(re.finditer(r"\b(android|mobile|desktop|gateway|upstream)\b", line, re.I))
     for match in pattern.finditer(line):
         if match.group() not in eligible:
             continue
-        previous = [label for label in labels if label.end() <= match.start()]
-        if previous and previous[-1].group().lower() in ("android", "mobile"):
+        prefix = line[:match.start()]
+        # Explicit @ always owns its citation. Consumer prose such as
+        # "Android adaptation consumes path @ SHA" is not a foreign declaration.
+        explicit = prefix.rstrip().rstrip("`").rstrip().endswith("@")
+        foreign = re.search(
+            r"\b(?:android|mobile)(?:\s+implementation)?"
+            r"(?:\s+(?:baseline|foundation|source|revision|commit|sha|pin|target))?"
+            r"\s*[:=]?\s*`?\s*$", prefix.replace("|", " "), re.I)
+        if foreign and not explicit:
             continue
         result.append(match.group())
     return result
@@ -602,9 +608,12 @@ def _line_revision_tokens(lines: list[str], index: int, cited: str | None = None
     # "Desktop <sha> and Android baseline" / "<sha> ...". Carry the LABEL,
     # not the preceding revision, so two repositories remain distinguishable.
     if index and re.match(r"^\s*`?[0-9a-f]{40}\b", line):
-        labels = list(re.finditer(r"\b(android|mobile|desktop|gateway|upstream)\b", lines[index - 1], re.I))
-        if labels:
-            line = labels[-1].group() + " " + line
+        label = re.search(
+            r"\b((?:android|mobile|desktop|gateway|upstream)(?:\s+implementation)?"
+            r"(?:\s+(?:baseline|foundation|source|revision|commit|sha|pin|target))?)"
+            r"\s*[:=]?\s*$", lines[index - 1], re.I)
+        if label:
+            line = label.group(1) + " " + line
     return _revision_tokens(line, cited, full=full)
 
 
@@ -729,7 +738,14 @@ def _declaration(lines: list[str], number: int, cited: str | None = None) -> str
             pin, row_marker, general = row
             if pin not in _line_revision_tokens(lines, index, cited, full=True):
                 continue
-            if general:
+            earlier = index - 1
+            while earlier >= 0 and lines[earlier].lstrip().startswith("|"):
+                prior = rows.get(earlier)
+                if prior and prior[0] in _line_revision_tokens(lines, earlier, cited, full=True):
+                    break
+                earlier -= 1
+            eligible_general = earlier < 0 or not lines[earlier].lstrip().startswith("|")
+            if eligible_general:
                 return pin
             if row_marker is not None and row_marker == marker_name:
                 return pin
@@ -782,7 +798,7 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
         pin, row_marker, is_general = row
         if pin not in _line_revision_tokens(lines, index - 1, cited, full=True):
             continue
-        if is_general and general is None:
+        if general is None:
             general = pin
         elif row_marker is not None:
             by_marker.setdefault(row_marker, pin)

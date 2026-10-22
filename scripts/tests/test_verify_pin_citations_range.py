@@ -172,6 +172,20 @@ class CitationPinTest(unittest.TestCase):
         ]
         self.assertEqual(self.moved, gate.citation_pin(lines, 7, [self.moved, self.other]))
 
+    def test_incidental_android_word_does_not_hide_explicit_upstream_pin(self) -> None:
+        lines = ["## Pin", f"Desktop authority: `{self.moved}`", "## Claims",
+                 f"Android adaptation consumes `lib/util.ts:1-3` @ `{self.other}`"]
+        self.assertEqual(self.other, gate.citation_pin(lines, 4, [self.moved, self.other], "lib/util.ts"))
+        lines[-1] = "Android adaptation consumes `lib/util.ts:1-3` @"
+        lines.append(f"`{self.other}`")
+        self.assertEqual(self.other, gate.citation_pin(lines, 4, [self.moved, self.other], "lib/util.ts"))
+
+    def test_eligible_desktop_table_row_becomes_general_after_foreign_row(self) -> None:
+        lines = ["## Pin", "| Source | Pin |", "|---|---|",
+                 f"| Android foundation | `{self.other}` |",
+                 f"| Desktop authority | `{self.moved}` |", "", "## Claims", "`lib/util.ts:1-3`"]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 8, [self.moved, self.other], "lib/util.ts"))
+
     def test_mobile_foundation_does_not_bind_desktop_citations(self) -> None:
         lines = ["## Pin and scope", "",
                  f"Desktop/Gateway authority: `{self.moved}`.",
