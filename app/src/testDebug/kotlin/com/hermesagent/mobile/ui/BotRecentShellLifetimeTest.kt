@@ -22,6 +22,43 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class BotRecentShellLifetimeTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun `disposed shell revokes held recent predicate and completion`() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        val store = PluginStore(scope, object : PluginDecisionStore {
+            override val pluginDecisions = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+            override suspend fun savePluginDecision(id: String, enabled: Boolean) = Unit
+        })
+        val registry = ContributionRegistry()
+        var canAdopt: (() -> Boolean)? = null
+        var completion: ((Boolean) -> Unit)? = null
+        val outcomes = mutableListOf<Boolean>()
+        val mounted = mutableStateOf(true)
+        registry.register(Contribution("fixture:one", PluginAreas.ROUTES_AREA, render = {
+            val nav = LocalPluginNavigation.current
+            com.hermesagent.mobile.ui.common.TextButton("Start bot action", {
+                nav.onOpenBotRecentSession("work", "recent", 0L) { outcomes += it }
+            })
+        }))
+        compose.setContent {
+            if (mounted.value) HermesApp(ChatUiState(), GatewaySettingsUiState(), SshUiState(),
+                AppearanceSelection(), chatActions = ChatActions(onOpenBotRecentSession = { _, _, _, current, done ->
+                    canAdopt = current; completion = done
+                }), appearanceActions = AppearanceActions(), gatewayActions = GatewayActions(), sshActions = SshActions(),
+                pluginRegistry = registry, pluginStore = store,
+                navigationAsk = HermesNavigationAsk(HermesDestination.Route("fixture:one"), 1L))
+            else Text("Replacement shell")
+        }
+        compose.onNodeWithText("Start bot action").performClick()
+        compose.runOnIdle { assertTrue(canAdopt!!()); mounted.value = false }
+        compose.onNodeWithText("Replacement shell").assertIsDisplayed()
+        compose.runOnIdle {
+            assertFalse(canAdopt!!())
+            completion!!(true)
+            assertEquals(listOf(false), outcomes)
+            scope.cancel()
+        }
+    }
+
     @Test fun `held success cannot override later shell navigation or leave return ABA`() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val store = PluginStore(scope, object : PluginDecisionStore {

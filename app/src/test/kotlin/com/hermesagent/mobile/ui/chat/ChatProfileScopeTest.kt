@@ -333,6 +333,44 @@ class ChatProfileScopeTest {
     }
 
     @Test
+    fun `failed ordinary create retains recent owner queue scope`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        repository.onRecentOpened = { cache.upsertSession(row("recent", CLOCK, "work")) }
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        repository.sessionCreateFailure = true
+        viewModel.createSession(); runCurrent()
+        assertEquals("recent", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+    }
+
+    @Test
+    fun `disconnected ordinary create retains recent owner queue scope`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        viewModel.createSession(); runCurrent()
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+    }
+
+    @Test
+    fun `stale ordinary create retains newer recent owner queue scope`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        viewModel.createSession(); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+    }
+
+    @Test
     fun `create snapshots profile before launch and cannot adopt after switching scope`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -575,6 +613,7 @@ class ChatProfileScopeTest {
 
         var sessionCreateGate: CompletableDeferred<Unit>? = null
         var sessionCreateJob: kotlinx.coroutines.Job? = null
+        var sessionCreateFailure = false
         var createdProfile: String? = null
         override suspend fun createSession(workspacePath: String?): String {
             createdProfile = routing.activeProfile
@@ -591,6 +630,7 @@ class ChatProfileScopeTest {
             createdProfile = profile
             sessionCreateJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             sessionCreateGate?.await()
+            check(!sessionCreateFailure)
             return "created"
         }
 

@@ -199,6 +199,9 @@ fun HermesApp(
         mutableStateOf<HermesDestination>(HermesDestination.Chat)
     }
     val navigationEpoch = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    androidx.compose.runtime.DisposableEffect(navigationEpoch) {
+        onDispose { navigationEpoch.longValue++ }
+    }
     fun navigate(target: HermesDestination) {
         navigationEpoch.longValue++
         destination = target

@@ -2432,7 +2432,7 @@ internal class ChatViewModel(
     }
 
     fun createSession() {
-        ordinaryBotOwner.value = null
+        // The current ordinary session keeps its owner until rehome succeeds.
         // This is the person's explicit escape from a Bot Chat, not a Bot-open
         // side effect. Clear first so New Chat is usable.
         clearBotChatCapability()
