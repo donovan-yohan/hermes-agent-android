@@ -31,7 +31,10 @@ leave-and-return ABA; it cannot drag a newer Settings/plugin destination back
 to Chat. The ordinary session's queue binds to its explicit bot owner while
 the browsing rail remains unchanged. Opening suppresses automatic queue drain
 through hydration, scope binding and reconnect until an explicit send/resume.
-Recent compressed IDs use the existing draft/history/queue migration path.
+Recent compressed IDs use the existing draft/history/queue migration path after
+binding the owner queue namespace. Shell liveness is checked before foreground
+adoption and after migration awaits; every ordinary session entry restores the
+queue owner from the backend row, without changing the browsing rail.
 These boundaries have focused VM/controller and real-shell Compose regressions;
 the test command and exact-candidate outcome remain separate execution evidence.
 
@@ -44,7 +47,7 @@ the test command and exact-candidate outcome remain separate execution evidence.
 
 ## Visual report
 
-- pending: #190
+- pending: #216
 
 No new rendered side-by-side or physical-device acceptance is claimed.
 Visual verdict remains Concern until the existing owner supplies evidence.

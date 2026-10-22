@@ -49,7 +49,7 @@ class BotRecentShellLifetimeTest {
             }
         }))
         compose.setContent { HermesApp(ChatUiState(), GatewaySettingsUiState(), SshUiState(),
-            AppearanceSelection(), chatActions = ChatActions(onOpenBotRecentSession = { _, _, _, done -> completion = done }),
+            AppearanceSelection(), chatActions = ChatActions(onOpenBotRecentSession = { _, _, _, _, done -> completion = done }),
             appearanceActions = AppearanceActions(), gatewayActions = GatewayActions(), sshActions = SshActions(),
             pluginRegistry = registry, pluginStore = store,
             navigationAsk = HermesNavigationAsk(HermesDestination.Route("fixture:one"), 1L)) }

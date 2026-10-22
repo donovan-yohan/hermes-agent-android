@@ -446,6 +446,62 @@ class ChatProfileScopeTest {
         assertEquals("keep my work", subject.uiState.value.draft)
     }
 
+    @Test
+    fun `revoked shell lifetime leaves foreground and draft untouched`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectSession("lab-row"); runCurrent()
+        viewModel.setDraft("preserve foreground")
+        val before = viewModel.uiState.value.activeSessionId
+        val gate = CompletableDeferred<Unit>(); repository.recentOpenGate = gate
+        var current = true
+        val result = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value, { current }) { result += it }
+        runCurrent(); current = false; gate.complete(Unit); runCurrent()
+        assertEquals(before, viewModel.uiState.value.activeSessionId)
+        assertEquals("preserve foreground", viewModel.uiState.value.draft)
+        assertEquals(listOf(false), result)
+    }
+
+    @Test
+    fun `ordinary session rail reopening restores authoritative queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+        viewModel.selectSession("lab-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "lab"), queueScopes.last())
+        viewModel.selectSession("work-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `navigation during compressed migration cannot rebind newer composer`() = runTest(dispatcher) {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val storage = com.hermesagent.mobile.data.draft.TransientSessionDraftStore()
+        storage.replace("recent", "old draft")
+        val held = object : com.hermesagent.mobile.data.draft.SessionDraftStore by storage {
+            override suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String, sourceText: String?): String? {
+                entered.complete(Unit); release.await()
+                return storage.migrateIfDestinationEmpty(fromDurableId, toDurableId, sourceText)
+            }
+        }
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles,
+            draftStore = held, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        repository.recentResult = "tip"
+        repository.onRecentOpened = { cache.upsertSession(row("tip", CLOCK, "work")) }
+        val outcomes = mutableListOf<Boolean>()
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { outcomes += it }
+        runCurrent(); assertTrue(entered.isCompleted)
+        subject.selectSession("lab-row"); runCurrent()
+        val before = subject.uiState.value.composer
+        release.complete(Unit); runCurrent()
+        assertEquals("lab-row", subject.uiState.value.activeSessionId)
+        assertEquals(before, subject.uiState.value.composer)
+        assertEquals(listOf(false), outcomes)
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())

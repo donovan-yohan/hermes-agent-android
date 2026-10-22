@@ -40,7 +40,7 @@ class ChatActions(
      */
     val onRetrySessionOpen: () -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
-    val onOpenBotRecentSession: (profile: String, durableId: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
+    val onOpenBotRecentSession: (profile: String, durableId: String, endpoint: Long, isCurrent: () -> Boolean, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _, _, _ -> },
     val onCreateSession: () -> Unit = {},
     val onBranchFromReply: ((String) -> Unit)? = null,
     val onRegenerateReply: ((String) -> Unit)? = null,

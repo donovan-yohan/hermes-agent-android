@@ -260,7 +260,7 @@ fun HermesApp(
             },
             onOpenBotRecentSession = { profile, durableId, endpoint, onFinished ->
                 val originEpoch = navigationEpoch.longValue
-                chatActions.onOpenBotRecentSession(profile, durableId, endpoint) { opened ->
+                chatActions.onOpenBotRecentSession(profile, durableId, endpoint, { navigationEpoch.longValue == originEpoch }) { opened ->
                     val accepted = opened && navigationEpoch.longValue == originEpoch
                     if (accepted) navigate(HermesDestination.Chat)
                     onFinished(accepted)
