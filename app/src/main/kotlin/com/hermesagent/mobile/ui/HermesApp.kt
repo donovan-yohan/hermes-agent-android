@@ -174,6 +174,7 @@ fun HermesApp(
     connectionsActions: ConnectionsActions = ConnectionsActions(),
     pluginRegistry: ContributionRegistry = ContributionRegistry(),
     pluginStore: PluginStore,
+    agentPluginsHost: com.hermesagent.mobile.plugins.PluginHost = com.hermesagent.mobile.plugins.UnavailablePluginHost,
     avatarRoster: AvatarRosterCoordinator? = null,
     notificationsState: NotificationsUiState = NotificationsUiState(),
     notificationsActions: NotificationsActions = NotificationsActions(),
@@ -373,7 +374,8 @@ fun HermesApp(
                     title = PluginsCopy.TITLE,
                     onBack = onBack,
                 ) {
-                    PluginsScreen(store = pluginStore)
+                    PluginsScreen(store = pluginStore, agentHost = agentPluginsHost,
+                        selectedProfile = chatState.profileRail.scope.activeProfile)
                 }
 
                 // The updates sheet is hosted here rather than beside the panel's
