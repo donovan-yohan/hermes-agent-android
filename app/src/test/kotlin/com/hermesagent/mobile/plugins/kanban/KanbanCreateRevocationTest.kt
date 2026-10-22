@@ -32,7 +32,7 @@ class KanbanCreateRevocationTest {
         })
         val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> board.await() },
             MutableStateFlow(false), MutableStateFlow(0L), backgroundScope,
-            GatewayKanbanCreate({ http }, MutableStateFlow(0L), EndpointDispatchFence()))
+            create = GatewayKanbanCreate({ http }, MutableStateFlow(0L), EndpointDispatchFence()))
         vm.refreshBoard(); runCurrent()
         vm.openCreate(); runCurrent()
         // Interceptor completion runs on OkHttp; awaiting the scope's preparation avoids wall-clock sleeps.
