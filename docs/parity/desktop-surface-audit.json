@@ -1,0 +1,2095 @@
+{
+  "schema_version": 1,
+  "upstream_sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+  "android_sha": "65080e8a37e8d546869528e43c162503015b94c7",
+  "semantic_complete": false,
+  "scope": "Source-derived family reconciliation. Discovery records are candidates, not features. Family ownership does not certify every nested control or visual state.",
+  "families": [
+    {
+      "id": "navigation-and-discovery",
+      "controls": [
+        "New chat",
+        "Settings",
+        "System",
+        "Usage",
+        "Capabilities",
+        "Messaging",
+        "Artifacts",
+        "Cron",
+        "Profiles",
+        "Agents",
+        "Starmap",
+        "Session import",
+        "plugin routes",
+        "command palette",
+        "setting search",
+        "direct session and folder lookup"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/routes.ts",
+          "start": 11,
+          "end": 77
+        },
+        {
+          "path": "apps/desktop/src/app/command-palette/index.tsx",
+          "start": 759,
+          "end": 1185
+        }
+      ],
+      "authority": "Renderer route state; palette invokes existing feature actions rather than a universal backend endpoint. Contributions add run callbacks.",
+      "android": "HermesApp.kt and SettingsScreen.kt: native destination routing, no universal command palette. Settings has Appearance, Gateways, System, Plugins, Notifications; contributed feature launchers are distinct. Missing destinations are not implicitly non-goals.",
+      "classification": "omission",
+      "owner": "migration #73; discovery/drift #266",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "session-actions",
+      "controls": [
+        "New tab/window/terminal",
+        "Rename",
+        "Pin/unpin",
+        "Read/unread",
+        "Appearance",
+        "Copy ID",
+        "Branch",
+        "Export",
+        "Move to project",
+        "Reload/close tab family",
+        "Archive/unarchive",
+        "Delete"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 119,
+          "end": 149
+        },
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 300,
+          "end": 610
+        }
+      ],
+      "authority": "Session identity and mutations backend-owned; window/tab state renderer/Electron-owned. Rename prefers live RPC.",
+      "android": "ui/sessions/SessionActionsMenu.kt: rename, pin/read, copy, archive/delete enabled; appearance, Branch, Export, Move to project unavailable. Android archive label is unconditional, unlike current Desktop toggle. No tab/window surface. Parent work does not alter this baseline.",
+      "classification": "mixed",
+      "owner": "drift #266; migration #73",
+      "parity_pages": [
+        "docs/parity/session-actions-menu.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.test.ts",
+          "start": 62,
+          "end": 161,
+          "finding": "Rename prefers owned runtime RPC; persisted-only rows use REST, including empty-title handling.",
+          "executed": false
+        },
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.test.tsx",
+          "start": 130,
+          "end": 146,
+          "finding": "Real dropdown trigger composition opens the action menu; labels in mocks are not copy authority.",
+          "executed": false
+        }
+      ],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 318
+        }
+      ]
+    },
+    {
+      "id": "settings-navigation",
+      "controls": [
+        "Config section navigation",
+        "Passwords & Logins",
+        "Notifications",
+        "Billing overview/plans",
+        "Providers accounts/API keys/custom endpoints/local models",
+        "Gateway",
+        "Keyboard shortcuts",
+        "Tool keys",
+        "Archived chats",
+        "Plugins",
+        "About",
+        "Config export/import"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/settings/index.tsx",
+          "start": 240,
+          "end": 435
+        },
+        {
+          "path": "apps/desktop/src/app/settings/index.tsx",
+          "start": 489,
+          "end": 536
+        },
+        {
+          "path": "apps/desktop/src/app/settings/types.ts",
+          "start": 7,
+          "end": 19
+        }
+      ],
+      "authority": "Config schema/backend owns host configuration; renderer selects/deep-links subpage. Billing is separate account authority.",
+      "android": "ui/settings/SettingsScreen.kt: only five built-in destinations. No evidence of equivalent general config, provider, billing, keys, vault, keybind or About destinations. Bounded bot editors do not equal full Settings.",
+      "classification": "omission",
+      "owner": "migration #73; vault #238; surface gaps #184",
+      "parity_pages": [
+        "docs/parity/settings-plugins.md",
+        "docs/parity/gateway-connections.md",
+        "docs/parity/vault-prompts.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/settings/SettingsScreen.kt",
+          "start": 27,
+          "end": 100
+        }
+      ]
+    },
+    {
+      "id": "appearance-manifest",
+      "controls": [
+        "Language",
+        "Intro",
+        "Model pricing",
+        "Resume last chat",
+        "Tips/tours",
+        "Theme/mode",
+        "UI/chat/terminal fonts and scale",
+        "Simple mode",
+        "Density",
+        "Tab strip",
+        "App actions",
+        "Tray",
+        "Translucency/backdrop",
+        "Files",
+        "Composer popout",
+        "Bubble opacity",
+        "Direction",
+        "Timeline",
+        "Reactions",
+        "Hearts",
+        "Tool view/diffs/reasoning",
+        "Embeds",
+        "Pet"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/settings/settings-manifest.ts",
+          "start": 54,
+          "end": 146
+        }
+      ],
+      "authority": "Local renderer preferences and theme authority, not Gateway session truth. Platform predicates hide native-only rows.",
+      "android": "ui/appearance/AppearanceScreen.kt has mode, presets/custom import and selected chat chrome. Full manifest must not be inferred from theme registry parity; absent rows remain omissions pending explicit platform decisions.",
+      "classification": "mixed",
+      "owner": "appearance #157; six-surface stance #184; visual #292",
+      "parity_pages": [
+        "docs/parity/appearance-themes.md",
+        "docs/parity/empty-states.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "core-config-schema",
+      "controls": [
+        "Model/context/fallback/delegation",
+        "Chat/personality/timezone",
+        "Workspace/path/scan",
+        "Safety/approval/checkpoints",
+        "Browser/profile",
+        "Memory/provider/compression",
+        "Voice/STT/TTS",
+        "Advanced tools/execution/output/updates"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/settings/constants.ts",
+          "start": 709,
+          "end": 870
+        }
+      ],
+      "authority": "SECTIONS curates backend config keys; schema fields, credentials and plugins dynamically extend search independently of SETTINGS_MANIFEST.",
+      "android": "No generic Android config-schema editor. Composer model/reasoning and approval mode plus bot model/toolset editors are bounded subsets, not full section coverage. Browser host preferences are not phone browser preferences.",
+      "classification": "omission",
+      "owner": "migration #73; discovery #266",
+      "parity_pages": [
+        "docs/parity/approval-mode.md",
+        "docs/parity/bot-model-config.md",
+        "docs/parity/bot-toolsets.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "keyboard-and-pane-layout",
+      "controls": [
+        "Composer focus/model/voice/reasoning",
+        "Profile slots/switch/create",
+        "Session/tab slots",
+        "New worktree/folder",
+        "Navigation",
+        "Pane visibility",
+        "Tabs",
+        "HUD",
+        "Terminal",
+        "Find",
+        "Theme mode",
+        "Keybind editor",
+        "Layout reset/edit",
+        "Profile export/import",
+        "Reload desktop plugins"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/lib/keybinds/actions.ts",
+          "start": 81,
+          "end": 225
+        },
+        {
+          "path": "apps/desktop/src/lib/keybinds/actions.ts",
+          "start": 348,
+          "end": 377
+        },
+        {
+          "path": "apps/desktop/src/app/contrib/controller.tsx",
+          "start": 192,
+          "end": 440
+        }
+      ],
+      "authority": "Renderer pane tree and scoped preferences; Electron supplies native windows/terminal/files. Keys are triggers, not separate features.",
+      "android": "HermesApp.kt compact drawer and native destinations adapt navigation. No arbitrary pane tree, tab strip, HUD or rebind editor. Do not classify all absent keyboard-triggered backend actions as Electron-only.",
+      "classification": "omission",
+      "owner": "migration #73; gap classification #184",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md",
+        "docs/parity/session-actions-menu.md",
+        "docs/parity/profile-switcher.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "kanban",
+      "controls": [
+        "Board/lane display",
+        "Board switch/create/rename/delete/import/export",
+        "Search/filter assignee/tenant/archived/lanes",
+        "New task",
+        "Detail",
+        "Move status",
+        "Select/bulk move/reassign/archive/delete",
+        "Comments/requeue",
+        "Worker controls",
+        "Attachments",
+        "Estimate",
+        "Orchestration",
+        "Profile descriptions"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/kanban/plugin.tsx",
+          "start": 81,
+          "end": 170
+        },
+        {
+          "path": "apps/desktop/src/plugins/kanban/api.ts",
+          "start": 388,
+          "end": 517
+        },
+        {
+          "path": "apps/desktop/src/plugins/kanban/board.tsx",
+          "start": 900,
+          "end": 1088
+        },
+        {
+          "path": "apps/desktop/src/plugins/kanban/drawer.tsx",
+          "start": 985,
+          "end": 1030
+        }
+      ],
+      "authority": "Plugin namespace REST via ctx.rest, socket-invalidated scoped query cache. Endpoint family is /api/plugins/kanban; not core RPC.",
+      "android": "plugins/kanban/KanbanScreen.kt and KanbanPluginRepository.kt: board/task read snapshot. Filters, New task, Move to are visible WIP at baseline. Rich task/board mutations beyond those are not implemented by showing a label.",
+      "classification": "mixed",
+      "owner": "plugin migration #166; full coverage #73",
+      "parity_pages": [
+        "docs/parity/kanban-task-snapshot.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [
+        {
+          "path": "apps/desktop/src/plugins/kanban/api.connection-scope.test.ts",
+          "start": 28,
+          "end": 129,
+          "finding": "Query keys and board slugs follow connection; outgoing observer cannot refetch on incoming host.",
+          "executed": false
+        }
+      ],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/kanban/KanbanScreen.kt",
+          "start": 86,
+          "end": 129
+        }
+      ]
+    },
+    {
+      "id": "system-actions",
+      "controls": [
+        "Backend status",
+        "Gateway restart",
+        "Hermes update",
+        "Update check/changelog/action tail",
+        "Recent logs",
+        "Maintenance doctor/security audit/backup/debug share",
+        "Usage"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/system.ts",
+          "start": 148,
+          "end": 179
+        },
+        {
+          "path": "apps/desktop/src/api/system.ts",
+          "start": 270,
+          "end": 313
+        },
+        {
+          "path": "apps/desktop/src/app/command-palette/index.tsx",
+          "start": 956,
+          "end": 995
+        }
+      ],
+      "authority": "Authenticated host REST, explicit profile/owner scoping; Electron client update differs from backend update.",
+      "android": "ui/system/SystemScreen.kt, SystemViewModel.kt and data/updates: status/restart/update implemented; System Recent logs WIP. Existing chat GatewayLogsDialog is error recovery, not System feature parity. No general maintenance/usage destination.",
+      "classification": "mixed",
+      "owner": "logs/background/skew #127; broad omissions #73",
+      "parity_pages": [
+        "docs/parity/system-panel.md",
+        "docs/parity/turn-error-recovery.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/system/SystemScreen.kt",
+          "start": 179,
+          "end": 200
+        }
+      ]
+    },
+    {
+      "id": "agent-and-desktop-plugins",
+      "controls": [
+        "Bundled Desktop enable/disable",
+        "Runtime Desktop discovery/reload/install",
+        "Agent package list/toggle",
+        "Provenance/version/kind",
+        "Install here",
+        "Failure/refresh",
+        "Plugin settings",
+        "Contribution areas"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/contrib/controller.tsx",
+          "start": 325,
+          "end": 337
+        },
+        {
+          "path": "apps/desktop/src/app/settings/types.ts",
+          "start": 7,
+          "end": 19
+        },
+        {
+          "path": "apps/desktop/src/plugins/kanban/plugin.tsx",
+          "start": 81,
+          "end": 170
+        }
+      ],
+      "authority": "Desktop plugin loader is local JS/Electron authority; Agent half is profile-scoped backend authority. They are not interchangeable.",
+      "android": "ui/settings/PluginsScreen.kt: bundled Kotlin module toggles plus disabled Agent plugins row. ADR 0003 rules out loading Desktop JS, not managing backend plugins.",
+      "classification": "mixed",
+      "owner": "Agent #234; SDK #166",
+      "parity_pages": [
+        "docs/parity/settings-plugins.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [
+        {
+          "path": "apps/desktop/src/store/agent-plugins.test.ts",
+          "start": 21,
+          "end": 60,
+          "finding": "Slow install has explicit timeout budget; timeout is unknown outcome, not retry-safe failure.",
+          "executed": false
+        },
+        {
+          "path": "apps/desktop/src/store/agent-plugins.test.ts",
+          "start": 90,
+          "end": 161,
+          "finding": "Secret writer separate from settings RPC; stale profile response cannot replace another list.",
+          "executed": false
+        }
+      ],
+      "backend_evidence": [
+        {
+          "path": "tui_gateway/methods_tools.py",
+          "start": 1859,
+          "end": 1866
+        }
+      ],
+      "android_evidence": []
+    },
+    {
+      "id": "bots-roster-and-chat",
+      "controls": [
+        "Roster select/refresh",
+        "New/edit/duplicate/delete bot",
+        "Pin/hide/sections/order",
+        "Canonical Bot Chat",
+        "New side chat",
+        "Recent session",
+        "Screen open/auto-open",
+        "Groups",
+        "Activity notices",
+        "Routines pane"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/plugin.tsx",
+          "start": 438,
+          "end": 505
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/plugin.tsx",
+          "start": 728,
+          "end": 753
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/roster-actions.ts",
+          "start": 215,
+          "end": 381
+        }
+      ],
+      "authority": "profiles.list and canonical session registry own identity; Server ui_meta CAS owns shared roster metadata; ctx.storage owns scoped local section/preferences state. Bot Chat is not an arbitrary latest session; source/profile-qualified open fenced by generation.",
+      "android": "plugins/bots/BotsRosterScreen.kt and management models implement roster/canonical chat/selected mutations. New chat/recent and Screen actions visibly WIP; Group/identity/routine coverage is separately bounded.",
+      "classification": "mixed",
+      "owner": "Bot epic #186; captures #216; doors #268",
+      "parity_pages": [
+        "docs/parity/bots-roster.md",
+        "docs/parity/bot-chat.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsRosterScreen.kt",
+          "start": 539,
+          "end": 560
+        }
+      ]
+    },
+    {
+      "id": "sidebar-catalog-and-projects",
+      "controls": [
+        "Search",
+        "Group Updated/Profile/Project/Status",
+        "Ordering updated/created/status/tokens/cost/manual",
+        "Show metadata",
+        "Inbox",
+        "Profile rail",
+        "Status/profile/project/PR filters",
+        "Archived",
+        "Reset",
+        "Collapse/expand",
+        "Mark read",
+        "New project",
+        "Rename/add folder/set active",
+        "Appearance",
+        "Copy/reveal path",
+        "Remove/hide/undo"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 116,
+          "end": 160
+        },
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 280,
+          "end": 453
+        },
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/projects/project-menu.tsx",
+          "start": 40,
+          "end": 158
+        }
+      ],
+      "authority": "Backend project/session catalog, renderer grouping/filter/order preferences. Auto project hide is local, explicit deletion is catalog mutation.",
+      "android": "ui/sessions/SessionList.kt and ChatViewModel.kt: backend project tree, project selection and search; Updated/Project grouping. Other filter controls owed. Rich project management not equivalent to displaying a project.",
+      "classification": "mixed",
+      "owner": "filter #142; gateway groups #182; search drift #367",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md",
+        "docs/parity/session-list-sections.md",
+        "docs/parity/session-search.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "profiles",
+      "controls": [
+        "Rail/picker",
+        "All profiles",
+        "Profile list/detail",
+        "Create/rename/delete",
+        "SOUL",
+        "Export/import archive",
+        "Setup command",
+        "Default profile"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/profiles.ts",
+          "start": 11,
+          "end": 116
+        },
+        {
+          "path": "apps/desktop/src/app/routes.ts",
+          "start": 74,
+          "end": 75
+        }
+      ],
+      "authority": "Host profile lifecycle + authenticated profile-scoped REST; renderer selection is not host launch profile.",
+      "android": "ui/profiles/ProfilesScreen.kt is read-only roster; data/profiles and session RPC route selected scope. Bot New/edit/duplicate is a separate bounded mutation path, not full lifecycle parity.",
+      "classification": "mixed",
+      "owner": "migration #73; Bot epic #186; scope #180",
+      "parity_pages": [
+        "docs/parity/profile-switcher.md",
+        "docs/parity/bot-management-contract-audit.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "provider-accounts-and-keys",
+      "controls": [
+        "Provider OAuth sign in/poll/code/cancel/disconnect",
+        "API key save/clear/reveal/validate",
+        "Tool credentials",
+        "Custom endpoint add/validate/activate/delete",
+        "Delegation/fallback models"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/config.ts",
+          "start": 204,
+          "end": 371
+        },
+        {
+          "path": "apps/desktop/src/app/settings/index.tsx",
+          "start": 315,
+          "end": 356
+        }
+      ],
+      "authority": "Host config/env/provider account authority, profile-bound reads and writes. Connection OAuth is a different authority from provider OAuth.",
+      "android": "No Android provider account/key/custom endpoint settings. Composer provider/model choice consumes a catalog; it does not configure credentials. Bot model choice is bounded.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/model-visibility.md",
+        "docs/parity/bot-model-config.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "local-model-management",
+      "controls": [
+        "Hardware/status",
+        "Catalog",
+        "Install runtime",
+        "Quickstart",
+        "Download/pause/resume",
+        "Activate/eject/delete",
+        "Server start/stop",
+        "HF search/files/download",
+        "Sideload"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/local-models.ts",
+          "start": 13,
+          "end": 146
+        },
+        {
+          "path": "apps/desktop/src/api/local-models.ts",
+          "start": 167,
+          "end": 207
+        },
+        {
+          "path": "apps/desktop/src/app/settings/local-models-owner.ts",
+          "start": 1,
+          "end": 20
+        }
+      ],
+      "authority": "The connected HOST owns model files/hardware/jobs. Pane pins owner on mount; local means backend-local, not Android inference.",
+      "android": "No local-model management destination. Model picker local/download headings and loading details remain independently owed; never turn these into a claim that Android runs a model.",
+      "classification": "omission",
+      "owner": "stance #184; picker #183",
+      "parity_pages": [
+        "docs/parity/model-visibility.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "vault-management",
+      "controls": [
+        "List saved login/payment/address",
+        "Add/remove",
+        "Local/Bitwarden/1Password sources",
+        "Unlock/lock",
+        "Authenticator data"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/settings/vault-settings.tsx",
+          "start": 158,
+          "end": 190
+        },
+        {
+          "path": "apps/desktop/src/app/settings/vault-settings.tsx",
+          "start": 320,
+          "end": 378
+        },
+        {
+          "path": "apps/desktop/src/app/settings/vault-settings.tsx",
+          "start": 450,
+          "end": 503
+        }
+      ],
+      "authority": "Profile/connection-qualified vault RPC. Secret entry remains sensitive state, list metadata is not a credential read. No live vault was accessed in this audit.",
+      "android": "PendingInputSurface.kt can answer vault prompts; no Passwords & Logins management destination. Saving via a prompt cannot be undone on phone through a nonexistent screen.",
+      "classification": "omission",
+      "owner": "vault #238; prompt state #237",
+      "parity_pages": [
+        "docs/parity/vault-prompts.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [
+        {
+          "path": "apps/desktop/src/app/settings/vault-settings.owner.test.tsx",
+          "start": 86,
+          "end": 168,
+          "finding": "Owner change wipes secret draft; late list cannot repaint next profile; secret absent from mutation cache.",
+          "executed": false
+        }
+      ],
+      "backend_evidence": [
+        {
+          "path": "tui_gateway/methods_vault.py",
+          "start": 1,
+          "end": 22
+        },
+        {
+          "path": "tui_gateway/methods_vault.py",
+          "start": 42,
+          "end": 121
+        }
+      ],
+      "android_evidence": []
+    },
+    {
+      "id": "capabilities-skills-and-catalog",
+      "controls": [
+        "Installed list/filter",
+        "Enable/disable",
+        "Detail/edit/delete/archive",
+        "Official/Hub catalog search/filter/preview/scan/install/uninstall/update",
+        "Plugin package catalog",
+        "Toolsets detail/config"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 61,
+          "end": 180
+        },
+        {
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 14,
+          "end": 43
+        },
+        {
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 102,
+          "end": 173
+        }
+      ],
+      "authority": "Profile-scoped host REST, bounded installer action status, backend enabled state. Catalog metadata and installed state are separate.",
+      "android": "BotSkillsEditor.kt lists/toggles installed skills with guarded core HTTP; Browse/install/detail/bulk/archive WIP. BotToolsetsEditor.kt is a bounded enabled-toolsets editor, not full Capabilities UI.",
+      "classification": "mixed",
+      "owner": "migration #73; plugins #234",
+      "parity_pages": [
+        "docs/parity/bot-installed-skills.md",
+        "docs/parity/bot-toolsets.md",
+        "docs/parity/settings-plugins.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "connectors-and-mcp",
+      "controls": [
+        "Hosted accounts/connect/disconnect",
+        "Directory/search/categories",
+        "Local MCP add/edit/remove",
+        "Catalog install",
+        "Probe/logs",
+        "OAuth",
+        "Tool controls",
+        "Alias/config persistence"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 175,
+          "end": 180
+        },
+        {
+          "path": "apps/desktop/src/api/mcp.ts",
+          "start": 27,
+          "end": 103
+        }
+      ],
+      "authority": "Backend MCP config and account grants, typed profile-scoped HTTP/RPC. Whole-map save/reload differs from named enabled toggle.",
+      "android": "BotMcpEditor.kt and PluginMcp.kt list/named toggle; catalog/add/OAuth/remove/probe/per-tool controls WIP. In-turn MCP consent is distinct.",
+      "classification": "mixed",
+      "owner": "migration #73; in-chat consent #63",
+      "parity_pages": [
+        "docs/parity/bot-configured-mcp.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "messaging-and-pairing",
+      "controls": [
+        "Platforms list/configure/test",
+        "Telegram QR start/status/apply/cancel",
+        "Pairing approve/revoke",
+        "Allowlist",
+        "Gateway restart"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/messaging.ts",
+          "start": 18,
+          "end": 145
+        }
+      ],
+      "authority": "Profile-scoped host messaging router, not phone messaging-account APIs.",
+      "android": "No messaging management destination in HermesApp/SettingsScreen; sessions from messaging sources can still be read. Reading conversations does not configure their channels.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "webhooks",
+      "controls": [
+        "List/detail",
+        "Enable service/restart",
+        "New subscription",
+        "Event/skills/delivery fields",
+        "Enable/disable/delete"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/webhooks/index.tsx",
+          "start": 397,
+          "end": 507
+        },
+        {
+          "path": "apps/desktop/src/api/messaging.ts",
+          "start": 157,
+          "end": 200
+        }
+      ],
+      "authority": "Host webhook configuration and service authority over authenticated HTTP, scoped to explicit profile.",
+      "android": "No Android Webhooks destination or API consumer found. Not a platform non-goal: these act on the host.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "cron-and-blueprints",
+      "controls": [
+        "List/search/detail",
+        "Create/edit",
+        "Pause/resume/trigger/delete",
+        "Run history/open",
+        "Delivery target picker",
+        "Blueprints list/instantiate"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/cron.ts",
+          "start": 30,
+          "end": 134
+        },
+        {
+          "path": "apps/desktop/src/api/cron.ts",
+          "start": 148,
+          "end": 168
+        }
+      ],
+      "authority": "Core host REST owns full job/run records. List scoping is not an atomic item owner precondition; ordinary job IDs cannot prove ownership alone.",
+      "android": "ui/cron and data/cron implement core management through GatewayCronApi. Runtime schema fields outside supported editors remain WIP. Blueprint actions require separate review; bot routines are not core Cron parity.",
+      "classification": "mixed",
+      "owner": "migration #73; routine #191",
+      "parity_pages": [
+        "docs/parity/cron-management.md",
+        "docs/parity/cron-session-admission.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "bot-routines",
+      "controls": [
+        "Bot-owned list",
+        "Title/detail inspector",
+        "Pause/resume/delete",
+        "New routine frequencies/once",
+        "Delivery target",
+        "Legacy delegated policy"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/cron.tsx",
+          "start": 99,
+          "end": 145
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/cron.tsx",
+          "start": 490,
+          "end": 586
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/cron.tsx",
+          "start": 632,
+          "end": 739
+        }
+      ],
+      "authority": "Profile-qualified cron.manage list/add/remove/pause/resume; richer core REST is a separate host door.",
+      "android": "BotsRoutinesScreen.kt and models: list/read inspector, supported pause/resume/remove and creation including explicit one-shot syntax. Legacy/unknown jobs retain WIP. Do not repeat old contract-audit claims that all management remains missing.",
+      "classification": "mixed",
+      "owner": "routines #191",
+      "parity_pages": [
+        "docs/parity/bot-routines.md",
+        "docs/parity/bot-management-contract-audit.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "bot-identity",
+      "controls": [
+        "Avatar upload/clear",
+        "Blobatar appearance",
+        "Generate/Bot/Pet choices",
+        "Model/provider/reasoning/confirmation",
+        "Toolsets",
+        "Skills",
+        "MCP",
+        "Reset defaults",
+        "SOUL/title/description"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/profile-config.tsx",
+          "start": 1,
+          "end": 120
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/avatar-picker.tsx",
+          "start": 1,
+          "end": 100
+        }
+      ],
+      "authority": "profiles.describe/configure plus host asset and guarded core capabilities; UI metadata is server-synchronized, not all local storage.",
+      "android": "BotAvatarEditor.kt has upload/clear bounded path, Bot/Generate/Pet WIP; BotModelEditor reset WIP. Model/toolset/skills/MCP editors exist at baseline, so historical finite-remainder prose is stale in places.",
+      "classification": "mixed",
+      "owner": "identity #194; Bot epic #186",
+      "parity_pages": [
+        "docs/parity/bot-identity.md",
+        "docs/parity/bot-avatar-editor.md",
+        "docs/parity/bot-model-config.md",
+        "docs/parity/bot-toolsets.md",
+        "docs/parity/bot-installed-skills.md",
+        "docs/parity/bot-configured-mcp.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotAvatarEditor.kt",
+          "start": 69,
+          "end": 90
+        },
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 52,
+          "end": 65
+        }
+      ]
+    },
+    {
+      "id": "groups",
+      "controls": [
+        "Create",
+        "Room select/history",
+        "Send",
+        "Stop/retry/approval",
+        "Rename/disband",
+        "Members/holds/peers",
+        "Attachments",
+        "Threads",
+        "Pin/sections/order",
+        "Room picture"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/canonical-group-registry.tsx",
+          "start": 1,
+          "end": 110
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/group-chat-view.tsx",
+          "start": 1,
+          "end": 110
+        }
+      ],
+      "authority": "Desktop legacy UI-meta and canonical hosted-room paths coexist. Android deliberately uses hosted groups.* and cannot claim legacy blob write parity.",
+      "android": "GroupsScreen.kt read surface; send coordinator/store/wire exists but is not wired to production composer. New/Stop/disband/member/attachment/thread and room menu controls WIP. Existing-room send core alone is not user-facing send capability.",
+      "classification": "drift",
+      "owner": "hosted writes #193; Bot epic #186",
+      "parity_pages": [
+        "docs/parity/bot-group-chat.md",
+        "docs/parity/group-message-links.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/groups/GroupsScreen.kt",
+          "start": 100,
+          "end": 161
+        }
+      ]
+    },
+    {
+      "id": "bot-screen",
+      "controls": [
+        "Open Screen",
+        "Auto-open tool activity",
+        "Route-owned screen/control/stream",
+        "Install",
+        "Image switching",
+        "Browser comment drafts"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/screen-open.tsx",
+          "start": 1,
+          "end": 49
+        },
+        {
+          "path": "apps/desktop/src/plugins/hermes-bots/screen-connection.ts",
+          "start": 1,
+          "end": 90
+        }
+      ],
+      "authority": "Desktop workspace/Screen host capabilities bind connection + profile; not an unrestricted Android WebView.",
+      "android": "BotsRosterScreen.kt Open Screen/auto-open WIP; no matching screen transport or workspace. Presence of a browser tool transcript is not an interactive Screen.",
+      "classification": "omission",
+      "owner": "Bot epic #186; identity #194",
+      "parity_pages": [
+        "docs/parity/bots-roster.md",
+        "docs/parity/bot-management-contract-audit.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "session-import",
+      "controls": [
+        "Source browse Claude/Codex",
+        "Search/page",
+        "Preview/truncation",
+        "Import/already imported",
+        "Open imported chat"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/session-import/api.ts",
+          "start": 1,
+          "end": 49
+        }
+      ],
+      "authority": "session.foreign.list/preview/import routed through exact owner connection/profile; host reads its own foreign histories.",
+      "android": "No Android foreign-session import RPC consumer or route; owes visible entrypoint stance, not a phone file picker substitute.",
+      "classification": "omission",
+      "owner": "six-surface stance #184",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [
+        {
+          "path": "tui_gateway/methods_session_foreign.py",
+          "start": 1,
+          "end": 46
+        }
+      ],
+      "android_evidence": []
+    },
+    {
+      "id": "subagents",
+      "controls": [
+        "Global agent tree",
+        "Per-session activity",
+        "Expand transcript",
+        "Steer",
+        "Interrupt",
+        "Snapshot hydration",
+        "Terminal/error states"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/agents/index.tsx",
+          "start": 84,
+          "end": 130
+        },
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/subagent-controls.tsx",
+          "start": 15,
+          "end": 88
+        },
+        {
+          "path": "apps/desktop/src/store/subagents.ts",
+          "start": 250,
+          "end": 319
+        }
+      ],
+      "authority": "Parent owned session routes subagent.list/tail/steer/interrupt; child transcript ID is not steering authority. Unknown owner refuses rather than retargeting.",
+      "android": "No equivalent subagent transcript/steer consumer found. Tool rows may mention delegations but are not this interactive surface.",
+      "classification": "omission",
+      "owner": "six-surface stance #184",
+      "parity_pages": [
+        "docs/parity/composer-status-stack.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/subagent-controls.test.tsx",
+          "start": 26,
+          "end": 64,
+          "finding": "Steer/stop target parent owner and preserve rejected text; unknown owner never falls back.",
+          "executed": false
+        }
+      ],
+      "backend_evidence": [
+        {
+          "path": "tui_gateway/methods_subagents.py",
+          "start": 19,
+          "end": 63
+        },
+        {
+          "path": "tui_gateway/methods_subagents.py",
+          "start": 81,
+          "end": 128
+        }
+      ],
+      "android_evidence": []
+    },
+    {
+      "id": "goal-loop-heartbeat",
+      "controls": [
+        "Goal details/pause/resume/unwait/clear",
+        "Acceptance criteria add/remove/clear/copy",
+        "Loop pause/resume/stop",
+        "Heartbeat pause/resume/clear",
+        "Error dismissal"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/session-control.tsx",
+          "start": 19,
+          "end": 109
+        },
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/session-control-goal.tsx",
+          "start": 230,
+          "end": 273
+        },
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/session-control-loop.tsx",
+          "start": 126,
+          "end": 153
+        },
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/session-control-heartbeat.tsx",
+          "start": 108,
+          "end": 130
+        },
+        {
+          "path": "apps/desktop/src/store/session-control.ts",
+          "start": 754,
+          "end": 862
+        }
+      ],
+      "authority": "Backend session.control.read snapshots + session.control actions; visible status does not authorize a write.",
+      "android": "GatewaySessionRepository.kt reads session.control.read and GatewayGoalStatus.kt bounds display state. Full action/criteria/loop/heartbeat control stack absent; do not classify this as zero backend support.",
+      "classification": "omission",
+      "owner": "six-surface stance #184",
+      "parity_pages": [
+        "docs/parity/composer-status-stack.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [
+        {
+          "path": "apps/desktop/src/app/chat/composer/status-stack/session-control.test.tsx",
+          "start": 139,
+          "end": 189,
+          "finding": "Hydrates structured control while retaining legacy goal until capability is supported; no duplicate goal.",
+          "executed": false
+        }
+      ],
+      "backend_evidence": [
+        {
+          "path": "tui_gateway/methods_session_control.py",
+          "start": 255,
+          "end": 323
+        }
+      ],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4471,
+          "end": 4501
+        }
+      ]
+    },
+    {
+      "id": "composer-edit-send-and-queue",
+      "controls": [
+        "Draft/edit history",
+        "Send/stop/redirect/steer",
+        "Queue/send next/edit/reorder",
+        "Attach files/images/folder/clipboard",
+        "URL/snippet/path/session references",
+        "Slash/at/emoji/skills completions",
+        "Model/provider/reasoning/fast",
+        "Popout"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 38,
+          "end": 188
+        },
+        {
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 290,
+          "end": 350
+        }
+      ],
+      "authority": "Canonical text/draft/queue local to owner; acknowledged prompt transport and session/model state backend-owned. Capture stages bytes; completion paths are host paths, not Android paths.",
+      "android": "Composer.kt, ChatViewModel.kt, data/draft, attachments and GatewaySessionRepository implement main send/stop/corrections/queue/acquisition/model/completion pipeline. Folder and clipboard-image WIP; reference Open and queue-editor/details gaps stay owned. Popout is not silently declared a non-goal.",
+      "classification": "mixed",
+      "owner": "acquisition #278; references #205; Bot doors #268",
+      "parity_pages": [
+        "docs/parity/composer-references.md",
+        "docs/parity/composer-recent-images.md",
+        "docs/parity/composer-status-stack.md",
+        "docs/parity/model-visibility.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "slash-execution",
+      "controls": [
+        "Desktop command interception",
+        "Session command dispatch",
+        "Curated palette visibility",
+        "Skill invocation",
+        "Terminal-only commands",
+        "Command output rendering"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/lib/desktop-slash-registry.json",
+          "start": 1,
+          "end": 132
+        }
+      ],
+      "authority": "Registry categories curate visibility, not execution availability. Per-command handlers and backend contracts decide execution.",
+      "android": "Completion is not command execution. GatewaySessionRepository has session commands and established execution paths; #70 tracks remaining execution/output. Do not count registry keys as implemented features.",
+      "classification": "mixed",
+      "owner": "slash #70; historical manifest #196",
+      "parity_pages": [
+        "docs/parity/composer-references.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "transcript-and-required-input",
+      "controls": [
+        "Backfill/tail/jump/timeline/sticky prompt",
+        "Copy/select/edit/regenerate/reactions",
+        "Markdown/code/diff/image/audio/video/artifacts/embeds",
+        "Tool details",
+        "Clarify/approval/sudo/secret/vault/MCP",
+        "Model confirmation/admission",
+        "Error/log/support recovery"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/components/assistant-ui/clarify/settled.tsx",
+          "start": 1,
+          "end": 57
+        },
+        {
+          "path": "apps/desktop/src/app/chat/scroll-to-bottom-button.tsx",
+          "start": 1,
+          "end": 70
+        }
+      ],
+      "authority": "Backend transcript/canonical owner controls; renderer scroll, selections and disclosure. Secure replies route pending owner; generic tool output is not a specialized settled renderer.",
+      "android": "Transcript.kt/ToolView.kt/PendingInputSurface.kt and canonical repository provide substantial bounded implementations. Settled responses-array clarification gap remains #380; in-chat refs #204; density #265; message-below count #224; no all-renderer parity claim.",
+      "classification": "mixed",
+      "owner": "settled #380; refs #204; density #265; below count #224",
+      "parity_pages": [
+        "docs/parity/transcript-rendering.md",
+        "docs/parity/tool-output-fidelity.md",
+        "docs/parity/canonical-inputs.md",
+        "docs/parity/transcript-backfill.md",
+        "docs/parity/sticky-user-prompt-port.md",
+        "docs/parity/transcript-selection-copy.md",
+        "docs/parity/turn-error-recovery.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "statusbar-and-notices",
+      "controls": [
+        "Gateway/profile/model/reasoning/approval controls",
+        "Backend/client versions",
+        "Context breakdown",
+        "Free tier",
+        "Workspace path/reveal",
+        "Agents/Cron/Webhooks",
+        "Running/session timer",
+        "Cache hit/tokens per second",
+        "System resources",
+        "Item visibility",
+        "Toast/notification/butterbar/terms"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx",
+          "start": 475,
+          "end": 627
+        },
+        {
+          "path": "apps/desktop/src/app/shell/hooks/use-statusbar-items.tsx",
+          "start": 669,
+          "end": 730
+        },
+        {
+          "path": "apps/desktop/src/app/shell/system-resources-statusbar.tsx",
+          "start": 51,
+          "end": 160
+        },
+        {
+          "path": "apps/desktop/src/app/settings/settings-manifest.ts",
+          "start": 192,
+          "end": 218
+        }
+      ],
+      "authority": "Backend usage/model/effective state; renderer visibility; native OS notification capabilities. Hardware is host-authoritative.",
+      "android": "ChatScreen.kt context/model/approval and status; NotificationsScreen.kt/SessionNotifier OS notifications. No general Desktop toast center or full resources/rate/visibility surface. #184 comment explicitly disputes blanket statusbar order parity.",
+      "classification": "mixed",
+      "owner": "surface #184; notifications #99; background/skew #127",
+      "parity_pages": [
+        "docs/parity/context-usage.md",
+        "docs/parity/approval-mode.md",
+        "docs/parity/notifications.md",
+        "docs/parity/model-visibility.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "artifacts",
+      "controls": [
+        "All/images/files/links tabs",
+        "Search/sort/page/view",
+        "Preview/open/download",
+        "Reveal location",
+        "Open source chat"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/artifacts/index.tsx",
+          "start": 114,
+          "end": 170
+        },
+        {
+          "path": "apps/desktop/src/app/artifacts/index.tsx",
+          "start": 336,
+          "end": 349
+        },
+        {
+          "path": "apps/desktop/src/app/artifacts/index.tsx",
+          "start": 528,
+          "end": 549
+        }
+      ],
+      "authority": "Artifact aggregation uses host/session data; file opening goes through bounded Desktop host capabilities. Inline transcript attachment rendering is a separate entrypoint.",
+      "android": "No Android Artifacts library route. Transcript links/images do not equal cross-session artifact browsing/download management.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/transcript-rendering.md",
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "learning-starmap",
+      "controls": [
+        "Graph pan/zoom/select",
+        "Timeline/playback",
+        "Node detail/edit/delete",
+        "Skill archive confirmation",
+        "Share/import/reset map"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 46,
+          "end": 90
+        },
+        {
+          "path": "apps/desktop/src/app/starmap/share-controls.tsx",
+          "start": 30,
+          "end": 130
+        }
+      ],
+      "authority": "Host learning graph/node API; renderer simulation/share state. No new Android endpoint inferred.",
+      "android": "No Android Starmap/learning route or graph/node API consumer. A skill list is not a learning graph.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md",
+        "docs/parity/bot-installed-skills.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "files-terminal-review-browser",
+      "controls": [
+        "File tree/browse/create/rename/delete/copy/path/open/drag",
+        "Terminal tabs/selection/paste/revive",
+        "Review list/diff/stage/unstage/revert/commit/push/PR",
+        "Worktree/branch operations",
+        "Preview/browser navigation/popout"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/right-sidebar/files/ipc.ts",
+          "start": 190,
+          "end": 218
+        },
+        {
+          "path": "apps/desktop/src/lib/desktop-git.ts",
+          "start": 22,
+          "end": 100
+        }
+      ],
+      "authority": "Desktop host filesystem/PTY/browser bridge and authenticated git facade. Remote backend workspace path must never become a phone path.",
+      "android": "CodingContext/CodingStatusRow expose bounded git status/PR links via Gateway HTTP; no full Files/Terminal/Review/browser workspace. These host functions are not all Electron-only non-goals: each needs a deliberate transport/safety decision.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/composer-status-stack.md",
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "radio",
+      "controls": [
+        "Choose/search station",
+        "Play/pause/retry/next",
+        "Volume/mute",
+        "Favorite/pin",
+        "Visit station/artist",
+        "Waveform",
+        "Cross-window playback arbitration"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/plugins/radio/plugin.js",
+          "start": 94,
+          "end": 139
+        },
+        {
+          "path": "apps/desktop/src/plugins/radio/plugin.js",
+          "start": 157,
+          "end": 240
+        }
+      ],
+      "authority": "Client audio + external public directory/media, local plugin preferences. No Gateway RPC required; not covered by backend plugin toggles.",
+      "android": "No Android Radio bundled module in BundledPlugins. Missing surface, not an inherited platform non-goal. New privacy/media policy needed before port.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/settings-plugins.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "runtime-example-and-extension-boundary",
+      "controls": [
+        "Hello Runtime chip toggle/style/about",
+        "Arbitrary runtime plugin routes/panes/palette/settings/transcript/composer contributions"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/contrib/plugins.ts",
+          "start": 1,
+          "end": 21
+        },
+        {
+          "path": "apps/desktop/src/plugins/hello-runtime/plugin.runtime.js",
+          "start": 39,
+          "end": 119
+        },
+        {
+          "path": "apps/desktop/src/contrib/settings-pages.ts",
+          "start": 138,
+          "end": 173
+        }
+      ],
+      "authority": "Bundled glob and runtime disk loader invoke plugin register; runtime content is open-ended and cannot be exhaustively enumerated from repository labels.",
+      "android": "Android bundled Kotlin SDK/contribution registry only. Loading arbitrary Desktop JS is a documented ADR 0003 non-goal; future bundled ports need their own surface audit. Hello Runtime is a runtime example, not automatically a shipping bundled destination.",
+      "classification": "non-goal",
+      "owner": "SDK #166",
+      "parity_pages": [
+        "docs/parity/settings-plugins.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "native-shell-and-onboarding",
+      "controls": [
+        "Application/Window menu",
+        "Window controls/tray/quit/find/devtools",
+        "Install/bootstrap/update/uninstall",
+        "Quick entry/HUD/wake/pet overlays",
+        "Onboarding/provider/free-tier",
+        "Shared metrics consent",
+        "Support diagnostics consent",
+        "About / Check for Updates",
+        "Services / Hide / Hide Others / Unhide / Quit",
+        "New Window / Open Folder / Close",
+        "Undo / Redo / Cut / Copy / Paste / Paste and Match Style / Delete / Select All",
+        "Substitutions / Text Replacement",
+        "Reload focused preview / Force Reload / Developer Tools",
+        "Actual Size / Zoom In / Zoom Out / Fullscreen",
+        "Window Minimize / Zoom / Bring All to Front"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/contrib/controller.tsx",
+          "start": 780,
+          "end": 845
+        },
+        {
+          "path": "apps/desktop/src/app/settings/settings-manifest.ts",
+          "start": 154,
+          "end": 190
+        },
+        {
+          "path": "apps/desktop/src/components/onboarding/flow.tsx",
+          "start": 1,
+          "end": 100
+        },
+        {
+          "path": "apps/desktop/electron/main.ts",
+          "start": 6487,
+          "end": 6622
+        },
+        {
+          "path": "apps/desktop/electron/window-menu.ts",
+          "start": 7,
+          "end": 29
+        },
+        {
+          "path": "apps/desktop/electron/application-menu-startup.ts",
+          "start": 1,
+          "end": 33
+        }
+      ],
+      "authority": "Electron owns OS windows/process/install; renderer consent/flow; host provider/free-tier authority remains separate. Window role behavior is not an Android backend feature.",
+      "android": "Native Android activity/back/permissions/connection setup and diagnostic consent paths adapt part of flow. No Electron installer/HUD/tray or full Desktop onboarding. Do not silently omit portable provider/account/consent capabilities as OS-only.",
+      "classification": "mixed",
+      "owner": "migration #73; release/physical #72",
+      "parity_pages": [
+        "docs/parity/gateway-connections.md",
+        "docs/parity/empty-states.md",
+        "docs/parity/turn-error-recovery.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "gateways-and-connection-lifecycle",
+      "controls": [
+        "Saved registry/add/edit/remove/duplicate detection",
+        "Connect/disconnect/switch",
+        "Local/Remote/SSH/Cloud",
+        "Sign in/out",
+        "Test",
+        "Make primary",
+        "Headers",
+        "Diagnostics",
+        "Ownership/restart/reconnect"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/settings/connections-registry.tsx",
+          "start": 88,
+          "end": 173
+        },
+        {
+          "path": "apps/desktop/src/app/settings/connections-registry.tsx",
+          "start": 630,
+          "end": 672
+        },
+        {
+          "path": "apps/desktop/src/app/chat/sidebar/connection-switcher.tsx",
+          "start": 35,
+          "end": 115
+        }
+      ],
+      "authority": "Saved route preferences local; transport/auth/lifecycle machine facts; sessions backend-owned. Source switch wipes connection-bound stores, never treats a URL label as owner identity.",
+      "android": "ConnectionsSection.kt and connection registry implement saved rows/switch/edit/remove. Test connection and Make primary WIP; Cloud not shipped. Android Local targets Termux without owning process, SSH owned lifecycle separate from shared Remote.",
+      "classification": "mixed",
+      "owner": "Cloud #151; polish #85; switch #110",
+      "parity_pages": [
+        "docs/parity/gateway-connections.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": [
+        {
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/gateway/ConnectionsSection.kt",
+          "start": 399,
+          "end": 406
+        }
+      ]
+    },
+    {
+      "id": "billing-and-subscriptions",
+      "controls": [
+        "Account overview/usage",
+        "Buy credits",
+        "Charge status/retry",
+        "Auto reload",
+        "Plan preview/change/resume",
+        "Step-up",
+        "Portal links"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/app/settings/billing/api.ts",
+          "start": 146,
+          "end": 178
+        },
+        {
+          "path": "apps/desktop/src/app/settings/billing/plans-view.tsx",
+          "start": 85,
+          "end": 113
+        }
+      ],
+      "authority": "Gateway billing/subscription RPC backed by account authority; idempotent charge key and explicit step-up are security boundaries, not UI decoration.",
+      "android": "No Android Billing destination or billing RPC consumer. This audit performs no purchase, account mutation or credential access. Portable account management is not automatically an Electron non-goal.",
+      "classification": "omission",
+      "owner": "migration #73",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Source reconciliation only; rendered and independent review remain owed.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    },
+    {
+      "id": "shared-source-infrastructure",
+      "controls": [
+        "Shared primitives and SDK",
+        "Types",
+        "Localization",
+        "Theme registry/tokens",
+        "API/state helpers",
+        "Debug/development fixtures"
+      ],
+      "desktop": [
+        {
+          "path": "apps/desktop/src/contrib/types.ts",
+          "start": 1,
+          "end": 40
+        },
+        {
+          "path": "apps/desktop/src/app/contrib/index.ts",
+          "start": 1,
+          "end": 7
+        }
+      ],
+      "authority": "Support code is not a user-facing capability. Source ownership routes review; it does not classify every exported helper as an implemented feature.",
+      "android": "Android counterpart depends on consumer; this row records structural support only. Newly discovered UI under a support root still requires semantic inspection and a dedicated family as needed.",
+      "classification": "mixed",
+      "owner": "source-impact triage #266",
+      "parity_pages": [
+        "docs/parity/desktop-sidebar.md"
+      ],
+      "review_limit": "Structural ownership only; not a semantic completeness claim.",
+      "source_tests_read": [],
+      "backend_evidence": [],
+      "android_evidence": []
+    }
+  ],
+  "source_ownership": [
+    {
+      "prefix": "apps/desktop/src/",
+      "family": "shared-source-infrastructure"
+    },
+    {
+      "prefix": "apps/desktop/src/api/",
+      "family": "shared-source-infrastructure"
+    },
+    {
+      "prefix": "apps/desktop/src/api/config.ts",
+      "family": "core-config-schema"
+    },
+    {
+      "prefix": "apps/desktop/src/api/cron.ts",
+      "family": "cron-and-blueprints"
+    },
+    {
+      "prefix": "apps/desktop/src/api/local-models.ts",
+      "family": "local-model-management"
+    },
+    {
+      "prefix": "apps/desktop/src/api/mcp.ts",
+      "family": "connectors-and-mcp"
+    },
+    {
+      "prefix": "apps/desktop/src/api/messaging.ts",
+      "family": "messaging-and-pairing"
+    },
+    {
+      "prefix": "apps/desktop/src/api/profiles.ts",
+      "family": "profiles"
+    },
+    {
+      "prefix": "apps/desktop/src/api/skills.ts",
+      "family": "capabilities-skills-and-catalog"
+    },
+    {
+      "prefix": "apps/desktop/src/api/system.ts",
+      "family": "system-actions"
+    },
+    {
+      "prefix": "apps/desktop/src/app/",
+      "family": "navigation-and-discovery"
+    },
+    {
+      "prefix": "apps/desktop/src/app/agents/",
+      "family": "subagents"
+    },
+    {
+      "prefix": "apps/desktop/src/app/artifacts/",
+      "family": "artifacts"
+    },
+    {
+      "prefix": "apps/desktop/src/app/capabilities/",
+      "family": "capabilities-skills-and-catalog"
+    },
+    {
+      "prefix": "apps/desktop/src/app/capabilities/connectors/",
+      "family": "connectors-and-mcp"
+    },
+    {
+      "prefix": "apps/desktop/src/app/capabilities/mcp/",
+      "family": "connectors-and-mcp"
+    },
+    {
+      "prefix": "apps/desktop/src/app/capabilities/plugins/",
+      "family": "agent-and-desktop-plugins"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/",
+      "family": "transcript-and-required-input"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/composer/",
+      "family": "composer-edit-send-and-queue"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/composer/status-stack/",
+      "family": "goal-loop-heartbeat"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/composer/status-stack/subagent",
+      "family": "subagents"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/composer/status-stack/use-subagent",
+      "family": "subagents"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/sidebar/",
+      "family": "sidebar-catalog-and-projects"
+    },
+    {
+      "prefix": "apps/desktop/src/app/chat/sidebar/session-actions-menu",
+      "family": "session-actions"
+    },
+    {
+      "prefix": "apps/desktop/src/app/command-center/",
+      "family": "system-actions"
+    },
+    {
+      "prefix": "apps/desktop/src/app/command-palette/",
+      "family": "navigation-and-discovery"
+    },
+    {
+      "prefix": "apps/desktop/src/app/context-menu/",
+      "family": "keyboard-and-pane-layout"
+    },
+    {
+      "prefix": "apps/desktop/src/app/contrib/",
+      "family": "keyboard-and-pane-layout"
+    },
+    {
+      "prefix": "apps/desktop/src/app/cron/",
+      "family": "cron-and-blueprints"
+    },
+    {
+      "prefix": "apps/desktop/src/app/gateway/",
+      "family": "gateways-and-connection-lifecycle"
+    },
+    {
+      "prefix": "apps/desktop/src/app/hooks/",
+      "family": "shared-source-infrastructure"
+    },
+    {
+      "prefix": "apps/desktop/src/app/hud/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/app/learning/",
+      "family": "learning-starmap"
+    },
+    {
+      "prefix": "apps/desktop/src/app/messaging/",
+      "family": "messaging-and-pairing"
+    },
+    {
+      "prefix": "apps/desktop/src/app/overlays/",
+      "family": "navigation-and-discovery"
+    },
+    {
+      "prefix": "apps/desktop/src/app/pet-generate/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/app/pet-overlay/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/app/profiles/",
+      "family": "profiles"
+    },
+    {
+      "prefix": "apps/desktop/src/app/quick-entry/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/app/right-sidebar/",
+      "family": "files-terminal-review-browser"
+    },
+    {
+      "prefix": "apps/desktop/src/app/session-import/",
+      "family": "session-import"
+    },
+    {
+      "prefix": "apps/desktop/src/app/session/",
+      "family": "transcript-and-required-input"
+    },
+    {
+      "prefix": "apps/desktop/src/app/session/hooks/use-prompt-actions/slash-",
+      "family": "slash-execution"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/",
+      "family": "settings-navigation"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/appearance",
+      "family": "appearance-manifest"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/billing/",
+      "family": "billing-and-subscriptions"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/connections-",
+      "family": "gateways-and-connection-lifecycle"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/constants.ts",
+      "family": "core-config-schema"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/gateway-",
+      "family": "gateways-and-connection-lifecycle"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/local-model",
+      "family": "local-model-management"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/notifications-",
+      "family": "statusbar-and-notices"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/settings-manifest.ts",
+      "family": "appearance-manifest"
+    },
+    {
+      "prefix": "apps/desktop/src/app/settings/vault-",
+      "family": "vault-management"
+    },
+    {
+      "prefix": "apps/desktop/src/app/shell/",
+      "family": "statusbar-and-notices"
+    },
+    {
+      "prefix": "apps/desktop/src/app/starmap/",
+      "family": "learning-starmap"
+    },
+    {
+      "prefix": "apps/desktop/src/app/wake-indicator/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/app/webhooks/",
+      "family": "webhooks"
+    },
+    {
+      "prefix": "apps/desktop/src/components/",
+      "family": "transcript-and-required-input"
+    },
+    {
+      "prefix": "apps/desktop/src/components/onboarding/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/components/pane-shell/",
+      "family": "keyboard-and-pane-layout"
+    },
+    {
+      "prefix": "apps/desktop/src/components/pet/",
+      "family": "native-shell-and-onboarding"
+    },
+    {
+      "prefix": "apps/desktop/src/components/remote-setup/",
+      "family": "gateways-and-connection-lifecycle"
+    },
+    {
+      "prefix": "apps/desktop/src/components/ui/",
+      "family": "shared-source-infrastructure"
+    },
+    {
+      "prefix": "apps/desktop/src/contrib/",
+      "family": "runtime-example-and-extension-boundary"
+    },
+    {
+      "prefix": "apps/desktop/src/lib/desktop-slash",
+      "family": "slash-execution"
+    },
+    {
+      "prefix": "apps/desktop/src/lib/keybinds/",
+      "family": "keyboard-and-pane-layout"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hello-runtime/",
+      "family": "runtime-example-and-extension-boundary"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/",
+      "family": "bots-roster-and-chat"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/avatar",
+      "family": "bot-identity"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/canonical-group",
+      "family": "groups"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/cron",
+      "family": "bot-routines"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/group",
+      "family": "groups"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/profile-config",
+      "family": "bot-identity"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/hermes-bots/screen",
+      "family": "bot-screen"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/kanban/",
+      "family": "kanban"
+    },
+    {
+      "prefix": "apps/desktop/src/plugins/radio/",
+      "family": "radio"
+    },
+    {
+      "prefix": "apps/desktop/src/store/agent-plugins.ts",
+      "family": "agent-and-desktop-plugins"
+    },
+    {
+      "prefix": "apps/desktop/src/store/session-control.ts",
+      "family": "goal-loop-heartbeat"
+    },
+    {
+      "prefix": "apps/desktop/src/store/subagents.ts",
+      "family": "subagents"
+    },
+    {
+      "prefix": "apps/desktop/src/themes/",
+      "family": "appearance-manifest"
+    },
+    {
+      "prefix": "apps/desktop/electron/",
+      "family": "native-shell-and-onboarding"
+    }
+  ]
+}
