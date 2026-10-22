@@ -5383,6 +5383,34 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `authority completions accept additive capacity and rate limit descriptors`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        for ((code, extra) in listOf(
+            "free_tier_at_capacity" to "\"message\":\"The free tier is full right now.\",",
+            "rate_limit" to "\"resets_at\":1900000000.0,",
+        )) {
+            repository.submit("durable-a", "synthetic request")
+            rpc.emit("message.start", "runtime-a", """{"id":"failure-$code","role":"assistant"}""")
+            rpc.emit("message.complete", "runtime-a",
+                """{"status":"error","text":"","error_surface":{"layer":"provider","code":"$code",${extra}"retryable":true,"provider":"nous","model":"free-model"}}""")
+            runCurrent()
+            val failure = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
+            assertEquals(code, failure.errorDetails?.code)
+            assertEquals("nous", failure.errorDetails?.provider)
+            assertEquals("free-model", failure.errorDetails?.model)
+            assertTrue(failure.errorDetails?.retryable == true)
+            assertNotNull(failure.error)
+            assertFalse(failure.streaming)
+            assertEquals(1, cache.transcript("durable-a").filterIsInstance<AssistantTurn>().count { it.id == "failure-$code" })
+        }
+    }
+
+    @Test
     fun `error event and error completion cache only mapped safe copy`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
