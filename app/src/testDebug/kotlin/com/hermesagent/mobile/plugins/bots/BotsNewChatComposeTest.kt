@@ -14,6 +14,33 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
 class BotsNewChatComposeTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun `both ordinary chat actions share a menu without canonical activation`() {
+        val row = BotRosterRow(name = "researcher", lastSession = BotSessionPreview("recent"))
+        val state = BotsRosterUiState(phase = BotsRosterPhase.Ready, connectionUp = true,
+            managementRows = listOf(row), sections = listOf(BotSectionBlock(null,
+                "section:unassigned", "Unassigned", listOf(row))))
+        var created = 0; var recent = 0; var canonical = 0
+        compose.setContent { HermesTheme(AppearanceSelection()) {
+            BotsRosterScreen(state, onBack = {}, onOpenBotChat = { canonical++ },
+                actions = BotsActions(
+                    onNewChat = { selected, origin ->
+                        assertEquals(row, selected); assertEquals(state, origin); created++
+                    },
+                    onOpenRecent = { selected, origin ->
+                        assertEquals(row, selected); assertEquals(state, origin); recent++
+                    },
+                ))
+        } }
+        compose.onNodeWithContentDescription("Actions for Researcher").performClick()
+        compose.onNodeWithText("Open recent session").assertIsEnabled()
+        compose.onNodeWithText("New chat with this bot").assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Actions for Researcher").performClick()
+        compose.onNodeWithText("Open recent session").assertIsEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(1, created); assertEquals(1, recent); assertEquals(0, canonical)
+        }
+    }
     @Test fun `menu starts ordinary chat without canonical row activation`() {
         val row = BotRosterRow(name = "researcher")
         val state = BotsRosterUiState(phase = BotsRosterPhase.Ready, connectionUp = true,

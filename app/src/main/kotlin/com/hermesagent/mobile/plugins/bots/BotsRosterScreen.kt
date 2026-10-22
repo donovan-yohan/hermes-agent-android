@@ -97,6 +97,7 @@ data class BotsActions(
      */
     val onResume: () -> Unit = {},
     val onNewChat: (BotRosterRow, BotsRosterUiState) -> Unit = { _, _ -> },
+    val onOpenRecent: (BotRosterRow, BotsRosterUiState) -> Unit = { _, _ -> },
     val onNewBot: (Long) -> Unit = {},
     val onSection: (BotSection?, BotsRosterUiState) -> Unit = { _, _ -> },
     val onRowAction: (BotRosterRow, BotRowAction, BotsRosterUiState) -> Unit = { _, _, _ -> },
@@ -268,6 +269,7 @@ private fun RosterList(
                     onOpenRoutines = { onOpenRoutines(row) },
                     managementEnabled = state.connectionUp,
                     onNewChat = { actions.onNewChat(row, state) },
+                    onOpenRecent = { actions.onOpenRecent(row, state) },
                     onManage = { action -> actions.onRowAction(row, action, state) },
                 )
             }
@@ -318,6 +320,7 @@ private fun RosterList(
                                 onOpenRoutines = { onOpenRoutines(row) },
                                 managementEnabled = state.connectionUp,
                                 onNewChat = { actions.onNewChat(row, state) },
+                                onOpenRecent = { actions.onOpenRecent(row, state) },
                                 onManage = { action -> actions.onRowAction(row, action, state) },
                             )
                         }
@@ -386,6 +389,7 @@ private fun BotRowItem(
     onOpenRoutines: () -> Unit,
     managementEnabled: Boolean,
     onNewChat: () -> Unit,
+    onOpenRecent: () -> Unit,
     onManage: (BotRowAction) -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -450,7 +454,8 @@ private fun BotRowItem(
                     )
                 }
             }
-            BotContextMenu(name, pinned, hidden, onOpen, managementEnabled && !opening, row.isDefault, onManage, onNewChat)
+            BotContextMenu(name, pinned, hidden, onOpen, managementEnabled && !opening, row.isDefault, onManage,
+                onNewChat, recentSessionId(row) != null, onOpenRecent)
             // The one distinct Routines entry for this row: always visible, its
             // own accessible name, and its own 48dp target. Desktop reaches
             // Routines by focusing the bot, because its Bots pane and the
@@ -532,6 +537,7 @@ private fun RosterSearchField(value: String, onValueChange: (String) -> Unit) {
 private fun BotContextMenu(
     name: String, pinned: Boolean, hidden: Boolean, onOpen: () -> Unit,
     enabled: Boolean, isDefault: Boolean, onManage: (BotRowAction) -> Unit, onNewChat: () -> Unit,
+    hasRecent: Boolean, onOpenRecent: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -557,7 +563,7 @@ private fun BotContextMenu(
             BotMenuItem("Duplicate", enabled) { expanded = false; onManage(BotRowAction.Duplicate) }
             Hairline()
             BotMenuItem("New chat with this bot", enabled) { expanded = false; onNewChat() }
-            ComingSoonAction("Open recent session", Modifier.padding(horizontal = 12.dp))
+            BotMenuItem("Open recent session", enabled && hasRecent) { expanded = false; onOpenRecent() }
             Hairline()
             BotMenuItem("Move to section", enabled) { expanded = false; onManage(BotRowAction.Move) }
             Hairline()

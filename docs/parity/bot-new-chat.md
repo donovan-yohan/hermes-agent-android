@@ -22,6 +22,11 @@ do not retarget navigation. An ordinary new conversation inherits the chosen
 profile default rather than another profile's composer model or project cwd.
 Unit tests exercise explicit owner creation, held completion, profile navigation,
 endpoint revocation and unknown owners. Compose drives the actual menu action.
+Both ordinary actions are enabled together in the existing menu order: New chat
+with this bot, then Open recent session (disabled only when no listed session
+exists). A combined Compose regression dispatches each callback from the same
+mounted roster without invoking canonical Bot Chat. Standalone and embedded
+mounts retain both handlers and share the shell's disposal/navigation epoch.
 
 ## Navigation and private queue ownership
 

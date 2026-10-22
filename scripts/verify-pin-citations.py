@@ -230,6 +230,10 @@ def materialize(sha: str) -> None:
 
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
+        # A snapshot proved before switching stores must not disappear merely
+        # because the independent scratch store has not fetched it yet.
+        if _FETCH and sha in _ensured and not _has(sha):
+            materialize(sha)
         if not _has(sha):
             # Not a revision of the read checkout, so it has no tree to list.
             # Returning nothing is honest — "this SHA names no file here" — and it
@@ -254,9 +258,9 @@ def read_root() -> pathlib.Path:
 
     The reference checkout is read-only by policy — never `git fetch` inside it,
     never check anything out in it. A pin it does not have is obtained by fetching
-    into a temporary clone that borrows its object store (`--reference`), and from
-    then on reads come from that clone, which can see everything the reference
-    checkout had plus what was fetched.
+    into a temporary empty object store, and from then on reads come from
+    explicitly fetched snapshots. Shallow/partial references are never cloned
+    or traversed implicitly; only requested immutable SHAs are fetched.
     """
     return _READ or UPSTREAM
 
@@ -286,16 +290,13 @@ def _scratch_clone() -> pathlib.Path:
             ["git", "-C", str(UPSTREAM), "config", "--get", "remote.origin.url"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
-        clone = subprocess_run(
-            ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
-             "--reference", str(UPSTREAM), str(UPSTREAM), str(target)],
-            capture_output=True, text=True,
-        )
-        if clone.returncode != 0:
-            raise GitFailure(clone.stderr)
+        # An empty store supports shallow/partial read-only sources without
+        # --reference (which rejects shallow stores) or local clone's implicit
+        # promisor traversal. materialize() fetches only requested exact SHAs.
+        subprocess_run(["git", "init", "--quiet", str(target)], check=True)
         if origin:
             subprocess_run(
-                ["git", "-C", str(target), "remote", "set-url", "origin", origin],
+                ["git", "-C", str(target), "remote", "add", "origin", origin],
                 capture_output=True, text=True, check=True,
             )
     except BaseException:
@@ -303,6 +304,9 @@ def _scratch_clone() -> pathlib.Path:
         raise
     _SCRATCH = scratch
     _READ = target
+    # Completeness proved in the source store does not imply presence in this
+    # independent store; retain identity knowledge but re-prove materialization.
+    _materialized.clear()
     _tree_paths.clear()
     _blobs.clear()
     return target

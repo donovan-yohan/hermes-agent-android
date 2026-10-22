@@ -374,6 +374,26 @@ class BotsViewModel(
         }
     }
 
+    /** Most recent LISTED conversation, not canonical-session/worker activity.
+     * Desktop recent-session.ts:24-78 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa. */
+    fun openRecent(row: BotRosterRow, origin: BotsRosterUiState,
+        onOpen: (String, String, Long, (Boolean) -> Unit) -> Unit) {
+        val endpoint = endpointGeneration.value
+        val id = recentSessionId(row) ?: return
+        if (origin !== _uiState.value || origin.endpoint != endpoint || !connected.value ||
+            origin.openingBotKey != null || origin.managementRows.none { it == row } ||
+            !validBotId(row.name) || row.connectionId != null) return
+        _uiState.update { it.copy(openingBotKey = row.rosterKey, botChatMessage = null) }
+        var completed = false
+        onOpen(row.name, id, endpoint) { opened ->
+            if (completed) return@onOpen
+            completed = true
+            if (endpoint != endpointGeneration.value) return@onOpen
+            _uiState.update { it.copy(openingBotKey = null,
+                botChatMessage = if (opened) null else "The recent session could not be opened. Try again.") }
+        }
+    }
+
     /** [refresh] without the scope, so a test can await it deterministically. */
     suspend fun refreshNow() {
         // The endpoint flow can move before its collector gets a dispatcher

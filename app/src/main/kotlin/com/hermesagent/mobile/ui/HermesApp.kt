@@ -20,7 +20,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +76,7 @@ data class PluginNavigation(
     val onOpenGateways: (SignInOrigin) -> Unit = {},
     val onNavigate: (String) -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    val onOpenBotRecentSession: (profile: String, durableId: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
     val onNewBotSession: (profile: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     val currentRoute: String? = null,
 )
@@ -201,8 +201,7 @@ fun HermesApp(
         mutableStateOf<HermesDestination>(HermesDestination.Chat)
     }
     val navigationEpoch = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
-    DisposableEffect(navigationEpoch) {
-        // ViewModel work can outlive this composition and retain its callbacks.
+    androidx.compose.runtime.DisposableEffect(navigationEpoch) {
         onDispose { navigationEpoch.longValue++ }
     }
     fun navigate(target: HermesDestination) {
@@ -267,6 +266,14 @@ fun HermesApp(
             onNewBotSession = { profile, endpoint, onFinished ->
                 val originEpoch = navigationEpoch.longValue
                 chatActions.onNewBotSession(profile, endpoint, { navigationEpoch.longValue == originEpoch }) { opened ->
+                    val accepted = opened && navigationEpoch.longValue == originEpoch
+                    if (accepted) navigate(HermesDestination.Chat)
+                    onFinished(accepted)
+                }
+            },
+            onOpenBotRecentSession = { profile, durableId, endpoint, onFinished ->
+                val originEpoch = navigationEpoch.longValue
+                chatActions.onOpenBotRecentSession(profile, durableId, endpoint, { navigationEpoch.longValue == originEpoch }) { opened ->
                     val accepted = opened && navigationEpoch.longValue == originEpoch
                     if (accepted) navigate(HermesDestination.Chat)
                     onFinished(accepted)
