@@ -44,7 +44,7 @@
       "handler": "Legacy name or connectionId::profile -> scopeOverride; app-wide profile switch clears override; tab key includes scope key.",
       "authority": "ProfileScope object retains connection identity; crossBackend suppresses active-socket MCP reload; this alone does not prove every plugin callback preserves connection.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -74,7 +74,7 @@
       "handler": "CatalogAddButton onClick -> CatalogEntryInstall -> PluginsTab openCatalogPluginInstall; no off transition or uninstall.",
       "authority": "Catalog metadata is not installed state; install request stores catalog name and target profile.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage. Historical generic catalog non-goal cannot exclude server-side Agent install.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage. Historical generic catalog non-goal cannot exclude server-side Agent install.",
       "issue_owner": "#73",
       "source": [
         {
@@ -116,7 +116,7 @@
       "handler": "entry.source passed as tier; deep-link lookup response tier parsed; InstallHeader formats badge.",
       "authority": "Display only, not install authorization or backend pin selection; backend resolves catalog_name itself.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -152,7 +152,7 @@
       "handler": "RepositoryEntry trim -> openPluginInstallRequest; blank submit disabled; Cancel clears request.",
       "authority": "Renderer draft creates no installation; source inspection is Electron IPC in next stage.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage. Server Agent path is unimplemented; arbitrary JS module loading on Android remains a separate non-goal.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage. Server Agent path is unimplemented; arbitrary JS module loading on Android remains a separate non-goal.",
       "issue_owner": "#73",
       "source": [
         {
@@ -176,7 +176,7 @@
       "handler": "usePluginProbe generation retires old results; probe clones temporary source, detects Agent/Desktop halves, then removes clone.",
       "authority": "Electron-local hermes:plugin:probe -> probePluginRepo, not an authenticated Android Gateway REST route. A portable replacement needs a real host contract.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -206,7 +206,7 @@
       "handler": "advancedOpen -> Source/Version/Contents/Profile/Force child editors.",
       "authority": "Renderer disclosure is UI-only; its children do not all write the same authority.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -236,7 +236,7 @@
       "handler": "targetProfile initialized request || active || profileScope, normalized; selected value goes to runPluginInstall.",
       "authority": "Target profile string is sent by plugins.manage; do not infer cross-connection safety from outer capability selector alone.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -266,7 +266,7 @@
       "handler": "pinRef trimmed/lowercased; nonblank invalid full SHA disables Install; opts.ref conditionally sent.",
       "authority": "Agent install ref is distinct from display-only request.sha for curated catalog.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -296,7 +296,7 @@
       "handler": "setForce -> plan.force -> Boolean force in plugins.manage install and Desktop clone.",
       "authority": "Agent host and Electron local filesystem are separate effects, not an atomic transaction.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -326,7 +326,7 @@
       "handler": "Wait settled probe; install Agent first; timeout => uncertain and refresh, no Desktop phase; otherwise optional Desktop phase then refresh; done closes/navigates, failed exposes error. No automatic retry after uncertain.",
       "authority": "plugins.manage action install with captured profile/catalog_name/ref and 120-second bound; Desktop IPC is a separate authority.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -356,7 +356,7 @@
       "handler": "Retry repeats install only for installError; probe failure restarts inspection; Cancel clears request.",
       "authority": "UI busy does not prove host cancellation; uncertain may already have changed backend.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -386,7 +386,7 @@
       "handler": "Card changes keyed Agent toggle and also Desktop half if present; detail off remains per-half.",
       "authority": "Profile-scoped plugins.manage Agent mutation plus app-wide Desktop store, no atomic all-halves completion.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage. This combined package action is not equivalent to future Agent-only list/toggle.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage. This combined package action is not equivalent to future Agent-only list/toggle.",
       "issue_owner": "#234",
       "source": [
         {
@@ -408,9 +408,9 @@
       "operation": "Uninstall Agent package",
       "mount": "Installed detail only, removable Agent wins over removable Desktop; bundled/pip have no uninstall row.",
       "handler": "UninstallRow -> confirm -> removeAgentPlugin(name,scope); success rescan; backend row locally dropped.",
-      "authority": "plugins.manage remove uses name/profile; no Android host removal implementation. Moving it off card changes interaction, not wire shape.",
+      "authority": "plugins.manage remove uses name/profile; no Android host removal implementation. Moving it from the detail header to the detail footer changes interaction, not wire shape.",
       "classification": "omission",
-      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #392 candidate list/toggle work is not installed/catalog/schema coverage.",
       "issue_owner": "#73",
       "source": [
         {
@@ -649,9 +649,9 @@
         "runtime-example-and-extension-boundary",
         "shared-source-infrastructure"
       ],
-      "classification": "review-debt",
+      "classification": "mixed",
       "issue_owner": "#266",
-      "remaining": "Native role children, generic primitive affordances, callback registries/factory aliases, runtime-loaded extension templates and old-to-new drift report/workflow. Installed private contents are not enumerated.",
+      "remaining": "Review debt: unread native role children, generic primitive affordances, callback registries/factory aliases and runtime-loaded extension templates. Missing implementation: old-to-new drift engine/report and artifact-only workflow. Installed private contents are not enumerated.",
       "acceptance": "Deliver #266 deterministic changed copy/state/test/citation classification and artifact-only workflow with historical dogfood; schema/extension templates source-read without private content. Structural census never substitutes for semantic acceptance.",
       "evidence": [
         "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",

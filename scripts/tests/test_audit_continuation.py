@@ -58,10 +58,28 @@ class AuditContinuationTest(unittest.TestCase):
         self.assertEqual(data['upstream_sha'], '92663ae8054ae81f207f46d83512d3f879dc698d')
         self.assertEqual(data['android_sha'], '65080e8a37e8d546869528e43c162503015b94c7')
         self.assertEqual(len(data['changed_paths']), 27)
+        self.assertEqual(hashlib.sha256('\n'.join(data['changed_paths']).encode()).hexdigest(),
+                         '7470eaa88f6711a55e6736d985a8ecb14cbb9799ba8977c1996b09cd9e4eff9b')
         self.assertEqual(data['contract_assessment'], 'additive catalog tier; no demonstrated existing-client wire repair')
         ledger = (ROOT / 'app/src/test/kotlin/com/hermesagent/mobile/ui/theme/DesktopThemeLedger.kt').read_text()
         self.assertIn('PINNED_SHA = "' + data['upstream_sha'] + '"', ledger)
         self.assertNotIn('/Users/', json.dumps(data))
+
+    def test_missing_drift_engine_cannot_be_only_review_debt(self):
+        category = next(c for c in self.load()['remaining_categories']
+                        if c['id'] == 'dynamic-boundaries-drift-engine')
+        self.assertEqual(category['classification'], 'mixed')
+        self.assertIn('implementation', category['remaining'])
+        self.assertIn('unread', category['remaining'])
+
+    def test_exact_reviewed_control_ids_are_retained(self):
+        expected = {
+            'capabilities.scope', 'catalog.add', 'catalog.tier', 'catalog.repository',
+            'catalog.probe', 'catalog.advanced', 'catalog.profile', 'catalog.pin',
+            'catalog.force', 'catalog.install', 'catalog.retry-cancel',
+            'plugins.package-toggle', 'plugins.uninstall', 'plugins.desktop-install',
+        }
+        self.assertEqual({c['id'] for c in self.load()['controls']}, expected)
 
 
 if __name__ == '__main__':

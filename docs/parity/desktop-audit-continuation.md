@@ -92,7 +92,7 @@ An unread tree is **review-debt**, not proof Android is missing every control.
 | `transcript-agents-artifacts` | mixed | #73 | Specialized transcript/render/input branches, Agents controls, Starmap and Artifacts viewers. Existing clarify/approval/secret and bounded renderer coverage is not zero. |
 | `workspace-native-bridges` | mixed | #73 | Files/PTY/Review/browser and onboarding children, connection transport branches, native OS roles. Backend cwd is not phone path; not every host operation is a permanent non-goal. |
 | `system-notifications-status` | mixed | #127 | System maintenance/background/skew, logs Copy/jumps/match actions, notification plugin/sound policy conflict #99, statusbar resource children and Radio. Existing log feature candidate is not full maintenance parity. |
-| `dynamic-boundaries-drift-engine` | review-debt | #266 | Native role children, generic primitive affordances, callback registries/factory aliases, runtime-loaded extension templates and old-to-new drift report/workflow. Installed private contents are not enumerated. |
+| `dynamic-boundaries-drift-engine` | mixed | #266 | Review debt: unread native role children, generic primitive affordances, callback registries/factory aliases and runtime-loaded extension templates. Missing implementation: old-to-new drift engine/report and artifact-only workflow. Installed private contents are not enumerated. |
 
 The voice category deliberately reuses the specific open #67 construction owner,
 not only umbrella #73. Its existing issue acceptance and the preserved composer
