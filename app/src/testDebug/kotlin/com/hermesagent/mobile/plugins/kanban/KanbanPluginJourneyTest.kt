@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.plugins.ContributionRegistry
 import com.hermesagent.mobile.plugins.PluginAreas
@@ -121,8 +122,9 @@ class KanbanPluginJourneyTest {
 
         compose.onNodeWithTag("Kanban Board controls").performClick()
         compose.waitForIdle()
-        assertWipOrder("Board switcher", "Filters", "Filter cards…", "Orchestration settings")
+        assertWipOrder("Board switcher", "Orchestration settings")
         compose.onNodeWithText("New task").assertIsDisplayed()
+        compose.onNodeWithText("Filters").assertIsDisplayed()
         compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(1)
         compose.onNodeWithTag("Kanban Board controls").performClick()
         compose.waitForIdle()
@@ -178,7 +180,8 @@ class KanbanPluginJourneyTest {
     }
 
     @Test fun `new task form requires title and submits title description priority`() {
-        var state by mutableStateOf(KanbanUiState())
+        val filters = KanbanFilters(search = "Pearl", assignee = "planner", archived = true)
+        var state by mutableStateOf(KanbanUiState(filters = filters))
         var submitted: KanbanNewTask? = null
         compose.setContent { HermesTheme {
             KanbanScreen(state, {}, {}, {}, {},
@@ -189,12 +192,16 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithTag("Kanban Board controls").performClick()
         compose.onNodeWithText("New task").performClick()
         compose.onNodeWithText("Create task").assertIsNotEnabled()
+        compose.onNodeWithTag("Kanban WIP Workspace").assertIsNotEnabled()
+        compose.onNodeWithTag("Kanban WIP Assignee").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Title").performTextInput("Pearl")
         compose.onNodeWithContentDescription("Description").performTextInput("A useful task\nwith detail")
         compose.onNodeWithText("Create task").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(KanbanNewTask("Pearl", "A useful task\nwith detail", 0), submitted) }
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithTag("Kanban refresh").assertExists()
+        compose.onNodeWithContentDescription("Filter cards…").assertExists()
+        compose.runOnIdle { assertEquals(filters, state.filters) }
     }
 
     @Test fun `create defaults publish only redacted semantics`() {
@@ -205,6 +212,49 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithText("Assignee: password=assignee-demo", useUnmergedTree = true).assertDoesNotExist()
         compose.onNodeWithText("Board: password=<redacted>", useUnmergedTree = true).assertExists()
         compose.onNodeWithText("Assignee: password=<redacted>", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `search and profile filters hide cards without changing board snapshot`() {
+        val tasks = listOf(
+            KanbanTask("a", "Pearl", "todo", assignee = "alpha"),
+            KanbanTask("b", "Shell", "todo", assignee = "beta"),
+        )
+        var state by mutableStateOf(KanbanUiState(
+            KanbanPhase.Ready, listOf(KanbanColumn("todo", tasks)),
+            assignees = listOf("alpha", "beta"),
+        ))
+        compose.setContent { HermesTheme {
+            KanbanScreen(state, {}, {}, {}, {}, onFilters = { state = state.copy(filters = it) })
+        } }
+        compose.onNodeWithContentDescription("Filter cards…").performTextInput("pearl")
+        compose.onNodeWithTag("Kanban task a").assertExists()
+        compose.onNodeWithTag("Kanban task b").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Filter cards…").performTextClearance()
+        compose.onNodeWithTag("Kanban Board controls").performClick()
+        compose.onNodeWithText("Filters").performClick()
+        compose.onNodeWithText("beta").performClick()
+        compose.onNodeWithTag("Kanban task a").assertDoesNotExist()
+        compose.onNodeWithTag("Kanban task b").assertExists()
+        compose.onNodeWithContentDescription("Filter cards…").performTextInput("missing")
+        compose.onNodeWithText("No tasks match the filters").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(tasks, state.columns.single().tasks) }
+    }
+
+    @Test fun `filter semantics redact backend labels but selection retains exact identities`() {
+        val raw = "password=kanban-demo"
+        var state by mutableStateOf(KanbanUiState(KanbanPhase.Empty,
+            assignees = listOf(raw), tenants = listOf("Tenant password=tenant-demo")))
+        compose.setContent { HermesTheme {
+            KanbanScreen(state, {}, {}, {}, {}, onFilters = { state = state.copy(filters = it) })
+        } }
+        compose.onNodeWithTag("Kanban Board controls").performClick()
+        compose.onNodeWithText("Filters").performClick()
+        compose.onNodeWithText(raw, useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Tenant password=tenant-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Tenant password=<redacted>", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("password=<redacted>").performClick()
+        compose.runOnIdle { assertEquals(raw, state.filters.assignee) }
     }
 
     private fun assertWipOrder(vararg labels: String) {

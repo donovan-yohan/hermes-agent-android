@@ -22,7 +22,8 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 |---|---|---|---|
 | Horizontally interactive lanes | mobile-adaptation | Vertically grouped, tap-only cards | Desktop `board.tsx:1390-1415`; Android `KanbanScreen.kt:141-179`; phone one-pane adaptation |
 | Board switcher | mobile-adaptation | `Board controls` menu shows disabled `Board switcher` with `WIP` | Desktop titlebar `board.tsx:1326-1328`, control `board-switcher.tsx:1-6`; Android `KanbanScreen.kt`; current-board-only snapshot, no board selection read or write |
-| Filters and search | mobile-adaptation | `Board controls` menu shows disabled `Filters`, then `Filter cards…`, with `WIP` | Phone slice prioritizes a readable current-board snapshot; Desktop `apps/desktop/src/plugins/kanban/i18n.ts:240,261`, header `board.tsx:1335-1346`; Android `KanbanScreen.kt` |
+| Filters and search | mobile-adaptation | Enabled `Filters` menu and `Filter cards…` search over title/body/id, exact profile/tenant intersection; Show archived reloads the snapshot | Phone keeps the search field visible and puts filters in Board controls; source audit below; no task mutation |
+| Group Running by profile | omission | Visible disabled WIP in Filters | coming soon; vertical status groups do not yet subgroup by profile |
 | Orchestration settings | omission | Disabled WIP after filtering controls | coming soon; orchestration editing remains unavailable |
 | New task | mobile-adaptation | Enabled New task opens a scrollable phone form: title, description, priority; configured default assignee and board workspace inherited | Full-screen form fits the phone keyboard. Typed host capability uses the plugin namespace and explicit-board readback; source audit below |
 | Advanced New task options | omission | Workspace/Assignee overrides, skills, model, parent, goal mode and estimate stay disabled WIP | coming soon; basic creation uses server workspace defaults and the resolved orchestration assignee |
@@ -50,6 +51,17 @@ Android opens a typed, irrevocably closable endpoint-bound host scope, resolves 
 Close and OkHttp enqueue share a revocation lock; endpoint teardown uses the existing dispatch fence. A board-unavailable result that removes the form also closes the scope and rejects late continuations, including mutations still waiting for credentials. Guarded transport disables redirect/replay. A single dialog issues at most one POST, with an idempotency key. Success requires a fresh task GET matching the returned id/title; a lost, refused or malformed reply does not automatically retry and instructs the person to close and refresh. The server has no atomic create-plus-nudge transaction, so dispatcher availability is shown separately from confirmed creation. Backend board/assignee display labels pass through `redact()` without changing wire identities.
 
 Desktop's advanced fields remain visible WIP rather than being silently absent. Android adds a safe confirmation-failure sentence instead of displaying raw backend exceptions. `KanbanCreateTest` exercises the actual authenticated production transport, selected-board workspace kinds, raw assignee identity, endpoint fencing, explicit board/idempotency payload and unconfirmed receipt. `KanbanCreationStateTest` and `KanbanCreateRevocationTest` cover a held background board failure followed by late completion or credential release. Compose covers New task -> form -> Create task, Cancel, and redacted backend-label semantics. No live-Gateway or rendered approval is claimed: Concern, pending #73.
+
+## Filtering source audit (2026-10-22)
+
+New filtering behavior was inspected at `NousResearch/hermes-agent@81a55437f3f31a9f12a30c53b6c5d49d420898aa`:
+
+- `apps/desktop/src/plugins/kanban/board.tsx:880-953,1183-1197`: menu order, exact profile/tenant equality, trimmed case-insensitive title/body/id search. Filters are UI-only; unfiltered task records remain authoritative.
+- `apps/desktop/src/plugins/kanban/api.ts:388-389`: archived snapshot query.
+- `plugins/kanban/dashboard/plugin_api.py:291-370`: board inventory and `include_archived` read contract.
+- `apps/desktop/src/plugins/kanban/i18n.ts:252-278`: verbatim labels and no-match copy.
+
+The historical Pin table and visual provenance above are unchanged. `KanbanFiltersTest` covers intersection, inventory parsing, archived query, endpoint clearing and obsolete snapshot rejection. Backend inventory labels pass through `redact()` at display, while exact unmodified values govern equality and selection. The Compose journey exercises text search, profile choice, no-match recovery and synthetic secret-label semantics with raw identity retained by the handler. No rendered approval is claimed: Concern, pending #73; closed #261 explicitly retains evidence debt, not approval.
 
 ## Executable evidence
 

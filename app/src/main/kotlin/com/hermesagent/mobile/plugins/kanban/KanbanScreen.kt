@@ -1,4 +1,5 @@
 package com.hermesagent.mobile.plugins.kanban
+import com.hermesagent.mobile.data.ssh.redact
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -11,6 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import com.hermesagent.mobile.ui.common.SearchField
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
@@ -25,6 +29,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.Alignment
+import com.hermesagent.mobile.ui.common.HermesIcon
+import com.hermesagent.mobile.ui.common.HermesIconGlyph
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.testTag
@@ -45,6 +53,7 @@ fun KanbanScreen(
     onNewTask: () -> Unit = {},
     onCloseCreate: () -> Unit = {},
     onSubmitTask: (KanbanNewTask) -> Unit = {},
+    onFilters: (KanbanFilters) -> Unit = {},
 ) {
     state.creation?.let { creation ->
         BackHandler { onCloseCreate() }
@@ -53,6 +62,7 @@ fun KanbanScreen(
     }
     val detail = state.detail
     val showingDetail = detail !is KanbanDetail.None
+    val searchFocus = remember { FocusRequester() }
 
     BackHandler(enabled = showingDetail) { onCloseDetail() }
     OverlayScaffold(
@@ -65,18 +75,31 @@ fun KanbanScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             TextButton(label = "Refresh", onClick = onRefresh, modifier = Modifier.testTag("Kanban refresh"))
-            KanbanControlsMenu(showingDetail, onNewTask)
+            KanbanControlsMenu(showingDetail, state, onFilters, onNewTask) { searchFocus.requestFocus() }
         }
 
         if (!showingDetail) {
+            SearchField(
+                value = state.filters.search,
+                onValueChange = { onFilters(state.filters.copy(search = it)) },
+                placeholder = "Filter cards…",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = HermesTheme.spacing.pageInset)
+                    .focusRequester(searchFocus).testTag("Kanban search"),
+            )
             state.creationNotice?.let { Notice(it) }
             if (state.stale) Notice(KANBAN_STALE)
             when (state.phase) {
                 KanbanPhase.Loading -> EmptyState("Loading board…", "Hermes is asking the Gateway for its current board.")
-                KanbanPhase.Empty -> EmptyState("No tasks on this board", "Refresh to check the current board again.")
+                KanbanPhase.Empty -> if (state.filters.search.isNotEmpty() || state.filters.assignee.isNotEmpty() || state.filters.tenant.isNotEmpty()) {
+                    EmptyState("No tasks match the filters", "Change the filters to see more tasks.")
+                } else EmptyState("No tasks on this board", "Refresh to check the current board again.")
                 KanbanPhase.Unavailable -> EmptyState("Kanban unavailable", KANBAN_UNAVAILABLE)
                 KanbanPhase.Refused -> EmptyState("Board could not be loaded", "Try refreshing the board.")
-                KanbanPhase.Ready -> Board(state.columns, onOpenTask)
+                KanbanPhase.Ready -> {
+                    val visible = state.filters.apply(state.columns)
+                    if (visible.isEmpty()) EmptyState("No tasks match the filters", "Change the filters to see more tasks.")
+                    else Board(visible, onOpenTask)
+                }
             }
         } else when (detail) {
             is KanbanDetail.Loading -> EmptyState("Loading task…", "Hermes is asking for this task's details.")
@@ -93,8 +116,15 @@ fun KanbanScreen(
 }
 
 @Composable
-private fun KanbanControlsMenu(showingDetail: Boolean, onNewTask: () -> Unit) {
+private fun KanbanControlsMenu(
+    showingDetail: Boolean,
+    state: KanbanUiState,
+    onFilters: (KanbanFilters) -> Unit,
+    onNewTask: () -> Unit,
+    onSearch: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
+    var filtersOpen by remember { mutableStateOf(false) }
     val label = if (showingDetail) "Task actions" else "Board controls"
 
     Column {
@@ -113,13 +143,51 @@ private fun KanbanControlsMenu(showingDetail: Boolean, onNewTask: () -> Unit) {
                     )
                 }
                 actions.forEach { action ->
-                    if (!showingDetail && action == "New task") TextButton("New task", {
+                    if (!showingDetail && action in listOf("Filters", "Filter cards…")) {
+                        TextButton(label = action, onClick = {
+                            expanded = false
+                            if (action == "Filters") filtersOpen = true else onSearch()
+                        })
+                    } else if (!showingDetail && action == "New task") TextButton("New task", {
                         expanded = false
                         onNewTask()
                     }) else KanbanWipMenuRow(action)
                 }
             }
         }
+        DropdownMenu(expanded = filtersOpen && !showingDetail, onDismissRequest = { filtersOpen = false }) {
+            fun choose(filters: KanbanFilters) { onFilters(filters); filtersOpen = false }
+            FilterChoice("All profiles", state.filters.assignee.isEmpty()) { choose(state.filters.copy(assignee = "")) }
+            state.assignees.forEach { name -> FilterChoice(
+                label = name, checked = state.filters.assignee == name,
+                click = { choose(state.filters.copy(assignee = name)) },
+            ) }
+            if (state.tenants.isNotEmpty()) {
+                HorizontalDivider(color = HermesTheme.tokens.strokeTertiary)
+                FilterChoice("All tenants", state.filters.tenant.isEmpty()) { choose(state.filters.copy(tenant = "")) }
+                state.tenants.forEach { name -> FilterChoice(
+                    label = name, checked = state.filters.tenant == name,
+                    click = { choose(state.filters.copy(tenant = name)) },
+                ) }
+            }
+            HorizontalDivider(color = HermesTheme.tokens.strokeTertiary)
+            FilterChoice("Show archived", state.filters.archived, {
+                choose(state.filters.copy(archived = !state.filters.archived))
+            })
+            KanbanWipMenuRow("Group Running by profile")
+        }
+    }
+}
+
+@Composable
+private fun FilterChoice(label: String, checked: Boolean, click: () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = HermesTheme.spacing.touchTarget)
+        .clickable(role = Role.Button, onClick = click).semantics { selected = checked }
+        .padding(horizontal = HermesTheme.spacing.pageInset),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(redact(label), style = HermesTheme.type.body, color = HermesTheme.tokens.textPrimary, modifier = Modifier.weight(1f))
+        if (checked) HermesIconGlyph(HermesIcon.Check, color = HermesTheme.tokens.textSecondary)
     }
 }
 

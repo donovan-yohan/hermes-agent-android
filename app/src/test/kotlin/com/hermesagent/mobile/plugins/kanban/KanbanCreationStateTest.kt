@@ -11,8 +11,10 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class KanbanCreationStateTest {
-    @Test fun `submit is single flight confirmation closes form and refreshes board`() = runTest {
+    @Test fun `submit is single flight confirmation closes form and refreshes archived board retaining filters`() = runTest {
         val held = CompletableDeferred<KanbanCreated?>()
+        val queries = mutableListOf<Map<String, String>>()
+        val filters = KanbanFilters(search = "Pearl", assignee = "planner", tenant = "design", archived = true)
         var submissions = 0; var reads = 0; var closed = false
         val api = object : KanbanCreate {
             override fun open(expectedEndpoint: Long) = object : KanbanCreateScope {
@@ -21,14 +23,21 @@ class KanbanCreationStateTest {
                 override fun close() { closed = true }
             }
         }
-        val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> reads++; PluginRestResult.Success(200, """{"columns":[]}""".toByteArray()) },
+        val vm = KanbanViewModel(KanbanPluginRepository { _, options ->
+            reads++; queries += options.query
+            PluginRestResult.Success(200, """{"columns":[],"assignees":["planner"],"tenants":["design"]}""".toByteArray()) },
             MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, api)
+        vm.setFilters(filters); runCurrent()
         vm.openCreate(); runCurrent()
         vm.submitTask(KanbanNewTask("Pearl")); vm.submitTask(KanbanNewTask("Pearl")); runCurrent()
         assertEquals(1, submissions); assertTrue(vm.uiState.value.creation!!.loading)
         held.complete(KanbanCreated(KanbanTask("x", "Pearl", "ready"), false)); runCurrent()
         assertNull(vm.uiState.value.creation); assertEquals("Task created.", vm.uiState.value.creationNotice)
-        assertTrue(closed); assertEquals(1, reads)
+        assertTrue(closed); assertEquals(2, reads)
+        assertEquals(filters, vm.uiState.value.filters)
+        assertEquals(listOf("planner"), vm.uiState.value.assignees)
+        assertEquals(listOf("design"), vm.uiState.value.tenants)
+        assertEquals(List(2) { mapOf("include_archived" to "true") }, queries)
     }
 
     @Test fun `unavailable background board closes scope and late failure cannot restore form`() = runTest {

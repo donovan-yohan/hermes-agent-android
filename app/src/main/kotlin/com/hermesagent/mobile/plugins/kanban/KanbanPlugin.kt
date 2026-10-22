@@ -53,6 +53,7 @@ class KanbanPlugin(
                             onNewTask = viewModel::openCreate,
                             onCloseCreate = viewModel::closeCreate,
                             onSubmitTask = viewModel::submitTask,
+                            onFilters = viewModel::setFilters,
                         )
                     },
                 ),
