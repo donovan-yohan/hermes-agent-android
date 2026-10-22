@@ -77,6 +77,7 @@ data class PluginNavigation(
     val onNavigate: (String) -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     val onOpenBotRecentSession: (profile: String, durableId: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
+    val onNewBotSession: (profile: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     val currentRoute: String? = null,
 )
 
@@ -261,6 +262,14 @@ fun HermesApp(
             onNavigate = { target ->
                 if (destination !is HermesDestination.Route) routeOrigin = destination
                 navigate(HermesDestination.Route(target))
+            },
+            onNewBotSession = { profile, endpoint, onFinished ->
+                val originEpoch = navigationEpoch.longValue
+                chatActions.onNewBotSession(profile, endpoint, { navigationEpoch.longValue == originEpoch }) { opened ->
+                    val accepted = opened && navigationEpoch.longValue == originEpoch
+                    if (accepted) navigate(HermesDestination.Chat)
+                    onFinished(accepted)
+                }
             },
             onOpenBotRecentSession = { profile, durableId, endpoint, onFinished ->
                 val originEpoch = navigationEpoch.longValue

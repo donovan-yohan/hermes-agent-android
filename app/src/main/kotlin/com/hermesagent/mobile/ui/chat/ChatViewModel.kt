@@ -2389,6 +2389,44 @@ internal class ChatViewModel(
         }
     }
 
+    /** Explicit roster owner. Never inherits another profile's model pin or project cwd.
+     * Desktop newBotChat data.ts:1297-1325 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa. */
+    fun newBotSession(profile: String, expectedEndpoint: Long, isCurrent: () -> Boolean = { true }, onFinished: (Boolean) -> Unit) {
+        if (profile.isBlank() || profile != profile.trim() ||
+            expectedEndpoint != cache.endpointGeneration.value ||
+            repository.connectionState.value.status != GatewayConnectionStatus.Connected ||
+            profileRepository.roster.value.profiles.none { it.name == profile }) {
+            onFinished(false)
+            return
+        }
+        val generation = ++navigationGeneration
+        val connection = connectionGeneration()
+        val scopeGeneration = profileScopeGeneration
+        fun stillOwns() = isCurrent() && generation == navigationGeneration && connection == connectionGeneration() &&
+            expectedEndpoint == cache.endpointGeneration.value && scopeGeneration == profileScopeGeneration
+        viewModelScope.launch {
+            try {
+                if (!stillOwns()) { onFinished(false); return@launch }
+                val id = repository.createSessionAtEndpoint(null, null, profile, expectedEndpoint)
+                if (!stillOwns()) { onFinished(false); return@launch }
+                flushDraft()
+                clearBotChatCapability()
+                inertBotOpens += id
+                ordinaryBotOwner.value = OrdinaryBotOwner(id, profile)
+                composerScope?.let { bindComposerScope(it, normalizeProfileKey(profile).takeIf { it != DEFAULT_PROFILE }) }
+                rehome(id, applyOpenSideEffects = false)
+                refreshComposer(id)
+                onFinished(true)
+            } catch (cancelled: CancellationException) {
+                onFinished(false)
+                throw cancelled
+            } catch (_: Throwable) {
+                if (stillOwns()) noticeLine = "A new chat could not be started. Try again."
+                onFinished(false)
+            }
+        }
+    }
+
     /** Owner-qualified ordinary conversation. Never grants canonical Bot Chat authority. */
     fun openBotRecentSession(profile: String, durableId: String, expectedEndpoint: Long,
         isCurrent: () -> Boolean = { true }, onFinished: (Boolean) -> Unit) {
