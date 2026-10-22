@@ -6292,6 +6292,30 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `repeated own-only forwarded pending does not reorder waiting occurrences`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        for (id in listOf("A", "B")) {
+            rpc.promptResponse = CompletableDeferred(json("""{"status":"queued","admission_id":"$id","forwarded":true}"""))
+            repository.submit("durable-a", "Question $id")
+        }
+        for (id in listOf("B", "A")) {
+            rpc.emit("session.info", "runtime-a", """{"pending_submissions":[{"admission_id":"$id","status":"queued","user":"Question $id","input_id":"input-$id"}]}""")
+        }
+        runCurrent()
+        assertEquals(listOf("Question A", "Question B"), cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.map { it.text })
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant","id":"answer-A"}""")
+        rpc.emit("session.info", "runtime-a", """{"pending_submissions":[]}""")
+        runCurrent()
+        assertEquals(listOf("Question B"), cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.map { it.text })
+        assertEquals(2, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
     fun `legacy forwarded uncertainty remains ambiguous and is never retried`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { promptResponse = CompletableDeferred<JsonElement>().also {

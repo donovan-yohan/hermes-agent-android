@@ -3712,8 +3712,10 @@ internal class LiveGatewaySessionRepository(
         if (admission in retiredForwardedAdmissions[runtimeId].orEmpty()) return
         val id = "forwarded:$admission"
         updateComposerStatus(durableId, runtimeId) { status ->
-            status.copy(gatewayQueuedPrompts = status.gatewayQueuedPrompts.filterNot { it.id == id } +
-                ComposerGatewayQueuedPrompt(id = id, text = text))
+            val existing = status.gatewayQueuedPrompts.indexOfFirst { it.id == id }
+            status.copy(gatewayQueuedPrompts = if (existing < 0)
+                status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(id = id, text = text)
+            else status.gatewayQueuedPrompts.map { if (it.id == id) it.copy(text = text) else it })
         }
     }
 

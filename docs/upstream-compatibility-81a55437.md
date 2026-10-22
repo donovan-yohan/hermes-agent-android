@@ -17,7 +17,7 @@ All upstream paths/ranges below refer to the Desktop source target above.
 | Busy model selection | `gateway/session_deferred_pick.py:16-43,92-136` defers selection and can ask for confirmation at the next boundary. | Isolated follow-up is being implemented and tested. No claim of new-backend compatibility until explicit consent and effective-state fencing are verified. | #266 |
 | Observing transferred queued work | `gateway/session_queued_controls.py:65-78,175-214` can return unconsumed steering work to FIFO. | Accept a newer authoritative pending return only for a known `started,steering:true` row. Pending publication revisions fence delayed submit receipts; terminal remains non-resurrectable. This is observer support, not new queued-control UI. | #266 |
 | Uncertain correction rejection | `gateway/session_busy_controls.py:202-217` distinguishes proven `delivered:false` from rejection that may follow delivery. | Only explicit false permits definite-negative recovery. Plain rejected becomes Ambiguous; ready fallback never follows uncertain delivery. Existing typed outcomes retain pre-dispatch refusal behavior. | #266 |
-| Legacy owner forwarding | `tui_gateway/methods_prompt.py:709-762` may queue work at the live owner or answer `SESSION_OWNER_UNCONFIRMED` after a possibly durable handoff. | Unconfirmed is potentially accepted throughout repository and composer. A successful forwarded queued receipt removes only its phantom local running turn and uses the existing Gateway queue projection, never a fabricated canonical admission. | #266 |
+| Legacy owner forwarding | `tui_gateway/methods_prompt.py:709-762` may queue work at the live owner or answer `SESSION_OWNER_UNCONFIRMED` after a possibly durable handoff. | Unconfirmed is potentially accepted throughout repository and composer. A successful forwarded queued receipt removes only its phantom local running turn and uses the existing Gateway queue projection, never a fabricated canonical admission. Repeated own-only pending observations preserve occurrence placement. Legacy relays omit admission identity from starts, so cross-relay start reordering cannot be certified by this projection; canonical admission-backed sessions remain the stronger identity contract. | #266 |
 
 The field-level comparison also inspected REST fenced session edits,
 owner-qualified identity/replay/snapshots, staged attachment/download routes,
@@ -39,7 +39,9 @@ and owners, and pending rendered comparisons remain Concern.
 - Theme registry source comparison is byte-identical from the previous UI target.
 - ThemeParityTest ran 13 tests with zero failures/errors/skips before production
   remediations were added. It is not compatibility evidence for those changes.
-- Focused regression and full check/APK verification for the remediated candidate
-  are pending. Do not read this working audit as a green new-backend result.
+- The committed first review-remediation focused set ran 550 tests with zero
+  failures/errors/skips (22 canonical-peer, 305 repository, 223 ViewModel).
+  A later multiple-forwarded-order regression and source fix require a fresh run.
+  Full check/APK and live new-backend certification remain separate and pending.
 - No live provider, update, restart, installed app or physical-device operation
   was performed by this audit.
