@@ -135,6 +135,14 @@ class GitBoundsTest(unittest.TestCase):
                         m._SCRATCH.cleanup()
                     m._SCRATCH = m._READ = None
 
+    def test_known_source_revision_is_materialized_after_store_switch(self):
+        sha = "a" * 40
+        with patch.object(m, "_FETCH", True), patch.object(m, "_ensured", {sha}), \
+                patch.object(m, "_has", return_value=False), \
+                patch.object(m, "materialize") as materialize:
+            m.tree_paths(sha)
+        materialize.assert_called_once_with(sha)
+
     def test_complete_snapshot_does_not_require_a_remote(self):
         with patch.object(m, "_has", return_value=True), patch.object(m, "subprocess_run", return_value=subprocess.CompletedProcess([], 0, "b" * 40 + "\n", "")), patch.object(m, "_scratch_clone") as clone:
             m.materialize("a" * 40)

@@ -230,6 +230,10 @@ def materialize(sha: str) -> None:
 
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
+        # A snapshot proved before switching stores must not disappear merely
+        # because the independent scratch store has not fetched it yet.
+        if _FETCH and sha in _ensured and not _has(sha):
+            materialize(sha)
         if not _has(sha):
             # Not a revision of the read checkout, so it has no tree to list.
             # Returning nothing is honest — "this SHA names no file here" — and it
