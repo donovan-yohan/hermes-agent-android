@@ -24,11 +24,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -499,6 +501,38 @@ class ChatProfileScopeTest {
         release.complete(Unit); runCurrent()
         assertEquals("lab-row", subject.uiState.value.activeSessionId)
         assertEquals(before, subject.uiState.value.composer)
+        assertEquals(listOf(false), outcomes)
+    }
+
+    @Test
+    fun `obsolete queue migration cannot cancel another sessions debounced draft save`() = runTest(dispatcher) {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val queue = com.hermesagent.mobile.data.composer.TransientComposerQueueStore()
+        val held = object : com.hermesagent.mobile.data.composer.ComposerQueueStore by queue {
+            override suspend fun migrate(fromDurableId: String, toDurableId: String): com.hermesagent.mobile.data.composer.ComposerQueueMutation {
+                entered.complete(Unit); release.await()
+                return queue.migrate(fromDurableId, toDurableId)
+            }
+        }
+        val controller = com.hermesagent.mobile.data.composer.ComposerQueueController(held,
+            object : com.hermesagent.mobile.data.composer.ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String) =
+                    com.hermesagent.mobile.data.composer.QueueSubmissionOutcome.Accepted
+            })
+        val drafts = com.hermesagent.mobile.data.draft.TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles,
+            composerQueueController = controller, draftStore = drafts, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        repository.recentResult = "tip"
+        repository.onRecentOpened = { cache.upsertSession(row("tip", CLOCK, "work")) }
+        val outcomes = mutableListOf<Boolean>()
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { outcomes += it }
+        runCurrent(); assertTrue(entered.isCompleted)
+        subject.selectSession("lab-row"); runCurrent()
+        subject.setDraft("persist after old migration")
+        release.complete(Unit); runCurrent()
+        advanceTimeBy(401); runCurrent()
+        assertEquals("persist after old migration", drafts.drafts.first()["lab-row"])
         assertEquals(listOf(false), outcomes)
     }
 

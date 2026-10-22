@@ -2918,9 +2918,12 @@ internal class ChatViewModel(
         if (canonicalId == requestedId) return
         composerHistoryController.rehome(requestedId, canonicalId)
         composerQueueController.migrate(requestedId, canonicalId)
-        invalidateHistory()
+        if (!canAdopt()) return
         draftStoreReady.await()
-        val transitionRevision = invalidatePendingDraftWrite()
+        if (!canAdopt()) return
+        val foreground = activeSessionId.value == requestedId
+        if (foreground) invalidateHistory()
+        val transitionRevision = if (foreground) invalidatePendingDraftWrite() else draftRevision
         val sourceWasTouched = requestedId in locallyTouchedDrafts
         val source = if (sourceWasTouched) draftSnapshot[requestedId].orEmpty() else draftSnapshot[requestedId]
         val destination = draftSnapshot[canonicalId]
