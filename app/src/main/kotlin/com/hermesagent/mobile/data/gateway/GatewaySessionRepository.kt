@@ -5304,6 +5304,7 @@ internal class LiveGatewaySessionRepository(
                 if (event.canonical && payload.string("operation") == "model") {
                     val connection = connectionSnapshot()
                     val endpoint = cache.endpointGeneration.value
+                    val profile = runtimeProfiles[runtimeId]
                     val pick = payload.obj("payload")
                     val token = payload.string("confirm")
                     val target = pick?.string("model")?.let { ComposerModelSelection(it, pick.string("provider").orEmpty()) }
@@ -5318,6 +5319,7 @@ internal class LiveGatewaySessionRepository(
                                 try {
                                     val result = requestAtEndpointDispatch(connection, endpoint, "session.model", buildJsonObject {
                                         put("session_id", JsonPrimitive(runtimeId)); put("payload", pick!!); put("confirm", JsonPrimitive(token!!))
+                                        profile?.let { put("profile", JsonPrimitive(it)) }
                                     }).asObject("session.model")
                                     when {
                                         result.boolean("deferred") == true -> ControlMutationResult.Deferred
