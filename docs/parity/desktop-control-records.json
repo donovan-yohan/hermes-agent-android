@@ -21331,6 +21331,2695 @@
         }
       ],
       "lifecycle": "Refresh uses allSettled per call, config-backed auxiliary main fallback, 5s model-info budget; providers/options failure does not prove model absence. No backend/provider calls were executed."
+    },
+    {
+      "id": "composer-depth.send",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Send an idle draft including attachments",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. !conversation.active; primary is Send when payload present; disabled || !canSubmit blocks. IME form guard and pointer-capture sync are real gates.",
+      "handler": "Form submit -> submitDraft re-reads DOM/pathifies references, handles queue-edit/card first, clones attachments, clears UI then dispatchSubmit. Submission identity is new or explicit restored retry; rejection stashes to submitted/assigned scope and paints only if that scope still owns composer.",
+      "authority": "Captured submission destination and prepared identity reach prompt.submit; only explicit pre-admission refusal permits identityless downgrade. Acceptance is not turn completion.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 155,
+          "end": 180
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1338,
+          "end": 1396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 112,
+          "end": 169
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 367,
+          "end": 433
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/submit.ts",
+          "start": 1098,
+          "end": 1197
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/submit.ts",
+          "start": 1308,
+          "end": 1370
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 766,
+          "end": 800
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2954,
+          "end": 3142
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Late reject can restore the same scope without checking a newer same-scope draft; not certified non-clobbering. Hidden machine submits deliberately do not restore."
+    },
+    {
+      "id": "composer-depth.stop",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Stop a running turn without auto-draining queued prompts",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. busy && !hasComposerPayload && !conversation.active; primary disabled || !canSubmit.",
+      "handler": "Empty busy primary submits -> submitWhileBusy empty branch -> haltRun first parks queue, then onCancel. Empty Enter is intercepted separately and is NOT this Stop action.",
+      "authority": "Main cancelRun clears optimistic busy/prompts/compaction then session.interrupt with stale-runtime recovery; error notifies without reconstructing all cleared state.",
+      "android_status": "drift",
+      "android_boundary": "Native Stop exists, parks its durable text queue and refuses NeedsInput; native notice says Gateway queued-next payloads may be discarded with the turn. Do not claim canonical server FIFO preservation merely because the Stop labels match.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 155,
+          "end": 180
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1338,
+          "end": 1396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 377,
+          "end": 391
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 249,
+          "end": 301
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+          "start": 736,
+          "end": 819
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3750,
+          "end": 3797
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 756,
+          "end": 762
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.busy-send",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Busy primary follows interrupt/steer/queue policy",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Payload branch; unloaded busyInputMode disables ordinary text correction unless compacting/blocking. Card-waiting changes label and suppresses secondary queue.",
+      "handler": "deriveBusySubmitState resolves busyAction; submitWhileBusy dispatches slash immediately unless attachments, text correction by loaded policy, attachments/blocking prompt to queue. A parked answerable card takes typed text before those branches.",
+      "authority": "Backend policy controls text correction mode; slash plus attachments warns and refuses; approvals/sudo/secrets are never answered by message text.",
+      "android_status": "drift",
+      "android_boundary": "Native composerActionState fixes streaming text to Redirect and NeedsInput to Queue. The separate Steer control exists, but that is not a loaded backend busy-input policy selector or parked-card text-answer parity.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 86,
+          "end": 94
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1338,
+          "end": 1396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/busy-submit-state.ts",
+          "start": 23,
+          "end": 51
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 249,
+          "end": 364
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 403,
+          "end": 430
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerActions.kt",
+          "start": 22,
+          "end": 61
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3645,
+          "end": 3724
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.steer",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Steer a text correction at the tool boundary",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. busy && busyAction!=steer && onSteer; parent supplies handler only canSteer; disabled prop.",
+      "handler": "Optional secondary -> steerDraft(steer): require nonblank text, no attachments/slash; freeze terminal transport, warn if missing; clear then onSteer. False/throw preserves via canonical admission/local queue or fresh composer.",
+      "authority": "Correction is not Stop+new prompt. Canonical fallback uses explicit queue target; local fallback keeps frozen terminal contents in runtime memory.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 214,
+          "end": 235
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1338,
+          "end": 1396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 436,
+          "end": 504
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 375,
+          "end": 384
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3645,
+          "end": 3724
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Fresh-scope keep() loadIntoComposer lacks the normal dispatchSubmit scope comparison; this bounded record does not certify late fresh-draft recovery against navigation."
+    },
+    {
+      "id": "composer-depth.queue-secondary",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Queue the current payload during a live turn",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. busy && policy neither stop nor queue && payload && !cardWaiting; disabled prop.",
+      "handler": "queueDraft -> queueCurrentDraft. Requires session queue key and payload, rejects slash+attachments and expired terminal selection. Canonical owner receives fromQueue submit; clear/remove occurrences only on accepted===true and same key/text. Local enqueue clears only after stored success.",
+      "authority": "Durable owner FIFO and local legacy queue are different branches, not one client array.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 139,
+          "end": 154
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1338,
+          "end": 1396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 195,
+          "end": 204
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 507,
+          "end": 514
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 403,
+          "end": 478
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3611,
+          "end": 3643
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 747,
+          "end": 752
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.add-menu",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Open the composer attachment dropdown",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Always in composer menu cell; disabled !state.tools.enabled.",
+      "handler": "Radix dropdown trigger; tool label is descriptive only, enabled comes from state.tools.enabled.",
+      "authority": "Local menu state; no backend write.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 49,
+          "end": 67
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 57,
+          "end": 123
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 356,
+          "end": 369
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.pick-files",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Pick files as context",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open enabled Add menu; row disabled when callback absent.",
+      "handler": "onPickFiles -> pickContextPaths(file): selectDesktopPaths, ignore cancel/empty; contextPath relative to captured cwd -> scoped attachment id/ref/path -> focus target.",
+      "authority": "Desktop picker is local acquisition; later file staging can upload bytes, while folder is a reference, not an archive upload.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native Files grant reader and occurrence-scoped stage/send already exist; not a missing attachment feature.",
+      "parity_page": "docs/parity/composer-recent-images.md",
+      "issue": "#278",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 71,
+          "end": 73
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 413,
+          "end": 421
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 459,
+          "end": 485
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+          "start": 113,
+          "end": 234
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1130,
+          "end": 1135
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 190,
+          "end": 222
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3189,
+          "end": 3280
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 4549,
+          "end": 4585
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Picker promise captures cwd/scope but has no general navigation-generation check here; no picker was opened."
+    },
+    {
+      "id": "composer-depth.pick-folders",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Pick folders as context",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open enabled Add menu; row disabled when callback absent.",
+      "handler": "onPickFolders -> pickContextPaths(folder): selectDesktopPaths, ignore cancel/empty; contextPath relative to captured cwd -> scoped attachment id/ref/path -> focus target.",
+      "authority": "Desktop picker is local acquisition; later file staging can upload bytes, while folder is a reference, not an archive upload.",
+      "android_status": "omission",
+      "android_boundary": "No Folder acquisition row/disabled marker: Add sheet contains a limitation sentence instead. Remote @folder completion is a separate existing reference path, not local directory acquisition. No permanent non-goal inferred.",
+      "parity_page": "docs/parity/composer-recent-images.md",
+      "issue": "#278",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 74,
+          "end": 76
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 413,
+          "end": 421
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 459,
+          "end": 485
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+          "start": 113,
+          "end": 234
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1130,
+          "end": 1135
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 190,
+          "end": 222
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3189,
+          "end": 3280
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 4549,
+          "end": 4585
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Picker promise captures cwd/scope but has no general navigation-generation check here; no picker was opened."
+    },
+    {
+      "id": "composer-depth.pick-images",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Pick images and prepare scoped previews",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open menu, callback present.",
+      "handler": "pickImages -> selectDesktopPaths filtered extensions -> sequential attachImagePath; add base occurrence immediately, queued thumbnail read updates only same occurrence; failed preview notifies but retains valid attachment.",
+      "authority": "Acquisition and bounded thumbnail are not model payload; upload reads original bytes at submit.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-recent-images.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 77,
+          "end": 79
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 529,
+          "end": 579
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 622,
+          "end": 641
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1130,
+          "end": 1135
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 190,
+          "end": 202
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3189,
+          "end": 3280
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.paste-image",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Acquire clipboard image from the Add menu",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Callback absent disables row. This explicit click is not the silent WSL empty-paste fallback.",
+      "handler": "pasteClipboardImage default silent=false -> optional saveClipboardImage bridge -> attachImagePath; empty clipboard warns, failure notifies; false returned rather than successful empty acquisition.",
+      "authority": "Native Desktop bridge writes acquired image path; no generic clipboard text forwarder is counted.",
+      "android_status": "omission",
+      "android_boundary": "Baseline Add sheet has recent-image acquisition and Files but no clipboard-image row or handler. Share/in-memory attachment machinery does not by itself mount Paste image; independent overnight candidate is outside this baseline.",
+      "parity_page": "docs/parity/composer-recent-images.md",
+      "issue": "#278",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 80,
+          "end": 86
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 643,
+          "end": 672
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1130,
+          "end": 1135
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 170,
+          "end": 222
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.url-open",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Open Add URL dialog",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open Add menu.",
+      "handler": "openUrlDialog sets open; hook schedules input focus; no URL fetch or attachment yet.",
+      "authority": "Local dialog intent only.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 87,
+          "end": 89
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-url-dialog.ts",
+          "start": 15,
+          "end": 29
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1535,
+          "end": 1541
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 106,
+          "end": 113
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 203,
+          "end": 208
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.url-input",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Edit the URL input and see a non-HTTP hint",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open URL dialog; field not busy-disabled.",
+      "handler": "onChange -> setUrlValue; looksLikeUrl only checks trimmed http(s) prefix; hint mounts for nonempty invalid prefix.",
+      "authority": "Draft input only; prefix hint is not a full URL parse.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/url-dialog.tsx",
+          "start": 52,
+          "end": 68
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-url-dialog.ts",
+          "start": 15,
+          "end": 24
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1535,
+          "end": 1541
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 258,
+          "end": 296
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.url-submit",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Attach a URL from the dialog",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Attach button disabled unless http(s) prefix, but form handler itself only checks nonempty.",
+      "handler": "Submit form -> submitUrl trims and only rejects empty; prefers onAddUrl callback, otherwise inserts @url directive; clears value and closes synchronously. Main wiring supplies addContextRefAttachment(@url:...) so it creates a URL attachment card; tile wiring is not silently inferred.",
+      "authority": "Host supplied onAddUrl determines attachment vs inline reference; primary/tile paths cannot be inferred from fallback alone.",
+      "android_status": "drift",
+      "android_boundary": "Native Add URL validates via validComposerUrl then inserts an inline reference at cursor; historical #205 already owns card-versus-inline divergence, not absence of URL support.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/url-dialog.tsx",
+          "start": 70,
+          "end": 77
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/url-dialog.tsx",
+          "start": 45,
+          "end": 50
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-url-dialog.ts",
+          "start": 31,
+          "end": 47
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1082,
+          "end": 1084
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 440,
+          "end": 456
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 258,
+          "end": 313
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 555,
+          "end": 566
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.url-cancel",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Cancel URL dialog without submitting",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open URL dialog; no busy lock.",
+      "handler": "setUrlOpen(false); hook does not reset urlValue on cancel.",
+      "authority": "UI dismissal only; reopening can retain prior text.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/url-dialog.tsx",
+          "start": 70,
+          "end": 73
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-url-dialog.ts",
+          "start": 15,
+          "end": 18
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 106,
+          "end": 113
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 258,
+          "end": 264
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.snippets-open",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Open prompt snippets",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open Add menu.",
+      "handler": "setSnippetsOpen(true) mounts controlled Dialog, not a nested hover submenu.",
+      "authority": "Local disclosure; no send.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 93,
+          "end": 95
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1505,
+          "end": 1517
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 119,
+          "end": 136
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 114,
+          "end": 120
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 209,
+          "end": 214
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.snippet-pick",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Insert one prompt snippet template",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open snippets dialog.",
+      "handler": "For fixed codeReview/implementationPlan/explainThis keys, onInsertText(snippet.text) then close dialog. One template per snippet shape, not three new features.",
+      "authority": "Cursor-aware local draft insertion, not automatic execution or submit.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 135,
+          "end": 159
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/context-menu.tsx",
+          "start": 25,
+          "end": 25
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1110,
+          "end": 1119
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ComposerAddSheet.kt",
+          "start": 317,
+          "end": 346
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 555,
+          "end": 566
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.attachment-remove",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Remove an attachment occurrence/card",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. AttachmentList only when attachments nonempty; remove child only when callback provided. Uploading does not disable remove.",
+      "handler": "onRemove(id) -> scoped remove; matching staged image on active runtime additionally best-effort image.detach; error swallowed after local remove.",
+      "authority": "Local chip removal precedes optional backend detach; this is not prompt.cancel.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/attachments.tsx",
+          "start": 200,
+          "end": 209
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1495,
+          "end": 1496
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/hooks/use-composer-actions.ts",
+          "start": 832,
+          "end": 849
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1130,
+          "end": 1135
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/AttachmentChips.kt",
+          "start": 118,
+          "end": 139
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3292,
+          "end": 3299
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Late preview/stage writers use occurrence identity in the named paths. A detach failure does not restore the removed chip."
+    },
+    {
+      "id": "composer-depth.attachment-preview",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Preview a file/URL/image attachment",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Not folder/terminal and not uploading; upload-error chip is still previewable.",
+      "handler": "openAttachment: image uses preview or lazy local-first path/detail fallback -> lightbox; file/URL normalize target against tile cwd -> openPreview. Error notifies, chip retained.",
+      "authority": "UI preview target differs from model bytes. Image download child/library internals are outside this record.",
+      "android_status": "omission",
+      "android_boundary": "Native attachment row displays a thumbnail and state plus Remove, but mounts no preview/lightbox/open action. Existing bytes/read/thumbnail pipeline remains implemented.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/attachments.tsx",
+          "start": 145,
+          "end": 160
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/attachments.tsx",
+          "start": 53,
+          "end": 143
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/attachments.tsx",
+          "start": 212,
+          "end": 227
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1495,
+          "end": 1496
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/AttachmentChips.kt",
+          "start": 59,
+          "end": 140
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.reference-open",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Open an actionable inline reference",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Only hovered connected ref-kind/ref-id belonging to this editor and registered action; not every reference kind.",
+      "handler": "Editor-scoped hover resolves DIRECTIVE_ACTIONS; click runs action with native modifier, middle-click native=true; prevent mousedown caret loss; then dismiss pill.",
+      "authority": "Dispatch to shared action table, not execution acceptance of all link/session descendants.",
+      "android_status": "omission",
+      "android_boundary": "Native inline chip paint/atomic editor exists, but no touch Open action. Existing historical #205 owns the missing action, not all reference support.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/directive-actions.tsx",
+          "start": 141,
+          "end": 166
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1231,
+          "end": 1231
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/directive-actions.tsx",
+          "start": 29,
+          "end": 56
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/directive-actions.tsx",
+          "start": 83,
+          "end": 126
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 590,
+          "end": 634
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "500ms hide grace, scroll/resize reanchor, document listeners and timer cleaned up; external navigation implementation remains unreviewed."
+    },
+    {
+      "id": "composer-depth.completion-pick",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Pick a completion row without losing the caret suffix",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. trigger && !argStageEmpty; only actual result rows, not loading/no-match text.",
+      "handler": "onPick -> replaceTriggerWithChip: bank undo; completion action strips token then runs known action; otherwise serialize -> starter/arg expansion or reference/slash chip; fallback rebuild splits around caret and preserves suffix.",
+      "authority": "Insertion is local. Action-tagged rows dispatch side effects instead of pretending every row inserts a reference.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/trigger-popover.tsx",
+          "start": 189,
+          "end": 214
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 453,
+          "end": 472
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1400,
+          "end": 1409
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 147,
+          "end": 234
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 294,
+          "end": 412
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 59,
+          "end": 85
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 572,
+          "end": 588
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/CompletionPopup.kt",
+          "start": 80,
+          "end": 113
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.completion-keyboard",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Navigate and accept trigger completions",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Open trigger with matching result/loading branches; IME checks run first.",
+      "handler": "Arrows wrap and mark explicit selection; Tab while loading is swallowed. Accept distinguishes Tab descent, typed slash exact/explicit pick, free-text arg behavior. Escape closes list and consumed keyup avoids reopening.",
+      "authority": "Keyboard intent changes local selection/query, not an automatic send.",
+      "android_status": "drift",
+      "android_boundary": "Native hardware arrows/Enter pick completion; composer key handler has no Tab-folder descent or completion-Escape close branch. Soft keyboard Enter deliberately stays newline; existing completion support is not absent.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 783,
+          "end": 872
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 39,
+          "end": 56
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 243,
+          "end": 257
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 453,
+          "end": 472
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1400,
+          "end": 1409
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 147,
+          "end": 234
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 646,
+          "end": 713
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.completion-folder",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Descend or ascend a reference path",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Only @ folder item descends; other kinds do not.",
+      "handler": "Tab folder descends to bare @scope:path/ retaining browse kind; Enter/click commits folder. Backspace ascends one path segment or drops empty browse scope, only at appropriate trigger position.",
+      "authority": "Next complete.path query uses owner/session/cwd; no local Android directory is implied.",
+      "android_status": "omission",
+      "android_boundary": "Native @folder starters and remote completePath exist, but no mounted Tab descent/backspace ascent action. Missing navigation must not be mislabeled as missing remote folder references.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 838,
+          "end": 863
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 329,
+          "end": 361
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts",
+          "start": 415,
+          "end": 458
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 646,
+          "end": 713
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 4549,
+          "end": 4585
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.completion-query",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Type the actual completion query in the composer",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. contentEditable=!inputDisabled; current trigger uses text-before-caret. This is the query input, NOT an independent SearchField child.",
+      "handler": "Input skips preedit writes; frame-coalesced DOM sync sanitizes and refreshes trigger; compositionend flushes immediately. At adapter dispatches owner-routed complete.path with session/cwd, caches by owner/cwd/session/query, falls back to starters on RPC error.",
+      "authority": "Advisory completion owner may fall back to ambient when unknown; this is deliberately weaker than mutation routing.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1175,
+          "end": 1225
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 485,
+          "end": 535
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-at-completions.ts",
+          "start": 197,
+          "end": 244
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/completion-route.ts",
+          "start": 7,
+          "end": 42
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-live-completion-adapter.ts",
+          "start": 55,
+          "end": 138
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 605,
+          "end": 634
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 4507,
+          "end": 4611
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Adapter token rejects older-query results and disabled state invalidates; unmount clears debounce timer but does not prove in-flight network cancellation. Scope-only same-query cache invalidation is not certified."
+    },
+    {
+      "id": "composer-depth.model-search",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Search models from the composer dropdown",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. ModelPill live menu exists and enabled; ModelMenuPanel -> ModelCatalogMenu. No independent Clear button is mounted by DropdownMenuSearch.",
+      "handler": "DropdownMenuSearch input -> setSearch + reset kb override; query spans all model families irrespective of shortlist/collapse; arrows/IME-safe Enter select visible keyboard rows.",
+      "authority": "Search is component-local filtering of owner-keyed model.options, not a model write.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native ModelControlSheet has a modelQuery BasicTextField and visibleModelGroups query filtering, already mounted through ModelControl. Search is implemented; full model mutation/preset/keyboard submenu parity remains separate debt.",
+      "parity_page": "docs/parity/model-visibility.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/shell/model-catalog-menu.tsx",
+          "start": 684,
+          "end": 717
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/model-pill.tsx",
+          "start": 207,
+          "end": 242
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/shell/model-menu-panel.tsx",
+          "start": 77,
+          "end": 111
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/dropdown-menu.tsx",
+          "start": 184,
+          "end": 232
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/shell/model-catalog-menu.tsx",
+          "start": 1315,
+          "end": 1393
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 445,
+          "end": 469
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/ModelControl.kt",
+          "start": 235,
+          "end": 319
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-expand",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Expand/collapse the queued message group",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Queue key and entries nonempty; expanded children only unless preview.",
+      "handler": "StatusSection local collapsed state toggles; queue has defaultCollapsed=true. Lost rows use preview even while collapsed.",
+      "authority": "Presentation state only, not pause/resume.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/status-section.tsx",
+          "start": 28,
+          "end": 55
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 166,
+          "end": 193
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 60,
+          "end": 111
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-preview",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Expand a long queued message preview",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Trimmed preview >140 chars or multiline; hidden entry preview uses hidden label, not machine text.",
+      "handler": "toggleExpanded clones set of ids; renders whitespace-preserved scrolling text instead of two-line clamp.",
+      "authority": "Component-local preview, no queue mutation.",
+      "android_status": "omission",
+      "android_boundary": "Native queue row renders maxLines=3 and no separate full-preview expansion control; native row edit remains available, not absent.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 105,
+          "end": 123
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 32,
+          "end": 69
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 141,
+          "end": 159
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 159,
+          "end": 176
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-edit",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Load a queued entry into the composer editor",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Local row or serverControls includes replace; another edit disables button.",
+      "handler": "beginQueuedEdit captures pre-edit draft+attachments and session key; loads displayText not expanded transport; refuses absent key/existing edit or server without replace control.",
+      "authority": "Local row edit and server admission replacement are separate authorities.",
+      "android_status": "drift",
+      "android_boundary": "Native beginQueueEdit and save/cancel exist, but editText uses an in-row BasicTextField rather than replacing ordinary composer draft. Existing #205 owns this treatment difference.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 243,
+          "end": 257
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 198,
+          "end": 216
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 177,
+          "end": 199
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3923,
+          "end": 3959
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-edit-save",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Save the active queue edit via Send/Enter",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Queue edit exists; server text-only replacement; duplicate pending save guarded.",
+      "handler": "submitDraft queueEdit first -> exitQueuedEdit(save); reject empty/slash+attachments/expired terminal ref. Local update; server replace uses own submission id and token, waits for owner; accepted restores pre-edit draft preserving later typed text, named refusal keeps draft, unknown keeps edit open/id for retry.",
+      "authority": "prompt.replace_queued is owner-routed and replacement joins back of FIFO, not local in-place reorder.",
+      "android_status": "drift",
+      "android_boundary": "Native local durable queue save is mounted and reports failed persistence, but in-row editor/controller is not a server prompt.replace_queued admission editor. Do not classify local queue editing as missing.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 168,
+          "end": 180
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts",
+          "start": 413,
+          "end": 418
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 269,
+          "end": 400
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/discard-lost-prompt.ts",
+          "start": 50,
+          "end": 66
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 188,
+          "end": 199
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3941,
+          "end": 3951
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Server save settles only exact edit token/ref; unknown keeps identity. Session swap clears edit separately; this is not a universal in-flight transport abort."
+    },
+    {
+      "id": "composer-depth.queue-edit-cancel",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Cancel queue edit and restore interrupted draft",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Queue edit exists; keyboard branch precedes Stop.",
+      "handler": "Escape -> exitQueuedEdit(cancel): clears edit/unknown save identity, restores captured draft+attachments and focus; cancels presentation, not an already-dispatched owner write.",
+      "authority": "Local editor transaction cancellation; remote replacement already in flight cannot be un-sent.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#205",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1032,
+          "end": 1038
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 390,
+          "end": 400
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 188,
+          "end": 193
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3954,
+          "end": 3959
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-delete",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Delete local entry or withdraw server admission",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Queue entry row; not gated globally by busy.",
+      "handler": "StatusRow dismiss -> queue-slot branches server queued to cancelQueuedPrompt, unknown to discardLostPrompt; pending fanout retires card, RPC failure notifies. Local remove -> exit matching edit(cancel).",
+      "authority": "prompt.cancel/resolve_unknown on owning queue session for server rows; never hide live server work by local deletion.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native local queue Delete exists; separate gateway-admission Delete/Discard groups already mount. resolveGatewayAdmission validates endpoint/connection, visible admission key and duplicate action; repository dispatches prompt.resolve_unknown (with execution_generation) or prompt.cancel, checks terminal receipt, removes matching row only on current connection. Retryable failure keeps row. This is implemented, not an inferred missing control.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 95,
+          "end": 102
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/discard-lost-prompt.ts",
+          "start": 4,
+          "end": 32
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 218,
+          "end": 225
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3914,
+          "end": 3920
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerStatusStack.kt",
+          "start": 233,
+          "end": 253
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 1840,
+          "end": 1852
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 3876,
+          "end": 3908
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-send-now",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Send next local queue entry, interrupting only to reach it",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Only !entry.serverStatus; disabled edited row.",
+      "handler": "sendQueuedNow: refuses edited row/no key; busy promotes to head, unparks, calls raw onCancel (not haltRun); idle clears retry budget and runDrain. Drain excludes server rows, claims cross-window lock, resolves frozen transport, removes only accepted===true.",
+      "authority": "Captured durable/runtime target, submission_id=entry.id, fromQueue=true. Server FIFO never gets local reorder.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 273,
+          "end": 287
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 480,
+          "end": 593
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 218,
+          "end": 225
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3809,
+          "end": 3883
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "try/finally releases drain flag. Failure retains entry; bounded auto-drain backoff and timer cleanup are followed separately in the cited hook."
+    },
+    {
+      "id": "composer-depth.queue-steer",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Steer with a queued row",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. busy && onSteerNow && local steerable OR serverControls includes steer; disabled edited row.",
+      "handler": "Local steerQueuedNow resolves frozen text and only removes accepted redirect; failure leaves entry. Server branch calls prompt.steer_queued and relies on owner fanout; errors notify.",
+      "authority": "Consumes admission only on its owner; local correction is not queue reordering.",
+      "android_status": "drift",
+      "android_boundary": "Native row labeled Steer calls redirectQueuedEntry -> repository.redirect, not the explicit draft steerAtEndpoint path. It preserves/marks ambiguous entry, but name alone does not establish tool-boundary steer semantics.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 258,
+          "end": 272
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 79,
+          "end": 89
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 601,
+          "end": 644
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/discard-lost-prompt.ts",
+          "start": 35,
+          "end": 47
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 218,
+          "end": 225
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3886,
+          "end": 3910
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-discard-lost",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Acknowledge a server-lost admission",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. entry.serverStatus unknown && callback; lost preview is visible even while group collapsed.",
+      "handler": "onDiscardLost -> owner-routed prompt.resolve_unknown; fanout retires row; catch notifies and keeps visible.",
+      "authority": "Acknowledges unknown admission generation, not arbitrary current turn; not a resend.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native local queue Delete exists; separate gateway-admission Delete/Discard groups already mount. resolveGatewayAdmission validates endpoint/connection, visible admission key and duplicate action; repository dispatches prompt.resolve_unknown (with execution_generation) or prompt.cancel, checks terminal receipt, removes matching row only on current connection. Retryable failure keeps row. This is implemented, not an inferred missing control.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 227,
+          "end": 240
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/discard-lost-prompt.ts",
+          "start": 4,
+          "end": 17
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerStatusStack.kt",
+          "start": 233,
+          "end": 243
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 1840,
+          "end": 1852
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 3876,
+          "end": 3908
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.queue-resume",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Resume a deliberately parked local queue",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Header action only parked=true, visible independent of section expansion. Lost admission is a different pause and needs Discard.",
+      "handler": "unparkQueuedPrompts then idle drainNextQueued; busy resumes on settle.",
+      "authority": "Local park flag; does not approve or skip required input.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-panel.tsx",
+          "start": 172,
+          "end": 186
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1317,
+          "end": 1336
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/queue-slot.tsx",
+          "start": 85,
+          "end": 151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 681,
+          "end": 735
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts",
+          "start": 759,
+          "end": 773
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerQueueSection.kt",
+          "start": 104,
+          "end": 109
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3800,
+          "end": 3806
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.voice-start",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Start a voice conversation",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. No active conversation; folded voice menu when HUD/foldVoice and !minimal; empty idle primary shares start. disabled prop gates click.",
+      "handler": "activateConversation latches selected engine; unavailable GPT-Live warns and falls back chained. enabled engine receives onSubmit/transcription/interrupt selectors.",
+      "authority": "Conversation engine handoff; ordinary voice turn uses voiceTurn:true, live delegation carries surface voice-live/context. Not a certification of full engine/provider protocol.",
+      "android_status": "omission",
+      "android_boundary": "Native Conversation composables and VM start/end/mute hooks exist, but ordinary idle VoiceActionCluster mounts only Dictation. Production source search finds no assignment to voiceConversationStart/End/Mute and no VoiceConversationController construction; MainActivity wires dictation only. Conditional End/Mute definitions are not mounted working conversation controls. Native dictation and per-reply read-aloud remain implemented elsewhere.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/voice-menu.tsx",
+          "start": 104,
+          "end": 115
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 82,
+          "end": 124
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 155,
+          "end": 156
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 174,
+          "end": 192
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 472,
+          "end": 494
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/VoiceControls.kt",
+          "start": 73,
+          "end": 125
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3541,
+          "end": 3581
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt",
+          "start": 288,
+          "end": 337
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/voice/VoiceConversationController.kt",
+          "start": 18,
+          "end": 85
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.dictation",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Start/stop dictation and insert its settled transcript",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. disabled || !state.voice.enabled || transcribing blocks; select keeps folded menu open.",
+      "handler": "dictate starts only idle or stops recording. Recorder resolves owner at mic-open, STT lease warmup, mic cap 1..600 seconds; Stop awaits warmup/live transcript else recorded blob callback; empty warns, error notifies; inserts text not sends.",
+      "authority": "Captured owner for warmup/transcription/release; callback prefers client-direct STT, null only falls back relay, provider rejection does not retry via relay.",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native control and named state/action path exist at the baseline; this record certifies only the described bounded operation, not rendered parity, every transport branch, or a later feature candidate.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/voice-menu.tsx",
+          "start": 122,
+          "end": 135
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-recorder.ts",
+          "start": 75,
+          "end": 140
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-recorder.ts",
+          "start": 169,
+          "end": 200
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-recorder.ts",
+          "start": 240,
+          "end": 255
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+          "start": 708,
+          "end": 733
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/VoiceControls.kt",
+          "start": 31,
+          "end": 64
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3431,
+          "end": 3466
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt",
+          "start": 288,
+          "end": 337
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Unmount clears timers/live dictation ref/releases lease; late stop/transcript guarded by take identity. Async mic-start itself is not claimed universally unmount-fenced."
+    },
+    {
+      "id": "composer-depth.voice-end",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "End the active voice conversation",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. conversation.active replaces ordinary controls; disabled prop.",
+      "handler": "endConversation clears active flag and calls selected end. Chained end cancels recorder, playback/timer/speech, clears conversation identity and releases captured-owner STT lease; live end increments start epoch, clears utterance timer/delegation and session?.close(), resets meter/mute/status. Outer effects release TTS/resume paused wake.",
+      "authority": "End capture/playback engine is distinct from session.interrupt. This record follows handoff and lease cleanup, not complete engine internals.",
+      "android_status": "omission",
+      "android_boundary": "Native Conversation composables and VM start/end/mute hooks exist, but ordinary idle VoiceActionCluster mounts only Dictation. Production source search finds no assignment to voiceConversationStart/End/Mute and no VoiceConversationController construction; MainActivity wires dictation only. Conditional End/Mute definitions are not mounted working conversation controls. Native dictation and per-reply read-aloud remain implemented elsewhere.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 334,
+          "end": 346
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 344,
+          "end": 414
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 425,
+          "end": 432
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts",
+          "start": 971,
+          "end": 994
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-live-conversation.ts",
+          "start": 207,
+          "end": 227
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/VoiceControls.kt",
+          "start": 73,
+          "end": 97
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3546,
+          "end": 3561
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt",
+          "start": 288,
+          "end": 337
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/voice/VoiceConversationController.kt",
+          "start": 18,
+          "end": 85
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.voice-mute",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Mute/unmute active conversation microphone",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. conversation.active; disabled prop.",
+      "handler": "Chained toggleMute -> setMuted; muting clears take timer, handle.cancel(), status idle; unmute arms pendingStart only enabled, idle and not busy. Live toggleMute calls sessionRef.current?.setMuted(next). This is capture mute, not read-aloud preference.",
+      "authority": "Voice capture engine owns actual mute; selected-engine internal processing remains unverified.",
+      "android_status": "omission",
+      "android_boundary": "Native Conversation composables and VM start/end/mute hooks exist, but ordinary idle VoiceActionCluster mounts only Dictation. Production source search finds no assignment to voiceConversationStart/End/Mute and no VoiceConversationController construction; MainActivity wires dictation only. Conditional End/Mute definitions are not mounted working conversation controls. Native dictation and per-reply read-aloud remain implemented elsewhere.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 300,
+          "end": 317
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts",
+          "start": 1002,
+          "end": 1016
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-live-conversation.ts",
+          "start": 464,
+          "end": 471
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/VoiceControls.kt",
+          "start": 98,
+          "end": 125
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3563,
+          "end": 3569
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt",
+          "start": 288,
+          "end": 337
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/voice/VoiceConversationController.kt",
+          "start": 18,
+          "end": 85
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.voice-stop-listening",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Finish the current listening take",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. status=listening && !muted, active conversation, not disabled.",
+      "handler": "Chained stopTurn requires listening -> handleTurn(true): turnClosing lock, handle.stop(), forceTranscribe bypasses meter silence, await captured-owner warmup/STT; live-token fences, stop-word ends instead of submit, otherwise onSubmit transcript; error notifies/rearms, finally unlocks. Live stopTurn instructs voice session to respond now; it does NOT stop capture.",
+      "authority": "Selected engine changes semantics: chained utterance boundary vs live in-session instruction. Chained callback routes to prompt submission with voiceTurn; full provider/socket processing remains outside this source slice.",
+      "android_status": "omission",
+      "android_boundary": "Native active conversation control exposes End and Mute only, no separate Stop listening/take action. Existing native capture/conversation does not disappear because this child is absent.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/controls.tsx",
+          "start": 318,
+          "end": 333
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts",
+          "start": 220,
+          "end": 350
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts",
+          "start": 996,
+          "end": 1000
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-voice-live-conversation.ts",
+          "start": 473,
+          "end": 476
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/composer/VoiceControls.kt",
+          "start": 73,
+          "end": 125
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.auto-speak",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Toggle automatic spoken replies",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Folded menu in non-conversation nonminimal controls; disabled prop; preventDefault keeps menu.",
+      "handler": "handleToggleAutoSpeak -> setAutoSpeakReplies; writes renderer-local Boolean preference and atom, never backend voice.auto_tts. Reader engine and TTS warm lease follow toggle.",
+      "authority": "Desktop-local preference; one-time config migration is not continuing config authority.",
+      "android_status": "omission",
+      "android_boundary": "Native per-reply read aloud exists at ChatViewModel.toggleReadAloud but no composer automatic-replies toggle. Do not call all native speech output missing.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/voice-menu.tsx",
+          "start": 136,
+          "end": 148
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 419,
+          "end": 445
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/voice-prefs.ts",
+          "start": 5,
+          "end": 15
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/voice-prefs.ts",
+          "start": 159,
+          "end": 164
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 472,
+          "end": 494
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3469,
+          "end": 3516
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.voice-engine",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Choose the next conversation engine",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. VoiceMenu imported child; absent until status nonnull; GPT-Live disabled unavailable; disabled prop.",
+      "handler": "setVoiceChatMode validates enum; profile-routed config.set voice.voice_chat_mode then writeEpoch++ and scoped status refresh; active conversation engine remains latched.",
+      "authority": "Live active connection/profile, not necessarily session tile owner; refreshed status is scope/write-epoch fenced. No provider or key touched.",
+      "android_status": "omission",
+      "android_boundary": "Native composer voice control/VM hooks have no chained/GPT-Live engine selector. Native hands-free engine is a separate existing capability.",
+      "parity_page": "docs/parity/composer-references.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/voice-engine-rows.tsx",
+          "start": 25,
+          "end": 65
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1081,
+          "end": 1108
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1122,
+          "end": 1151
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-composer-voice.ts",
+          "start": 219,
+          "end": 280
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/voice-menu.tsx",
+          "start": 117,
+          "end": 117
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/voice-live.ts",
+          "start": 21,
+          "end": 55
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/voice-live.ts",
+          "start": 58,
+          "end": 78
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 472,
+          "end": 494
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 3541,
+          "end": 3581
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.status-drawer",
+      "family": "composer-edit-send-and-queue",
+      "group": "composer-core",
+      "operation": "Show/hide the whole status drawer",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. !hudMode && !guidedChat; controls both status/coding drawer.",
+      "handler": "toggleStatusDrawer -> owner-aware statusDrawerKey(connection/profile/targetProfile/session) preference, or fresh-draft local state. Collapsed container uses inert/aria-hidden but retains mounted children.",
+      "authority": "Renderer presentation state; collapse does not itself stop backend work or unmount effects.",
+      "android_status": "omission",
+      "android_boundary": "Native per-group disclosures exist, but no global whole-stack grip/inert drawer toggle in the baseline Composer/StatusStack. Do not call the per-group controls missing.",
+      "parity_page": "docs/parity/composer-status-stack.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/status-stack/drawer.tsx",
+          "start": 38,
+          "end": 58
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/index.tsx",
+          "start": 1432,
+          "end": 1437
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/status-stack/drawer.tsx",
+          "start": 15,
+          "end": 28
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/composer/hooks/use-status-drawer.ts",
+          "start": 13,
+          "end": 49
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/composer-status-drawer.ts",
+          "start": 33,
+          "end": 55
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Composer.kt",
+          "start": 310,
+          "end": 324
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerStatusStack.kt",
+          "start": 124,
+          "end": 211
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Static source reading only. Component state is not proof that dispatched backend work cancels on unmount; no universal race-safety claim."
+    },
+    {
+      "id": "composer-depth.moa-reference-enabled",
+      "family": "core-config-schema",
+      "group": "settings-moa-reference",
+      "operation": "Enable/disable one MoA reference-model slot",
+      "mount": "ChatBar live main/tile composer, not ChatBarFallback. Settings config:model specialized ModelSettings; showMoa && moa && currentMoaPreset; disabled applying. This is NOT an @-reference chip toggle.",
+      "handler": "updateMoaPreset maps only indexed enabled flag, keeps slot/provider/model; updates ref/UI then schedules 600ms whole-config save. Incomplete configuration holds save; generation fences prior completion.",
+      "authority": "Profile-scoped PUT /api/model/moa; disabled slot remains stored. No explicit ok check in autosave then-handler; errors surface without automatic rollback.",
+      "android_status": "omission",
+      "android_boundary": "Native Settings destination list has no MoA reference-slot form. Named-Bot ModelEditor and composer model controls exist but do not implement reference-model orchestration toggles.",
+      "parity_page": "docs/parity/bot-model-config.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/settings/model-settings.tsx",
+          "start": 1452,
+          "end": 1468
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/settings/config-settings.tsx",
+          "start": 388,
+          "end": 397
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/settings/model-settings.tsx",
+          "start": 1353,
+          "end": 1358
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/settings/model-settings.tsx",
+          "start": 617,
+          "end": 681
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/models.ts",
+          "start": 104,
+          "end": 120
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/settings/SettingsScreen.kt",
+          "start": 27,
+          "end": 100
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotModelEditor.kt",
+          "start": 24,
+          "end": 64
+        }
+      ],
+      "review": "source read; not rendered; no runtime/backend/device operation executed",
+      "lifecycle": "Timer/generation behavior is followed for this one switch; full preset CRUD, aggregator, selection and provider completion tree remain debt."
     }
   ]
 }

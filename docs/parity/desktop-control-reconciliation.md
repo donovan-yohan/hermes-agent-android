@@ -11,7 +11,7 @@ These are analysis revisions, not replacements for historical visual/source pins
 The [family inventory](desktop-surface-audit.md) remains the ownership index.
 This continuation adds three separate artifacts:
 
-- [Reviewed control records](desktop-control-records.json): 375 source-read operation/entrypoint/control templates (the original 295 plus 80 Settings-depth templates), with exact immutable UI and handler/state/transport spans, mount predicates, Android baseline citations, status, parity page and existing issue. The original 295 serialized objects and identifiers are unchanged. Repeated entrypoints are recorded separately, not counted as separate features. A route entry proves access to a destination, not implementation of everything inside it.
+- [Reviewed control records](desktop-control-records.json): 418 source-read operation/entrypoint/control templates (375 preserved plus 43 composer-depth templates), with exact immutable UI and handler/state/transport spans, mount predicates, Android baseline citations, status, parity page and existing issue. The original 375 serialized objects and identifiers are unchanged. Repeated entrypoints are recorded separately, not counted as separate features. A route entry proves access to a destination, not implementation of everything inside it.
 - [Syntax census](desktop-control-candidates.json): 3283 syntax candidates across production-source candidates, extracted using TypeScript 5.9.3 without evaluating upstream modules. JSX attributes, compiled `jsx`/`jsxs`/`createElement` props, action objects, native roles, registrations, Settings manifest properties and dynamic spreads are separate kinds. File/name/import references are navigation aids, not a resolved interprocedural call graph or proof of mounting.
 - [Registry reconciliation](desktop-registry-reconciliation.json): 21 root registries joined to their actual syntax entries, source hashes, existing parity/issue owners and overlapping reviewed UI spans. An overlap never upgrades a candidate to semantic acceptance. The root counts are not control or feature counts.
 
@@ -229,8 +229,8 @@ status. The original 3283-candidate snapshot is unchanged.
 | Bundled Bots / Kanban / Radio | Radio lifecycle and controls from prior increment | Bots/Kanban full nested trees, and Radio descendants beyond those explicit spans |
 
 The structured records cover 22 families only in these bounded senses. Their
-375 entries classify as 38 implemented-bounded, 15 WIP, 301 omission, 11
-standing non-goal and ten drift. These are template/entrypoint records, not
+418 entries classify as 60 implemented-bounded, 15 WIP, 315 omission, 11
+standing non-goal and 17 drift. These are template/entrypoint records, not
 feature totals, and not a claim that the remaining families are empty.
 
 Every syntactic candidate has a family review owner and every reviewed control has an existing issue/page, but that is weaker than resolving these semantic gaps. Existing #73 owns the broader remainder; #184 owns its six specific stances; #266's requested old-to-new drift engine/workflow remains separate and is not delivered by this ledger. Independent inventory review and parent exact-head compatibility acceptance are still outstanding.
@@ -378,6 +378,119 @@ That expanded path set does not rewrite the parent's earlier observation that
 only Electron main changed among its 81 reviewed paths. Neither the historical
 observation nor this inventory is restamped to the later revision.
 
+## Composer-depth continuation (2026-10-22)
+
+This increment appends 43 source-read templates: 42 composer operations and
+one specialized MoA reference-slot switch. It preserves all 375 prior serialized
+objects, all 3283 syntax candidates and the 21-root registry artifact. New rows:
+22 implemented-bounded, seven drift and 14 provisional omissions. These are not
+43 features. Desktop remains the historical analysis revision
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa`; Android remains baseline
+`65080e8a37e8d546869528e43c162503015b94c7`. No newer-pin acceptance is asserted.
+All Desktop paths below refer to that Desktop revision; native paths refer to
+that Android baseline. The machine records carry each full revision separately.
+
+- Send is the actual form-submit tree, not the metrics-only button onClick.
+  It re-reads live DOM, respects IME, prioritizes queue editing/parked-card
+  answers, assigns or reuses an explicit retry identity and restores rejected
+  text only to the submitted/assigned scope. The same-scope restore is not a
+  newer-draft revision fence. Prepared `prompt.submit` only downgrades identity
+  on a named pre-admission refusal, never an unknown acknowledgement
+  (`apps/desktop/src/app/chat/composer/index.tsx:1362-1396` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/hooks/use-composer-submit.ts:112-169,249-430` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/session/hooks/use-prompt-actions/submit.ts:1110-1197` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`).
+- Busy Send follows the backend policy; a waiting answerable card changes the
+  branch, while approvals/sudo/secrets do not become text answers. Native
+  streaming text instead selects Redirect; its explicit Steer exists but does
+  not establish loaded-policy parity. Empty busy Stop first parks the queue;
+  empty Enter follows a different queue-delivery branch. Native Stop exists
+  and guards NeedsInput, but can discard Gateway queued-next payloads. Both are
+  #266 findings, not missing Send/Stop features
+  (`apps/desktop/src/app/chat/composer/busy-submit-state.ts:23-51` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/index.tsx:377-391,1008-1048` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerActions.kt:22-61` @ `65080e8a37e8d546869528e43c162503015b94c7`;
+  `app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt:3750-3797` @ `65080e8a37e8d546869528e43c162503015b94c7`).
+- The Add dropdown was followed through real wiring to Files, Folder, Images,
+  explicit clipboard image, URL input/Attach/Cancel and snippet dialog/pick.
+  Folder acquisition is not remote `@folder:` completion. Files/images and
+  bounded native byte staging already exist; clipboard and local-folder
+  acquisition remain #278 omissions at this baseline, regardless of other
+  feature branches. URL creates a card through the supplied main callback;
+  native URL inserts inline, the existing #205 divergence. Remove is local
+  first with best-effort matching image detach; file/image preview is a
+  separate missing native child, not a missing thumbnail pipeline
+  (`apps/desktop/src/app/chat/composer/context-menu.tsx:49-159` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/contrib/wiring.tsx:1082-1084,1130-1135` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/hooks/use-composer-actions.ts:459-485,529-672,832-849` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/attachments.tsx:53-143,145-227` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`).
+- Completion rows actually replace the token around the caret, preserve suffix,
+  expand argument/starters, or execute an explicit action tag instead of
+  inserting. Tab-folder descent and Backspace ascent differ from Enter pick.
+  The composer editor itself is the completion query input. Neither the live
+  trigger drawer nor its imported shell mounts a Clear button or independent
+  search field. The composer model dropdown has a real search input, but its
+  `DropdownMenuSearch` child likewise has no Clear. No shared SearchField Clear
+  or unused `ComposerCompletionDrawer` export is counted as a mounted feature
+  (`apps/desktop/src/app/chat/composer/trigger-popover.tsx:154-239` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/completion-drawer.tsx:20-50` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/hooks/use-composer-trigger.ts:294-458` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/shell/model-catalog-menu.tsx:684-717` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/components/ui/dropdown-menu.tsx:184-232` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`).
+  Native completion and model search both exist. Missing Tab/ascent behavior
+  stays #205; unknown completion owner deliberately permits ambient advisory
+  fallback, not the fail-closed mutation contract.
+- Queue disclosures, long-preview expansion, edit/save/cancel, Delete, Send next,
+  Steer, lost Discard and Resume were read. Local drains claim then send and
+  remove only on true acceptance; server admissions use owner-routed cancel,
+  replace, steer and resolve-unknown verbs and retire via fanout. Replacement
+  preserves an unknown save identity; it is not local reordering. Native queue
+  editing already exists in-row (#205 drift). Native separate server admission
+  Delete/Discard groups also exist. The native row labeled Steer calls
+  `repository.redirect`, unlike explicit draft Steer (#266)
+  (`apps/desktop/src/app/chat/composer/queue-slot.tsx:85-151` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts:198-400,403-644,681-773` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/discard-lost-prompt.ts:4-66` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerStatusStack.kt:233-253` @ `65080e8a37e8d546869528e43c162503015b94c7`;
+  `app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt:3886-3959` @ `65080e8a37e8d546869528e43c162503015b94c7`).
+- Voice dictation captures owner at mic-open, waits warmup before transcription,
+  inserts only a live take, and cleans timers/lease. End and mute were followed
+  beyond forwarding: chained End cancels capture/playback and clears identity;
+  live End invalidates startup and closes session. Stop listening forces a
+  chained utterance transcription but merely instructs the live engine to
+  respond now. Automatic spoken replies are a Desktop-local preference, not a
+  backend `voice.auto_tts` write. Native dictation and per-reply read-aloud exist. Conversation End/Mute
+  composables and VM hooks exist, but production search finds no controller
+  construction or hook assignment; MainActivity wires dictation only. Those
+  conditional controls are not certified as a working conversation loop
+  (`apps/desktop/src/app/chat/composer/hooks/use-voice-recorder.ts:75-140,169-200` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/hooks/use-voice-conversation.ts:220-350,971-1016` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/hooks/use-voice-live-conversation.ts:207-227,464-491` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/store/voice-prefs.ts:159-164` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`).
+- Whole-stack collapse preserves mounted children with inert/aria-hidden and
+  owner-keyed presentation storage; hiding is not suspension of all work.
+  Background polling separately gates pane/document visibility. Native has
+  per-group disclosures, not this whole-stack grip
+  (`apps/desktop/src/app/chat/composer/status-stack/drawer.tsx:15-58` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/hooks/use-status-drawer.ts:13-49` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/app/chat/composer/status-stack/index.tsx:184-203` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`).
+- The concrete MoA reference-model switch is a Settings child, not an invented
+  composer-reference toggle. It keeps the disabled slot, edits only its enabled
+  flag, debounces a complete profile-scoped config PUT for 600ms and fences old
+  responses by generation. Incomplete slots hold saves; failure shows error
+  without rollback. This narrows one specialized-editor debt under #73, not
+  full MoA acceptance
+  (`apps/desktop/src/app/settings/model-settings.tsx:617-681,1353-1358,1452-1468` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
+  `apps/desktop/src/api/models.ts:104-120` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`).
+
+Remaining composer debt includes all contributed attachment/action providers,
+wake-word lifecycle, full chained/live engines and streaming/provider internals,
+model mutation/preset/reasoning children, pop-out, recovery notices, drop/native
+capture, terminal references and status children beyond the named paths. Neither
+Clear nor search is invented from a label or a generic forwarder. All other
+remaining trees above still need review; `semantic_complete` remains false.
+No app code, capture, network/provider operation or installed/device state changed.
+Historical visual pages and issues remain owners, not fresh visual approval.
+
 ## Reproduce
 
 Use a disposable checkout at the exact Desktop SHA and an isolated tooling directory. Do not install dependencies into upstream or installed Hermes.
@@ -461,6 +574,10 @@ narrowed; a successful range alone was not treated as independent approval.
 | Specialized Appearance rows, named setters and font editors in the Settings-depth increment | omission | Only native mode/skin/Intro Splash controls are mounted in the compared Appearance tree | pill-owed: #157; 38 new provisional omission templates, not approved native non-goals |
 | Current per-profile skin/mode assignment and inheritance | drift | Native skin is saved on a connection row; mode uses one global DataStore key | #266; two current-source scope records; historical per-connection adaptation and visual pins remain historical |
 | Providers Accounts/Keys, endpoint forms and specialized Settings main-model defaults | omission | No corresponding built-in Settings tree; native named-Bot model-only editing still exists | pill-owed: #73; 39 new provisional omission templates with actual native form/repository comparisons |
+| Busy Send policy, Stop queue consequences and queued-row Steer | drift | Core controls exist, but fixed Redirect policy, Gateway-next discard and redirect-versus-steer writer differ | #266; composer-depth records and exact source/native spans above |
+| Nested preview/Open, folder/clipboard acquisition and queue-preview expansion | omission | Existing file/image acquisition, thumbnail, references and queue editor do not mount every child action | pill-owed: #205 and #278; baseline only, no feature-candidate reclassification |
+| Voice conversation controls, auto-speak, engine selector and whole-stack grip | omission | Dictation/read-aloud and per-group disclosure exist; conversation hooks/conditional composables alone are not production engine wiring | pill-owed: #73; named composer-depth records; rendering remains pending |
+| MoA reference-model enable switch | omission | Native model selection is not a MoA reference-slot editor | pill-owed: #73; one specialized switch, not whole-editor acceptance |
 | Arbitrary runtime Desktop JavaScript loading | omission | Compiled Kotlin plugins only | non-goal: ADR 0003 and #166 explicitly reject runtime JavaScript loading; Agent management is a different capability |
 
 ## Visual report

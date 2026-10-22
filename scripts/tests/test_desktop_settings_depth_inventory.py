@@ -32,7 +32,8 @@ class SettingsDepthInventoryTest(unittest.TestCase):
         cls.raw = (ROOT / RECORDS).read_text()
         cls.data = json.loads(cls.raw)
         cls.rows = {r['id']: r for r in cls.data['controls']}
-        cls.new = cls.data['controls'][295:]
+        # This historical slice remains 80 records when later audits append.
+        cls.new = cls.data['controls'][295:375]
 
     def test_original_295_serialized_objects_and_ids_are_unchanged(self):
         original = subprocess.check_output(
@@ -43,8 +44,8 @@ class SettingsDepthInventoryTest(unittest.TestCase):
 
     def test_exact_bounded_count_and_no_whole_tree_promotion(self):
         self.assertEqual(len(self.new), 80)
-        self.assertEqual(len(self.data['controls']), 375)
-        self.assertEqual(len(self.rows), 375)
+        self.assertGreaterEqual(len(self.data['controls']), 375)
+        self.assertEqual(len(self.rows), len(self.data['controls']))
         self.assertFalse(self.data['semantic_complete'])
         self.assertEqual(self.data['upstream_sha'], PIN)
         self.assertEqual(self.data['android_sha'], BASE)
