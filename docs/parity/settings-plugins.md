@@ -84,6 +84,19 @@ new rendered parity claim or an implementation change.
 
 ## Divergences
 
+### Later-source qualification (not a restamp of this page's Pin)
+
+The separately pinned [continuation](desktop-audit-continuation.md) follows
+the current catalog, install modal, Electron-local probe, host Agent install,
+uncertain completion and detail-only uninstall. This historical table's
+device-side JS-loader non-goal remains valid; its blanket catalog/install/deep-link
+rationale must **not** exclude backend Agent functionality. Server install,
+catalog, schema and update remain unimplemented under #73; #234 owns bounded
+inventory/toggle, not every package operation. No screenshot is relabelled.
+#227 is closed naming work, not an outstanding evidence owner; current Agent
+rendered acceptance belongs to #234. The continuation carries all newer source
+citations so this page's historical paths retain their actual Pin.
+
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | The page is a tab of the Capabilities pane (`skills/index.tsx:873,891`), reachable from the pane, the command palette and `/skills?tab=plugins` | mobile-adaptation | Settings ▸ Plugins, labelled with Desktop’s own word for the page (`skills.tabPlugins`, `en.ts:1587`) | Capabilities groups Skills, Tools, MCP and Plugins; this app ships none of the other three, so the destination would hold one tab and cost a tap and a screen to group nothing. A phone has no command palette and no address bar, and Settings is this app’s only destination list. The row’s description carries the surface’s purpose instead of its location. |

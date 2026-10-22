@@ -32,10 +32,14 @@ python3 scripts/desktop_surface_inventory.py --require-semantic-complete
 ## Nested-control continuation
 
 The [nested-control reconciliation](desktop-control-reconciliation.md) adds
-`desktop-control-records.json` (375 source-read entrypoint/control templates),
+`desktop-control-records.json` (418 source-read entrypoint/control templates),
 `desktop-control-candidates.json` (3283 uncertified syntax candidates), and
 `desktop-registry-reconciliation.json` (21 actual root registries). These are
 three different evidence layers, not a feature count or a completeness percentage.
+The [latest-target continuation](desktop-audit-continuation.md) retains this
+baseline and assigns every family to a finite residual category with acceptance
+and issue ownership; it does not convert source-review debt into implementation
+omission or declare the inventory exhaustive.
 The continuation follows imported primitives, handler/state/transport authority,
 conditional menus and actual plugin delivery roots. It records additional logs
 Copy/jump/match/Clear omissions, Maintenance operations, a notification-policy

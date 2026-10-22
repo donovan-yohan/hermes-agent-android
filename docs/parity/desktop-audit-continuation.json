@@ -1,0 +1,691 @@
+{
+  "upstream_sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+  "previous_target": "8237c7f8ec179c88857f24a174509d985af704b7",
+  "android_sha": "65080e8a37e8d546869528e43c162503015b94c7",
+  "observed_android_main": "5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac",
+  "semantic_complete": false,
+  "coverage_claim": "finite ownership reconciliation, not exhaustive control certification",
+  "historical_inventory": "desktop-control-records.json retained byte-for-byte: 418 source-read templates, not feature total",
+  "contract_assessment": "additive catalog tier; no demonstrated existing-client wire repair",
+  "changed_paths": [
+    "apps/desktop/src/app/capabilities/catalog/catalog-add-button.tsx",
+    "apps/desktop/src/app/capabilities/catalog/catalog-browser.test.tsx",
+    "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+    "apps/desktop/src/app/capabilities/catalog/catalog-card.tsx",
+    "apps/desktop/src/app/capabilities/catalog/catalog-install-switch.tsx",
+    "apps/desktop/src/app/capabilities/index.test.tsx",
+    "apps/desktop/src/app/capabilities/plugins/plugins-tab.test.tsx",
+    "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+    "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+    "apps/desktop/src/i18n/ar.ts",
+    "apps/desktop/src/i18n/en_catalog.ts",
+    "apps/desktop/src/i18n/ja_catalog.ts",
+    "apps/desktop/src/i18n/overlay-gaps.json",
+    "apps/desktop/src/i18n/ru_catalog.ts",
+    "apps/desktop/src/i18n/types_catalog.ts",
+    "apps/desktop/src/i18n/zh-hant.ts",
+    "apps/desktop/src/i18n/zh_catalog.ts",
+    "apps/desktop/src/lib/plugin-catalog.ts",
+    "apps/desktop/src/store/plugin-catalog-install.ts",
+    "apps/desktop/src/store/plugin-install-request.ts",
+    "apps/shared/src/gateway-contract.generated.ts",
+    "apps/shared/src/gateway-contract.openrpc.json",
+    "locales/_keys.desktop.json",
+    "plugin-catalog/agent-importers.yaml",
+    "tests/tui_gateway/test_plugins_catalog_lookup.py",
+    "tui_gateway/contracts/tools_mcp_plugins.py",
+    "tui_gateway/methods_plugin_catalog.py"
+  ],
+  "controls": [
+    {
+      "id": "capabilities.scope",
+      "operation": "Choose capability owner",
+      "mount": "Unpinned Capabilities; selector hidden for <=1 option and fixedProfile. Plugins embeds compact selector in its Agent heading.",
+      "handler": "Legacy name or connectionId::profile -> scopeOverride; app-wide profile switch clears override; tab key includes scope key.",
+      "authority": "ProfileScope object retains connection identity; crossBackend suppresses active-socket MCP reload; this alone does not prove every plugin callback preserves connection.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/scope-selector.tsx",
+          "start": 47,
+          "end": 175
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/scope-selector.tsx",
+          "start": 179,
+          "end": 233
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 130,
+          "end": 186
+        }
+      ]
+    },
+    {
+      "id": "catalog.add",
+      "operation": "Install catalog entry",
+      "mount": "Available card/list/detail; installed owner action takes precedence, pending/installed/missing skill identifier disables install. Hero/detail labels Install; small rows use Add.",
+      "handler": "CatalogAddButton onClick -> CatalogEntryInstall -> PluginsTab openCatalogPluginInstall; no off transition or uninstall.",
+      "authority": "Catalog metadata is not installed state; install request stores catalog name and target profile.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage. Historical generic catalog non-goal cannot exclude server-side Agent install.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-add-button.tsx",
+          "start": 16,
+          "end": 43
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 110,
+          "end": 137
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 390,
+          "end": 439
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 768,
+          "end": 785
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/store/plugin-catalog-install.ts",
+          "start": 15,
+          "end": 36
+        }
+      ]
+    },
+    {
+      "id": "catalog.tier",
+      "operation": "Display reviewed source tier",
+      "mount": "Install header when request has catalogName; tier label known or generic Verified fallback; community muted and unreviewed warning.",
+      "handler": "entry.source passed as tier; deep-link lookup response tier parsed; InstallHeader formats badge.",
+      "authority": "Display only, not install authorization or backend pin selection; backend resolves catalog_name itself.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 187,
+          "end": 220
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 774,
+          "end": 779
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/store/plugin-catalog-install.ts",
+          "start": 28,
+          "end": 36
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "tui_gateway/methods_plugin_catalog.py",
+          "start": 28,
+          "end": 42
+        }
+      ]
+    },
+    {
+      "id": "catalog.repository",
+      "operation": "Review raw Git repository",
+      "mount": "Global install dialog request with empty repo; on Settings first navigates to New chat before showing modal.",
+      "handler": "RepositoryEntry trim -> openPluginInstallRequest; blank submit disabled; Cancel clears request.",
+      "authority": "Renderer draft creates no installation; source inspection is Electron IPC in next stage.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage. Server Agent path is unimplemented; arbitrary JS module loading on Android remains a separate non-goal.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 93,
+          "end": 129
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 140,
+          "end": 184
+        }
+      ]
+    },
+    {
+      "id": "catalog.probe",
+      "operation": "Inspect repository components",
+      "mount": "Nonempty request starts probe, effect cleanup cancels accepted publication; without Electron bridge returns unavailable.",
+      "handler": "usePluginProbe generation retires old results; probe clones temporary source, detects Agent/Desktop halves, then removes clone.",
+      "authority": "Electron-local hermes:plugin:probe -> probePluginRepo, not an authenticated Android Gateway REST route. A portable replacement needs a real host contract.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/use-plugin-probe.ts",
+          "start": 7,
+          "end": 43
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/electron/fs-ipc.ts",
+          "start": 149,
+          "end": 157
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/electron/desktop-plugin-install.ts",
+          "start": 366,
+          "end": 409
+        }
+      ]
+    },
+    {
+      "id": "catalog.advanced",
+      "operation": "Expand install particulars",
+      "mount": "Catalog starts collapsed, raw Git expanded; disclosure remains a UI state toggle.",
+      "handler": "advancedOpen -> Source/Version/Contents/Profile/Force child editors.",
+      "authority": "Renderer disclosure is UI-only; its children do not all write the same authority.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 235,
+          "end": 252
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 301,
+          "end": 319
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 373,
+          "end": 393
+        }
+      ]
+    },
+    {
+      "id": "catalog.profile",
+      "operation": "Set install profile",
+      "mount": "Advanced; disabled busy or probe proves no Agent component; unavailable selected profile is retained as an option.",
+      "handler": "targetProfile initialized request || active || profileScope, normalized; selected value goes to runPluginInstall.",
+      "authority": "Target profile string is sent by plugins.manage; do not infer cross-connection safety from outer capability selector alone.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 292,
+          "end": 307
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 321,
+          "end": 343
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-details.tsx",
+          "start": 153,
+          "end": 175
+        }
+      ]
+    },
+    {
+      "id": "catalog.pin",
+      "operation": "Pin custom Agent install",
+      "mount": "Raw Git with Agent component; reviewed catalog shows static reviewed pin, Desktop-only shows latest commit. Busy disables input.",
+      "handler": "pinRef trimmed/lowercased; nonblank invalid full SHA disables Install; opts.ref conditionally sent.",
+      "authority": "Agent install ref is distinct from display-only request.sha for curated catalog.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-details.tsx",
+          "start": 71,
+          "end": 101
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 321,
+          "end": 367
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/store/agent-plugins.ts",
+          "start": 289,
+          "end": 333
+        }
+      ]
+    },
+    {
+      "id": "catalog.force",
+      "operation": "Force custom reinstall",
+      "mount": "Advanced raw source only, busy disables switch; catalog hides Force.",
+      "handler": "setForce -> plan.force -> Boolean force in plugins.manage install and Desktop clone.",
+      "authority": "Agent host and Electron local filesystem are separate effects, not an atomic transaction.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-details.tsx",
+          "start": 176,
+          "end": 183
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-run.ts",
+          "start": 96,
+          "end": 106
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-run.ts",
+          "start": 124,
+          "end": 143
+        }
+      ]
+    },
+    {
+      "id": "catalog.install",
+      "operation": "Confirm install",
+      "mount": "Install enabled when not busy/uncertain/invalid pin and reviewed pick OR successful probe; reviewed click still waits for successful probe.",
+      "handler": "Wait settled probe; install Agent first; timeout => uncertain and refresh, no Desktop phase; otherwise optional Desktop phase then refresh; done closes/navigates, failed exposes error. No automatic retry after uncertain.",
+      "authority": "plugins.manage action install with captured profile/catalog_name/ref and 120-second bound; Desktop IPC is a separate authority.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 329,
+          "end": 367
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-run.ts",
+          "start": 176,
+          "end": 215
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/store/agent-plugins.ts",
+          "start": 283,
+          "end": 365
+        }
+      ]
+    },
+    {
+      "id": "catalog.retry-cancel",
+      "operation": "Retry failure or cancel install dialog",
+      "mount": "Cancel disabled during install; modal onOpenChange refuses closing while installing. Failure selects Retry; uncertain disables Install.",
+      "handler": "Retry repeats install only for installError; probe failure restarts inspection; Cancel clears request.",
+      "authority": "UI busy does not prove host cancellation; uncertain may already have changed backend.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 155,
+          "end": 163
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 264,
+          "end": 283
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-modal.tsx",
+          "start": 346,
+          "end": 367
+        }
+      ]
+    },
+    {
+      "id": "plugins.package-toggle",
+      "operation": "Toggle installed package",
+      "mount": "Installed card uses owning package switch; missing Agent key or busy disables; per-half detail differs.",
+      "handler": "Card changes keyed Agent toggle and also Desktop half if present; detail off remains per-half.",
+      "authority": "Profile-scoped plugins.manage Agent mutation plus app-wide Desktop store, no atomic all-halves completion.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage. This combined package action is not equivalent to future Agent-only list/toggle.",
+      "issue_owner": "#234",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 731,
+          "end": 754
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 795,
+          "end": 830
+        }
+      ]
+    },
+    {
+      "id": "plugins.uninstall",
+      "operation": "Uninstall Agent package",
+      "mount": "Installed detail only, removable Agent wins over removable Desktop; bundled/pip have no uninstall row.",
+      "handler": "UninstallRow -> confirm -> removeAgentPlugin(name,scope); success rescan; backend row locally dropped.",
+      "authority": "plugins.manage remove uses name/profile; no Android host removal implementation. Moving it off card changes interaction, not wire shape.",
+      "classification": "omission",
+      "android_boundary": "Android baseline PluginsScreen.kt:131-149 only mounts a disabled Agent marker; bundled module toggles at :120-125 are not host plugin installation. PluginsScreen is byte-identical at observed Android main 5a2b666dc41471fd7a04d5a91534d8d9fe73d2ac. Separate #395 candidate list/toggle work is not installed/catalog/schema coverage.",
+      "issue_owner": "#73",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 223,
+          "end": 252
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 512,
+          "end": 534
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.tsx",
+          "start": 685,
+          "end": 705
+        },
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/store/agent-plugins.ts",
+          "start": 452,
+          "end": 480
+        }
+      ]
+    },
+    {
+      "id": "plugins.desktop-install",
+      "operation": "Load Desktop JS half",
+      "mount": "Probe detects Desktop and plan selects half; local unified package reconciles, remote/standalone clones via native bridge.",
+      "handler": "installDesktopHalf -> reconcile/discover or installDesktopPlugin; Agent-enabled package can enable Desktop half.",
+      "authority": "Electron filesystem/runtime loader; Android bundled Kotlin module ABI cannot execute Desktop JavaScript.",
+      "classification": "non-goal",
+      "android_boundary": "ADR 0003 excludes device-side runtime JS loader only; it does NOT exclude backend Agent plugin installs or catalog.",
+      "issue_owner": "#166",
+      "source": [
+        {
+          "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+          "path": "apps/desktop/src/app/settings/plugin-install-run.ts",
+          "start": 124,
+          "end": 173
+        }
+      ]
+    }
+  ],
+  "remaining_categories": [
+    {
+      "id": "discovery-and-session-owners",
+      "families": [
+        "navigation-and-discovery",
+        "session-actions",
+        "sidebar-catalog-and-projects",
+        "profiles",
+        "keyboard-and-pane-layout"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#266",
+      "remaining": "Header/Bot menu suppliers; project menus/search/comparators; profile create/import; tab rehome, archive/pin lifecycle and native gestures. Existing row/tab actions are bounded implementation, not whole-family absence.",
+      "acceptance": "Follow each mount/callback to captured connection/profile and actual mutation, compare baseline and selected integrated Android head; retain #142/#180/#182/#367. Label unread/delete/archive differences drift, not policy approval.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-control-reconciliation.md:59-198"
+      ]
+    },
+    {
+      "id": "settings-and-native-appearance",
+      "families": [
+        "settings-navigation",
+        "appearance-manifest",
+        "core-config-schema"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "Language/Pet/tray/contributed children, actual native effects and layout persistence; generic schema template does not certify specialized Voice/Memory/fallback/auxiliary/MoA.",
+      "acceptance": "Enumerate remaining mounted child controls, actual writers and busy/error states; keep Appearance #157/#184/#292 and MoA omission distinct.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-control-records.json groups appearance-specialized, dynamic-config-field-precedence, settings-moa-reference"
+      ]
+    },
+    {
+      "id": "provider-vault-billing",
+      "families": [
+        "provider-accounts-and-keys",
+        "local-model-management",
+        "vault-management",
+        "billing-and-subscriptions"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "OAuth/onboarding completion, provider/native-opening, local downloads/progress, vault and billing step-up branches. Named-Bot model editor already exists; full host Settings does not.",
+      "acceptance": "Trace dialogs through authentication/storage authority using synthetic fixtures; no credential reads; retain #238/#183/#184. Do not infer nonexistent controls from open issues.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-control-records.json groups providers-accounts-and-keys, providers-custom-endpoint, settings-main-model, subscription-management"
+      ]
+    },
+    {
+      "id": "kanban-remaining",
+      "families": [
+        "kanban"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "Complete board/drawer/menu/form, multi-board/workspace/advanced creation and orchestration. Filters/Branch observed merged elsewhere are not audit-baseline features; independent create/move candidates not certified here.",
+      "acceptance": "Read source predicates and host task ownership for remaining mutations, compare exact integrated implementation; preserve prior feature review/gates instead of rerunning all ten.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/kanban-task-snapshot.md"
+      ]
+    },
+    {
+      "id": "bots-groups-routines",
+      "families": [
+        "bots-roster-and-chat",
+        "bot-routines",
+        "bot-identity",
+        "groups",
+        "bot-screen"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#186",
+      "remaining": "Roster/identity/editor children, canonical versus ordinary session menu variants, Screen, routines/groups nested controls and contributions. Production routines/avatar/editors are not absent just because umbrella issues remain open.",
+      "acceptance": "Read #191/#193/#194/#268 plus current handlers; classify real missing mounted controls, backend authority and evidence debt separately; #216 remains rendered owner.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-surface-audit.md:68-71"
+      ]
+    },
+    {
+      "id": "capability-packages-and-connectors",
+      "families": [
+        "capabilities-skills-and-catalog",
+        "connectors-and-mcp",
+        "agent-and-desktop-plugins"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "This increment resolves scope/install/probe/tier/uninstall seams; remaining public catalog query/discovery/detail links, toolset/provider forms, update consent/scan UI, hosted OAuth/accounts/directory/probe/per-tool dialogs remain unverified.",
+      "acceptance": "Separate Agent host installation/schema (#73) from bounded list/toggle (#234), and device JS non-goal (#166); verify actual cross-connection dispatch rather than scope-selector intent alone.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-audit-continuation.json controls",
+        "docs/parity/desktop-control-reconciliation.md:117-153"
+      ]
+    },
+    {
+      "id": "messaging-cron-import",
+      "families": [
+        "messaging-and-pairing",
+        "webhooks",
+        "cron-and-blueprints",
+        "session-import"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "Messaging/pairing all trees, Cron blueprint/delivery/history and import completion; webhook and foreign import templates already read but not general acceptance.",
+      "acceptance": "Follow selected profile, receiver restart, delivery/history and import side effects to authenticated routes; session import stance #184 and routines #191 remain separate.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-control-reconciliation.md:32-33"
+      ]
+    },
+    {
+      "id": "composer-voice-queue",
+      "families": [
+        "composer-edit-send-and-queue",
+        "slash-execution",
+        "goal-loop-heartbeat"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#67",
+      "remaining": "Voice engine construction is missing despite nullable callbacks/dictation; server-owned queued edit/steer differs from local queue actions; loaded busy policy, completion folder/Tab/Escape, URL attachment cards, MoA and specialized model flows.",
+      "acceptance": "Constructed production graph proof for #67; keep #205 references/queue, #278 acquisition, #70 execution, #184 structured controls; no substitute local redirect -> tool steering rewrite.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-control-records.json composer-depth.voice-engine, composer-depth.queue-steer",
+        "docs/parity/desktop-control-reconciliation.md composer depth continuation"
+      ]
+    },
+    {
+      "id": "transcript-agents-artifacts",
+      "families": [
+        "transcript-and-required-input",
+        "subagents",
+        "artifacts",
+        "learning-starmap"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "Specialized transcript/render/input branches, Agents controls, Starmap and Artifacts viewers. Existing clarify/approval/secret and bounded renderer coverage is not zero.",
+      "acceptance": "Read selected source renderers and required-input producers through response routing, compare #378/#380/#279/#204/#224/#265; no schema/capability claim from labels.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/canonical-inputs.md",
+        "docs/parity/transcript-rendering.md"
+      ]
+    },
+    {
+      "id": "workspace-native-bridges",
+      "families": [
+        "files-terminal-review-browser",
+        "native-shell-and-onboarding",
+        "gateways-and-connection-lifecycle"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#73",
+      "remaining": "Files/PTY/Review/browser and onboarding children, connection transport branches, native OS roles. Backend cwd is not phone path; not every host operation is a permanent non-goal.",
+      "acceptance": "Read native bridge plus remote facade/host authority and Android route composition; keep #151/#85/#110 and physical/signing #72. Only documented platform exclusions qualify as non-goals.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-surface-audit.json files-terminal-review-browser"
+      ]
+    },
+    {
+      "id": "system-notifications-status",
+      "families": [
+        "system-actions",
+        "statusbar-and-notices",
+        "radio"
+      ],
+      "classification": "mixed",
+      "issue_owner": "#127",
+      "remaining": "System maintenance/background/skew, logs Copy/jumps/match actions, notification plugin/sound policy conflict #99, statusbar resource children and Radio. Existing log feature candidate is not full maintenance parity.",
+      "acceptance": "Keep actual logs implementation distinct from residual controls and rendered evidence; reconcile notification issue mandate with historical ledger before approving non-goal; Radio default-off is shipping code.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "docs/parity/desktop-control-reconciliation.md:39-47"
+      ]
+    },
+    {
+      "id": "dynamic-boundaries-drift-engine",
+      "families": [
+        "runtime-example-and-extension-boundary",
+        "shared-source-infrastructure"
+      ],
+      "classification": "review-debt",
+      "issue_owner": "#266",
+      "remaining": "Native role children, generic primitive affordances, callback registries/factory aliases, runtime-loaded extension templates and old-to-new drift report/workflow. Installed private contents are not enumerated.",
+      "acceptance": "Deliver #266 deterministic changed copy/state/test/citation classification and artifact-only workflow with historical dogfood; schema/extension templates source-read without private content. Structural census never substitutes for semantic acceptance.",
+      "evidence": [
+        "docs/parity/desktop-control-reconciliation.md:200-220 @ e0255095403a7480850c05ab377a0eacdd2e9939",
+        "https://github.com/donovan-yohan/hermes-agent-android/issues/266"
+      ]
+    }
+  ],
+  "android_evidence": [
+    {
+      "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+      "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/settings/PluginsScreen.kt",
+      "start": 120,
+      "end": 149
+    }
+  ],
+  "source_tests_read": [
+    {
+      "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+      "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.test.tsx",
+      "start": 68,
+      "end": 100
+    },
+    {
+      "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+      "path": "apps/desktop/src/app/capabilities/plugins/plugins-tab.test.tsx",
+      "start": 297,
+      "end": 324
+    },
+    {
+      "sha": "92663ae8054ae81f207f46d83512d3f879dc698d",
+      "path": "apps/desktop/src/app/settings/plugin-install-modal.test.tsx",
+      "start": 107,
+      "end": 160
+    }
+  ],
+  "tests_read_not_executed": true
+}

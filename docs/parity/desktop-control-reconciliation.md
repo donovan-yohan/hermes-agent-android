@@ -17,6 +17,12 @@ This continuation adds three separate artifacts:
 
 All three deliberately retain `semantic_complete: false`. This is an incremental semantic audit, not the mission's exhaustive-acceptance receipt. Structural success must not be used to close #73, #184 or #266.
 
+The [latest-target continuation](desktop-audit-continuation.md) preserves all
+418 records byte-for-byte, follows fourteen additional package-install/control
+seams at a separately declared newer source, and reconciles the remaining work
+into twelve finite categories covering every family with explicit issue owners
+and acceptance. This is ownership closure, **not semantic coverage closure**.
+
 ## What was actually followed
 
 The reviewed records cover these bounded trees rather than merely renaming source prefixes:
