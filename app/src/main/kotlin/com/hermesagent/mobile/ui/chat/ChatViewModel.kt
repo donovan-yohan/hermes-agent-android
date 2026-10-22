@@ -729,8 +729,10 @@ internal class ChatViewModel(
     private var liveMutationGeneration = 0L
     private data class ModelConsent(val key: Long, val durableId: String, val composerGeneration: Long,
         val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        val pendingTarget: ComposerModelSelection?,
         val request: suspend () -> ControlMutationResult)
     private var modelConsent: ModelConsent? = null
+    private var confirmingModelMutation: Long? = null
     private var liveControlBefore: ModelControlsSnapshot? = null
     private val supersededModelConsentEndpoints = linkedMapOf<Long, Long>()
     private val gatewayAdmissionActions = mutableSetOf<com.hermesagent.mobile.data.gateway.GatewayAdmissionKey>()
@@ -1453,17 +1455,19 @@ internal class ChatViewModel(
         viewModelScope.launch {
             repository.deferredModelPicks.collect { event ->
                 if (activeSessionId.value != event.durableId || cache.endpointGeneration.value != event.endpointGeneration) return@collect
+                if (event.consentInvalidated && modelConsent == null && confirmingModelMutation != liveMutationGeneration) return@collect
                 val key = ++liveMutationGeneration
                 modelConsent = null
+                confirmingModelMutation = null
                 if (composer.value.mutation is ComposerMutationUiState.Saving) {
                     composer.value = composer.value.copy(controls = liveControlBefore ?: composer.value.controls)
                 }
                 val confirm = event.confirm
                 if (confirm != null && event.target != null) {
                     modelConsent = ModelConsent(key, event.durableId, composerGeneration, event.endpointGeneration,
-                        { it }, confirm)
+                        { it }, event.target, confirm)
                     composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.ConfirmationRequired(
-                        key, event.target.model, event.safeMessage))
+                        key, com.hermesagent.mobile.data.ssh.redact(event.target.model).take(160), event.safeMessage))
                 } else composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.Error(event.safeMessage))
             }
         }
@@ -1964,7 +1968,7 @@ internal class ChatViewModel(
             return
         }
         if (refuseBotChatMutation() != null) return
-        mutateLiveControls(consent.durableId, consent.update, request = consent.request)
+        mutateLiveControls(consent.durableId, consent.update, pendingTarget = consent.pendingTarget, request = consent.request)
     }
 
     fun dismissModelChange(key: Long) {
@@ -1977,6 +1981,7 @@ internal class ChatViewModel(
         durableId: String,
         update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
         confirmRequest: (suspend () -> ControlMutationResult)? = null,
+        pendingTarget: ComposerModelSelection? = null,
         request: suspend () -> ControlMutationResult,
     ) {
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
@@ -1989,6 +1994,7 @@ internal class ChatViewModel(
         val generation = composerGeneration
         val endpoint = cache.endpointGeneration.value
         val mutationGeneration = ++liveMutationGeneration
+        confirmingModelMutation = mutationGeneration.takeIf { pendingTarget != null }
         liveControlBefore = before.controls
         composerLoad?.cancel()
         composer.value = before.copy(
@@ -2011,17 +2017,18 @@ internal class ChatViewModel(
                 liveMutationGeneration != mutationGeneration ||
                 activeSessionId.value != durableId
             ) return@launch
+            confirmingModelMutation = null
             when (result) {
                 ControlMutationResult.Applied -> {
                     composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
                 }
                 ControlMutationResult.Deferred -> {
                     composer.value = composer.value.copy(controls = before.controls,
-                        pendingModel = update(before.controls).selection, mutation = ComposerMutationUiState.Deferred)
+                        pendingModel = pendingTarget ?: update(before.controls).selection, mutation = ComposerMutationUiState.Deferred)
                 }
                 is ControlMutationResult.ConfirmationRequired -> {
                     if (confirmRequest != null) {
-                        modelConsent = ModelConsent(mutationGeneration, durableId, generation, endpoint, update, confirmRequest)
+                        modelConsent = ModelConsent(mutationGeneration, durableId, generation, endpoint, update, update(before.controls).selection, confirmRequest)
                         composer.value = before.copy(mutation = ComposerMutationUiState.ConfirmationRequired(
                             mutationGeneration, update(before.controls).selection?.model.orEmpty(), result.safeMessage))
                     } else composer.value = before.copy(mutation = ComposerMutationUiState.Error("Choose this model again to confirm the change."))

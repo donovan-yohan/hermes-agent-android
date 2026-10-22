@@ -868,6 +868,84 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `event confirmed deferred target is B while effective controls remain A`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val effective = viewModel.uiState.value.composer.controls.selection
+        val target = ComposerModelSelection("model/next", "provider-b")
+        var sends = 0
+        repository.deferredPicks.emit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+            "session-a", cache.endpointGeneration.value, target, "Confirm this model change.") {
+            sends += 1; ControlMutationResult.Deferred
+        })
+        runCurrent()
+        val ask = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        viewModel.confirmModelChange(ask.key); runCurrent()
+        assertEquals(1, sends)
+        assertEquals(effective, viewModel.uiState.value.composer.controls.selection)
+        assertEquals(target, viewModel.uiState.value.composer.pendingModel)
+        assertEquals(ComposerMutationUiState.Deferred, viewModel.uiState.value.composer.mutation)
+        viewModel.confirmModelChange(ask.key); runCurrent()
+        assertEquals(1, sends)
+    }
+
+    @Test
+    fun `same model provider B pending survives authoritative old provider A controls`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        repository.emitComposerControls(SessionComposerControls("session-a",
+            selection = ComposerModelSelection("model/same", "provider-a"), hasSelection = true))
+        runCurrent()
+        repository.modelMutation = ControlMutationResult.Deferred
+        val target = ComposerModelSelection("model/same", "provider-b")
+        viewModel.selectModel(target); runCurrent()
+        repository.emitComposerControls(SessionComposerControls("session-a",
+            selection = ComposerModelSelection("model/same", "provider-a"), hasSelection = true))
+        runCurrent()
+        // Ambiguous old refusal is suppressed by the canonical adapter, not emitted as
+        // a current-pick refusal (real producer-shaped coverage in CanonicalGatewayRpcTest).
+        assertEquals(target, viewModel.uiState.value.composer.pendingModel)
+        assertEquals("provider-a", viewModel.uiState.value.composer.controls.selection?.provider)
+        assertEquals(ComposerMutationUiState.Deferred, viewModel.uiState.value.composer.mutation)
+    }
+
+    @Test
+    fun `gap invalidation closes dialog before resume and stale confirm cannot send`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        var sends = 0
+        repository.deferredPicks.emit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+            "session-a", cache.endpointGeneration.value, ComposerModelSelection("model/next", "provider"), "Confirm this model change.") {
+            sends += 1; ControlMutationResult.Applied
+        })
+        runCurrent()
+        val ask = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        repository.deferredPicks.emit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+            "session-a", cache.endpointGeneration.value, null, "Session state changed. Choose the model again.", consentInvalidated = true))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.composer.mutation is ComposerMutationUiState.Error)
+        viewModel.confirmModelChange(ask.key); runCurrent()
+        assertEquals(0, sends)
+    }
+
+    @Test
+    fun `gap invalidates held confirmed mutation and its late deferred receipt cannot restore pending consent`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val reply = CompletableDeferred<ControlMutationResult>()
+        repository.deferredPicks.emit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+            "session-a", cache.endpointGeneration.value, ComposerModelSelection("model/next", "provider"), "Confirm this model change.") {
+            reply.await()
+        })
+        runCurrent()
+        val ask = viewModel.uiState.value.composer.mutation as ComposerMutationUiState.ConfirmationRequired
+        viewModel.confirmModelChange(ask.key); runCurrent()
+        assertEquals(ComposerMutationUiState.Saving, viewModel.uiState.value.composer.mutation)
+        repository.deferredPicks.emit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+            "session-a", cache.endpointGeneration.value, null, "Session state changed. Choose the model again.", consentInvalidated = true))
+        runCurrent()
+        reply.complete(ControlMutationResult.Deferred); runCurrent()
+        assertTrue(viewModel.uiState.value.composer.mutation is ComposerMutationUiState.Error)
+        assertNull(viewModel.uiState.value.composer.pendingModel)
+    }
+
+    @Test
     fun `deferred live model keeps the requested next turn selection`() = runTest(dispatcher) {
         collectState()
         runCurrent()

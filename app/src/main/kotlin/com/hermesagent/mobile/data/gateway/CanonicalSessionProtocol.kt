@@ -29,12 +29,33 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private val descriptors = mutableMapOf<String, ConfirmedOwner>()
     private val snapshots = mutableMapOf<Owner, Snapshot>()
     private data class MutationKey(val owner: Owner, val operation: String, val payload: JsonObject)
-    private data class ModelConfirmation(val token: String, var sent: Boolean = false)
+    private data class ModelConfirmation(val token: String, val version: Long)
     private val mutations = mutableMapOf<MutationKey, JsonObject>()
     private val modelConfirmations = mutableMapOf<Pair<Owner, JsonObject>, ModelConfirmation>()
     private data class DeferredConfirmation(val payload: JsonObject, val token: String, val generation: Long)
     private val deferredConfirmations = mutableMapOf<Owner, DeferredConfirmation>()
     private val latestModelPicks = mutableMapOf<Owner, JsonObject>()
+    private val modelConsentVersions = mutableMapOf<Owner, Long>()
+    private val reconcilingOwners = mutableSetOf<Owner>()
+    private data class ModelDispatchLease(val owner: Owner, val version: Long, var used: Boolean = false)
+    private val modelDispatchLeases = mutableMapOf<String, ModelDispatchLease>()
+
+    private fun revokeModelConsent(owner: Owner) {
+        deferredConfirmations.remove(owner)
+        modelConfirmations.keys.removeAll { it.first == owner }
+        modelConsentVersions[owner] = (modelConsentVersions[owner] ?: 0) + 1
+    }
+
+    /** Called inside the final transport dispatch callback, not before a suspending lookup.
+     * The same lock serializes stream invalidation with admission to wire.send. */
+    fun dispatchMutation(method: String, params: JsonObject, send: () -> Boolean): Boolean = synchronized(stateLock) {
+        val id = params.text("request_id")
+        val lease = if (method == "session.mutate") modelDispatchLeases[id] else null
+        if (lease == null) send() else if (lease.used || modelConsentVersions[lease.owner] != lease.version) false else {
+            lease.used = true
+            send()
+        }
+    }
     private val mutationLocks = KeyedMutex<Owner>()
     private val preSnapshotEvents = mutableListOf<GatewayEvent>()
     private val admissionStatuses = linkedMapOf<Pair<Owner, String>, String>()
@@ -236,6 +257,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         val sid = params.text("parent_session_id") ?: params.text("session_id") ?: params.text("session_key") ?: unusable()
         val owner = owner(params.text("profile").orEmpty(), sid)
         return mutationLocks.withLock(owner) {
+            var consentVersion: Long? = null
+            var requestConsentVersion: Long? = null
             val payload = synchronized(stateLock) {
                 if (method == "session.model") {
                     val ask = deferredConfirmations[owner]
@@ -243,17 +266,26 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                         ask.generation != snapshots[owner]?.generation)
                         throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
                     deferredConfirmations.remove(owner)
+                    consentVersion = modelConsentVersions.getOrPut(owner) { 0 }
+                    requestConsentVersion = consentVersion
+                    latestModelPicks[owner] = suppliedPayload
                     JsonObject(ask.payload + ("confirm" to JsonPrimitive(ask.token)))
                 } else {
+                    val explicitConfirm = operation == "model" && params["confirm_expensive_model"] == JsonPrimitive(true)
+                    val confirmation = if (explicitConfirm) modelConfirmations.remove(owner to suppliedPayload) else null
+                    if (explicitConfirm) {
+                        if (confirmation == null || confirmation.version != modelConsentVersions[owner])
+                            throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
+                        consentVersion = confirmation.version
+                    } else if (operation in setOf("model", "reasoning")) revokeModelConsent(owner)
                     if (operation == "model") {
-                        deferredConfirmations.remove(owner)
+                        requestConsentVersion = modelConsentVersions.getOrPut(owner) { 0 }
                         latestModelPicks[owner] = suppliedPayload
+                    } else if (operation == "reasoning") latestModelPicks[owner]?.let { pick ->
+                        suppliedPayload["effort"]?.let { latestModelPicks[owner] = JsonObject(pick + ("reasoning" to it)) }
                     }
-                    val confirmation = modelConfirmations[owner to suppliedPayload]
-                    if (operation == "model" && confirmation != null &&
-                        (params["confirm_expensive_model"] == JsonPrimitive(true) || confirmation.sent)) {
-                        confirmation.sent = true
-                        JsonObject(suppliedPayload + ("confirm" to JsonPrimitive(confirmation.token)))
+                    if (explicitConfirm) {
+                        JsonObject(suppliedPayload + ("confirm" to JsonPrimitive(confirmation!!.token)))
                     } else suppliedPayload
                 }
             }
@@ -270,11 +302,16 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     }
                 }
             }
+            consentVersion?.let { version -> synchronized(stateLock) {
+                modelDispatchLeases[prepared.text("request_id")!!] = ModelDispatchLease(owner, version)
+            } }
             fun uncertain(): Nothing = throw GatewayRpcException("The Gateway returned an unusable mutation receipt.", requestMayHaveBeenAccepted = true)
             val value = try { send("session.mutate", prepared) as? JsonObject ?: uncertain() }
             catch (failure: GatewayRpcError) {
                 synchronized(stateLock) { mutations.remove(key) }
                 throw failure
+            } finally {
+                synchronized(stateLock) { modelDispatchLeases.remove(prepared.text("request_id")) }
             }
             val readOnly = (operation == "model" && value.text("status") == "confirmation_required") ||
                 (operation == "compress" && value.text("status") in setOf("preview", "noop"))
@@ -290,8 +327,10 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 if (operation == "model") {
                     if (payload.text("confirm") != null) modelConfirmations.remove(owner to suppliedPayload)
                     if (value.text("status") == "confirmation_required") {
+                        if (owner in reconcilingOwners || requestConsentVersion != modelConsentVersions[owner])
+                            throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
                         val token = value.text("confirm")?.takeIf(String::isNotBlank) ?: uncertain()
-                        modelConfirmations[owner to suppliedPayload] = ModelConfirmation(token)
+                        modelConfirmations[owner to suppliedPayload] = ModelConfirmation(token, modelConsentVersions.getOrPut(owner) { 0 })
                     }
                 }
             }
@@ -430,7 +469,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             snapshots[key] = if (stale) previous.copy(subscriptionId = subscription) else
                 Snapshot(revision, generation, epoch, sequence, subscription, stored, authority, retired)
             if (!stale) {
-                deferredConfirmations.remove(key)
+                reconcilingOwners.remove(key)
+                revokeModelConsent(key)
                 reconcilePending(key, value["pending"] as? JsonArray ?: unusable())
                 prompts.keys.removeAll { it.first == key }
                 (value["prompts"] as? JsonArray).orEmpty().forEach { element ->
@@ -494,7 +534,11 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 if (event.authorityEpoch?.let { it < previous.authorityEpoch } == true ||
                     generation?.let { it < previous.generation } == true) return@synchronized null
                 if (event.replayEpoch != null && event.replayEpoch != previous.replayEpoch ||
-                    event.seq?.let { it > previous.lastSequence + 1 } == true) {
+                    event.seq?.let { it > previous.lastSequence + 1 } == true ||
+                    event.authorityEpoch?.let { it > previous.authorityEpoch } == true ||
+                    event.type == "session.replay_gap" || owner in reconcilingOwners) {
+                    reconcilingOwners.add(owner)
+                    revokeModelConsent(owner)
                     return@synchronized event.copy(type = "session.replay_gap", payload = JsonObject(emptyMap()),
                         runtimeSessionId = sessionIdentity.qualify(event.runtimeSessionId, route), canonical = true)
                 }
@@ -502,25 +546,31 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
 
                 // Whole-payload consent, scoped to this ordered owner stream and turn.
                 // gateway/session_deferred_pick.py:111-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
-                if (generation != null && generation > previous.generation) deferredConfirmations.remove(owner)
-                if (event.type == "session.info") latestModelPicks[owner]?.let { pick ->
-                    if (payload.text("model") == pick.text("model") &&
-                        (pick.text("provider") == null || payload.text("provider") == pick.text("provider")))
-                        latestModelPicks.remove(owner)
-                }
+                if (generation != null && generation > previous.generation) revokeModelConsent(owner)
+                // Keep the latest local selection as a supersession tombstone even after
+                // matching session.info. A delayed uncorrelated refusal can be published
+                // after that info; it still cannot repaint a newer committed selection.
+                // Effective/pending presentation is reconciled separately by session.info.
                 if (event.type == "session.updated" && payload.text("operation") == "model" &&
                     payload.text("status") in setOf("confirmation_required", "refused")) {
                     val pick = payload["payload"] as? JsonObject
                     val token = payload.text("confirm")
                     val latest = latestModelPicks[owner]
-                    val obsolete = if (payload.text("status") == "refused")
-                        latest != null && latest.text("model") != payload.text("target_model")
+
+                    // Refusal has no target provider/reasoning, request id or rejection
+                    // revision. Committed provider is NOT target identity. Preserve local
+                    // intent until authoritative whole-selection state confirms it.
+                    // gateway/session_deferred_pick.py:128-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+                    val obsolete = if (payload.text("status") == "refused") latest != null
                     else latest != null && latest != pick
+                    if (payload.text("status") == "refused" && payload.text("session_id") == owner.sessionId &&
+                        payload.text("profile_id")?.let { it != descriptors[owner.profile]?.ownerId } != true)
+                        revokeModelConsent(owner)
                     if (obsolete || payload.text("session_id") != owner.sessionId ||
                         payload.text("profile_id")?.let { it != descriptors[owner.profile]?.ownerId } == true)
                         payload = JsonObject(emptyMap())
                     else {
-                        deferredConfirmations.remove(owner)
+                        revokeModelConsent(owner)
                         if (payload.text("status") == "refused") latestModelPicks.remove(owner)
                         if (payload.text("status") == "confirmation_required") {
                             if (event.seq == null || event.replayEpoch == null || generation == null ||

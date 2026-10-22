@@ -5130,7 +5130,8 @@ internal class LiveGatewaySessionRepository(
             ).asObject("config.set")
             synchronized(stateLock) { ensureCurrent(connection) }
             if (modelSwitch && result.boolean("confirm_required") == true) {
-                ControlMutationResult.ConfirmationRequired(redact(result.string("confirm_message") ?: "This model switch needs confirmation."))
+                modelConfirmationMessage(result.string("confirm_message"))?.let(ControlMutationResult::ConfirmationRequired)
+                    ?: ControlMutationResult.Rejected(MODEL_WARNING_TOO_LONG)
             } else if (result.boolean("ok") == false || result.string("status") == "rejected") {
                 ControlMutationResult.Rejected(controlFailureMessage(key))
             } else if (modelSwitch && result.boolean("deferred") == true) {
@@ -5139,7 +5140,7 @@ internal class LiveGatewaySessionRepository(
                 ControlMutationResult.Applied
             }
         } catch (failure: Throwable) {
-            if (failure is CancellationException) throw failure
+            currentCoroutineContext().ensureActive()
             if (modelSwitch && failure.isLegacyBusyModelRefusal()) {
                 ControlMutationResult.Deferred
             } else {
@@ -5252,6 +5253,14 @@ internal class LiveGatewaySessionRepository(
         return true
     }
 
+    // Preserve the entire redacted warning, including combined cost/data/context guards.
+    // Never clip away a required warning merely to fit a dialog: oversized warnings
+    // refuse native consent instead. Wire payload/token are never display-normalized.
+    private fun modelConfirmationMessage(message: String?): String? =
+        redact(message ?: "This model switch needs confirmation.").takeIf { it.length <= 4096 }
+
+    private val MODEL_WARNING_TOO_LONG = "This model warning is too long to display. Review it in Hermes Desktop before switching."
+
     /** Returns true when authoritative list metadata should be refreshed. */
     private fun applyEvent(event: GatewayEvent): Boolean {
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
@@ -5268,6 +5277,10 @@ internal class LiveGatewaySessionRepository(
                     event.seq?.let { it <= previous.sequence } == true)) return false
             if (previous != null && event.replayEpoch != null && event.replayEpoch != previous.epoch) return false
             event.executionGeneration?.let { generation ->
+                if (previous != null && generation > previous.generation)
+                    deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+                        durableId, cache.endpointGeneration.value, null,
+                        "Session state changed. Choose the model again.", consentInvalidated = true))
                 mutablePendingInputs.value.keys.filter { it.runtimeSessionId == runtimeId && it.origin == PendingInputOrigin.Canonical &&
                     it.executionGeneration?.let { old -> old < generation } == true }.forEach(::removePendingInput)
             }
@@ -5308,26 +5321,34 @@ internal class LiveGatewaySessionRepository(
                     val pick = payload.obj("payload")
                     val token = payload.string("confirm")
                     val target = pick?.string("model")?.let { ComposerModelSelection(it, pick.string("provider").orEmpty()) }
-                    val ask = payload.string("status") == "confirmation_required" && target != null && !token.isNullOrBlank()
-                    if (ask || payload.string("status") == "refused") {
+                    val warning = modelConfirmationMessage(payload.string("confirm_message"))
+                    val requiresConfirmation = payload.string("status") == "confirmation_required"
+                    val ask = requiresConfirmation && target != null && !token.isNullOrBlank() && warning != null
+                    if (requiresConfirmation || payload.string("status") == "refused") {
                         if (!ask) projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
                         deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
                             durableId, endpoint, target,
-                            if (ask) redact(payload.string("confirm_message") ?: "This model switch needs confirmation.")
+                            if (ask) warning!! else if (requiresConfirmation && warning == null) MODEL_WARNING_TOO_LONG
                             else controlFailureMessage("model"),
-                            if (!ask) null else suspend {
+                            confirm = if (!ask) null else suspend {
                                 try {
                                     val result = requestAtEndpointDispatch(connection, endpoint, "session.model", buildJsonObject {
                                         put("session_id", JsonPrimitive(runtimeId)); put("payload", pick!!); put("confirm", JsonPrimitive(token!!))
                                         profile?.let { put("profile", JsonPrimitive(it)) }
-                                    }).asObject("session.model")
+                                    }, consentDispatch = { send -> synchronized(stateLock) {
+                                        identities.durableFor(runtimeId) == durableId && runtimeProfiles[runtimeId] == profile &&
+                                            runtimeId !in replayReconciliations && send()
+                                    } }).asObject("session.model")
                                     when {
                                         result.boolean("deferred") == true -> ControlMutationResult.Deferred
                                         result.boolean("ok") == true && result.string("status") != "refused" -> ControlMutationResult.Applied
                                         else -> ControlMutationResult.Rejected(controlFailureMessage("model"))
                                     }
                                 } catch (failure: Throwable) {
-                                    if (failure is CancellationException) throw failure
+                                    // An inner RPC timeout is uncertain, not cancellation of
+                                    // this owner's coroutine. Consume consent and show failure;
+                                    // never leave Saving parked or automatically resend.
+                                    currentCoroutineContext().ensureActive()
                                     ControlMutationResult.Rejected(controlFailureMessage("model"))
                                 }
                             },
@@ -5337,6 +5358,9 @@ internal class LiveGatewaySessionRepository(
                 true
             }
             "session.replay_gap" -> {
+                if (event.canonical) deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+                    durableId, cache.endpointGeneration.value, null,
+                    "Session state changed. Choose the model again after reconnecting.", consentInvalidated = true))
                 if (event.canonical && replayReconciliations.add(runtimeId)) {
                     val endpoint = cache.endpointGeneration.value
                     val generation = connectionGeneration

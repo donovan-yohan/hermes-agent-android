@@ -164,6 +164,7 @@ data class DeferredModelPick(
     val endpointGeneration: Long,
     val target: ComposerModelSelection?,
     val safeMessage: String,
+    val consentInvalidated: Boolean = false,
     val confirm: (suspend () -> ControlMutationResult)? = null,
 )
 
