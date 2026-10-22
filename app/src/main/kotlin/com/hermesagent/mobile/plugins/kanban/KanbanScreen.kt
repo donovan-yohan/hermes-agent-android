@@ -50,8 +50,16 @@ fun KanbanScreen(
     onRefresh: () -> Unit,
     onOpenTask: (KanbanTask) -> Unit,
     onCloseDetail: () -> Unit,
+    onNewTask: () -> Unit = {},
+    onCloseCreate: () -> Unit = {},
+    onSubmitTask: (KanbanNewTask) -> Unit = {},
     onFilters: (KanbanFilters) -> Unit = {},
 ) {
+    state.creation?.let { creation ->
+        BackHandler { onCloseCreate() }
+        KanbanNewTaskScreen(creation, onCloseCreate, onSubmitTask)
+        return
+    }
     val detail = state.detail
     val showingDetail = detail !is KanbanDetail.None
     val searchFocus = remember { FocusRequester() }
@@ -67,7 +75,7 @@ fun KanbanScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             TextButton(label = "Refresh", onClick = onRefresh, modifier = Modifier.testTag("Kanban refresh"))
-            KanbanControlsMenu(showingDetail, state, onFilters) { searchFocus.requestFocus() }
+            KanbanControlsMenu(showingDetail, state, onFilters, onNewTask) { searchFocus.requestFocus() }
         }
 
         if (!showingDetail) {
@@ -78,6 +86,7 @@ fun KanbanScreen(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = HermesTheme.spacing.pageInset)
                     .focusRequester(searchFocus).testTag("Kanban search"),
             )
+            state.creationNotice?.let { Notice(it) }
             if (state.stale) Notice(KANBAN_STALE)
             when (state.phase) {
                 KanbanPhase.Loading -> EmptyState("Loading board…", "Hermes is asking the Gateway for its current board.")
@@ -111,6 +120,7 @@ private fun KanbanControlsMenu(
     showingDetail: Boolean,
     state: KanbanUiState,
     onFilters: (KanbanFilters) -> Unit,
+    onNewTask: () -> Unit,
     onSearch: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -138,7 +148,10 @@ private fun KanbanControlsMenu(
                             expanded = false
                             if (action == "Filters") filtersOpen = true else onSearch()
                         })
-                    } else KanbanWipMenuRow(action)
+                    } else if (!showingDetail && action == "New task") TextButton("New task", {
+                        expanded = false
+                        onNewTask()
+                    }) else KanbanWipMenuRow(action)
                 }
             }
         }
@@ -179,7 +192,7 @@ private fun FilterChoice(label: String, checked: Boolean, click: () -> Unit) {
 }
 
 @Composable
-private fun KanbanWipMenuRow(label: String) {
+internal fun KanbanWipMenuRow(label: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
