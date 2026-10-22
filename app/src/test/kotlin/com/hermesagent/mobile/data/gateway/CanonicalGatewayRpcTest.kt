@@ -350,6 +350,28 @@ class CanonicalGatewayRpcTest {
         peer.rpc.close()
     }
 
+    @Test
+    fun `move project repository uses canonical workspace mutation on owning profile`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val target = repository.sessionProjectTargets(key).single()
+        repository.moveSessionToProject(key, target, cache.endpointGeneration.value)
+        val move = peer.frames.single { it["method"] == JsonPrimitive("session.mutate") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("canonical-public"), move["session_id"])
+        assertEquals(JsonPrimitive("work"), move["profile"])
+        assertEquals(JsonPrimitive("workspace"), move["operation"])
+        assertEquals(buildJsonObject { put("cwd", "/workspace/target") }, move["payload"])
+        assertNotNull(move["expected_revision"])
+        assertEquals("/workspace/target", cache.session(key)?.worktreePath)
+        peer.rpc.request("session.interrupt", buildJsonObject { put("session_id", key); put("profile", "work") })
+        assertEquals(JsonPrimitive(4), peer.frames.last().getValue("params").jsonObject["execution_generation"])
+        peer.rpc.close()
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
         var refuseRegistryAfterCreate = false
@@ -383,6 +405,7 @@ class CanonicalGatewayRpcTest {
                         snapshot()
                     }
                     "session.control.read" -> """{"control":{"goal":null,"loop":null,"heartbeat":null,"revision":"","updated_at":0}}"""
+                    "projects.tree" -> """{"projects":[{"id":"public-project","label":"Public project","path":"/workspace/target","repos":[],"previewSessions":[]}]}"""
                     "session.info" -> confirmationOwner?.let { """{"profile_id":"$it","desktop_protocol":"hermes-gateway-v1"}""" } ?: "{}"
                     "session.resume" -> snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
                     "session.list" -> {
@@ -425,6 +448,7 @@ class CanonicalGatewayRpcTest {
                                 payload.forEach { (key, value) -> put(key, value) }
                             }
                             if (operation == "branch") { put("branched_session_id", "public-child"); put("copied_messages", 2) }
+                            if (operation == "workspace") { expectedGeneration = 4; put("execution_generation", 4) }
                             if (operation == "model" && "confirm" !in payload) {
                                 put("status", "confirmation_required"); put("confirm_required", true)
                                 put("confirm", "public-confirmation"); put("confirm_message", "Confirm this model change.")

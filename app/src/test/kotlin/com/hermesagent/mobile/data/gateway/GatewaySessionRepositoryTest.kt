@@ -2766,6 +2766,58 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `move project uses actual owner roster and durable workspace mutation`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        cache.upsertSession(SessionSummary("durable-a", "Research", "", CLOCK, remoteProfile = "research"))
+        repository.openSession("durable-a", "research")
+        val targets = repository.sessionProjectTargets("durable-a")
+        assertEquals(listOf("project-mobile"), targets.map { it.id })
+        assertEquals("research", rpc.call("projects.tree").params.string("profile"))
+        repository.moveSessionToProject("durable-a", targets.single())
+        val request = rpc.call("session.workspace.move").params
+        assertEquals("durable-a", request.string("session_key"))
+        assertEquals("research", request.string("profile"))
+        assertEquals("/work/hermes-mobile", request.string("cwd"))
+        assertEquals("/work/hermes-mobile", cache.session("durable-a")?.worktreePath)
+    }
+
+    @Test
+    fun `move project rejects stale picker path without mutation`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val target = repository.sessionProjectTargets("durable-a").single()
+        rpc.projectTreeResult = """{"projects":[]}"""
+        assertTrue(runCatching { repository.moveSessionToProject("durable-a", target) }.isFailure)
+        assertTrue(rpc.calls.none { it.method == "session.workspace.move" })
+    }
+
+    @Test
+    fun `move project stale endpoint never resolves or writes on replacement`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val target = repository.sessionProjectTargets("durable-a").single()
+        val endpoint = cache.endpointGeneration.value
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        val before = rpc.calls.toList()
+        assertTrue(runCatching { repository.moveSessionToProject("durable-a", target, endpoint) }.isFailure)
+        assertEquals(before, rpc.calls)
+    }
+
+    @Test
     fun `project overview and drill in keep backend identity and membership`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -9654,6 +9706,7 @@ class GatewaySessionRepositoryTest {
                     projectTreeFailure?.let { throw it }
                     projectTreeResponse?.await() ?: json(projectTreeResult)
                 }
+                "session.workspace.move" -> json("""{"cwd":"/work/hermes-mobile","branch":null,"git_repo_root":null}""")
                 "projects.project_sessions" -> projectDetailsResponse?.await() ?: json(projectDetailsResult)
                 "projects.create" -> projectCreateResponse?.await() ?: json(projectCreateResult)
                 "session.resume" -> {

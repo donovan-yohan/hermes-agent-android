@@ -262,7 +262,11 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             synchronized(stateLock) {
                 if (operation != "branch") mutations.remove(key)
                 value.number("revision")?.let { revision -> snapshots[owner]?.let { previous ->
-                    snapshots[owner] = previous.copy(revision = maxOf(previous.revision, revision))
+                    snapshots[owner] = previous.copy(
+                        revision = maxOf(previous.revision, revision),
+                        generation = if (operation == "workspace") value.number("execution_generation")
+                            ?.takeIf { it >= previous.generation } ?: previous.generation else previous.generation,
+                    )
                 } }
                 if (operation == "model") {
                     if (payload.text("confirm") != null) modelConfirmations.remove(owner to suppliedPayload)

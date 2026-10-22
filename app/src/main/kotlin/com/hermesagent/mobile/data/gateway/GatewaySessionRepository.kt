@@ -417,6 +417,9 @@ interface GatewaySessionRepository {
 
     suspend fun renameSession(durableId: String, title: String): String =
         error("Session renaming is not implemented by this repository.")
+    suspend fun sessionProjectTargets(durableId: String): List<ProjectSummary> = emptyList()
+    suspend fun moveSessionToProject(durableId: String, project: ProjectSummary, expectedEndpointGeneration: Long? = null): Unit =
+        error("Moving sessions is not implemented by this repository.")
     suspend fun deleteSession(durableId: String): Unit =
         error("Session deletion is not implemented by this repository.")
 
@@ -4539,6 +4542,56 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    override suspend fun sessionProjectTargets(durableId: String): List<ProjectSummary> {
+        val connection = connectionSnapshot()
+        val profile = owningProfileParam(durableId)
+        val result = connection.client.request("projects.tree", buildJsonObject {
+            put("preview_limit", JsonPrimitive(0))
+            profile?.let { put("profile", JsonPrimitive(it)) }
+        })
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val cwd = cache.session(durableId)?.worktreePath
+        val currentProjectId = projectOwningCwd(result, cwd)
+        return parseProjectOverview(result, clock()).projects.filter {
+            !it.isHome && !it.path.isNullOrBlank() && it.id != currentProjectId
+        }
+    }
+
+    override suspend fun moveSessionToProject(durableId: String, project: ProjectSummary, expectedEndpointGeneration: Long?) {
+        requireEndpoint(expectedEndpointGeneration)
+        val binding = ensureRuntime(durableId, expectedEndpointGeneration)
+        navigationMutex.withLock {
+        requireEndpoint(expectedEndpointGeneration)
+        val connection = connectionSnapshot(binding)
+        val targetId = binding.durableId
+        val profile = owningProfileParam(targetId)
+        // Refresh the actual owner's roster before accepting a picker snapshot.
+        val target = sessionProjectTargets(targetId).singleOrNull { it.id == project.id && it.path == project.path }
+            ?: throw GatewayRpcException("That project is no longer available. Reopen Move to project.")
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val result = requestAtEndpointDispatch(connection, connection.endpointGeneration,
+            "session.workspace.move", buildJsonObject {
+                if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+                    // Canonical adapter resolves this qualified runtime identity before session.mutate.
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                } else put("session_key", JsonPrimitive(binding.durableId))
+                put("cwd", JsonPrimitive(requireNotNull(target.path)))
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            }).asObject("session.workspace.move")
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            val cwd = result.string("cwd")?.takeIf(String::isNotBlank)
+                ?: throw GatewayRpcException("The Gateway did not confirm the move. Reopen the session to check.")
+            worktreeByDurableId[targetId] = cwd
+            val branch = result.string("branch")
+            if (branch == null) branchByDurableId.remove(targetId) else branchByDurableId[targetId] = branch
+            cache.session(targetId)?.let { cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch)) }
+        }
+        // Membership is backend-owned; do not infer it from a path on the phone.
+        refreshProjects()
+    }
+    }
+
     override suspend fun renameSession(durableId: String, title: String): String {
         require(durableId.isNotBlank()) { "Cannot rename a session without a durable id." }
         val trimmed = title.trim()
@@ -7541,7 +7594,10 @@ private fun parseProject(root: JsonObject, nowMillis: Long): ProjectSummary {
     return ProjectSummary(
         id = id,
         label = root.string("label")?.ifBlank { id } ?: id,
-        path = root.string("path")?.takeIf(String::isNotBlank),
+        path = (root.string("path")?.takeIf(String::isNotBlank)
+            ?: (root["repos"] as? JsonArray).orEmpty().firstNotNullOfOrNull {
+                (it as? JsonObject)?.string("path")?.takeIf(String::isNotBlank)
+            })?.trim(),
         isAuto = root.boolean("isAuto") == true,
         isHome = root.boolean("isNoProject") == true,
         sessionCount = root.primitive("sessionCount")?.toIntOrNull() ?: previews.size,

@@ -254,6 +254,7 @@ fun sessionActionItems(
     pinned: Boolean = false,
     /** Either unread source: the backend's durable watermark or this client's finished-turn dot. */
     unread: Boolean = false,
+    moveAvailable: Boolean = false,
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
@@ -271,7 +272,7 @@ fun sessionActionItems(
         },
         Branch,
         Export,
-        MoveToProject,
+        MoveToProject.copy(available = moveAvailable),
         Archive,
         Delete,
     )
@@ -404,6 +405,7 @@ internal fun SessionActionsControl(
     unread: Boolean = false,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
+    projectActions: SessionProjectActions? = null,
     /**
      * Pin, read-state and archive, all deliberately **not** `suspend`.
      *
@@ -425,6 +427,7 @@ internal fun SessionActionsControl(
     if (!hasSessionActions(sessionId)) return
 
     var expanded by remember(sessionId) { mutableStateOf(false) }
+    var moveOpen by remember(sessionId) { mutableStateOf(false) }
     var renameOpen by remember(sessionId) { mutableStateOf(false) }
     var deleteOpen by remember(sessionId) { mutableStateOf(false) }
     var copyStatus by remember(sessionId) { mutableStateOf(SessionIdCopyStatus.Idle) }
@@ -469,13 +472,17 @@ internal fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, copyStatus, pinned, unread) },
+            items = { sessionActionItems(sessionId, copyStatus, pinned, unread, moveAvailable = projectActions != null) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
             },
             onSelect = { item ->
                 when (item) {
+                    MoveToProject.copy(available = true) -> {
+                        expanded = false
+                        moveOpen = true
+                    }
                     Rename -> {
                         expanded = false
                         renameOpen = true
@@ -510,6 +517,14 @@ internal fun SessionActionsControl(
                     else -> error("unhandled session action: ${item.label}")
                 }
             },
+        )
+    }
+
+    if (moveOpen && projectActions != null) {
+        MoveSessionProjectDialog(
+            load = { projectActions.load(sessionId) },
+            move = { projectActions.move(sessionId, it) },
+            onDismiss = { moveOpen = false },
         )
     }
 

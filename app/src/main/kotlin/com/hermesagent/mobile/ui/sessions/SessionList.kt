@@ -156,6 +156,7 @@ fun SessionList(
     onSelectProjectSession: (SessionSummary) -> Unit = {},
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
+    sessionProjectActions: SessionProjectActions? = null,
     /** Not `suspend`: the row that owns the press leaves the list it was on. */
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
@@ -486,6 +487,7 @@ fun SessionList(
                             nowMillis = nowMillis,
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelectProjectSession,
+                            sessionProjectActions = sessionProjectActions,
                             canCreate = canCreate,
                             onCreate = { onSelectProject(project.id); onCreate() },
                         )
@@ -676,6 +678,7 @@ fun SessionList(
                                     },
                                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(row.session.id, newTitle) } },
                                     onDelete = onDeleteSession?.let { delete -> { delete(row.session.id) } },
+                                    projectActions = sessionProjectActions,
                                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(row.session.id, pinned) } },
                                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(row.session.id, unread) } },
                                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(row.session.id, archived) } },
@@ -985,6 +988,7 @@ private fun ProjectRow(
     nowMillis: Long,
     onOpen: () -> Unit,
     onSelectSession: (SessionSummary) -> Unit,
+    sessionProjectActions: SessionProjectActions?,
     canCreate: Boolean,
     onCreate: () -> Unit,
 ) {
@@ -1055,6 +1059,7 @@ private fun ProjectRow(
                 active = session.id == activeSessionId,
                 onClick = { onSelectSession(session) },
                 nowMillis = nowMillis,
+                projectActions = sessionProjectActions,
             )
         }
     }
@@ -1392,6 +1397,7 @@ private fun SessionRow(
     owner: HermesProfile? = null,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
+    projectActions: SessionProjectActions? = null,
     onSetPinned: ((Boolean) -> Unit)? = null,
     onSetUnread: ((Boolean) -> Unit)? = null,
     onSetArchived: ((Boolean) -> Unit)? = null,
@@ -1567,6 +1573,7 @@ private fun SessionRow(
             unread = unread,
             onRename = onRename,
             onDelete = onDelete,
+            projectActions = projectActions,
             onSetPinned = onSetPinned,
             onSetUnread = onSetUnread,
             onSetArchived = onSetArchived,

@@ -74,6 +74,28 @@ class SessionActionsMenuJourneyTest {
     val compose = createComposeRule()
 
     @Test
+    fun `move opens fresh project picker and selected target dispatches once`() {
+        var loaded: String? = null
+        var moved: String? = null
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                SessionActionsControl(sessionId = FIRST_ID, projectActions = SessionProjectActions(
+                    load = { loaded = it; listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Demo project", "/work/demo")) },
+                    move = { id, project -> moved = "$id:${project.id}" },
+                ))
+            }
+        }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
+        compose.waitForIdle()
+        assertEquals(FIRST_ID, loaded)
+        compose.onNodeWithText("Demo project").performClick()
+        compose.waitForIdle()
+        assertEquals("$FIRST_ID:p", moved)
+        compose.onNodeWithText("Demo project").assertDoesNotExist()
+    }
+
+    @Test
     fun `every row carries its own full-size actions control`() {
         launchSessionList()
 
