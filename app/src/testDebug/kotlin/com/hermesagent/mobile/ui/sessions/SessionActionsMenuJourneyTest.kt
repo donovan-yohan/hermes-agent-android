@@ -74,6 +74,21 @@ class SessionActionsMenuJourneyTest {
     val compose = createComposeRule()
 
     @Test
+    fun `branch is live only with an owner and dismisses before dispatch`() {
+        var branches = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                SessionActionsControl(sessionId = FIRST_ID, onBranch = { branches++ })
+            }
+        }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(1, branches)
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+    }
+
+    @Test
     fun `every row carries its own full-size actions control`() {
         launchSessionList()
 

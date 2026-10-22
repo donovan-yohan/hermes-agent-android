@@ -18,6 +18,23 @@ import org.junit.After
 class CanonicalBranchRegressionTest {
     @After fun resetMain() { Dispatchers.resetMain() }
     @Test
+    fun `menu whole branch hydrates canonical child and first prompt uses child owner`() = runTest {
+        fixture("work") { peer, cache, _, viewModel, parent ->
+            viewModel.branchSession(parent)
+            runCurrent()
+            val child = requireNotNull(viewModel.uiState.value.activeSessionId)
+            assertNotEquals(parent, child)
+            assertFalse(peer.calls("session.mutate").single().getValue("payload").jsonObject.containsKey("through_message_id"))
+            assertTrue(cache.transcript(child).isNotEmpty())
+            viewModel.setDraft("Continue whole branch")
+            viewModel.submit()
+            runCurrent()
+            val prompt = peer.calls("prompt.submit").single()
+            assertEquals(JsonPrimitive("public-child"), prompt["session_id"])
+            assertEquals(JsonPrimitive("work"), prompt["profile"])
+        }
+    }
+    @Test
     fun `viewmodel branch immediately sends and stops hydrated child on launch and named owner`() = runTest {
         for (profile in listOf(null, "work")) fixture(profile) { peer, cache, _, viewModel, parent ->
             val latest = cache.transcript(parent).filterIsInstance<AssistantTurn>().last()

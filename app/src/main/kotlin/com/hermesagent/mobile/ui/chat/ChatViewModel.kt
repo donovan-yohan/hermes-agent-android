@@ -2429,6 +2429,35 @@ internal class ChatViewModel(
         }
     }
 
+    private val branchingSessions = mutableSetOf<String>()
+
+    /** Whole-history branching uses the repository's backend-owned copy, never the visible page. */
+    fun branchSession(id: String) {
+        if (refuseBotChatMutation(id) != null) return
+        if (id.isBlank() || !branchingSessions.add(id)) return
+        val endpoint = cache.endpointGeneration.value
+        val selected = activeSessionId.value
+        val navigation = navigationGeneration
+        val profile = profileScopeGeneration
+        viewModelScope.launch {
+            try {
+                val child = repository.branchSessionAtEndpoint(id, endpoint)
+                if (cache.endpointGeneration.value == endpoint && activeSessionId.value == selected &&
+                    navigationGeneration == navigation && profileScopeGeneration == profile) {
+                    selectSession(child)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                if (cache.endpointGeneration.value == endpoint) {
+                    noticeLine = "Branch failed. Check the Gateway and try again."
+                }
+            } finally {
+                branchingSessions.remove(id)
+            }
+        }
+    }
+
     fun branchFromReply(entryId: String) {
         if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value

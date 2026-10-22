@@ -1381,9 +1381,67 @@ class GatewaySessionRepositoryTest {
 
         // without count
         repository.branchSession("durable-a", null)
-        val paramsWithoutCount = rpc.calls.last { it.method == "session.branch" }.params
+        val paramsWithoutCount = rpc.calls.last { it.method == "session.branch_whole" }.params
         assertEquals("runtime-a", paramsWithoutCount.string("session_id"))
         assertFalse("count" in paramsWithoutCount)
+        assertTrue(paramsWithoutCount.string("idempotency_key")?.isNotBlank() == true)
+    }
+
+    @Test
+    fun `whole branch falls back only for missing method and keeps retry key`() = runTest {
+        for (code in listOf(-32601, -32000)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                branchResult = CREATE
+                wholeBranchFailure = GatewayRpcError(code, "synthetic refusal")
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            val result = runCatching { repository.branchSession("durable-a", null) }
+            val first = rpc.calls.last { it.method == "session.branch_whole" }.params
+            if (code == -32601) {
+                assertTrue(result.isSuccess)
+                assertEquals(first, rpc.calls.last { it.method == "session.branch" }.params)
+            } else {
+                assertTrue(result.isFailure)
+                assertTrue(rpc.calls.none { it.method == "session.branch" })
+                runCatching { repository.branchSession("durable-a", null) }
+                assertEquals(first, rpc.calls.last { it.method == "session.branch_whole" }.params)
+            }
+        }
+    }
+
+    @Test
+    fun `menu whole branch resumes unopened stored row without reentrant navigation lock`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { branchResult = CREATE }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val child = repository.branchSessionAtEndpoint("durable-a", cache.endpointGeneration.value)
+        assertTrue(child.isNotBlank())
+        assertTrue(rpc.calls.any { it.method == "session.resume" })
+        assertTrue(rpc.calls.any { it.method == "session.branch_whole" })
+    }
+
+    @Test
+    fun `menu whole branch stale endpoint is refused before resolving runtime`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val endpoint = cache.endpointGeneration.value
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        val before = rpc.calls.toList()
+        assertTrue(runCatching { repository.branchSessionAtEndpoint("durable-a", endpoint) }.isFailure)
+        assertEquals(before, rpc.calls)
     }
 
     @Test
@@ -9565,6 +9623,7 @@ class GatewaySessionRepositoryTest {
     }
 
     private class FakeRpc : EndpointDispatchingGatewayRpcClient {
+        var wholeBranchFailure: Throwable? = null
         private val eventChannel = Channel<GatewayEvent>(capacity = 1_024)
         override val events = eventChannel.receiveAsFlow()
         val calls = mutableListOf<RpcCall>()
@@ -9676,6 +9735,7 @@ class GatewaySessionRepositoryTest {
                 }
                 "session.create" -> json(createResult)
                 "session.branch" -> json(branchResult)
+                "session.branch_whole" -> { wholeBranchFailure?.let { throw it }; json(branchResult) }
                 "model.options" -> modelOptionsResponse?.await() ?: json(modelOptionsResult)
                 "config.get" -> when (params.string("key")) {
                     "provider" -> json(providerResult)
