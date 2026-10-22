@@ -573,6 +573,41 @@ def _supplied_by_at(line: str) -> bool:
     return False
 
 
+def _revision_tokens(line: str, cited: str | None = None, *, full: bool = False) -> list[str]:
+    """Keep an explicitly Android-labelled revision out of an upstream binding.
+
+    Only explicit repository labels disambiguate mixed prose; unknown labels and
+    unlabelled revisions retain the existing fail-closed resolution behavior.
+    This applies to BOTH sides of a range, not only newly annotated citations.
+    """
+    pattern = FULL_SHA_RE if full else PIN_RE
+    if cited is None:
+        return pattern.findall(line) if full else _sha_tokens(line)
+    result = []
+    eligible = set(pattern.findall(line) if full else _sha_tokens(line))
+    labels = list(re.finditer(r"\b(android|mobile|desktop|gateway|upstream)\b", line, re.I))
+    for match in pattern.finditer(line):
+        if match.group() not in eligible:
+            continue
+        previous = [label for label in labels if label.end() <= match.start()]
+        if previous and previous[-1].group().lower() in ("android", "mobile"):
+            continue
+        result.append(match.group())
+    return result
+
+
+def _line_revision_tokens(lines: list[str], index: int, cited: str | None = None, *, full: bool = False) -> list[str]:
+    line = lines[index]
+    # A wrapped declaration can put the label at the previous line's end:
+    # "Desktop <sha> and Android baseline" / "<sha> ...". Carry the LABEL,
+    # not the preceding revision, so two repositories remain distinguishable.
+    if index and re.match(r"^\s*`?[0-9a-f]{40}\b", line):
+        labels = list(re.finditer(r"\b(android|mobile|desktop|gateway|upstream)\b", lines[index - 1], re.I))
+        if labels:
+            line = labels[-1].group() + " " + line
+    return _revision_tokens(line, cited, full=full)
+
+
 def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | None:
     """Tokens of the earlier citation that names this same path, if there is one.
 
@@ -601,9 +636,9 @@ def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | N
             for match in PATH_RE.finditer(line)
         ):
             continue
-        tokens = _sha_tokens(line)
+        tokens = _line_revision_tokens(lines, index, cited)
         if not tokens and index + 1 < len(lines) and not PATH_RE.search(lines[index + 1]):
-            tokens = _sha_tokens(lines[index + 1])
+            tokens = _line_revision_tokens(lines, index + 1, cited)
         return tokens
     return None
 
@@ -670,7 +705,7 @@ def _borrowed_above(lines: list[str], number: int) -> bool:
     return False
 
 
-def _declaration(lines: list[str], number: int) -> str | None:
+def _declaration(lines: list[str], number: int, cited: str | None = None) -> str | None:
     """The full-SHA declaration nearest above, within the citation's section.
 
     A declaration is prose or a table row that assigns a revision — as opposed
@@ -692,6 +727,8 @@ def _declaration(lines: list[str], number: int) -> str | None:
         row = rows.get(index)
         if row is not None:
             pin, row_marker, general = row
+            if pin not in _line_revision_tokens(lines, index, cited, full=True):
+                continue
             if general:
                 return pin
             if row_marker is not None and row_marker == marker_name:
@@ -704,13 +741,13 @@ def _declaration(lines: list[str], number: int) -> str | None:
             or _continuation_of_above(lines, index + 1)
         ):
             continue
-        named = FULL_SHA_RE.findall(line)
+        named = _line_revision_tokens(lines, index, cited, full=True)
         if named:
             return named[0]
     return None
 
 
-def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, bool]], marker: str | None) -> str | None:
+def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, bool]], marker: str | None, cited: str | None = None) -> str | None:
     """The pin a page declares in its own `## Pin` section, marker-aware.
 
     This is where a page states what governs the citations below it. Its first
@@ -738,11 +775,13 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
                 or _continuation_of_above(lines, index)
             ):
                 continue
-            named = FULL_SHA_RE.findall(line)
+            named = _line_revision_tokens(lines, index - 1, cited, full=True)
             if named and general is None:
                 general = named[0]
             continue
         pin, row_marker, is_general = row
+        if pin not in _line_revision_tokens(lines, index - 1, cited, full=True):
+            continue
         if is_general and general is None:
             general = pin
         elif row_marker is not None:
@@ -752,7 +791,7 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
     return general
 
 
-def _nearest_sha_above(lines: list[str], number: int) -> str | None:
+def _nearest_sha_above(lines: list[str], number: int, cited: str | None = None) -> str | None:
     """Last resort: the nearest revision-shaped token above, within the section.
 
     Reached only when nothing else has bound the citation — no revision on its
@@ -768,7 +807,7 @@ def _nearest_sha_above(lines: list[str], number: int) -> str | None:
     the text is talking *about*, not the revision the citation was taken at.
     """
     for index in range(number - 2, _section_start(lines, number) - 2, -1):
-        named = FULL_SHA_RE.findall(lines[index])
+        named = _line_revision_tokens(lines, index, cited, full=True)
         if named:
             return named[0]
     return None
@@ -803,13 +842,13 @@ def citation_pin(
     (only 26 name a single one), and a change that moves one stamp is not
     answerable for the citations that still name another.
     """
-    own = _sha_tokens(lines[number - 1])
+    own = _line_revision_tokens(lines, number - 1, cited)
     if not own:
         following = lines[number] if number < len(lines) else ""
         # A continuation line carries the pin and nothing else; a line that also
         # carries a citation is a citation of its own, not this one's tail.
-        if not PATH_RE.search(following):
-            own = _sha_tokens(following)
+        if number < len(lines) and not PATH_RE.search(following):
+            own = _line_revision_tokens(lines, number, cited)
     if own:
         return _match_pin(own, introduced)
 
@@ -823,7 +862,7 @@ def citation_pin(
             if matched is not None:
                 return matched
 
-    declaring = _declaration(lines, number)
+    declaring = _declaration(lines, number, cited)
     if declaring is not None:
         return _match_pin([declaring], introduced)
 
@@ -832,7 +871,7 @@ def citation_pin(
         following = lines[number]
         if not PATH_RE.search(following):
             marker = MARKER_RE.search(following)
-    page = _page_declaration(lines, _table_rows(lines), marker.group(1) if marker else None)
+    page = _page_declaration(lines, _table_rows(lines), marker.group(1) if marker else None, cited)
     if page is not None:
         return _match_pin([page], introduced)
     if _borrowed_above(lines, number):
@@ -841,7 +880,7 @@ def citation_pin(
         # against. Answering with the single pin the change introduced is how a
         # borrowed row's neighbour gets judged against a revision it never named.
         return None
-    fallback = _nearest_sha_above(lines, number)
+    fallback = _nearest_sha_above(lines, number, cited)
     if fallback is not None:
         return _match_pin([fallback], introduced)
     return introduced[0] if len(introduced) == 1 else None

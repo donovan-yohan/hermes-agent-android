@@ -15,6 +15,7 @@ import io
 import pathlib
 import re
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -171,6 +172,33 @@ class CitationPinTest(unittest.TestCase):
         ]
         self.assertEqual(self.moved, gate.citation_pin(lines, 7, [self.moved, self.other]))
 
+    def test_mobile_foundation_does_not_bind_desktop_citations(self) -> None:
+        lines = ["## Pin and scope", "",
+                 f"Desktop/Gateway authority: `{self.moved}`.",
+                 f"Approved mobile foundation: `{self.other}`.", "",
+                 "- `apps/desktop/src/api/mcp.ts:38-53`"]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 6, [self.moved, self.other], "apps/desktop/src/api/mcp.ts"))
+
+    def test_wrapped_mixed_desktop_android_declaration_preserves_upstream_owner(self) -> None:
+        lines = ["## Later source audit", "",
+                 f"A source audit at Desktop `{self.moved}`",
+                 f"and Android baseline `{self.other}` preserves history.", "",
+                 "- `apps/desktop/src/api/mcp.ts:38-53`"]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 6, [self.moved, self.other], "apps/desktop/src/api/mcp.ts"))
+
+    def test_sha_on_wrapped_android_baseline_keeps_desktop_declaration(self) -> None:
+        lines = ["## Later source audit", "",
+                 f"Desktop `{self.moved}` and Android baseline",
+                 f"`{self.other}` preserves history.", "",
+                 "- `apps/desktop/src/api/mcp.ts:38-53`"]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 6, [self.moved, self.other], "apps/desktop/src/api/mcp.ts"))
+
+    def test_android_revision_on_following_line_is_not_upstream_citation_tail(self) -> None:
+        lines = ["## Pin", f"Desktop source: `{self.moved}`", "",
+                 "- `apps/desktop/src/api/mcp.ts:38-53`",
+                 f"Android baseline `{self.other}` remains distinct."]
+        self.assertEqual(self.moved, gate.citation_pin(lines, 4, [self.moved, self.other], "apps/desktop/src/api/mcp.ts"))
+
     def test_a_bare_continuation_inherits_the_paths_own_pin(self) -> None:
         # `use-statusbar-items.tsx:569` under a
         # `use-statusbar-items.tsx:281-294 @ <sha>` names the same file at the
@@ -263,6 +291,52 @@ class CitationExtractionTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(gate, "blob", side_effect=fake_blob))
             reason, _ = gate.carried_verdict("old", "new", "lib/x.ts", [(1, 3)])
         self.assertEqual("construct-moved", reason)
+
+
+class MixedOriginRangeTest(unittest.TestCase):
+    def test_real_range_preserves_upstream_checks_with_foreign_foundation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            upstream = pathlib.Path(directory) / "upstream"
+            mobile = pathlib.Path(directory) / "mobile"
+            def git(repo, *args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], text=True).strip()
+            def commit(repo, message):
+                git(repo, "add", "-A")
+                git(repo, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+                    "commit", "-qm", message)
+                return git(repo, "rev-parse", "HEAD")
+            for repo in (upstream, mobile):
+                repo.mkdir(); git(repo, "init", "-q")
+            source = upstream / "apps/desktop/src/fixture.ts"
+            source.parent.mkdir(parents=True); source.write_text("start\nmiddle\nend\n")
+            old = commit(upstream, "source")
+            source.write_text("start\nmiddle\nend\nextra\n")
+            good = commit(upstream, "byte true")
+            source.write_text("different\nmiddle\nend\nextra\n")
+            moved = commit(upstream, "moved")
+            carrier = mobile / "page.md"; carrier.write_text("foundation\n")
+            foundation = commit(mobile, "mobile foundation")
+            def page(pin):
+                return ("## Pin and scope\n\n" + f"Desktop/Gateway authority: `{pin}`.\n"
+                        + f"Approved mobile foundation: `{foundation}`.\n\n"
+                        + "- `apps/desktop/src/fixture.ts:1-3`\n")
+            carrier.write_text(page(old)); base = commit(mobile, "old citation")
+            carrier.write_text(page(good)); valid = commit(mobile, "true restamp")
+            carrier.write_text(page(moved)); invalid = commit(mobile, "drifted restamp")
+            carrier.write_text(page(good).replace(":1-3", ":1-99")); outside = commit(mobile, "invalid span")
+            gate._blobs.clear(); gate._tree_paths.clear(); gate._ensured.clear()
+            try:
+                with mock.patch.object(gate, "UPSTREAM", upstream), mock.patch.object(gate, "_READ", None), mock.patch.object(gate, "_DEADLINE", None):
+                    findings, counts, missing = gate.check_range(base, valid, repo=str(mobile))
+                    self.assertEqual([], findings); self.assertEqual({}, missing)
+                    self.assertGreaterEqual(counts["checked"], 1)
+                    findings, _, missing = gate.check_range(base, invalid, repo=str(mobile))
+                    self.assertEqual({}, missing)
+                    self.assertEqual(["construct-moved"], [f.reason for f in findings])
+                    findings, _, missing = gate.check_range(base, outside, repo=str(mobile))
+                    self.assertEqual({}, missing); self.assertTrue(findings)
+            finally:
+                gate._blobs.clear(); gate._tree_paths.clear(); gate._ensured.clear()
 
 
 class SelfTestTest(unittest.TestCase):
