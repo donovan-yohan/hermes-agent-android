@@ -4632,7 +4632,7 @@ internal class LiveGatewaySessionRepository(
         // Keep the shared runtime admission checks (including cron write
         // refusal) after resolving the preview's explicit owner.
         ensureRuntime(canonicalId, expectedEndpointGeneration)
-        navigationMutex.withLock {
+        val (connection, profile, target) = navigationMutex.withLock {
         requireEndpoint(expectedEndpointGeneration)
         val binding = synchronized(stateLock) {
             val runtime = identities.runtimeFor(canonicalId)
@@ -4665,8 +4665,14 @@ internal class LiveGatewaySessionRepository(
             worktreeByDurableId[targetId] = cwd
             val branch = result.string("branch")
             if (branch == null) branchByDurableId.remove(targetId) else branchByDurableId[targetId] = branch
-            cache.session(targetId)?.let { cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch)) }
+            cache.session(targetId)?.takeIf { it.remoteProfile == profile }
+                ?.let { cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch)) }
         }
+        Triple(connection, profile, target)
+        }
+        // The confirmed move is committed. Catalog repair must neither hold navigation
+        // across round trips nor turn a successful mutation into a retry invitation.
+        try {
         // Read the moved owner's catalog, not the rail selected while the mutation was held.
         // Overview reads preserve hydrated membership, so explicitly rehydrate those projects and
         // the destination before publishing. Never infer source removal from cwd locally.
@@ -4696,7 +4702,10 @@ internal class LiveGatewaySessionRepository(
                 }
             }
         }
-    }
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            // A later project refresh repairs membership; the write was confirmed above.
+        }
     }
     override suspend fun exportSession(durableId: String): ByteArray {
         val row = cache.session(durableId) ?: throw GatewayRpcException("That session is no longer available.")

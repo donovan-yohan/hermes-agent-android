@@ -3002,6 +3002,84 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `accepted move survives failed readback without replay`() = runTest {
+        val cache = SessionCache()
+        val held = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { workspaceMoveResponse = held }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a", "research")
+        val target = repository.sessionProjectTargets("durable-a").single()
+        val moved = async { runCatching { repository.moveSessionToProject("durable-a", target) } }
+        runCurrent()
+        rpc.projectTreeFailure = GatewayRpcException("readback unavailable")
+        held.complete(json("""{"cwd":"/work/hermes-mobile","branch":null}"""))
+        assertTrue("accepted write is not a failed move", moved.await().isSuccess)
+        assertEquals("/work/hermes-mobile", cache.session("durable-a")?.worktreePath)
+        assertEquals(1, rpc.calls.count { it.method == "session.workspace.move" })
+    }
+
+    @Test
+    fun `move readback does not hold navigation lock`() = runTest {
+        val cache = SessionCache()
+        val held = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { workspaceMoveResponse = held }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a", "research")
+        val target = repository.sessionProjectTargets("durable-a").single()
+        val moved = async { repository.moveSessionToProject("durable-a", target) }
+        runCurrent()
+        val readback = CompletableDeferred<JsonElement>()
+        rpc.projectTreeResponse = readback
+        held.complete(json("""{"cwd":"/work/hermes-mobile","branch":null}"""))
+        runCurrent()
+        val opened = async { repository.openSession("durable-b", "research") }
+        runCurrent()
+        try {
+            assertTrue("unrelated open must finish while catalog read waits", opened.isCompleted)
+            assertFalse(moved.isCompleted)
+        } finally {
+            readback.complete(json(PROJECT_TREE))
+        }
+        opened.await()
+        moved.await()
+    }
+
+    @Test
+    fun `move readback preserves foreign foreground row and transcript`() = runTest {
+        val cache = SessionCache()
+        val held = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { workspaceMoveResponse = held }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a", "research")
+        val source = requireNotNull(cache.session("durable-a"))
+        val target = repository.sessionProjectTargets(source, cache.endpointGeneration.value).single()
+        val moved = async { repository.moveSessionToProject(source, target, cache.endpointGeneration.value) }
+        runCurrent()
+        val readback = CompletableDeferred<JsonElement>()
+        rpc.projectTreeResponse = readback
+        held.complete(json("""{"cwd":"/work/hermes-mobile","branch":null}"""))
+        runCurrent()
+        cache.upsertSession(source.copy(remoteProfile = "beta", title = "Beta active", status = SessionStatus.Working))
+        cache.setTranscript(source.id, listOf(UserTurn("beta-turn", "Beta private", CLOCK)))
+        val active = cache.session(source.id)
+        val transcript = cache.transcript(source.id)
+        readback.complete(json(PROJECT_TREE))
+        moved.await()
+        assertSame(active, cache.session(source.id))
+        assertSame(transcript, cache.transcript(source.id))
+        assertEquals("research", cache.state.value.projectsForScope("research").sessionRows.getValue(source.id).remoteProfile)
+    }
+
+    @Test
     fun `move project rejects stale picker path without mutation`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -3292,11 +3370,12 @@ class GatewaySessionRepositoryTest {
             repository.openProject("project-mobile")
             rpc.sessionListResult = SESSION_LIST
             repository.refreshSessions()
-            val members = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
+            val members = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.state.value.projects.sessionRows.getValue(it) }
             assertEquals(listOf("durable-a", "durable-b"), filterSessionsByProfileScope(members, "research").map { it.id })
             assertTrue(filterSessionsByProfileScope(members, "other").isEmpty())
             repository.openSession("durable-a")
-            assertEquals("research", rpc.call("session.resume").params.string("profile"))
+            assertEquals("raw-ID open keeps the owner of its existing slot", if (sessionsFirst) null else "research",
+                rpc.call("session.resume").params.string("profile"))
         }
     }
 
@@ -3317,7 +3396,7 @@ class GatewaySessionRepositoryTest {
         repository.setProfileRouting(ProfileRouting(activeProfile = "research", listProfiles = listOf("research")))
         repository.refreshProjects()
         repository.openProject("project-mobile")
-        val namedMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
+        val namedMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.state.value.projects.sessionRows.getValue(it) }
         assertEquals(2, filterSessionsByProfileScope(namedMembers, "research").size)
         assertTrue(filterSessionsByProfileScope(namedMembers, DEFAULT_PROFILE).isEmpty())
         val live = cache.session("durable-a")!!.copy(status = SessionStatus.Working, title = "Live title")
@@ -3327,7 +3406,7 @@ class GatewaySessionRepositoryTest {
         repository.refreshProjects()
         assertEquals(live, cache.session("durable-a"))
         repository.openProject("project-mobile")
-        val launchMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.session(it)!! }
+        val launchMembers = cache.state.value.projects.memberships.getValue("project-mobile").map { cache.state.value.projects.sessionRows.getValue(it) }
         assertEquals(2, filterSessionsByProfileScope(launchMembers, "research").size)
         assertTrue(filterSessionsByProfileScope(launchMembers, DEFAULT_PROFILE).isEmpty())
         assertEquals(SessionStatus.Working, cache.session("durable-a")?.status)
@@ -8680,16 +8759,16 @@ class GatewaySessionRepositoryTest {
             repository.submit("durable-a", "keep going")
             assertEquals(profile, cache.session("durable-a")?.remoteProfile)
 
-            // Project rows can legitimately replace sidebar ownership. They
-            // must not replace the provenance of the runtime being recovered.
+            // Catalog rows cannot replace foreground ownership or the runtime
+            // provenance being recovered.
             val otherProfile = if (profile == null) "other" else null
             repository.setProfileRouting(ProfileRouting(activeProfile = otherProfile))
             repository.refreshProjects()
-            assertEquals(otherProfile, cache.session("durable-a")?.remoteProfile)
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
             clients.value = null
             connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
             runCurrent()
-            assertEquals(otherProfile, cache.session("durable-a")?.remoteProfile)
+            assertEquals(profile, cache.session("durable-a")?.remoteProfile)
 
             val second = FakeRpc()
             clients.value = second

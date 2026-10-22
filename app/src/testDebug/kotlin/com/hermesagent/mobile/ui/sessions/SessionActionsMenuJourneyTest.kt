@@ -29,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -204,6 +205,43 @@ class SessionActionsMenuJourneyTest {
         compose.waitForIdle()
         assertEquals(1, branches)
         compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun `bot chat leaves other ordinary row move available`() {
+        var moved = false
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(state = ChatUiState(botChat = true,
+                    sessionRows = listOf(SessionListRow.Row(session(FIRST_ID, FIRST_TITLE)))),
+                    actions = ChatActions(sessionProjectActions = SessionProjectActions(
+                        { _, _ -> listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Destination", "/work/destination")) },
+                        { id, _ -> assertEquals(FIRST_ID, id); moved = true })), onOpenSettings = {})
+            }
+        }
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithTag("Session row $FIRST_ID").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
+        compose.onNodeWithText("Destination").performClick()
+        compose.waitForIdle()
+        assertTrue(moved)
+    }
+
+    @Test
+    @Config(qualifiers = "w891dp-h320dp")
+    fun `short move picker keeps cancel reachable with many projects`() {
+        var dismissed = false
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                MoveSessionProjectDialog(load = { (1..30).map {
+                    com.hermesagent.mobile.data.session.ProjectSummary("p$it", "Destination $it", "/work/$it")
+                } }, move = {}, onDismiss = { dismissed = true })
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
+        assertTrue(dismissed)
     }
 
     @Test

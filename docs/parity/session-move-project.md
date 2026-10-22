@@ -27,7 +27,13 @@ After mutation, owner-scoped tree and project-details reads replace every previo
 hydrated membership plus the target membership, even when profile navigation changes
 while the move is held. The cache publishes to that owner's snapshot without switching
 or refreshing the active rail. Source removal is asserted from backend details, never
-inferred from the returned cwd. Android does not yet model git_repo_root; cwd/branch
+inferred from the returned cwd. Catalog summaries stay in their owner-scoped project
+snapshot and cannot replace a foreign foreground raw-ID row or its transcript. A
+confirmed move releases the navigation lock before best-effort catalog repair; a
+failed repair never reports the accepted write as failed. The ViewModel retains the
+operation if its preview row disappears. The entire picker scrolls in short windows,
+and Bot Chat blocks only its own row rather than unrelated ordinary sessions.
+Android does not yet model git_repo_root; cwd/branch
 receipt assertions do not certify git-root readback or actual-router acceptance.
 Errors stay generic and actionable; an uncertain move asks the reader to reopen the
 session rather than claiming rollback.

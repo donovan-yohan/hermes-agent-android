@@ -160,6 +160,8 @@ class CachedProjectPreviewJourneyTest {
         runCurrent()
         compose.waitForIdle()
         compose.onNodeWithText("beta project").assertIsDisplayed()
+        // Catalog refresh cannot steal a foreign foreground raw-ID slot.
+        cache.upsertSession(com.hermesagent.mobile.data.session.SessionSummary("s", "beta preview", "", NOW, remoteProfile = "beta"))
         assertEquals("beta", cache.session("s")?.remoteProfile)
         cache.upsertSession(requireNotNull(cache.session("s")).copy(title = "beta live"))
         cache.setTranscript("s", listOf(com.hermesagent.mobile.data.session.AssistantTurn("beta-turn", "Beta private reply", NOW)))

@@ -157,6 +157,7 @@ fun SessionList(
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
     sessionProjectActions: SessionProjectActions? = null,
+    moveBlockedSessionId: String? = null,
     onExportSession: (suspend (String) -> PreparedSessionExport)? = null,
     onExportProjectSession: (suspend (SessionSummary) -> PreparedSessionExport)? = null,
     onBranchSession: ((String) -> Unit)? = null,
@@ -492,6 +493,7 @@ fun SessionList(
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelectProjectSession,
                             sessionProjectActions = sessionProjectActions,
+                            moveBlockedSessionId = moveBlockedSessionId,
                             onExportSession = onExportProjectSession,
                             onBranchSession = onBranchProjectSession,
                             canCreate = canCreate,
@@ -672,7 +674,10 @@ fun SessionList(
                                 is SessionListRow.Row -> SessionRow(
                                     session = row.session,
                                     active = row.session.id == activeSessionId,
-                                    onClick = { onSelect(row.session.id) },
+                                    onClick = {
+                                        if (selectedProject != null) onSelectProjectSession(row.session)
+                                        else onSelect(row.session.id)
+                                    },
                                     nowMillis = nowMillis,
                                     // A single-profile scope already says which
                                     // profile every row belongs to, so the tag only
@@ -684,9 +689,13 @@ fun SessionList(
                                     },
                                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(row.session.id, newTitle) } },
                                     onDelete = onDeleteSession?.let { delete -> { delete(row.session.id) } },
-                                    projectActions = sessionProjectActions,
-                                    onExport = onExportSession?.let { export -> { export(row.session.id) } },
-                                    onBranch = onBranchSession?.let { branch -> { branch(row.session.id) } },
+                                    projectActions = sessionProjectActions.takeUnless { row.session.id == moveBlockedSessionId },
+                                    onExport = if (selectedProject != null) {
+                                        onExportProjectSession?.let { export -> { export(row.session) } }
+                                    } else onExportSession?.let { export -> { export(row.session.id) } },
+                                    onBranch = if (selectedProject != null) {
+                                        onBranchProjectSession?.let { branch -> { branch(row.session) } }
+                                    } else onBranchSession?.let { branch -> { branch(row.session.id) } },
                                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(row.session.id, pinned) } },
                                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(row.session.id, unread) } },
                                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(row.session.id, archived) } },
@@ -997,6 +1006,7 @@ private fun ProjectRow(
     onOpen: () -> Unit,
     onSelectSession: (SessionSummary) -> Unit,
     sessionProjectActions: SessionProjectActions?,
+    moveBlockedSessionId: String?,
     onExportSession: (suspend (SessionSummary) -> PreparedSessionExport)?,
     onBranchSession: ((SessionSummary) -> Unit)?,
     canCreate: Boolean,
@@ -1069,7 +1079,7 @@ private fun ProjectRow(
                 active = session.id == activeSessionId,
                 onClick = { onSelectSession(session) },
                 nowMillis = nowMillis,
-                projectActions = sessionProjectActions,
+                projectActions = sessionProjectActions.takeUnless { session.id == moveBlockedSessionId },
                 onExport = onExportSession?.let { export -> { export(session) } },
                 onBranch = onBranchSession?.let { branch -> { branch(session) } },
             )

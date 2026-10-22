@@ -109,6 +109,7 @@ class SessionCache {
             val sessions = current.sessions.toMutableMap()
             rows.flatMap(ProjectSummary::previewSessions).forEach { preview ->
                 val existing = sessions[preview.id]
+                if (existing != null && existing.remoteProfile != preview.remoteProfile) return@forEach
                 sessions[preview.id] = existing?.copy(
                     // A preview can correct scope, but must not replace richer
                     // session-list metadata or an in-flight turn's state.
@@ -128,6 +129,8 @@ class SessionCache {
                     putAll(previous.sessionProfiles.filterKeys { it in retainedIds })
                     rows.flatMap(ProjectSummary::previewSessions).forEach { put(it.id, it.remoteProfile) }
                 },
+                sessionRows = previous.sessionRows.filterKeys { it in memberships.values.flatten().toSet() } +
+                    rows.flatMap(ProjectSummary::previewSessions).associateBy(SessionSummary::id),
             )
             if (sessions == current.sessions && catalog == previous) {
                 current
@@ -161,6 +164,7 @@ class SessionCache {
             val mergedSessions = current.sessions.toMutableMap()
             sessions.forEach { row ->
                 val existing = mergedSessions[row.id]
+                if (existing != null && existing.remoteProfile != row.remoteProfile) return@forEach
                 mergedSessions[row.id] = if (existing == null) {
                     row
                 } else {
@@ -185,6 +189,7 @@ class SessionCache {
                 hydratedProjectIds = previous.hydratedProjectIds + project.id,
                 available = true,
                 sessionProfiles = previous.sessionProfiles + sessions.associate { it.id to it.remoteProfile },
+                sessionRows = previous.sessionRows + sessions.associateBy(SessionSummary::id),
             )
             if (mergedSessions == current.sessions && catalog == previous) {
                 current
@@ -271,6 +276,7 @@ class SessionCache {
                         },
                         memberships = catalog.memberships.mapValues { (_, ids) -> ids.filterNot { it == id } },
                         sessionProfiles = catalog.sessionProfiles - id,
+                        sessionRows = catalog.sessionRows - id,
                     )
                     if (next == catalog) catalog else next
                 }
@@ -374,6 +380,9 @@ class SessionCache {
                     sessionProfiles = if (catalog.sessionProfiles.containsKey(fromId)) {
                         catalog.sessionProfiles - fromId + (targetId to canonical.remoteProfile)
                     } else catalog.sessionProfiles,
+                    sessionRows = if (catalog.sessionRows.containsKey(fromId)) {
+                        catalog.sessionRows - fromId + (targetId to canonical)
+                    } else catalog.sessionRows,
                 )
                 if (next == catalog) catalog else next
             }

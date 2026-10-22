@@ -29,4 +29,6 @@ data class ProjectCatalogState(
     val available: Boolean? = null,
     /** Actual session owners from this route's project replies; null is legacy unstamped. */
     val sessionProfiles: Map<String, String?> = emptyMap(),
+    /** Catalog-owned summaries never replace another owner's foreground raw-ID slot. */
+    val sessionRows: Map<String, SessionSummary> = emptyMap(),
 )

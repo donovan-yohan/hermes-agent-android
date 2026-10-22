@@ -44,7 +44,8 @@ internal fun MoveSessionProjectDialog(
     }
     Dialog(onDismissRequest = { if (!busy) onDismiss() }) {
         Column(Modifier.fillMaxWidth().background(tokens.cardSurface, RoundedCornerShape(10.dp))
-            .border(1.dp, tokens.strokePrimary, RoundedCornerShape(10.dp)).padding(20.dp),
+            .border(1.dp, tokens.strokePrimary, RoundedCornerShape(10.dp))
+            .verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(MOVE_TO_PROJECT, style = HermesTheme.type.bodyStrong, color = tokens.textPrimary)
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {

@@ -580,7 +580,8 @@ private fun SessionsPane(
         modifier = modifier,
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,
-        sessionProjectActions = actions.sessionProjectActions.takeUnless { state.botChat },
+        sessionProjectActions = actions.sessionProjectActions,
+        moveBlockedSessionId = state.activeSession?.id?.takeIf { state.botChat },
         onExportSession = actions.onExportSession,
         onExportProjectSession = actions.onExportProjectSession?.let { export ->
             { session -> export(session, state.diagnosticsEndpointGeneration) }
