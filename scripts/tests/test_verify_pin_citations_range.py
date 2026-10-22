@@ -319,7 +319,7 @@ class MixedOriginRangeTest(unittest.TestCase):
             def page(pin):
                 return ("## Pin and scope\n\n" + f"Desktop/Gateway authority: `{pin}`.\n"
                         + f"Approved mobile foundation: `{foundation}`.\n\n"
-                        + "- `apps/desktop/src/fixture.ts:1-3`\n")
+                        + "- `apps/desktop/src/fixture.ts" + ":1-3`\n")
             carrier.write_text(page(old)); base = commit(mobile, "old citation")
             carrier.write_text(page(good)); valid = commit(mobile, "true restamp")
             carrier.write_text(page(moved)); invalid = commit(mobile, "drifted restamp")
