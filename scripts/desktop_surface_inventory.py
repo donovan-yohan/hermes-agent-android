@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -12,14 +13,18 @@ BASE = '65080e8a37e8d546869528e43c162503015b94c7'
 ROOTS = ('apps/desktop/src/', 'apps/desktop/electron/')
 SIGNALS = re.compile(r'onClick=|onSelect=|onCheckedChange=|onValueChange=|registerCommand\(|register[A-Z]\w*\(|ipcMain\.handle\(|Menu\.buildFromTemplate|<Route\b|path:|id:')
 
+# A missing blob must fail, never lazily fetch into the read-only reference.
+READ_ENV = dict(os.environ, GIT_NO_LAZY_FETCH='1', GIT_OPTIONAL_LOCKS='0',
+                GIT_TERMINAL_PROMPT='0', GIT_ALLOW_PROTOCOL='')
+
 def git(root, *args):
-    return subprocess.check_output(['git', '-C', str(root), *args], text=True)
+    return subprocess.check_output(['git', '-C', str(root), *args], text=True, env=READ_ENV)
 
 def read_sources(upstream, paths):
     """Read immutable blobs in one read-only Git process (not one fork per file)."""
     payload = ''.join(f'{PIN}:{p}\n' for p in paths).encode()
     raw = subprocess.run(['git', '-C', str(upstream), 'cat-file', '--batch'], input=payload,
-                         stdout=subprocess.PIPE, check=True).stdout
+                         stdout=subprocess.PIPE, check=True, env=READ_ENV).stdout
     result, offset = {}, 0
     for path in paths:
         end = raw.index(b'\n', offset)

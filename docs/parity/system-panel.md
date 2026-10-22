@@ -64,6 +64,21 @@ Every `path:line` below is against that SHA.
 | Overlay scrim `bg-black/22 backdrop-blur-[0.125rem]` (`app/overlays/overlay-view.tsx:77`) | Black at 32%, no blur (`HermesTokens.overlayScrim`) | Android composites no backdrop blur behind a modal, so the alpha carries the whole separation on its own |
 | Lemniscate loader | `WorkingDots` | The app's one reduced-motion-safe working indicator |
 
+## Candidate-source control audit (2026-10-22; not a visual repin)
+
+A separate [nested-control audit](desktop-control-reconciliation.md) inspected
+Desktop `81a55437f3f31a9f12a30c53b6c5d49d420898aa` separately. It does not replace
+the historical Pin or report below. At that candidate, Recent logs imports real nested controls:
+previous/next match (`apps/desktop/src/components/chat/log-search.tsx:89-103`),
+Clear (`apps/desktop/src/components/ui/search-field.tsx:114-128`), and Copy / Jump
+to top / Jump to bottom (`apps/desktop/src/components/chat/log-tail.tsx:90-122`).
+Those actions are absent from the baseline System placeholder, not implemented
+by its painted labels. #127 owns the missing controls as well as retrieval and
+redaction. Command Center Maintenance also has curator and builtin-memory reset
+operations; those remain separate #73 omissions, not part of a logs feature.
+The Android comparison baseline is `65080e8a37e8d546869528e43c162503015b94c7`.
+The historical ledger below retains Desktop `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+
 ## Divergences
 
 Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the argument.

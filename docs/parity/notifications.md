@@ -267,6 +267,25 @@ here rather than in the table under a class they would not earn.
   suppresses it anyway. Kept verbatim rather than "improved" into a silent
   divergence.
 
+## Candidate-source policy reconciliation (2026-10-22)
+
+The [nested-control audit](desktop-control-reconciliation.md) separately compares
+Desktop `81a55437f3f31a9f12a30c53b6c5d49d420898aa` separately; it does not restamp
+this page's historical Pin or visual evidence. All seven Desktop preference identifiers are
+still present (`apps/desktop/src/store/native-notifications.ts:28-36` at that
+candidate); sound selection and preview still render on the Sounds subpage
+(`apps/desktop/src/app/settings/notifications-settings.tsx:81-127`).
+
+There is an unresolved policy conflict: this ledger excludes plugin-kind and
+completion-sound controls, while #99's final “Parity mandate” requires their
+visible disabled markers. The baseline screen still has no such marker.
+`desktop-control-records.json` therefore records the plugin-kind and two sound
+controls as drift under #99, not as newly approved non-goals. The historical
+divergence rows retain their argument so the conflict is visible rather
+than silently rewritten. No device/shade approval is implied. The Android
+comparison baseline is `65080e8a37e8d546869528e43c162503015b94c7`; the historical
+narrative below retains Desktop `3ca096de5f8183cb2e0ec23673f294d5978656a3`.
+
 ## `resolved == 0` is success — but a map miss is not
 
 `approval.respond` answers `{"resolved": N}` and carries no `status` field

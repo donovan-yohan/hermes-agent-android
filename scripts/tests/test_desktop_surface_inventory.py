@@ -101,6 +101,8 @@ class InventoryTest(unittest.TestCase):
             result = inventory.read_sources(self.repo, ['apps/a.ts'])
         self.assertEqual(result['apps/a.ts'].encode(), body)
         self.assertIn('cat-file', run.call_args.args[0])
+        self.assertEqual(run.call_args.kwargs['env']['GIT_NO_LAZY_FETCH'], '1')
+        self.assertEqual(run.call_args.kwargs['env']['GIT_ALLOW_PROTOCOL'], '')
         self.assertEqual(run.call_args.kwargs['input'], (inventory.PIN + ':apps/a.ts\n').encode())
 
     def test_batch_reader_rejects_missing_object(self):

@@ -292,6 +292,14 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+For source inventories, follow imported primitives and the actual mount gate, not
+only the named page: `LogTail` adds Copy/jump actions and `SearchField` adds a
+conditional Clear button. Plain `.js` plugins can ship compiled `jsx`/`jsxs`
+factory calls rather than JSX tags. A menu factory's nonmac branch is not proof
+of shipping reachability when startup installs that menu only on macOS. Keep
+syntax candidates, reviewed control templates and rendered acceptance separate;
+see [the nested-control audit](../parity/desktop-control-reconciliation.md).
+
 Core Cron uses full REST job records, not the lossy `cron.manage` preview.
 Readback must account for the server's normalized names and natural-language
 schedules, and a finite run may remain as a disabled completed record. A profile

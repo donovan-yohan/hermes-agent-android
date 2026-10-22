@@ -29,6 +29,21 @@ python3 scripts/desktop_surface_inventory.py --require-semantic-complete
 
 `--discover` emits the reproducible source candidates; `--snapshot` emits the compact ledger. Neither writes to upstream. Regeneration is a reviewed action, not an automatic pin bump. The verifier rejects wrong HEAD, duplicate families, missing owners/pages, bad source bounds, unowned source paths, ambiguous ownership and ledger mismatches. It does not prove pixels, callback reachability, or complete test coverage. Broad support prefixes intentionally make no stronger claim.
 
+## Nested-control continuation
+
+The [nested-control reconciliation](desktop-control-reconciliation.md) adds
+`desktop-control-records.json` (212 source-read entrypoint/control templates),
+`desktop-control-candidates.json` (3283 uncertified syntax candidates), and
+`desktop-registry-reconciliation.json` (21 actual root registries). These are
+three different evidence layers, not a feature count or a completeness percentage.
+The continuation follows imported primitives, handler/state/transport authority,
+conditional menus and actual plugin delivery roots. It records additional logs
+Copy/jump/match/Clear omissions, Maintenance operations, a notification-policy
+conflict, and the macOS-only native-menu startup gate. Nonmac menu-factory
+branches are not claimed as currently mounted controls. The old file census and
+all visual pins remain unchanged. Exhaustive semantic acceptance remains withheld;
+the companion page names the remaining trees that still need read-through.
+
 ## Baseline findings that must survive the repin
 
 - Session action drift: Desktop chooses Archive/Unarchive from archived state (`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:520-535` at the inspected Desktop SHA); Android unconditionally appends Archive (`app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt:250-277` at the Android baseline). Existing #266 owns repin-impact triage; this is not repaired by relabelling the historical capture.
