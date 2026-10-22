@@ -48,6 +48,7 @@ class KanbanPlugin(
                             onRefresh = viewModel::refreshCurrent,
                             onOpenTask = viewModel::openTask,
                             onCloseDetail = viewModel::closeDetail,
+                            onFilters = viewModel::setFilters,
                         )
                     },
                 ),

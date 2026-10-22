@@ -310,6 +310,16 @@ private fun CompactLayout(
                     // matches the search just produced are the part covered.
                     modifier = Modifier.statusBarsPadding().windowInsetsPadding(imeInsets),
                     compactActions = true,
+                    onBranchSession = actions.onBranchSession?.let { branch -> { id ->
+                        onLeaveRoute()
+                        branch(id)
+                        scope.launch { drawerState.close() }
+                    } },
+                    onBranchProjectSession = actions.onBranchProjectSession?.let { branch -> { session ->
+                        onLeaveRoute()
+                        branch(session)
+                        scope.launch { drawerState.close() }
+                    } },
                     onSelectSession = { id ->
                         onLeaveRoute()
                         actions.onSelectSession(id)
@@ -361,6 +371,7 @@ private fun CompactLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession.takeUnless { state.botChat },
                 onDeleteSession = actions.onDeleteSession.takeUnless { state.botChat },
+                onBranchSession = actions.onBranchSession.takeUnless { state.botChat },
                 onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.botChat },
                 onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.botChat },
                 onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
@@ -449,6 +460,8 @@ private fun WideLayout(
             onManageProfiles = onOpenProfiles,
             onSelectSession = { onLeaveRoute(); actions.onSelectSession(it) },
             onSelectProjectSession = { onLeaveRoute(); actions.onSelectProjectSession(it) },
+            onBranchSession = actions.onBranchSession?.let { branch -> { onLeaveRoute(); branch(it) } },
+            onBranchProjectSession = actions.onBranchProjectSession?.let { branch -> { onLeaveRoute(); branch(it) } },
             onCreateSession = { onLeaveRoute(); actions.onCreateSession() },
             onOpenCron = onOpenCron,
             cronSection = { cronSection {} },
@@ -468,6 +481,7 @@ private fun WideLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession.takeUnless { state.botChat },
                 onDeleteSession = actions.onDeleteSession.takeUnless { state.botChat },
+                onBranchSession = actions.onBranchSession.takeUnless { state.botChat },
                 onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.botChat },
                 onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.botChat },
                 onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
@@ -519,6 +533,8 @@ private fun SessionsPane(
     modifier: Modifier = Modifier,
     onSelectSession: (String) -> Unit = actions.onSelectSession,
     onSelectProjectSession: (com.hermesagent.mobile.data.session.SessionSummary) -> Unit = actions.onSelectProjectSession,
+    onBranchSession: ((String) -> Unit)? = actions.onBranchSession,
+    onBranchProjectSession: ((com.hermesagent.mobile.data.session.SessionSummary) -> Unit)? = actions.onBranchProjectSession,
     onCreateSession: () -> Unit = actions.onCreateSession,
     onManageProfiles: () -> Unit = {},
     compactActions: Boolean = false,
@@ -554,6 +570,8 @@ private fun SessionsPane(
         modifier = modifier,
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,
+        onBranchSession = onBranchSession.takeUnless { state.botChat },
+        onBranchProjectSession = onBranchProjectSession.takeUnless { state.botChat },
         onSetSessionPinned = actions.onSetSessionPinned,
         onSetSessionUnread = actions.onSetSessionUnread,
         onSetSessionArchived = actions.onSetSessionArchived,
@@ -1240,6 +1258,7 @@ private fun ChatTopBar(
     gatewayDoor: StatusAction? = null,
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
+    onBranchSession: ((String) -> Unit)? = null,
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
     onSetSessionArchived: ((String, Boolean) -> Unit)? = null,
@@ -1346,6 +1365,7 @@ private fun ChatTopBar(
                     unread = sessionUnread,
                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(sessionId, newTitle) } },
                     onDelete = onDeleteSession?.let { delete -> { delete(sessionId) } },
+                    onBranch = onBranchSession?.let { branch -> { branch(sessionId) } },
                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(sessionId, pinned) } },
                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(sessionId, unread) } },
                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(sessionId, archived) } },

@@ -32,6 +32,9 @@ data class KanbanUiState(
     val columns: List<KanbanColumn> = emptyList(),
     val detail: KanbanDetail = KanbanDetail.None,
     val stale: Boolean = false,
+    val filters: KanbanFilters = KanbanFilters(),
+    val assignees: List<String> = emptyList(),
+    val tenants: List<String> = emptyList(),
 )
 
 /** Endpoint-scoped snapshot. New board/detail intents stamp out older answers. */
@@ -79,7 +82,7 @@ class KanbanViewModel(
             _uiState.update { it.copy(phase = KanbanPhase.Loading, stale = false) }
         }
 
-        when (val read = repository.board()) {
+        when (val read = repository.board(_uiState.value.filters.archived)) {
             is KanbanRead.Value -> if (acceptBoard(endpointAtStart, operation)) {
                 val columns = read.value.columns.filter { it.tasks.isNotEmpty() }
                 _uiState.update {
@@ -87,6 +90,8 @@ class KanbanViewModel(
                         phase = if (columns.isEmpty()) KanbanPhase.Empty else KanbanPhase.Ready,
                         columns = columns,
                         stale = false,
+                        assignees = read.value.assignees,
+                        tenants = read.value.tenants,
                     )
                 }
             }
@@ -103,6 +108,18 @@ class KanbanViewModel(
     }
 
     fun openTask(task: KanbanTask) = refreshDetail(task)
+
+    fun setFilters(filters: KanbanFilters) {
+        ensureEndpoint()
+        val reload = filters.archived != _uiState.value.filters.archived
+        _uiState.update { it.copy(filters = filters) }
+        if (reload) {
+            // Never label a snapshot with a different archived scope while loading.
+            boardOperation++
+            _uiState.update { it.copy(columns = emptyList(), phase = KanbanPhase.Loading) }
+            refreshBoard()
+        }
+    }
 
     private fun refreshDetail(task: KanbanTask) = scope.launch {
         ensureEndpoint()
