@@ -660,6 +660,10 @@ internal class ChatViewModel(
         set(value) {
             notice.value = value?.let(::ChatNotice)
         }
+    private data class OrdinaryBotOwner(val id: String, val profile: String)
+    private val ordinaryBotOwner = MutableStateFlow<OrdinaryBotOwner?>(null)
+    private val inertBotOpens = mutableSetOf<String>()
+    private val pendingBotResumes = mutableSetOf<String>()
     private val selectedProjectId = MutableStateFlow<String?>(null)
     private val projectLoadingId = MutableStateFlow<String?>(null)
     private var projectLoadGeneration = 0L
@@ -1438,6 +1442,8 @@ internal class ChatViewModel(
                         // A durable id is only meaningful on the endpoint that
                         // produced it. Drop the Bot Chat capability before any
                         // later cache/rehome event can reuse that id here.
+                        ordinaryBotOwner.value = null
+                        inertBotOpens.clear()
                         clearBotChatCapability(rehomeActive = true)
                         clearRecentImages()
                         clearAttachmentDrafts()
@@ -1450,7 +1456,11 @@ internal class ChatViewModel(
         viewModelScope.launch {
             repository.sessionRehomes.collect { rehome ->
                 draftStoreReady.await()
-                adoptCanonicalSession(rehome.oldDurableId, rehome.newDurableId)
+                val inert = rehome.oldDurableId in inertBotOpens
+                if (inert) inertBotOpens += rehome.newDurableId
+                // The explicit recent opener owns migration after its owner scope is bound.
+                if (rehome.oldDurableId in pendingBotResumes) return@collect
+                adoptCanonicalSession(rehome.oldDurableId, rehome.newDurableId, applyOpenSideEffects = !inert)
             }
         }
         viewModelScope.launch {
@@ -1552,8 +1562,8 @@ internal class ChatViewModel(
         // The queue is private per endpoint *and* per Hermes profile: text
         // parked while scoped to one profile must never be presented while
         // scoped to another.
-        combine(composerControlsStore.activeScope, profileScope) { scope, profiles ->
-            scope to normalizeProfileKey(profiles.activeProfile).takeIf { it != DEFAULT_PROFILE }
+        combine(composerControlsStore.activeScope, profileScope, ordinaryBotOwner) { scope, profiles, owner ->
+            scope to normalizeProfileKey(owner?.profile ?: profiles.activeProfile).takeIf { it != DEFAULT_PROFILE }
         }
             .distinctUntilChanged()
             .collect { (scope, hermesProfile) -> bindComposerScope(scope, hermesProfile) }
@@ -2409,7 +2419,55 @@ internal class ChatViewModel(
         }
     }
 
+    /** Owner-qualified ordinary conversation. Never grants canonical Bot Chat authority. */
+    fun openBotRecentSession(profile: String, durableId: String, expectedEndpoint: Long,
+        isCurrent: () -> Boolean = { true }, onFinished: (Boolean) -> Unit) {
+        if (profile.isBlank() || durableId.isBlank() || profile != profile.trim() ||
+            expectedEndpoint != cache.endpointGeneration.value ||
+            repository.connectionState.value.status != GatewayConnectionStatus.Connected ||
+            profileRepository.roster.value.profiles.none { it.name == profile }) {
+            onFinished(false)
+            return
+        }
+        val generation = ++navigationGeneration
+        val connection = connectionGeneration()
+        val scopeGeneration = profileScopeGeneration
+        fun stillOwns() = isCurrent() && generation == navigationGeneration && connection == connectionGeneration() &&
+            expectedEndpoint == cache.endpointGeneration.value && scopeGeneration == profileScopeGeneration
+        viewModelScope.launch {
+            try {
+                if (!stillOwns()) { onFinished(false); return@launch }
+                inertBotOpens += durableId
+                pendingBotResumes += durableId
+                val id = repository.openSessionAtEndpoint(durableId, profile, expectedEndpoint)
+                if (!stillOwns()) { onFinished(false); return@launch }
+                flushDraft()
+                clearBotChatCapability()
+                inertBotOpens += id
+                ordinaryBotOwner.value = OrdinaryBotOwner(durableId, profile)
+                composerScope?.let { bindComposerScope(it, normalizeProfileKey(profile).takeIf { it != DEFAULT_PROFILE }) }
+                rehome(durableId, applyOpenSideEffects = false)
+                queueScopeSwitch?.join()
+                if (!stillOwns() || activeSessionId.value != durableId) { onFinished(false); return@launch }
+                adoptCanonicalSession(durableId, id, applyOpenSideEffects = false, canAdopt = ::stillOwns)
+                if (!stillOwns() || activeSessionId.value != id) { onFinished(false); return@launch }
+                ordinaryBotOwner.value = OrdinaryBotOwner(id, profile)
+                refreshComposer(id)
+                onFinished(true)
+            } catch (cancelled: CancellationException) {
+                onFinished(false)
+                throw cancelled
+            } catch (_: Throwable) {
+                if (stillOwns()) noticeLine = "The recent session could not be opened. Try again."
+                onFinished(false)
+            } finally {
+                pendingBotResumes -= durableId
+            }
+        }
+    }
+
     fun createSession() {
+        // The current ordinary session keeps its owner until rehome succeeds.
         // This is the person's explicit escape from a Bot Chat, not a Bot-open
         // side effect. Clear first so New Chat is usable.
         clearBotChatCapability()
@@ -2692,6 +2750,27 @@ internal class ChatViewModel(
         }
     }
 
+    suspend fun exportProjectSession(session: SessionSummary, expectedEndpointGeneration: Long): com.hermesagent.mobile.ui.sessions.PreparedSessionExport {
+        val scope = profileScopeGeneration
+        val route = profileScope.value.sessionProfileParam
+        fun isCurrent(): Boolean = cache.endpointGeneration.value == expectedEndpointGeneration &&
+            profileScopeGeneration == scope && cache.state.value.projectsForScope(route).projects.values.any { project ->
+                project.previewSessions.any { it.id == session.id && it.remoteProfile == session.remoteProfile }
+            }
+        check(isCurrent())
+        val bytes = repository.exportSessionAtEndpoint(session, expectedEndpointGeneration)
+        return com.hermesagent.mobile.ui.sessions.PreparedSessionExport(bytes, ::isCurrent)
+    }
+
+    suspend fun exportSession(id: String): com.hermesagent.mobile.ui.sessions.PreparedSessionExport {
+        val endpoint = cache.endpointGeneration.value
+        val owner = cache.session(id)?.remoteProfile
+        val bytes = repository.exportSession(id)
+        return com.hermesagent.mobile.ui.sessions.PreparedSessionExport(bytes) {
+            cache.endpointGeneration.value == endpoint && cache.session(id) != null && cache.session(id)?.remoteProfile == owner
+        }
+    }
+
     suspend fun renameSessionAsync(id: String, newTitle: String): String {
         refuseBotChatMutation(id)?.let { throw it }
         return repository.renameSession(id, newTitle)
@@ -2899,6 +2978,10 @@ internal class ChatViewModel(
     }
 
     private fun rehome(id: String?, applyOpenSideEffects: Boolean = true) {
+        ordinaryBotOwner.value = id?.let { target ->
+            cache.session(target)?.let { OrdinaryBotOwner(target, it.remoteProfile ?: DEFAULT_PROFILE) }
+                ?: ordinaryBotOwner.value?.takeIf { it.id == target }
+        }
         sessionSelectionFence.invalidate()
         invalidateRecentImagesScope()
         activeSessionId.value?.let(composerHistoryController::reset)
@@ -2924,6 +3007,7 @@ internal class ChatViewModel(
         requestedId: String,
         canonicalId: String,
         applyOpenSideEffects: Boolean = true,
+        canAdopt: () -> Boolean = { true },
     ) {
         if (botChatSessionId == requestedId) botChatSessionId = canonicalId
         createdProjectBySession.remove(requestedId)?.let { projectId ->
@@ -2932,9 +3016,12 @@ internal class ChatViewModel(
         if (canonicalId == requestedId) return
         composerHistoryController.rehome(requestedId, canonicalId)
         composerQueueController.migrate(requestedId, canonicalId)
-        invalidateHistory()
+        if (!canAdopt()) return
         draftStoreReady.await()
-        val transitionRevision = invalidatePendingDraftWrite()
+        if (!canAdopt()) return
+        val foreground = activeSessionId.value == requestedId
+        if (foreground) invalidateHistory()
+        val transitionRevision = if (foreground) invalidatePendingDraftWrite() else draftRevision
         val sourceWasTouched = requestedId in locallyTouchedDrafts
         val source = if (sourceWasTouched) draftSnapshot[requestedId].orEmpty() else draftSnapshot[requestedId]
         val destination = draftSnapshot[canonicalId]
@@ -2954,7 +3041,7 @@ internal class ChatViewModel(
             locallyTouchedDrafts += requestedId
             if (sourceWasTouched || editedDuringTransition) locallyTouchedDrafts += canonicalId
         }
-        if (activeSessionId.value != requestedId) return
+        if (!canAdopt() || activeSessionId.value != requestedId) return
         // Compression changes only the durable key. Attachment drafts are
         // occurrence-scoped, so rekey them instead of orphaning their bytes.
         attachments.value = attachments.value.map { draft ->
@@ -3117,6 +3204,7 @@ internal class ChatViewModel(
         noticeLine = if (compactBotChat) {
             "Bot chats are one continuous conversation — compacting instead. For a throwaway session with this bot, use Sessions mode."
         } else refusalWarning
+        inertBotOpens -= sessionId
         viewModelScope.launch(selection) {
             try {
                 val result = if (botPromptEndpoint != null) {
@@ -3889,6 +3977,7 @@ internal class ChatViewModel(
         if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {
+            inertBotOpens -= sessionId
             composerQueueController.resume(sessionId)
             drainQueueIfIdle(sessionId)
         }
@@ -3904,6 +3993,7 @@ internal class ChatViewModel(
                     noticeLine = "Hermes needs a response before queued messages can continue."
                 }
                 else -> {
+                    inertBotOpens -= sessionId
                     composerQueueController.resume(sessionId)
                     sendNextAfterResume(sessionId, entryId, state.composer.runtime.busyKind)
                 }
@@ -4162,14 +4252,14 @@ internal class ChatViewModel(
         // one the person types here — a drain on open would arm live delivery
         // from nothing but an open, which is the exact consequence Phase B
         // keeps honest (`docs/parity/bot-chat.md`).
-        if (sessionId == botChatSessionId) return
+        if (sessionId == botChatSessionId || sessionId in inertBotOpens) return
         if (!queueScopeReady.value || !isSessionIdle(sessionId)) return
         if (!scheduledQueueDrains.add(sessionId)) return
         viewModelScope.launch {
             try {
                 // Recheck inside the scheduled owner. A settle/reconnect pair
                 // can both observe idle before either coroutine runs.
-                if (!queueScopeReady.value || !isSessionIdle(sessionId)) return@launch
+                if (sessionId in inertBotOpens || !queueScopeReady.value || !isSessionIdle(sessionId)) return@launch
                 when (composerQueueController.drainIfIdle(sessionId, isIdle = true)) {
                     ComposerQueueDrainResult.StoreUnavailable -> if (activeSessionId.value == sessionId) {
                         noticeLine = "The queue could not be updated. Try again."

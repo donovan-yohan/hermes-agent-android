@@ -158,6 +158,8 @@ jobs:
             range="${BASE_SHA}..${HEAD_SHA}"
           fi
           upstream="$RUNNER_TEMP/hermes-agent-upstream"
+          # Bootstrap one tip, not every branch's full history. The verifier's
+          # --fetch still materializes each exact historical pin in scratch.
           echo "git stage=upstream-clone started (limit 60s)"
           GIT_TERMINAL_PROMPT=0 timeout --kill-after=1s 60s git clone --quiet \
             --depth=1 --single-branch --no-tags --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {

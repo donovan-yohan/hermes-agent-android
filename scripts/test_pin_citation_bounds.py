@@ -112,7 +112,8 @@ class GitBoundsTest(unittest.TestCase):
             git("-C", origin, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
                 "commit", "--no-gpg-sign", "-qm", "fixture")
             sha = git("-C", origin, "rev-parse", "HEAD")
-            git("clone", "--filter=blob:none", "--no-checkout", origin.as_uri(), partial)
+            git("clone", "--depth=1", "--single-branch", "--no-tags",
+                "--filter=blob:none", "--no-checkout", origin.as_uri(), partial)
             def snapshot():
                 return {str(p.relative_to(partial)): p.read_bytes()
                         for p in partial.rglob("*") if p.is_file()}
@@ -129,6 +130,50 @@ class GitBoundsTest(unittest.TestCase):
                     fetches = [call for call in run.call_args_list if "fetch" in call.args[0]]
                     self.assertEqual(len(fetches), 1)
                     self.assertEqual(before, snapshot())
+                finally:
+                    if m._SCRATCH is not None:
+                        m._SCRATCH.cleanup()
+                    m._SCRATCH = m._READ = None
+
+    def test_known_source_revision_is_materialized_after_store_switch(self):
+        sha = "a" * 40
+        with patch.object(m, "_FETCH", True), patch.object(m, "_ensured", {sha}), \
+                patch.object(m, "_has", return_value=False), \
+                patch.object(m, "materialize") as materialize:
+            m.tree_paths(sha)
+        materialize.assert_called_once_with(sha)
+
+    def test_complete_source_snapshot_survives_historical_fetch_store_switch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            origin, shallow = root / "origin", root / "shallow"
+            def git(*args):
+                return subprocess.run(["git", *map(str, args)], capture_output=True,
+                                      text=True, check=True, timeout=10).stdout.strip()
+            git("init", "-q", origin)
+            source = origin / "source.py"
+            source.write_text("old\n")
+            git("-C", origin, "add", ".")
+            def commit():
+                git("-C", origin, "-c", "user.name=fixture", "-c",
+                    "user.email=fixture@example.invalid", "commit", "--no-gpg-sign", "-qam", "fixture")
+                return git("-C", origin, "rev-parse", "HEAD")
+            old = commit()
+            source.write_text("new\n")
+            head = commit()
+            git("clone", "--depth=1", origin.as_uri(), shallow)
+            before = {str(p.relative_to(shallow)): p.read_bytes()
+                      for p in shallow.rglob("*") if p.is_file()}
+            with patch.object(m, "UPSTREAM", shallow), patch.object(m, "_FETCH", True), \
+                    patch.object(m, "_ensured", set()):
+                try:
+                    m.ensure_sha(head, True)
+                    self.assertEqual(m.blob(head, "source.py"), ["new"])
+                    m.ensure_sha(old, True)
+                    self.assertEqual(m.blob(old, "source.py"), ["old"])
+                    self.assertEqual(m.blob(head, "source.py"), ["new"])
+                    self.assertEqual(before, {str(p.relative_to(shallow)): p.read_bytes()
+                                             for p in shallow.rglob("*") if p.is_file()})
                 finally:
                     if m._SCRATCH is not None:
                         m._SCRATCH.cleanup()

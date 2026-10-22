@@ -284,6 +284,12 @@ private fun CompactLayout(
                             pluginNavigation.onNavigate(target)
                             scope.launch { drawerState.close() }
                         },
+                        onOpenBotRecentSession = { profile, durableId, endpoint, onFinished ->
+                            pluginNavigation.onOpenBotRecentSession(profile, durableId, endpoint) { opened ->
+                                if (opened) scope.launch { drawerState.close() }
+                                onFinished(opened)
+                            }
+                        },
                         onOpenBotChat = { profile, durableId, onFinished ->
                             pluginNavigation.onOpenBotChat(profile, durableId) { opened ->
                                 if (opened) scope.launch { drawerState.close() }
@@ -365,6 +371,7 @@ private fun CompactLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession.takeUnless { state.botChat },
                 onDeleteSession = actions.onDeleteSession.takeUnless { state.botChat },
+                onExportSession = actions.onExportSession,
                 onBranchSession = actions.onBranchSession.takeUnless { state.botChat },
                 onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.botChat },
                 onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.botChat },
@@ -475,6 +482,7 @@ private fun WideLayout(
                 gatewayDoor = gatewayDoor,
                 onRenameSession = actions.onRenameSession.takeUnless { state.botChat },
                 onDeleteSession = actions.onDeleteSession.takeUnless { state.botChat },
+                onExportSession = actions.onExportSession,
                 onBranchSession = actions.onBranchSession.takeUnless { state.botChat },
                 onSetSessionPinned = actions.onSetSessionPinned.takeUnless { state.botChat },
                 onSetSessionUnread = actions.onSetSessionUnread.takeUnless { state.botChat },
@@ -564,6 +572,10 @@ private fun SessionsPane(
         modifier = modifier,
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,
+        onExportSession = actions.onExportSession,
+        onExportProjectSession = actions.onExportProjectSession?.let { export ->
+            { session -> export(session, state.diagnosticsEndpointGeneration) }
+        },
         onBranchSession = onBranchSession.takeUnless { state.botChat },
         onBranchProjectSession = onBranchProjectSession.takeUnless { state.botChat },
         onSetSessionPinned = actions.onSetSessionPinned,
@@ -1252,6 +1264,7 @@ private fun ChatTopBar(
     gatewayDoor: StatusAction? = null,
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
+    onExportSession: (suspend (String) -> com.hermesagent.mobile.ui.sessions.PreparedSessionExport)? = null,
     onBranchSession: ((String) -> Unit)? = null,
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
@@ -1359,6 +1372,7 @@ private fun ChatTopBar(
                     unread = sessionUnread,
                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(sessionId, newTitle) } },
                     onDelete = onDeleteSession?.let { delete -> { delete(sessionId) } },
+                    onExport = onExportSession?.let { export -> { export(sessionId) } },
                     onBranch = onBranchSession?.let { branch -> { branch(sessionId) } },
                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(sessionId, pinned) } },
                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(sessionId, unread) } },

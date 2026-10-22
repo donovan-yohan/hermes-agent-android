@@ -461,6 +461,18 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         code, output = self._run_captured(joined)
         self.assertEqual(0, code, output)
 
+    def test_upstream_bootstrap_bounds_history_before_exact_pin_fetches(self) -> None:
+        # PR397 timed out cloning all upstream history before checking a citation.
+        # Bootstrap only the default tip; --fetch still materializes historical pins.
+        job = checker._indented_block(self.valid_text, "  citations:")
+        self.assertIn("--depth=1 --single-branch --no-tags", job)
+        for flag in ("--depth=1 ", "--single-branch ", "--no-tags "):
+            with self.subTest(flag=flag):
+                self._assert_reports(
+                    self.valid_text.replace(flag, "", 1),
+                    "bounded, noninteractive, fail-closed upstream clone",
+                )
+
     def test_rejects_unsafe_upstream_clone_contract(self) -> None:
         for old, new in (
             ('GIT_TERMINAL_PROMPT=0 ', ''),

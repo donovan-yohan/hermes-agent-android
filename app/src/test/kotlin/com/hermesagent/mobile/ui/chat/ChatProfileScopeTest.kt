@@ -24,11 +24,13 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -331,6 +333,44 @@ class ChatProfileScopeTest {
     }
 
     @Test
+    fun `failed ordinary create retains recent owner queue scope`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        repository.onRecentOpened = { cache.upsertSession(row("recent", CLOCK, "work")) }
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        repository.sessionCreateFailure = true
+        viewModel.createSession(); runCurrent()
+        assertEquals("recent", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+    }
+
+    @Test
+    fun `disconnected ordinary create retains recent owner queue scope`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        viewModel.createSession(); runCurrent()
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+    }
+
+    @Test
+    fun `stale ordinary create retains newer recent owner queue scope`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        viewModel.createSession(); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+    }
+
+    @Test
     fun `create snapshots profile before launch and cannot adopt after switching scope`() = runTest(dispatcher) {
         collectState()
         runCurrent()
@@ -354,6 +394,184 @@ class ChatProfileScopeTest {
         assertNull(viewModel.uiState.value.activeSession)
         assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
         assertEquals("lab draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `recent bot session resumes explicit owner and never creates or grants canonical capability`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        repository.onRecentOpened = { cache.upsertSession(row("recent", CLOCK, "work")) }
+        val results = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        assertEquals("work" to "recent", repository.openedRecent)
+        assertEquals("recent", viewModel.uiState.value.activeSession?.id)
+        assertEquals(listOf(true), results)
+        assertTrue(!viewModel.uiState.value.botChat)
+        assertNull(repository.createdProfile)
+    }
+
+    @Test
+    fun `recent bot resume cannot take over newer navigation`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val gate = CompletableDeferred<Unit>(); repository.recentOpenGate = gate
+        val results = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.setDraft("newer draft")
+        gate.complete(Unit); runCurrent()
+        assertEquals(listOf(false), results)
+        assertNull(viewModel.uiState.value.activeSession)
+        assertEquals("newer draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `recent bot stale endpoint cannot resume`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val results = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value - 1) { results += it }
+        runCurrent()
+        assertEquals(listOf(false), results)
+        assertNull(repository.openedRecent)
+    }
+
+    @Test
+    fun `bot ordinary conversation binds queue to owner instead of browsing profile`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueScope.forConnectionProfile(
+            "transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `opening idle recent session preserves ready queue without sending`() = runTest(dispatcher) {
+        val store = com.hermesagent.mobile.data.composer.TransientComposerQueueStore()
+        val sends = mutableListOf<String>()
+        val controller = com.hermesagent.mobile.data.composer.ComposerQueueController(store,
+            object : com.hermesagent.mobile.data.composer.ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String): com.hermesagent.mobile.data.composer.QueueSubmissionOutcome {
+                    sends += text
+                    return com.hermesagent.mobile.data.composer.QueueSubmissionOutcome.Accepted
+                }
+            })
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles,
+            composerQueueController = controller, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        controller.enqueue("recent", "do not send on open")
+        repository.onRecentOpened = { cache.upsertSession(row("recent", CLOCK, "work")) }
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertTrue(sends.isEmpty())
+        assertEquals(1, controller.queue("recent").size)
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected); runCurrent()
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Connected); runCurrent()
+        assertTrue(sends.isEmpty())
+    }
+
+    @Test
+    fun `compressed recent session migrates stored draft to canonical tip`() = runTest(dispatcher) {
+        val drafts = com.hermesagent.mobile.data.draft.TransientSessionDraftStore()
+        drafts.replace("recent", "keep my work")
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles, draftStore = drafts, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        repository.recentResult = "tip"
+        repository.onRecentOpened = { cache.upsertSession(row("tip", CLOCK, "work")) }
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertEquals("tip", subject.uiState.value.activeSessionId)
+        assertEquals("keep my work", subject.uiState.value.draft)
+    }
+
+    @Test
+    fun `revoked shell lifetime leaves foreground and draft untouched`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectSession("lab-row"); runCurrent()
+        viewModel.setDraft("preserve foreground")
+        val before = viewModel.uiState.value.activeSessionId
+        val gate = CompletableDeferred<Unit>(); repository.recentOpenGate = gate
+        var current = true
+        val result = mutableListOf<Boolean>()
+        viewModel.openBotRecentSession("work", "recent", cache.endpointGeneration.value, { current }) { result += it }
+        runCurrent(); current = false; gate.complete(Unit); runCurrent()
+        assertEquals(before, viewModel.uiState.value.activeSessionId)
+        assertEquals("preserve foreground", viewModel.uiState.value.draft)
+        assertEquals(listOf(false), result)
+    }
+
+    @Test
+    fun `ordinary session rail reopening restores authoritative queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+        viewModel.selectSession("lab-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "lab"), queueScopes.last())
+        viewModel.selectSession("work-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `navigation during compressed migration cannot rebind newer composer`() = runTest(dispatcher) {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val storage = com.hermesagent.mobile.data.draft.TransientSessionDraftStore()
+        storage.replace("recent", "old draft")
+        val held = object : com.hermesagent.mobile.data.draft.SessionDraftStore by storage {
+            override suspend fun migrateIfDestinationEmpty(fromDurableId: String, toDurableId: String, sourceText: String?): String? {
+                entered.complete(Unit); release.await()
+                return storage.migrateIfDestinationEmpty(fromDurableId, toDurableId, sourceText)
+            }
+        }
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles,
+            draftStore = held, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        repository.recentResult = "tip"
+        repository.onRecentOpened = { cache.upsertSession(row("tip", CLOCK, "work")) }
+        val outcomes = mutableListOf<Boolean>()
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { outcomes += it }
+        runCurrent(); assertTrue(entered.isCompleted)
+        subject.selectSession("lab-row"); runCurrent()
+        val before = subject.uiState.value.composer
+        release.complete(Unit); runCurrent()
+        assertEquals("lab-row", subject.uiState.value.activeSessionId)
+        assertEquals(before, subject.uiState.value.composer)
+        assertEquals(listOf(false), outcomes)
+    }
+
+    @Test
+    fun `obsolete queue migration cannot cancel another sessions debounced draft save`() = runTest(dispatcher) {
+        val entered = CompletableDeferred<Unit>(); val release = CompletableDeferred<Unit>()
+        val queue = com.hermesagent.mobile.data.composer.TransientComposerQueueStore()
+        val held = object : com.hermesagent.mobile.data.composer.ComposerQueueStore by queue {
+            override suspend fun migrate(fromDurableId: String, toDurableId: String): com.hermesagent.mobile.data.composer.ComposerQueueMutation {
+                entered.complete(Unit); release.await()
+                return queue.migrate(fromDurableId, toDurableId)
+            }
+        }
+        val controller = com.hermesagent.mobile.data.composer.ComposerQueueController(held,
+            object : com.hermesagent.mobile.data.composer.ComposerQueueSubmitter {
+                override suspend fun submitQueued(durableSessionId: String, text: String) =
+                    com.hermesagent.mobile.data.composer.QueueSubmissionOutcome.Accepted
+            })
+        val drafts = com.hermesagent.mobile.data.draft.TransientSessionDraftStore()
+        val subject = ChatViewModel(cache, repository, profileRepository = profiles,
+            composerQueueController = controller, draftStore = drafts, clock = { CLOCK })
+        backgroundScope.launch { subject.uiState.collect { } }; runCurrent()
+        repository.recentResult = "tip"
+        repository.onRecentOpened = { cache.upsertSession(row("tip", CLOCK, "work")) }
+        val outcomes = mutableListOf<Boolean>()
+        subject.openBotRecentSession("work", "recent", cache.endpointGeneration.value) { outcomes += it }
+        runCurrent(); assertTrue(entered.isCompleted)
+        subject.selectSession("lab-row"); runCurrent()
+        subject.setDraft("persist after old migration")
+        release.complete(Unit); runCurrent()
+        advanceTimeBy(401); runCurrent()
+        assertEquals("persist after old migration", drafts.drafts.first()["lab-row"])
+        assertEquals(listOf(false), outcomes)
     }
 
     private class FakeRepository : GatewaySessionRepository {
@@ -380,11 +598,22 @@ class ChatProfileScopeTest {
             archivedReads += routing
         }
 
+        var recentResult: String? = null
+        var onRecentOpened: () -> Unit = {}
+        var openedRecent: Pair<String, String>? = null
+        var recentOpenGate: CompletableDeferred<Unit>? = null
+        override suspend fun openSessionAtEndpoint(durableId: String, profile: String, expectedEndpointGeneration: Long): String {
+            openedRecent = profile to durableId
+            recentOpenGate?.await()
+            onRecentOpened()
+            return recentResult ?: durableId
+        }
         override suspend fun openSession(durableId: String): String = durableId
         override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
         var sessionCreateGate: CompletableDeferred<Unit>? = null
         var sessionCreateJob: kotlinx.coroutines.Job? = null
+        var sessionCreateFailure = false
         var createdProfile: String? = null
         override suspend fun createSession(workspacePath: String?): String {
             createdProfile = routing.activeProfile
@@ -401,6 +630,7 @@ class ChatProfileScopeTest {
             createdProfile = profile
             sessionCreateJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             sessionCreateGate?.await()
+            check(!sessionCreateFailure)
             return "created"
         }
 

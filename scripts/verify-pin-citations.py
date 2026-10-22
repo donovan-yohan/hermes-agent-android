@@ -239,8 +239,13 @@ def materialize(sha: str) -> None:
 
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
-        if (_FETCH and _READ is not None and FULL_SHA_RE.fullmatch(sha)
-                and subprocess_run(["git", "-C", str(UPSTREAM), "cat-file", "-e", f"{sha}^{{commit}}"]).returncode == 0):
+        # Store handoff invalidates bytes/completeness, not revision identity.
+        # Discovery also runs before ensure_sha(), so retain the read-only source
+        # probe for known pins not yet registered in _ensured.
+        if (_FETCH and FULL_SHA_RE.fullmatch(sha)
+                and (sha in _ensured or (_READ is not None and subprocess_run(
+                    ["git", "-C", str(UPSTREAM), "cat-file", "-e", f"{sha}^{{commit}}"]
+                ).returncode == 0))):
             materialize(sha)
         if not _has(sha):
             # Not a revision of the read checkout, so it has no tree to list.
@@ -305,6 +310,9 @@ def _scratch_clone() -> pathlib.Path:
             ["git", "-C", str(UPSTREAM), "config", "--get", "remote.origin.url"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
+        # An empty store supports shallow/partial read-only sources without
+        # --reference (which rejects shallow stores) or local clone's implicit
+        # promisor traversal. materialize() fetches only requested exact SHAs.
         subprocess_run(["git", "init", "--quiet", str(target)], check=True)
         if origin:
             subprocess_run(
@@ -316,12 +324,13 @@ def _scratch_clone() -> pathlib.Path:
         raise
     _SCRATCH = scratch
     _READ = target
+    # Completeness proved in the source store does not imply presence in this
+    # independent store; retain identity knowledge but re-prove materialization.
+    _materialized.clear()
     _tree_paths.clear()
     _blobs.clear()
     _tree_objects.clear()
     _blob_objects.clear()
-    _materialized.clear()
-    _ensured.clear()
     return target
 
 

@@ -40,6 +40,7 @@ class ChatActions(
      */
     val onRetrySessionOpen: () -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    val onOpenBotRecentSession: (profile: String, durableId: String, endpoint: Long, isCurrent: () -> Boolean, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _, _, _ -> },
     val onCreateSession: () -> Unit = {},
     val onBranchFromReply: ((String) -> Unit)? = null,
     val onRegenerateReply: ((String) -> Unit)? = null,
@@ -51,6 +52,8 @@ class ChatActions(
     val onDismissGatewayLogs: () -> Unit = {},
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
+    val onExportSession: (suspend (String) -> com.hermesagent.mobile.ui.sessions.PreparedSessionExport)? = null,
+    val onExportProjectSession: (suspend (com.hermesagent.mobile.data.session.SessionSummary, Long) -> com.hermesagent.mobile.ui.sessions.PreparedSessionExport)? = null,
     val onBranchSession: ((String) -> Unit)? = null,
     val onBranchProjectSession: ((com.hermesagent.mobile.data.session.SessionSummary) -> Unit)? = null,
     /**

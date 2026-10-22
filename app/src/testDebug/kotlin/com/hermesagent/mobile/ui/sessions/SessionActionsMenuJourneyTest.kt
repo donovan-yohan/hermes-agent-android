@@ -75,6 +75,21 @@ class SessionActionsMenuJourneyTest {
     val compose = createComposeRule()
 
     @Test
+    fun `export prepares selected session and dismisses menu even on refusal`() {
+        var exports = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                SessionActionsControl(sessionId = FIRST_ID, onExport = { exports++; error("synthetic refusal") })
+            }
+        }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(EXPORT).performClick()
+        compose.waitForIdle()
+        assertEquals(1, exports)
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+    }
+
+    @Test
     fun `compact drawer branch leaves route and closes drawer`() {
         var branches = 0
         var leftRoutes = 0

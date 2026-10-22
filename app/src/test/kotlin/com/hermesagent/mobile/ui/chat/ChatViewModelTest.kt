@@ -132,6 +132,22 @@ class ChatViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
+    fun `prepared export validity follows actual endpoint and row owner`() = runTest(dispatcher) {
+        val prepared = viewModel.exportSession("session-a")
+        assertTrue(prepared.isCurrent())
+        val row = requireNotNull(cache.session("session-a"))
+        cache.upsertSession(row.copy(remoteProfile = "research"))
+        assertFalse(prepared.isCurrent())
+        val owned = viewModel.exportSession("session-a")
+        assertTrue(owned.isCurrent())
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(row.copy(remoteProfile = "research"))
+        assertFalse("recycled row on replacement endpoint cannot authorize old picker", owned.isCurrent())
+        prepared.bytes.fill(0)
+        owned.bytes.fill(0)
+    }
+
+    @Test
     fun `menu branch copies whole backend history and opens child once`() = runTest(dispatcher) {
         viewModel.branchSession("session-b")
         viewModel.branchSession("session-b")
@@ -4392,6 +4408,7 @@ class ChatViewModelTest {
     }
 
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
+        override suspend fun exportSession(durableId: String): ByteArray = "synthetic export".toByteArray()
         val goalCalls = mutableListOf<String>()
         var goalOutcome: com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Unsupported
         var goalGate: CompletableDeferred<Unit>? = null

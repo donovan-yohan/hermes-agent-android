@@ -40,12 +40,18 @@ class CachedProjectPreviewJourneyTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = previewJourney(branch = false)
+    fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = previewCollision(export = false)
 
     @Test
-    fun `cached alpha preview branch preserves alpha owner over beta raw id`() = previewJourney(branch = true)
+    fun `cached alpha preview export reads alpha while revalidation waits over beta raw id`() = previewCollision(export = true)
 
-    private fun previewJourney(branch: Boolean) = runTest {
+    @Test
+    fun `cached preview export payload rejects recycled endpoint`() = previewCollision(export = true, switchEndpoint = true)
+
+    @Test
+    fun `cached alpha preview branch preserves alpha owner over beta raw id`() = previewCollision(export = false, branch = true)
+
+    private fun previewCollision(export: Boolean, switchEndpoint: Boolean = false, branch: Boolean = false) = runTest {
         val frames = mutableListOf<JsonObject>()
         val heldTrees = mutableListOf<JsonObject>()
         val heldResumes = mutableListOf<JsonObject>()
@@ -83,9 +89,19 @@ class CachedProjectPreviewJourneyTest {
         val cache = SessionCache().apply {
             upsertSession(com.hermesagent.mobile.data.session.SessionSummary("bootstrap", "Initial chat", "", NOW, remoteProfile = "alpha"))
         }
+        val exports = mutableListOf<GatewayHttpRequest>()
+        var prepared: com.hermesagent.mobile.ui.sessions.PreparedSessionExport? = null
+        val http = object : GatewayHttp {
+            override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult {
+                exports += request
+                val profile = request.query["profile"]
+                return GatewayHttpResult.Success(200, """{"session_id":"s","messages":[{"id":1,"role":"user","content":"$profile transcript"}],"pagination":{"limit":100,"offset":0,"order":"oldest"}}""".encodeToByteArray())
+            }
+        }
         val repository = LiveGatewaySessionRepository(cache,
             MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
-            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { NOW }
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = kotlin.coroutines.EmptyCoroutineContext) { NOW }
         val profiles = object : ProfileRepository {
             override val roster = MutableStateFlow(ProfileRosterState(
                 listOf(HermesProfile("default", isDefault = true), HermesProfile("alpha"), HermesProfile("beta")), loaded = true))
@@ -105,6 +121,8 @@ class CachedProjectPreviewJourneyTest {
                     onBranchSession = viewModel::branchSession,
                     onBranchProjectSession = viewModel::branchProjectSession,
                     onSelectProfile = viewModel::selectProfile,
+                    onExportSession = { id -> viewModel.exportSession(id).also { prepared = it } },
+                    onExportProjectSession = { session, endpoint -> viewModel.exportProjectSession(session, endpoint).also { prepared = it } },
                 ), onOpenSettings = {})
             }
         }
@@ -141,6 +159,34 @@ class CachedProjectPreviewJourneyTest {
         assertSame("Restoring the preview must not rewind live rows", betaSessions, cache.state.value.sessions)
         assertSame(betaTranscripts, cache.state.value.transcripts)
         compose.onNodeWithText("alpha preview").assertIsDisplayed()
+        if (export) {
+            exports.clear()
+            compose.onNodeWithContentDescription("Session actions").performClick()
+            compose.onNodeWithText("Export").performClick()
+            runCurrent()
+            compose.waitForIdle()
+            assertEquals("The displayed alpha preview must never export beta", listOf("alpha"),
+                exports.map { it.query["profile"] })
+            val payload = requireNotNull(prepared)
+            assertTrue(payload.bytes.decodeToString().contains("alpha transcript"))
+            assertFalse(payload.bytes.decodeToString().contains("beta transcript"))
+            assertTrue(payload.isCurrent())
+            assertSame(betaSessions, cache.state.value.sessions)
+            assertSame(betaTranscripts, cache.state.value.transcripts)
+            val preview = viewModel.uiState.value.projects.single().previewSessions.single()
+            val endpoint = cache.endpointGeneration.value
+            if (switchEndpoint) cache.resetForEndpointSwitch() else viewModel.selectProfile("beta")
+            runCurrent()
+            assertFalse("A changed profile or endpoint must retire the chooser payload", payload.isCurrent())
+            val beforeStale = exports.size
+            assertTrue("A retained stale preview must not dispatch", runCatching {
+                viewModel.exportProjectSession(preview, endpoint)
+            }.isFailure)
+            assertEquals(beforeStale, exports.size)
+            payload.bytes.fill(0)
+            rpc.close()
+            return@runTest
+        }
         val beforeClick = frames.size
         holdResume = true
         if (branch) {

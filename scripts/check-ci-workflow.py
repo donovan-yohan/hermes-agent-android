@@ -327,7 +327,8 @@ def main() -> int:
         logical_job = re.sub(r"\\\n[ \t]*", " ", citations_job)
         clone_contract = (
             r'^\s*GIT_TERMINAL_PROMPT=0\s+timeout\s+--kill-after=1s\s+60s\s+'
-            r'git clone --quiet\s+--depth=1\s+--single-branch\s+--no-tags\s+--filter=blob:none\s+--no-checkout\s+'
+            r'git clone --quiet\s+--depth=1\s+--single-branch\s+--no-tags\s+'
+            r'--filter=blob:none\s+--no-checkout\s+'
             r'"\$UPSTREAM_URL"\s+"\$upstream"\s+2>/dev/null\s+\|\|\s*\{\n'
             r'\s*echo "::error::[^"\n]*"\n\s*exit 3\n\s*\}'
         )
