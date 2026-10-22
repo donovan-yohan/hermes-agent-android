@@ -18,6 +18,23 @@ import org.junit.After
 class CanonicalBranchRegressionTest {
     @After fun resetMain() { Dispatchers.resetMain() }
     @Test
+    fun `menu whole branch hydrates canonical child and first prompt uses child owner`() = runTest {
+        fixture("work") { peer, cache, _, viewModel, parent ->
+            viewModel.branchSession(parent)
+            runCurrent()
+            val child = requireNotNull(viewModel.uiState.value.activeSessionId)
+            assertNotEquals(parent, child)
+            assertFalse(peer.calls("session.mutate").single().getValue("payload").jsonObject.containsKey("through_message_id"))
+            assertTrue(cache.transcript(child).isNotEmpty())
+            viewModel.setDraft("Continue whole branch")
+            viewModel.submit()
+            runCurrent()
+            val prompt = peer.calls("prompt.submit").single()
+            assertEquals(JsonPrimitive("public-child"), prompt["session_id"])
+            assertEquals(JsonPrimitive("work"), prompt["profile"])
+        }
+    }
+    @Test
     fun `viewmodel branch immediately sends and stops hydrated child on launch and named owner`() = runTest {
         for (profile in listOf(null, "work")) fixture(profile) { peer, cache, _, viewModel, parent ->
             val latest = cache.transcript(parent).filterIsInstance<AssistantTurn>().last()
@@ -109,6 +126,31 @@ class CanonicalBranchRegressionTest {
             assertEquals("hydration failure must not mint another branch request", mutations.first(), mutations.last())
             assertTrue(cache.transcript(child).filterIsInstance<AssistantTurn>().isNotEmpty())
         }
+    }
+
+    @Test
+    fun `canonical lost child receipt cannot create another child after socket replacement`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val first = BranchPeer("work", false, UnconfinedTestDispatcher(testScheduler))
+        val second = BranchPeer("work", false, UnconfinedTestDispatcher(testScheduler))
+        val clients = MutableStateFlow<GatewayRpcClient?>(first.rpc)
+        val cache = SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope) { CLOCK }
+        try {
+            val parent = repository.openSession("public-parent", "work")
+            first.failNextChildResume = true
+            assertTrue(runCatching { repository.branchSession(parent, null) }.isFailure)
+            assertEquals(1, first.calls("session.mutate").size)
+            clients.value = null
+            runCurrent()
+            clients.value = second.rpc
+            runCurrent()
+            repository.openSession(parent, "work")
+            val failure = runCatching { repository.branchSession(parent, null) }.exceptionOrNull()
+            assertTrue((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+            assertTrue(second.calls("session.mutate").isEmpty())
+        } finally { first.rpc.close(); second.rpc.close() }
     }
 
     @Test
