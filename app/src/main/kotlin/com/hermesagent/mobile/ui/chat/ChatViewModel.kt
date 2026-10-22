@@ -2615,6 +2615,18 @@ internal class ChatViewModel(
         }
     }
 
+    suspend fun exportProjectSession(session: SessionSummary, expectedEndpointGeneration: Long): com.hermesagent.mobile.ui.sessions.PreparedSessionExport {
+        val scope = profileScopeGeneration
+        val route = profileScope.value.sessionProfileParam
+        fun isCurrent(): Boolean = cache.endpointGeneration.value == expectedEndpointGeneration &&
+            profileScopeGeneration == scope && cache.state.value.projectsForScope(route).projects.values.any { project ->
+                project.previewSessions.any { it.id == session.id && it.remoteProfile == session.remoteProfile }
+            }
+        check(isCurrent())
+        val bytes = repository.exportSessionAtEndpoint(session, expectedEndpointGeneration)
+        return com.hermesagent.mobile.ui.sessions.PreparedSessionExport(bytes, ::isCurrent)
+    }
+
     suspend fun exportSession(id: String): com.hermesagent.mobile.ui.sessions.PreparedSessionExport {
         val endpoint = cache.endpointGeneration.value
         val owner = cache.session(id)?.remoteProfile

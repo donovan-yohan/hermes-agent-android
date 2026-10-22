@@ -15,7 +15,11 @@ retain their original pin and are not recertified here.
 
 The existing REST transport owns credentials, URL and response byte bounds. Export
 captures one transport, identity mapper and row owner before its first suspension;
-it checks the connection before and after each page. Every page must match its
+it checks the connection before and after each page. In particular,
+project previews carry their displayed owner and endpoint explicitly rather than
+recovering an owner or title from a colliding shared raw-id cache slot. Preview
+payloads also retire when their profile scope or authoritative preview disappears.
+Every page must match its
 requested offset/order/limit and the same resolved session ID. A complete JSON
 payload is prepared before asking Android for a destination. The document destination's
 phone path or URI is never injected into a transcript request or exported metadata.
@@ -65,3 +69,9 @@ native JSON CreateDocument intent and cancel result; Compose tests verify dispat
 `SessionExportLifecycleTest` additionally drives the actual composed control and
 ActivityResult registry through recreation and delayed stale callbacks under Robolectric.
 This is JVM lifecycle regression evidence, not rendered/device acceptance.
+
+`CachedProjectPreviewJourneyTest` exercises cached alpha preview Export through the
+production row, ViewModel and REST client while beta owns the same raw-id cache
+slot. It verifies alpha-only retrieval, unchanged live rows/transcripts, and stale
+profile/endpoint rejection. Repository tests additionally fence stale endpoints
+before dispatch and profile switches during a page response.

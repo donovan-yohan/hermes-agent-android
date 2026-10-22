@@ -1370,6 +1370,49 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `owner scoped export rejects stale endpoint before HTTP dispatch`() = runTest {
+        val cache = SessionCache()
+        val requests = mutableListOf<GatewayHttpRequest>()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(FakeRpc()), backgroundScope,
+            http = { FakeGatewayRest { request -> requests += request; restPage("{}") } },
+            restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val endpoint = cache.endpointGeneration.value
+        val preview = SessionSummary("same", "Alpha", "", CLOCK, remoteProfile = "alpha")
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(preview.copy(remoteProfile = "beta"))
+        runCurrent()
+        requests.clear()
+        assertTrue(runCatching { repository.exportSessionAtEndpoint(preview, endpoint) }.isFailure)
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `owner scoped export rejects profile switch during page before next dispatch`() = runTest {
+        val cache = SessionCache()
+        val requests = mutableListOf<GatewayHttpRequest>()
+        lateinit var repository: LiveGatewaySessionRepository
+        val http = FakeGatewayRest { request ->
+            requests += request
+            repository.setProfileRouting(ProfileRouting(activeProfile = "beta"))
+            restPage("""{"session_id":"same","messages":[],"pagination":{"limit":100,"offset":0,"order":"oldest"}}""")
+        }
+        repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(FakeRpc()), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha"))
+        requests.clear()
+        val preview = SessionSummary("same", "Alpha", "", CLOCK, remoteProfile = "alpha")
+        assertTrue(runCatching { repository.exportSessionAtEndpoint(preview, cache.endpointGeneration.value) }.isFailure)
+        assertEquals(listOf("alpha"), requests.map { it.query["profile"] })
+        assertFalse(requests.single().isCurrent())
+    }
+
+    @Test
     fun `branchSession sends correct params and upserts response`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {

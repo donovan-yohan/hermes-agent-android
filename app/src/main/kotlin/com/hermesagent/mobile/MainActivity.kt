@@ -471,6 +471,7 @@ class MainActivity : ComponentActivity() {
                     onRenameSession = chatViewModel::renameSessionAsync,
                     onDeleteSession = chatViewModel::deleteSessionAsync,
                     onExportSession = chatViewModel::exportSession,
+                    onExportProjectSession = chatViewModel::exportProjectSession,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,
                     onSetSessionUnread = chatViewModel::setSessionUnreadAsync,
                     onSetSessionArchived = chatViewModel::setSessionArchivedAsync,

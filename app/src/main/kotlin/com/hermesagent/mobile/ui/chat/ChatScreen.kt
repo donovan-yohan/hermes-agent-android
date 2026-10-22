@@ -551,6 +551,9 @@ private fun SessionsPane(
         onRenameSession = actions.onRenameSession,
         onDeleteSession = actions.onDeleteSession,
         onExportSession = actions.onExportSession,
+        onExportProjectSession = actions.onExportProjectSession?.let { export ->
+            { session -> export(session, state.diagnosticsEndpointGeneration) }
+        },
         onSetSessionPinned = actions.onSetSessionPinned,
         onSetSessionUnread = actions.onSetSessionUnread,
         onSetSessionArchived = actions.onSetSessionArchived,
