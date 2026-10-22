@@ -175,7 +175,7 @@ class SystemJourneyTest {
     }
 
     @Test
-    fun `the recent-logs section ships visible and disabled behind the marker chip`() {
+    fun `the recent-logs section ships enabled with file and level tabs`() {
         launch(
             system = SystemUiState(
                 status = GatewayStatusSummary("0.5.1", 0L, gatewayRunning = true, canUpdateHermes = true),
@@ -183,10 +183,8 @@ class SystemJourneyTest {
         )
         openPanel()
 
-        // Every control Desktop has, and none of them working: an absent
-        // control would claim the surface was never meant to have one.
+        // The previously disabled WIP block is now an operational read surface.
         compose.onNodeWithText(SystemCopy.RECENT_LOGS.uppercase()).assertIsDisplayed()
-        compose.onNodeWithTag(WIP_PILL).assertIsDisplayed()
         for (file in SystemCopy.LOG_FILES) {
             compose.onNodeWithText(file).assertIsDisplayed()
         }
@@ -196,7 +194,9 @@ class SystemJourneyTest {
         compose.onNodeWithText(SystemCopy.LOG_SEARCH_PLACEHOLDER).assertIsDisplayed()
         // Below the fold on a phone, which is what the scroll container is for.
         compose.onNodeWithTag(SYSTEM_NO_LOGS_TAG).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("Recent logs. Work in progress.").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Log file: agent").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
+        )
     }
 
     @Test

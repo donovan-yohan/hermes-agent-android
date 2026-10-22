@@ -1,13 +1,16 @@
 package com.hermesagent.mobile.ui.system
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,15 +22,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.SectionLabel
 import com.hermesagent.mobile.ui.common.StatusDot
 import com.hermesagent.mobile.ui.common.TextButton
-import com.hermesagent.mobile.ui.common.WIP_SPOKEN
+import com.hermesagent.mobile.ui.common.SearchField
 import com.hermesagent.mobile.ui.common.WipPill
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.hermesagent.mobile.ui.common.WorkingDots
 import com.hermesagent.mobile.ui.theme.HermesTheme
 
@@ -39,6 +43,12 @@ class SystemActions(
     val onCheckUpdates: () -> Unit = {},
     val onApplyUpdate: () -> Unit = {},
     val onCloseUpdates: () -> Unit = {},
+    val onLogsResume: () -> Unit = {},
+    val onLogsPause: () -> Unit = {},
+    val onLogsRefresh: () -> Unit = {},
+    val onLogFile: (String) -> Unit = {},
+    val onLogLevel: (String) -> Unit = {},
+    val onLogQuery: (String) -> Unit = {},
 )
 
 /**
@@ -51,9 +61,7 @@ class SystemActions(
  * the panel's own content, order and words are unchanged. Top to bottom, that
  * order is: the messaging gateway's state, the backend version and session
  * count, the two actions, the action's progress line, and the recent-logs
- * section — which ships visible and disabled behind the `WIP` chip, because log
- * fetching is a slice of its own and a control that is silently missing is a
- * parity finding.
+ * section. Logs use their own lifecycle-bound, connection/profile-fenced read.
  */
 @Composable
 fun SystemScreen(
@@ -63,6 +71,10 @@ fun SystemScreen(
 ) {
     val tokens = HermesTheme.tokens
     LaunchedEffect(Unit) { actions.onRefresh() }
+    LifecycleResumeEffect(Unit) {
+        actions.onLogsResume()
+        onPauseOrDispose { actions.onLogsPause() }
+    }
 
     Column(
         modifier
@@ -177,29 +189,16 @@ fun SystemScreen(
         }
 
         Hairline(Modifier.padding(vertical = 4.dp))
-        RecentLogsSection()
+        RecentLogsSection(state.logs, actions)
     }
 }
 
-/**
- * Desktop's recent-logs block, shipped visible and disabled.
- *
- * Every control Desktop has is here — the heading, the four log files, the four
- * levels, the filter field and the empty state — and none of them does
- * anything. That is the honest rendering of "this app does not fetch logs yet":
- * omitting the block would claim the surface was never meant to have one, and a
- * silently missing control is a parity finding rather than a smaller surface.
- */
+/** File → level → local substring filter → bounded tail. See system-panel.md. */
 @Composable
-private fun RecentLogsSection() {
+internal fun RecentLogsSection(state: SystemLogsState, actions: SystemActions) {
     val tokens = HermesTheme.tokens
     Column(
-        Modifier
-            .fillMaxWidth()
-            .semantics {
-                contentDescription = "${SystemCopy.RECENT_LOGS}. $WIP_SPOKEN"
-                disabled()
-            },
+        Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -207,51 +206,67 @@ private fun RecentLogsSection() {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             SectionLabel(SystemCopy.RECENT_LOGS)
+            TextButton(label = "Refresh", onClick = actions.onLogsRefresh)
+        }
+        LogTabs(SystemCopy.LOG_FILE, SystemCopy.LOG_FILES, state.file, actions.onLogFile)
+        LogTabs(SystemCopy.LOG_LEVEL, SystemCopy.LOG_LEVELS, state.level, actions.onLogLevel)
+        SearchField(
+            value = state.query, onValueChange = actions.onLogQuery,
+            placeholder = SystemCopy.LOG_SEARCH_PLACEHOLDER,
+            modifier = Modifier.testTag(SYSTEM_LOG_FILTER_TAG),
+        )
+        if (state.query.isNotBlank()) {
+            // Current Desktop search navigation is not a substring filter.
+            // Keep its unsupported controls visible, not silently absent (#127).
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(label = "Previous match", onClick = {}, enabled = false)
+                TextButton(label = "Next match", onClick = {}, enabled = false)
+                WipPill()
+            }
+        }
+        if (state.loading) WorkingDots(Modifier.testTag("system-logs-loading"))
+        state.error?.let {
+            Text(it, style = HermesTheme.type.caption, color = tokens.destructive,
+                modifier = Modifier.testTag("system-logs-error"))
+        }
+        if (!state.loading && state.error == null && state.filteredLines.isEmpty()) {
+            Text(SystemCopy.NO_LOGS, style = HermesTheme.type.caption, color = tokens.textQuaternary,
+                modifier = Modifier.testTag(SYSTEM_NO_LOGS_TAG))
+        }
+        // The latest shared Desktop LogTail adds these beyond the original WIP
+        // block. Keep unported actions visible, rather than claiming parity (#127).
+        Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(label = "Top of log", onClick = {}, enabled = false)
+            TextButton(label = "Bottom of log", onClick = {}, enabled = false)
+            TextButton(label = "Copy", onClick = {}, enabled = false)
             WipPill()
         }
-        DisabledTabs(label = SystemCopy.LOG_FILE, options = SystemCopy.LOG_FILES)
-        DisabledTabs(label = SystemCopy.LOG_LEVEL, options = SystemCopy.LOG_LEVELS)
-        Text(
-            text = SystemCopy.LOG_SEARCH_PLACEHOLDER,
-            style = HermesTheme.type.body,
-            color = tokens.textQuaternary,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = HermesTheme.spacing.touchTarget)
-                .border(1.dp, tokens.strokeQuaternary, RoundedCornerShape(8.dp))
-                .padding(horizontal = 10.dp, vertical = 12.dp)
-                .testTag(SYSTEM_LOG_FILTER_TAG),
-        )
-        Text(
-            text = SystemCopy.NO_LOGS,
-            style = HermesTheme.type.caption,
-            color = tokens.textQuaternary,
-            modifier = Modifier.padding(bottom = 8.dp).testTag(SYSTEM_NO_LOGS_TAG),
-        )
+        Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState())
+            .background(tokens.widgetSurface, RoundedCornerShape(8.dp)).padding(8.dp)) {
+            state.filteredLines.forEach { line ->
+                Text(line, style = HermesTheme.type.code,
+                    color = tokens.textSecondary)
+            }
+        }
     }
 }
 
-/**
- * Desktop's `ResponsiveTabs` row, drawn and not wired.
- *
- * Deliberately not the app's [com.hermesagent.mobile.ui.common.SegmentedControl]:
- * that primitive is a `selectableGroup`, and a disabled radio group publishes
- * four selectable nodes a screen reader will offer and none of them will answer.
- * The whole block is one silent, disabled node instead; the heading above it
- * says the phrase.
- */
 @Composable
-private fun DisabledTabs(label: String, options: List<String>) {
+private fun LogTabs(label: String, options: List<String>, selected: String, select: (String) -> Unit) {
     val tokens = HermesTheme.tokens
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(text = label, style = HermesTheme.type.caption, color = tokens.textQuaternary)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.horizontalScroll(rememberScrollState()).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (option in options) {
                 Text(
                     text = option,
                     style = HermesTheme.type.caption,
-                    color = tokens.textQuaternary,
+                    color = if (selected == option) tokens.textPrimary else tokens.textTertiary,
                     modifier = Modifier
+                        .selectable(selected == option, role = Role.Tab, onClick = { select(option) })
+                        .heightIn(min = HermesTheme.spacing.touchTarget)
+                        .widthIn(min = HermesTheme.spacing.touchTarget)
+                        .semantics { contentDescription = "$label: $option" }
                         .background(tokens.widgetSurface, RoundedCornerShape(6.dp))
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                 )
