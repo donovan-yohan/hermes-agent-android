@@ -11,10 +11,11 @@ on its way in. Copy ID landed with the shell (S13), Rename and Delete with #65,
 and **Pin / Unpin, Mark as read / unread and Archive with #66**. The Archived
 view's separate `Unarchive` row action is covered by #138. Branch, Export and
 Move to project were empty slots in the historical implementation described below.
-Branch and Move to project are now live; see [session-branch.md](session-branch.md)
+Branch, Export and Move to project are now live; see
+[session-branch.md](session-branch.md), [session-export.md](session-export.md)
 and [session-move-project.md](session-move-project.md) for their inspected behavior
 pins, regression evidence and pending rendered acceptance. References below to four
-unbuilt verbs describe historical captures, not current Branch or Move to project.
+unbuilt verbs describe historical captures, not these current capabilities.
 
 ## Pin
 

@@ -1347,6 +1347,72 @@ class GatewaySessionRepositoryTest {
 
 
     @Test
+    fun `export session uses row owner and compacted oldest REST transcript`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val requests = mutableListOf<GatewayHttpRequest>()
+        val http = FakeGatewayRest { request ->
+            requests += request
+            restPage("""{"session_id":"durable-a","messages":[{"id":1,"role":"user","content":"Full history"}],"pagination":{"limit":100,"offset":0,"order":"oldest"}}""")
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        requests.clear()
+        cache.upsertSession(SessionSummary("durable-a", "Export title", "", CLOCK, remoteProfile = "research"))
+        val bytes = repository.exportSession("durable-a")
+        val request = requests.single()
+        assertEquals("api/sessions/durable-a/messages", request.path)
+        assertEquals(mapOf("profile" to "research", "limit" to "100", "offset" to "0", "order" to "oldest", "include_compacted" to "true"), request.query)
+        assertTrue(bytes.toString(Charsets.UTF_8).contains("Full history"))
+    }
+
+    @Test
+    fun `owner scoped export rejects stale endpoint before HTTP dispatch`() = runTest {
+        val cache = SessionCache()
+        val requests = mutableListOf<GatewayHttpRequest>()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(FakeRpc()), backgroundScope,
+            http = { FakeGatewayRest { request -> requests += request; restPage("{}") } },
+            restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val endpoint = cache.endpointGeneration.value
+        val preview = SessionSummary("same", "Alpha", "", CLOCK, remoteProfile = "alpha")
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(preview.copy(remoteProfile = "beta"))
+        runCurrent()
+        requests.clear()
+        assertTrue(runCatching { repository.exportSessionAtEndpoint(preview, endpoint) }.isFailure)
+        assertTrue(requests.isEmpty())
+    }
+
+    @Test
+    fun `owner scoped export rejects profile switch during page before next dispatch`() = runTest {
+        val cache = SessionCache()
+        val requests = mutableListOf<GatewayHttpRequest>()
+        lateinit var repository: LiveGatewaySessionRepository
+        val http = FakeGatewayRest { request ->
+            requests += request
+            repository.setProfileRouting(ProfileRouting(activeProfile = "beta"))
+            restPage("""{"session_id":"same","messages":[],"pagination":{"limit":100,"offset":0,"order":"oldest"}}""")
+        }
+        repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(FakeRpc()), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        repository.setProfileRouting(ProfileRouting(activeProfile = "alpha"))
+        requests.clear()
+        val preview = SessionSummary("same", "Alpha", "", CLOCK, remoteProfile = "alpha")
+        assertTrue(runCatching { repository.exportSessionAtEndpoint(preview, cache.endpointGeneration.value) }.isFailure)
+        assertEquals(listOf("alpha"), requests.map { it.query["profile"] })
+        assertFalse(requests.single().isCurrent())
+    }
+
+    @Test
     fun `branchSession sends correct params and upserts response`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {

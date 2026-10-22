@@ -494,6 +494,8 @@ class MainActivity : ComponentActivity() {
                     sessionProjectActions = com.hermesagent.mobile.ui.sessions.SessionProjectActions(
                         chatViewModel::sessionProjectTargets, chatViewModel::moveSessionToProject,
                     ),
+                    onExportSession = chatViewModel::exportSession,
+                    onExportProjectSession = chatViewModel::exportProjectSession,
                     onBranchSession = chatViewModel::branchSession,
                     onBranchProjectSession = chatViewModel::branchProjectSession,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,

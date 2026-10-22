@@ -103,6 +103,21 @@ class SessionActionsMenuJourneyTest {
     }
 
     @Test
+    fun `export prepares selected session and dismisses menu even on refusal`() {
+        var exports = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                SessionActionsControl(sessionId = FIRST_ID, onExport = { exports++; error("synthetic refusal") })
+            }
+        }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(EXPORT).performClick()
+        compose.waitForIdle()
+        assertEquals(1, exports)
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+    }
+
+    @Test
     fun `compact drawer branch leaves route and closes drawer`() {
         var branches = 0
         var leftRoutes = 0
@@ -123,6 +138,57 @@ class SessionActionsMenuJourneyTest {
         assertEquals(1, branches)
         assertEquals(1, leftRoutes)
         compose.onNodeWithTag("Session row $FIRST_ID").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun `compact header composes export move and branch together`() = combinedActionsJourney(drawer = false)
+
+    @Test
+    fun `compact ordinary row composes export move and branch together`() = combinedActionsJourney(drawer = true)
+
+    @Test
+    @Config(qualifiers = "w1000dp-h891dp")
+    fun `wide header composes export move and branch together`() = combinedActionsJourney(drawer = false)
+
+    private fun combinedActionsJourney(drawer: Boolean) {
+        val dispatches = mutableListOf<String>()
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(
+                    state = ChatUiState(activeSession = if (drawer) null else session(FIRST_ID, FIRST_TITLE),
+                        sessionRows = if (drawer) listOf(SessionListRow.Row(session(FIRST_ID, FIRST_TITLE))) else emptyList()),
+                    actions = ChatActions(
+                        onExportSession = { id -> dispatches += "export:$id"; error("synthetic refusal") },
+                        sessionProjectActions = SessionProjectActions(
+                            load = { id, row ->
+                                assertEquals(if (drawer) FIRST_ID else null, row?.id)
+                                dispatches += "load:$id"
+                                listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Combined project", "/work/demo"))
+                            },
+                            move = { id, project -> dispatches += "move:$id:${project.id}" },
+                        ),
+                        onBranchSession = { id -> dispatches += "branch:$id" },
+                    ),
+                    onOpenSettings = {},
+                )
+            }
+        }
+        if (drawer) compose.onNodeWithContentDescription("Open sessions").performClick()
+        fun openActions() { compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick() }
+        openActions()
+        compose.onNodeWithText(EXPORT).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+        openActions()
+        compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Combined project").performClick()
+        compose.waitForIdle()
+        openActions()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("export:$FIRST_ID", "load:$FIRST_ID", "move:$FIRST_ID:p", "branch:$FIRST_ID"), dispatches)
+        if (drawer) compose.onNodeWithTag("Session row $FIRST_ID").assertIsNotDisplayed()
     }
 
     @Test
