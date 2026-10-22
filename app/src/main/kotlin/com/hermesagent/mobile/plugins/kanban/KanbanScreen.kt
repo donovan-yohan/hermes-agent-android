@@ -42,7 +42,15 @@ fun KanbanScreen(
     onRefresh: () -> Unit,
     onOpenTask: (KanbanTask) -> Unit,
     onCloseDetail: () -> Unit,
+    onNewTask: () -> Unit = {},
+    onCloseCreate: () -> Unit = {},
+    onSubmitTask: (KanbanNewTask) -> Unit = {},
 ) {
+    state.creation?.let { creation ->
+        BackHandler { onCloseCreate() }
+        KanbanNewTaskScreen(creation, onCloseCreate, onSubmitTask)
+        return
+    }
     val detail = state.detail
     val showingDetail = detail !is KanbanDetail.None
 
@@ -57,10 +65,11 @@ fun KanbanScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             TextButton(label = "Refresh", onClick = onRefresh, modifier = Modifier.testTag("Kanban refresh"))
-            KanbanControlsMenu(showingDetail)
+            KanbanControlsMenu(showingDetail, onNewTask)
         }
 
         if (!showingDetail) {
+            state.creationNotice?.let { Notice(it) }
             if (state.stale) Notice(KANBAN_STALE)
             when (state.phase) {
                 KanbanPhase.Loading -> EmptyState("Loading board…", "Hermes is asking the Gateway for its current board.")
@@ -84,7 +93,7 @@ fun KanbanScreen(
 }
 
 @Composable
-private fun KanbanControlsMenu(showingDetail: Boolean) {
+private fun KanbanControlsMenu(showingDetail: Boolean, onNewTask: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val label = if (showingDetail) "Task actions" else "Board controls"
 
@@ -103,14 +112,19 @@ private fun KanbanControlsMenu(showingDetail: Boolean) {
                         color = HermesTheme.tokens.strokeTertiary,
                     )
                 }
-                actions.forEach { action -> KanbanWipMenuRow(action) }
+                actions.forEach { action ->
+                    if (!showingDetail && action == "New task") TextButton("New task", {
+                        expanded = false
+                        onNewTask()
+                    }) else KanbanWipMenuRow(action)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun KanbanWipMenuRow(label: String) {
+internal fun KanbanWipMenuRow(label: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

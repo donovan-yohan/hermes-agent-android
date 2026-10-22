@@ -32,6 +32,8 @@ data class KanbanUiState(
     val columns: List<KanbanColumn> = emptyList(),
     val detail: KanbanDetail = KanbanDetail.None,
     val stale: Boolean = false,
+    val creation: KanbanCreation? = null,
+    val creationNotice: String? = null,
 )
 
 /** Endpoint-scoped snapshot. New board/detail intents stamp out older answers. */
@@ -40,6 +42,7 @@ class KanbanViewModel(
     connected: StateFlow<Boolean>,
     private val endpointGeneration: StateFlow<Long>,
     private val pluginScope: CoroutineScope? = null,
+    private val create: KanbanCreate = UnavailableKanbanCreate,
 ) : ViewModel() {
     private val scope: CoroutineScope
         get() = pluginScope ?: viewModelScope
@@ -49,6 +52,46 @@ class KanbanViewModel(
     private var endpoint = endpointGeneration.value
     private var boardOperation = 0L
     private var detailOperation = 0L
+    private var createScope: KanbanCreateScope? = null
+
+    fun openCreate() {
+        ensureEndpoint()
+        closeCreate()
+        val bound = create.open(endpointGeneration.value)
+        createScope = bound
+        _uiState.update { it.copy(creation = KanbanCreation(loading = true), creationNotice = null) }
+        scope.launch {
+            val defaults = bound?.prepare()
+            if (createScope === bound && _uiState.value.creation != null) _uiState.update {
+                it.copy(creation = KanbanCreation(defaults = defaults, error = if (defaults == null) "New task is unavailable. Reconnect and try again." else null))
+            }
+        }
+    }
+
+    fun closeCreate() {
+        createScope?.close()
+        createScope = null
+        _uiState.update { it.copy(creation = null) }
+    }
+
+    fun submitTask(draft: KanbanNewTask) {
+        val dialog = _uiState.value.creation ?: return
+        val bound = createScope ?: return
+        if (dialog.loading || dialog.submitted || dialog.defaults == null || draft.title.isBlank()) return
+        _uiState.update { it.copy(creation = dialog.copy(submitted = true, loading = true, error = null)) }
+        scope.launch {
+            val result = bound.submit(draft)
+            if (createScope !== bound) return@launch
+            if (result == null) _uiState.update { it.copy(creation = dialog.copy(submitted = true,
+                error = "Task creation could not be confirmed. Close and refresh the board before trying again.")) }
+            else {
+                closeCreate()
+                _uiState.update { it.copy(creationNotice = if (result.dispatcherWarning)
+                    "Task created. Check the board; the worker may not have started yet." else "Task created.") }
+                refreshBoard()
+            }
+        }
+    }
 
     init {
         scope.launch {
@@ -149,6 +192,8 @@ class KanbanViewModel(
     }
 
     private fun clear(generation: Long) {
+        createScope?.close()
+        createScope = null
         endpoint = generation
         boardOperation++
         detailOperation++
