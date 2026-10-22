@@ -356,6 +356,60 @@ class ChatProfileScopeTest {
         assertEquals("lab draft", viewModel.uiState.value.draft)
     }
 
+    @Test
+    fun `bot side chat uses explicit roster owner without inherited project or model`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        repository.onSessionCreated = { cache.upsertSession(row("created", CLOCK, "work")) }
+        val results = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        assertEquals("work", repository.createdProfile)
+        assertNull(repository.createdWorkspace)
+        assertNull(repository.createdOverrides)
+        assertEquals("created", viewModel.uiState.value.activeSession?.id)
+        assertEquals(listOf(true), results)
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
+    @Test
+    fun `bot side chat completion cannot hijack newer profile navigation`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        val results = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.setDraft("newer draft")
+        gate.complete(Unit); runCurrent()
+        assertEquals(listOf(false), results)
+        assertNull(viewModel.uiState.value.activeSession)
+        assertEquals("newer draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `stale bot endpoint and unknown profile create nothing`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        val results = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value - 1) { results += it }
+        viewModel.newBotSession("missing", cache.endpointGeneration.value) { results += it }
+        runCurrent()
+        assertEquals(listOf(false, false), results)
+        assertNull(repository.createdProfile)
+    }
+
+    @Test
+    fun `bot ordinary conversation binds queue to owner instead of browsing profile`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.newBotSession("work", cache.endpointGeneration.value) { }
+        runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ComposerQueueScope.forConnectionProfile(
+            "transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
@@ -383,6 +437,9 @@ class ChatProfileScopeTest {
         override suspend fun openSession(durableId: String): String = durableId
         override suspend fun openSession(durableId: String, profile: String): String = openSession(durableId)
 
+        var onSessionCreated: () -> Unit = {}
+        var createdWorkspace: String? = null
+        var createdOverrides: com.hermesagent.mobile.data.composer.NewSessionComposerOverrides? = null
         var sessionCreateGate: CompletableDeferred<Unit>? = null
         var sessionCreateJob: kotlinx.coroutines.Job? = null
         var createdProfile: String? = null
@@ -399,8 +456,11 @@ class ChatProfileScopeTest {
             expectedEndpointGeneration: Long,
         ): String {
             createdProfile = profile
+            createdWorkspace = workspacePath
+            createdOverrides = overrides
             sessionCreateJob = kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
             sessionCreateGate?.await()
+            onSessionCreated()
             return "created"
         }
 

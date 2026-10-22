@@ -83,7 +83,7 @@ internal val BOT_AVATAR_SHAPE = RoundedCornerShape(percent = 22)
  * empty/error/stale states and the 48dp/accessibility sweep belong to the
  * surface slice, so the states below are the honest subset this one can prove.
  */
-class BotsActions(
+data class BotsActions(
     val onRefresh: () -> Unit = {},
     val onSearchChange: (String) -> Unit = {},
     val onKindFilterChange: (RosterKindFilter) -> Unit = {},
@@ -96,6 +96,7 @@ class BotsActions(
      * rather than left mounted, so entering it is what re-reads the roster.
      */
     val onResume: () -> Unit = {},
+    val onNewChat: (BotRosterRow, BotsRosterUiState) -> Unit = { _, _ -> },
     val onNewBot: (Long) -> Unit = {},
     val onSection: (BotSection?, BotsRosterUiState) -> Unit = { _, _ -> },
     val onRowAction: (BotRosterRow, BotRowAction, BotsRosterUiState) -> Unit = { _, _, _ -> },
@@ -266,6 +267,7 @@ private fun RosterList(
                     onOpen = { onOpenBotChat(row) },
                     onOpenRoutines = { onOpenRoutines(row) },
                     managementEnabled = state.connectionUp,
+                    onNewChat = { actions.onNewChat(row, state) },
                     onManage = { action -> actions.onRowAction(row, action, state) },
                 )
             }
@@ -315,6 +317,7 @@ private fun RosterList(
                                 onOpen = { onOpenBotChat(row) },
                                 onOpenRoutines = { onOpenRoutines(row) },
                                 managementEnabled = state.connectionUp,
+                                onNewChat = { actions.onNewChat(row, state) },
                                 onManage = { action -> actions.onRowAction(row, action, state) },
                             )
                         }
@@ -382,6 +385,7 @@ private fun BotRowItem(
     /** Open this bot's Routines — its own visible control, never the row's tap. */
     onOpenRoutines: () -> Unit,
     managementEnabled: Boolean,
+    onNewChat: () -> Unit,
     onManage: (BotRowAction) -> Unit,
 ) {
     val tokens = HermesTheme.tokens
@@ -446,7 +450,7 @@ private fun BotRowItem(
                     )
                 }
             }
-            BotContextMenu(name, pinned, hidden, onOpen, managementEnabled, row.isDefault, onManage)
+            BotContextMenu(name, pinned, hidden, onOpen, managementEnabled && !opening, row.isDefault, onManage, onNewChat)
             // The one distinct Routines entry for this row: always visible, its
             // own accessible name, and its own 48dp target. Desktop reaches
             // Routines by focusing the bot, because its Bots pane and the
@@ -527,7 +531,7 @@ private fun RosterSearchField(value: String, onValueChange: (String) -> Unit) {
 @Composable
 private fun BotContextMenu(
     name: String, pinned: Boolean, hidden: Boolean, onOpen: () -> Unit,
-    enabled: Boolean, isDefault: Boolean, onManage: (BotRowAction) -> Unit,
+    enabled: Boolean, isDefault: Boolean, onManage: (BotRowAction) -> Unit, onNewChat: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -552,7 +556,7 @@ private fun BotContextMenu(
             ComingSoonAction("Manage groups...", Modifier.padding(horizontal = 12.dp))
             BotMenuItem("Duplicate", enabled) { expanded = false; onManage(BotRowAction.Duplicate) }
             Hairline()
-            ComingSoonAction("New chat with this bot", Modifier.padding(horizontal = 12.dp))
+            BotMenuItem("New chat with this bot", enabled) { expanded = false; onNewChat() }
             ComingSoonAction("Open recent session", Modifier.padding(horizontal = 12.dp))
             Hairline()
             BotMenuItem("Move to section", enabled) { expanded = false; onManage(BotRowAction.Move) }

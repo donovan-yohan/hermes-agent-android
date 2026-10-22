@@ -188,7 +188,9 @@ class BotsPlugin(
                             onOpenRoutines = { row ->
                                 openRoutines(row, origin, nav.onNavigate)
                             },
-                            actions = actions,
+                            actions = actions.copy(onNewChat = { row, snapshot ->
+                                viewModel.newChat(row, snapshot, nav.onNewBotSession)
+                            }),
                         )
                     },
                 ),
@@ -233,7 +235,9 @@ class BotsPlugin(
                                 onBack = onBack,
                                 onOpenBotChat = { row -> viewModel.openBotChat(row, nav.onOpenBotChat) },
                                 onOpenRoutines = { row -> openRoutines(row, origin, nav.onNavigate) },
-                                actions = actions,
+                                actions = actions.copy(onNewChat = { row, snapshot ->
+                                    viewModel.newChat(row, snapshot, nav.onNewBotSession)
+                                }),
                                 embedded = true,
                             )
                         },

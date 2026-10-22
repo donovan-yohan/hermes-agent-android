@@ -76,6 +76,7 @@ data class PluginNavigation(
     val onOpenGateways: (SignInOrigin) -> Unit = {},
     val onNavigate: (String) -> Unit = {},
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    val onNewBotSession: (profile: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     val currentRoute: String? = null,
 )
 
@@ -197,6 +198,11 @@ fun HermesApp(
     var destination by rememberSaveable(stateSaver = HermesDestinationSaver) {
         mutableStateOf<HermesDestination>(HermesDestination.Chat)
     }
+    val navigationEpoch = remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    fun navigate(target: HermesDestination) {
+        navigationEpoch.longValue++
+        destination = target
+    }
     val routesContributions by pluginRegistry.areaFlow(PluginAreas.ROUTES_AREA)
         .collectAsStateWithLifecycle(emptyList())
     val sidebarNavContributions by pluginRegistry.areaFlow(PluginAreas.SIDEBAR_NAV_AREA)
@@ -215,13 +221,13 @@ fun HermesApp(
      */
     var signInOrigin by rememberSaveable { mutableStateOf(SignInOrigin.Gateways) }
     LaunchedEffect(signInOrigin) { onSignInOriginChange(signInOrigin) }
-    LaunchedEffect(navigationAsk) { navigationAsk?.let { destination = it.destination } }
+    LaunchedEffect(navigationAsk) { navigationAsk?.let { navigate(it.destination) } }
 
     var routeOrigin by rememberSaveable(stateSaver = HermesDestinationSaver) {
         mutableStateOf<HermesDestination>(HermesDestination.Settings)
     }
     val onBack = {
-        destination = if (destination is HermesDestination.Route) routeOrigin else destination.backDestination()
+        navigate(if (destination is HermesDestination.Route) routeOrigin else destination.backDestination())
     }
     // The Cron surface owns its header. A second shell title would duplicate it
     // and make the phone spend two rows saying the same destination.
@@ -239,7 +245,7 @@ fun HermesApp(
     // finishes there rather than on the pane it passed through.
     val openGateways = { origin: SignInOrigin ->
         signInOrigin = origin
-        destination = HermesDestination.Gateways
+        navigate(HermesDestination.Gateways)
     }
     val onOpenGateways = { openGateways(SignInOrigin.Gateways) }
     val onOpenGatewaysFromSessions = { openGateways(SignInOrigin.Sessions) }
@@ -250,11 +256,19 @@ fun HermesApp(
             onOpenGateways = openGateways,
             onNavigate = { target ->
                 if (destination !is HermesDestination.Route) routeOrigin = destination
-                destination = HermesDestination.Route(target)
+                navigate(HermesDestination.Route(target))
+            },
+            onNewBotSession = { profile, endpoint, onFinished ->
+                val originEpoch = navigationEpoch.longValue
+                chatActions.onNewBotSession(profile, endpoint) { opened ->
+                    val accepted = opened && navigationEpoch.longValue == originEpoch
+                    if (accepted) navigate(HermesDestination.Chat)
+                    onFinished(accepted)
+                }
             },
             onOpenBotChat = { profile, durableId, onFinished ->
                 chatActions.onOpenBotChat(profile, durableId) { opened ->
-                    if (opened) destination = HermesDestination.Chat
+                    if (opened) navigate(HermesDestination.Chat)
                     onFinished(opened)
                 }
             },
@@ -276,8 +290,8 @@ fun HermesApp(
                 HermesDestination.Chat -> ChatScreen(
                     state = chatState,
                     actions = chatActions,
-                    onOpenSettings = { destination = HermesDestination.Settings },
-                    onOpenProfiles = { destination = HermesDestination.Profiles },
+                    onOpenSettings = { navigate(HermesDestination.Settings) },
+                    onOpenProfiles = { navigate(HermesDestination.Profiles) },
                     // The chat chrome's connection line is the failure site; this
                     // is the same destination its sidebar's "Manage gateways…"
                     // reaches, so both routes out of a broken connection land in
@@ -296,8 +310,8 @@ fun HermesApp(
                     },
                     sidebarNavigation = sidebarNavContributions,
                     routeContent = sidebarRoute,
-                    onLeaveRoute = { destination = HermesDestination.Chat },
-                    onOpenCron = cronContent?.let { { destination = HermesDestination.Cron } },
+                    onLeaveRoute = { navigate(HermesDestination.Chat) },
+                    onOpenCron = cronContent?.let { { navigate(HermesDestination.Cron) } },
                     cronSection = cronSection,
                 )
 
@@ -320,11 +334,11 @@ fun HermesApp(
                     onBack = onBack,
                 ) {
                     SettingsScreen(
-                        onOpenAppearance = { destination = HermesDestination.Appearance },
+                        onOpenAppearance = { navigate(HermesDestination.Appearance) },
                         onOpenGateways = onOpenGateways,
-                        onOpenSystem = { destination = HermesDestination.System },
-                        onOpenNotifications = { destination = HermesDestination.Notifications },
-                        onOpenPlugins = { destination = HermesDestination.Plugins },
+                        onOpenSystem = { navigate(HermesDestination.System) },
+                        onOpenNotifications = { navigate(HermesDestination.Notifications) },
+                        onOpenPlugins = { navigate(HermesDestination.Plugins) },
                         systemAvailable =
                             gatewayState.connection.status == GatewayConnectionStatus.Connected,
                         // Sidebar feature launchers render in Chat's drawer/rail, not Settings.
@@ -396,7 +410,7 @@ fun HermesApp(
                         route.render.invoke()
                     } else {
                         LaunchedEffect(destination) {
-                            destination = HermesDestination.Settings
+                            navigate(HermesDestination.Settings)
                         }
                     }
                 }
