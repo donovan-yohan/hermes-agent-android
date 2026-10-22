@@ -62,7 +62,12 @@ class AuditContinuationTest(unittest.TestCase):
                          '7470eaa88f6711a55e6736d985a8ecb14cbb9799ba8977c1996b09cd9e4eff9b')
         self.assertEqual(data['contract_assessment'], 'additive catalog tier; no demonstrated existing-client wire repair')
         ledger = (ROOT / 'app/src/test/kotlin/com/hermesagent/mobile/ui/theme/DesktopThemeLedger.kt').read_text()
-        self.assertIn('PINNED_SHA = "' + data['upstream_sha'] + '"', ledger)
+        # Historical source reads stay at 926; the later registry-only target
+        # is justified separately by an exact unchanged-source assessment.
+        self.assertIn('PINNED_SHA = "41dfcf2c1bd7146d4ad46aea08b7dd007900602e"', ledger)
+        assessment = (ROOT / 'docs/spikes/upstream-41dfcf2c-2026-10-22.md').read_text()
+        self.assertIn(data['upstream_sha'], assessment)
+        self.assertIn('22 changed paths', assessment)
         self.assertNotIn('/Users/', json.dumps(data))
 
     def test_missing_drift_engine_cannot_be_only_review_debt(self):

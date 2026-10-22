@@ -28,6 +28,7 @@ Transport failures exit 3, without publishing remote stderr or private paths.
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import json
 import os
 import signal
@@ -87,6 +88,8 @@ HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
 PIN_SECTION_RE = re.compile(r"^\s{0,3}#{1,6}\s*[Pp]in\b")
 
 _blobs: dict[tuple[str, str], list[str] | None] = {}
+_blob_objects: dict[str, list[str]] = {}
+_tree_objects: dict[str, dict[str, str]] = {}
 _tree_paths: dict[str, list[str]] = {}
 _ensured: set[str] = set()
 _READ: pathlib.Path | None = None
@@ -177,6 +180,10 @@ def blob(sha: str, path: str) -> list[str] | None:
         if path not in tree_paths(sha):
             _blobs[key] = None
             return None
+        oid = _tree_objects.get(sha, {}).get(path)
+        if oid is not None and oid in _blob_objects:
+            _blobs[key] = _blob_objects[oid]
+            return _blobs[key]
         done = subprocess_run(
             ["git", "-C", str(read_root()), "show", f"{sha}:{path}"],
             capture_output=True,
@@ -193,6 +200,8 @@ def blob(sha: str, path: str) -> list[str] | None:
         if body and body[-1] == "":
             body.pop()
         _blobs[key] = body
+        if oid is not None:
+            _blob_objects[oid] = body
     return _blobs[key]
 
 
@@ -240,12 +249,20 @@ def tree_paths(sha: str) -> list[str]:
         if _FETCH:
             materialize(sha)
         done = subprocess_run(
-            ["git", "-C", str(read_root()), "ls-tree", "-r", "--name-only", sha],
+            ["git", "-C", str(read_root()), "ls-tree", "-rz", sha],
             capture_output=True,
             text=True,
             check=True,
         )
-        _tree_paths[sha] = done.stdout.splitlines()
+        entries = {}
+        for entry in done.stdout.split("\0"):
+            if entry:
+                metadata, path = entry.split("\t", 1)
+                mode, kind, oid = metadata.split()
+                if kind == "blob":
+                    entries[path] = oid
+        _tree_objects[sha] = entries
+        _tree_paths[sha] = list(entries)
     return _tree_paths[sha]
 
 
@@ -520,6 +537,7 @@ def full_pins(text: str) -> set[str]:
     return set(re.findall(r"(?<![0-9a-fA-F])[0-9a-f]{40}(?![0-9a-fA-F])", text))
 
 
+@lru_cache(maxsize=32768)
 def _sha_tokens(line: str) -> list[str]:
     """Pin-shaped tokens on a line: a revision, not a decimal literal in code.
 
@@ -561,6 +579,7 @@ def _continuation_of_above(lines: list[str], number: int) -> bool:
     return number >= 2 and lines[number - 2].rstrip().endswith("@")
 
 
+@lru_cache(maxsize=32768)
 def _supplied_by_at(line: str) -> bool:
     """True when the line's revision is introduced by `@`: a citation's own pin.
 
@@ -602,7 +621,23 @@ def _revision_tokens(line: str, cited: str | None = None, *, full: bool = False)
     return result
 
 
+class AnalyzedLines(list):
+    """Carrier-local memoization; no attribution or verdict is skipped."""
+    def __init__(self, lines):
+        super().__init__(lines)
+        self.revisions = {}
+        self.rows = None
+
+
+@lru_cache(maxsize=32768)
+def _named_paths(line: str):
+    return tuple(PATH_RE.finditer(line))
+
+
 def _line_revision_tokens(lines: list[str], index: int, cited: str | None = None, *, full: bool = False) -> list[str]:
+    key = (index, cited is not None, full)
+    if isinstance(lines, AnalyzedLines) and key in lines.revisions:
+        return lines.revisions[key]
     line = lines[index]
     # A wrapped declaration can put the label at the previous line's end:
     # "Desktop <sha> and Android baseline" / "<sha> ...". Carry the LABEL,
@@ -614,7 +649,10 @@ def _line_revision_tokens(lines: list[str], index: int, cited: str | None = None
             r"\s*[:=]?\s*$", lines[index - 1], re.I)
         if label:
             line = label.group(1) + " " + line
-    return _revision_tokens(line, cited, full=full)
+    result = _revision_tokens(line, cited, full=full)
+    if isinstance(lines, AnalyzedLines):
+        lines.revisions[key] = result
+    return result
 
 
 def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | None:
@@ -642,7 +680,7 @@ def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | N
             break
         if not any(
             match.group("path").rsplit("/", 1)[-1] == base
-            for match in PATH_RE.finditer(line)
+            for match in _named_paths(line)
         ):
             continue
         tokens = _line_revision_tokens(lines, index, cited)
@@ -664,6 +702,8 @@ def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
     general one is what let an added registry row re-point every unmarked
     citation in a file, turning honest merged history red (#280, #264).
     """
+    if isinstance(lines, AnalyzedLines) and lines.rows is not None:
+        return lines.rows
     rows: dict[int, tuple[str, str | None, bool]] = {}
     inside = False
     seen = False
@@ -672,7 +712,7 @@ def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
         if is_row != inside:
             inside = is_row
             seen = False
-        if not is_row or PATH_RE.search(line):
+        if not is_row or _named_paths(line):
             continue
         tokens = _sha_tokens(line)
         if not tokens:
@@ -680,6 +720,8 @@ def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
         marker = MARKER_RE.search(line)
         rows[index] = (tokens[0], marker.group(1) if marker else None, not seen)
         seen = True
+    if isinstance(lines, AnalyzedLines):
+        lines.rows = rows
     return rows
 
 
@@ -709,7 +751,7 @@ def _borrowed_above(lines: list[str], number: int) -> bool:
         if not line.lstrip().startswith("|"):
             # The end of this table: the block above is a different one.
             return False
-        if PATH_RE.search(line) and _sha_tokens(line):
+        if _named_paths(line) and _sha_tokens(line):
             return True
     return False
 
@@ -752,7 +794,7 @@ def _declaration(lines: list[str], number: int, cited: str | None = None) -> str
             # A narrower row governs only the marker it names.
             continue
         if (
-            PATH_RE.search(line)
+            _named_paths(line)
             or _supplied_by_at(line)
             or _continuation_of_above(lines, index + 1)
         ):
@@ -786,7 +828,7 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
         row = rows.get(index - 1)
         if row is None:
             if (
-                PATH_RE.search(line)
+                _named_paths(line)
                 or _supplied_by_at(line)
                 or _continuation_of_above(lines, index)
             ):
@@ -1076,7 +1118,7 @@ def citation_bindings(
     ambiguous = 0
     if not pins:
         return out, ambiguous
-    lines = text.splitlines()
+    lines = AnalyzedLines(text.splitlines())
     for number, cited, ranges, _safe in located_citations(text, pins[0]):
         if not ranges:
             # A citation with no line span proves nothing about any revision, so it
