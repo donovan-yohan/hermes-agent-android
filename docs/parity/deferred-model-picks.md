@@ -22,6 +22,8 @@ All citations in this section refer to the SHA above.
   not target provider/reasoning, request id or rejection revision. Its `provider`
   describes the committed selection. It cannot correlate a same-model refusal
   to a newer local provider/reasoning pick; the client must not invent that identity.
+- `gateway/session_local.py:386-403`: authoritative reasoning uses `reasoning_effort`,
+  distinct from the mutation payload's `reasoning` field.
 - `gateway/session_events.py:29-35,56-63,77-89`: epoch rollover, overflow and
   missing replay require a new snapshot. `gateway/session_deferred_pick.py:49-59,78-83`
   re-checks a guarded pick on attach and mints fresh consent rather than replaying it.
@@ -54,9 +56,11 @@ local pending intent clears consent and projects the committed selection. A refu
 without target correlation cannot erase local pending intent, even when its model
 label matches. Its token is revoked, but the incomplete refusal is not presented as
 the outcome of the newer choice. Unknown raw refusal text is not displayed.
-The latest local whole selection remains a connection-owned supersession tombstone
-after matching `session.info`, so a delayed refusal cannot repaint an already
-committed newer provider/reasoning choice either. This is not a second effective model.
+Matching whole `session.info` (including `reasoning_effort` for a combined pick)
+settles the local intent. An owner-level refusal tombstone remains for this connection,
+so a delayed uncorrelated refusal cannot repaint an already committed newer choice.
+It does not suppress a fresh whole-payload ask from another viewer after settlement,
+and is not a second effective model.
 
 Replay gaps, replay-epoch changes and authority-epoch changes revoke protocol consent
 immediately, before asynchronous resume. The repository also invalidates the open

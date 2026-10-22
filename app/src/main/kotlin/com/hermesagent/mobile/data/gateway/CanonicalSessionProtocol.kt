@@ -35,6 +35,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private data class DeferredConfirmation(val payload: JsonObject, val token: String, val generation: Long)
     private val deferredConfirmations = mutableMapOf<Owner, DeferredConfirmation>()
     private val latestModelPicks = mutableMapOf<Owner, JsonObject>()
+    private val localModelPickOwners = mutableSetOf<Owner>()
     private val modelConsentVersions = mutableMapOf<Owner, Long>()
     private val reconcilingOwners = mutableSetOf<Owner>()
     private data class ModelDispatchLease(val owner: Owner, val version: Long, var used: Boolean = false)
@@ -269,6 +270,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     consentVersion = modelConsentVersions.getOrPut(owner) { 0 }
                     requestConsentVersion = consentVersion
                     latestModelPicks[owner] = suppliedPayload
+                    localModelPickOwners.add(owner)
                     JsonObject(ask.payload + ("confirm" to JsonPrimitive(ask.token)))
                 } else {
                     val explicitConfirm = operation == "model" && params["confirm_expensive_model"] == JsonPrimitive(true)
@@ -281,6 +283,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     if (operation == "model") {
                         requestConsentVersion = modelConsentVersions.getOrPut(owner) { 0 }
                         latestModelPicks[owner] = suppliedPayload
+                        localModelPickOwners.add(owner)
                     } else if (operation == "reasoning") latestModelPicks[owner]?.let { pick ->
                         suppliedPayload["effort"]?.let { latestModelPicks[owner] = JsonObject(pick + ("reasoning" to it)) }
                     }
@@ -547,10 +550,15 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 // Whole-payload consent, scoped to this ordered owner stream and turn.
                 // gateway/session_deferred_pick.py:111-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
                 if (generation != null && generation > previous.generation) revokeModelConsent(owner)
-                // Keep the latest local selection as a supersession tombstone even after
-                // matching session.info. A delayed uncorrelated refusal can be published
-                // after that info; it still cannot repaint a newer committed selection.
-                // Effective/pending presentation is reconciled separately by session.info.
+                // Whole authoritative state settles local intent, including reasoning.
+                // Keep only an owner-level refusal tombstone afterwards: it must not
+                // suppress a genuinely new whole-payload ask from another viewer.
+                if (event.type == "session.info") latestModelPicks[owner]?.let { pick ->
+                    if (payload.text("model") == pick.text("model") &&
+                        (pick.text("provider") == null || payload.text("provider") == pick.text("provider")) &&
+                        (pick.text("reasoning") == null || payload["reasoning_effort"] == pick["reasoning"]))
+                        latestModelPicks.remove(owner)
+                }
                 if (event.type == "session.updated" && payload.text("operation") == "model" &&
                     payload.text("status") in setOf("confirmation_required", "refused")) {
                     val pick = payload["payload"] as? JsonObject
@@ -561,7 +569,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     // revision. Committed provider is NOT target identity. Preserve local
                     // intent until authoritative whole-selection state confirms it.
                     // gateway/session_deferred_pick.py:128-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
-                    val obsolete = if (payload.text("status") == "refused") latest != null
+                    val obsolete = if (payload.text("status") == "refused") owner in localModelPickOwners
                     else latest != null && latest != pick
                     if (payload.text("status") == "refused" && payload.text("session_id") == owner.sessionId &&
                         payload.text("profile_id")?.let { it != descriptors[owner.profile]?.ownerId } != true)

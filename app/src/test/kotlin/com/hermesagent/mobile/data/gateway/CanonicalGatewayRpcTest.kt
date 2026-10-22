@@ -573,10 +573,22 @@ class CanonicalGatewayRpcTest {
             runCurrent()
             assertEquals("public-provider-b", outcomes.single().target?.provider)
             assertNotNull(outcomes.single().confirm)
-            peer.rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","session_id":"canonical-public","seq":3,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":3,"payload":{"model":"public-same","provider":"public-provider-b","reasoning_effort":"high"}}}""")
-            peer.refusedEvent(4, "public-same"); runCurrent()
+            var sequence = 3
+            if (combined) {
+                peer.pickInfo(sequence++, "low")
+                peer.modelEvent(sequence++, JsonObject(expected + ("reasoning" to JsonPrimitive("low"))))
+                runCurrent()
+                assertEquals(1, outcomes.size)
+            }
+            peer.pickInfo(sequence++, "high")
+            peer.refusedEvent(sequence++, "public-same"); runCurrent()
             assertEquals(1, outcomes.size)
             assertEquals("public-provider-b", controls.last().selection?.provider)
+            peer.modelEvent(sequence, buildJsonObject { put("model", "public-other-viewer"); put("provider", "public-provider-c") })
+            runCurrent()
+            assertEquals(2, outcomes.size)
+            assertEquals("public-other-viewer", outcomes.last().target?.model)
+            assertNotNull(outcomes.last().confirm)
             job.cancel(); controlsJob.cancel(); peer.rpc.close()
         }
     }
@@ -877,6 +889,7 @@ class CanonicalGatewayRpcTest {
         fun ready() = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"session_authority":true,"change_events":true,"heartbeat":true,"replay_epoch":"public-global"}}}""")
         fun modelEvent(seq: Int, pick: JsonObject, generation: Int = 3, sid: String = "canonical-public", status: String = "confirmation_required", owner: String = "public-owner", message: String = "Confirm this model change.", token: String = "public-event-token") =
             rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.updated","session_id":"$sid","seq":$seq,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":$generation,"payload":{"session_id":"$sid","profile_id":"$owner","operation":"model","status":"$status","confirm":${JsonPrimitive(token)},"confirm_message":${JsonPrimitive(message)},"payload":$pick,"target_model":${pick.getValue("model")},"committed_model":"public-model"}}}""")
+        fun pickInfo(seq: Int, reasoning: String) = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","session_id":"canonical-public","seq":$seq,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":3,"payload":{"model":"public-same","provider":"public-provider-b","reasoning_effort":${JsonPrimitive(reasoning)}}}}""")
         fun refusedEvent(seq: Int, model: String) = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.updated","session_id":"canonical-public","seq":$seq,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":3,"payload":{"session_id":"canonical-public","operation":"model","status":"refused","target_model":${JsonPrimitive(model)},"model":"public-committed","provider":"public-provider-a","reason":"model_resolution_failed"}}}""")
         fun gap(kind: String) = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"${if (kind == "native") "session.replay_gap" else "session.info"}","session_id":"canonical-public","seq":${if (kind == "sequence") 4 else 2},"replay_epoch":"${if (kind == "epoch") "public-new-epoch" else "public-session-epoch"}","authority_epoch":${if (kind == "authority") 3 else 2},"execution_generation":3,"payload":{}}}""")
         private fun snapshot(sid: String = "canonical-public") = """{"session_id":"$sid","stored_session_id":"$sid","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work",${snapshotOwner?.let { "\"profile_id\":\"$it\"," }.orEmpty()}"model":"public-model","cwd":"/workspace/public"}}"""
