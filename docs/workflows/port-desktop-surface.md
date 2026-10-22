@@ -292,6 +292,16 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+For System logs, inspect the current search component as well as the panel:
+`apps/desktop/src/components/chat/log-search.tsx:21-39` at
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa` highlights and steps matches,
+while the original disabled Android block promised a substring filter. Record
+that difference instead of claiming current search parity from unchanged tab
+labels. Read the active in-memory profile for request fencing, not a preference
+whose save can lag a profile switch. Use the host's cancellable guarded enqueue
+for lifecycle-bound log reads; whole-tail redaction must precede per-line caps
+so a multiline private key is not split into unrecognisable fragments.
+
 Core Cron uses full REST job records, not the lossy `cron.manage` preview.
 Readback must account for the server's normalized names and natural-language
 schedules, and a finite run may remain as a disabled completed record. A profile
