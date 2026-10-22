@@ -80,6 +80,7 @@ import com.hermesagent.mobile.data.gateway.selectedSavedBranchRow
 import com.hermesagent.mobile.data.gateway.deriveBranchCount
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.isAmbiguousGatewayMutation
 import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
 import com.hermesagent.mobile.data.gateway.RegeneratePlan
 import com.hermesagent.mobile.data.gateway.planRegenerate
@@ -182,6 +183,7 @@ data class CompletionUiState(
 data class ComposerUiState(
     val catalog: ComposerCatalogUiState = ComposerCatalogUiState.Loading,
     val controls: ModelControlsSnapshot = ModelControlsSnapshot(),
+    val pendingModel: ComposerModelSelection? = null,
     val isLiveSession: Boolean = false,
     val isManualNewDraft: Boolean = false,
     val mutation: ComposerMutationUiState = ComposerMutationUiState.Idle,
@@ -735,8 +737,11 @@ internal class ChatViewModel(
     private var liveMutationGeneration = 0L
     private data class ModelConsent(val key: Long, val durableId: String, val composerGeneration: Long,
         val endpoint: Long, val update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
+        val pendingTarget: ComposerModelSelection?,
         val request: suspend () -> ControlMutationResult)
     private var modelConsent: ModelConsent? = null
+    private var confirmingModelMutation: Long? = null
+    private var liveControlBefore: ModelControlsSnapshot? = null
     private val supersededModelConsentEndpoints = linkedMapOf<Long, Long>()
     private val gatewayAdmissionActions = mutableSetOf<com.hermesagent.mobile.data.gateway.GatewayAdmissionKey>()
     /** Latest authoritative partial session.info controls for the active durable session. */
@@ -1462,6 +1467,25 @@ internal class ChatViewModel(
             repository.composerControls.collect(::applyComposerControls)
         }
         viewModelScope.launch {
+            repository.deferredModelPicks.collect { event ->
+                if (activeSessionId.value != event.durableId || cache.endpointGeneration.value != event.endpointGeneration) return@collect
+                if (event.consentInvalidated && modelConsent == null && confirmingModelMutation != liveMutationGeneration) return@collect
+                val key = ++liveMutationGeneration
+                modelConsent = null
+                confirmingModelMutation = null
+                if (composer.value.mutation is ComposerMutationUiState.Saving) {
+                    composer.value = composer.value.copy(controls = liveControlBefore ?: composer.value.controls)
+                }
+                val confirm = event.confirm
+                if (confirm != null && event.target != null) {
+                    modelConsent = ModelConsent(key, event.durableId, composerGeneration, event.endpointGeneration,
+                        { it }, event.target, confirm)
+                    composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.ConfirmationRequired(
+                        key, com.hermesagent.mobile.data.ssh.redact(event.target.model).take(160), event.safeMessage))
+                } else composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.Error(event.safeMessage))
+            }
+        }
+        viewModelScope.launch {
             observeComposerScope()
         }
         viewModelScope.launch {
@@ -1958,7 +1982,7 @@ internal class ChatViewModel(
             return
         }
         if (refuseBotChatMutation() != null) return
-        mutateLiveControls(consent.durableId, consent.update, request = consent.request)
+        mutateLiveControls(consent.durableId, consent.update, pendingTarget = consent.pendingTarget, request = consent.request)
     }
 
     fun dismissModelChange(key: Long) {
@@ -1971,6 +1995,7 @@ internal class ChatViewModel(
         durableId: String,
         update: (ModelControlsSnapshot) -> ModelControlsSnapshot,
         confirmRequest: (suspend () -> ControlMutationResult)? = null,
+        pendingTarget: ComposerModelSelection? = null,
         request: suspend () -> ControlMutationResult,
     ) {
         if (composer.value.mutation is ComposerMutationUiState.Saving) return
@@ -1983,9 +2008,12 @@ internal class ChatViewModel(
         val generation = composerGeneration
         val endpoint = cache.endpointGeneration.value
         val mutationGeneration = ++liveMutationGeneration
+        confirmingModelMutation = mutationGeneration.takeIf { pendingTarget != null }
+        liveControlBefore = before.controls
         composerLoad?.cancel()
         composer.value = before.copy(
             controls = update(before.controls),
+            pendingModel = null,
             isLiveSession = true,
             isManualNewDraft = false,
             mutation = ComposerMutationUiState.Saving,
@@ -2003,16 +2031,18 @@ internal class ChatViewModel(
                 liveMutationGeneration != mutationGeneration ||
                 activeSessionId.value != durableId
             ) return@launch
+            confirmingModelMutation = null
             when (result) {
                 ControlMutationResult.Applied -> {
                     composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
                 }
                 ControlMutationResult.Deferred -> {
-                    composer.value = composer.value.copy(mutation = ComposerMutationUiState.Deferred)
+                    composer.value = composer.value.copy(controls = before.controls,
+                        pendingModel = pendingTarget ?: update(before.controls).selection, mutation = ComposerMutationUiState.Deferred)
                 }
                 is ControlMutationResult.ConfirmationRequired -> {
                     if (confirmRequest != null) {
-                        modelConsent = ModelConsent(mutationGeneration, durableId, generation, endpoint, update, confirmRequest)
+                        modelConsent = ModelConsent(mutationGeneration, durableId, generation, endpoint, update, update(before.controls).selection, confirmRequest)
                         composer.value = before.copy(mutation = ComposerMutationUiState.ConfirmationRequired(
                             mutationGeneration, update(before.controls).selection?.model.orEmpty(), result.safeMessage))
                     } else composer.value = before.copy(mutation = ComposerMutationUiState.Error("Choose this model again to confirm the change."))
@@ -3207,6 +3237,7 @@ internal class ChatViewModel(
             ?.takeIf { botChatSessionId == sessionId }
             ?.cacheGeneration
         val selection = captureSessionSelection(sessionId)
+        val submitEndpoint = cache.endpointGeneration.value
         if (cronSendKey == null) clearDraftAfterDelivery(sessionId)
         noticeLine = if (compactBotChat) {
             "Bot chats are one continuous conversation — compacting instead. For a throwaway session with this bot, use Sessions mode."
@@ -3246,10 +3277,18 @@ internal class ChatViewModel(
                         composerHistoryController.reset(sessionId)
                         invalidateHistory()
                         if (composer.value.mutation is ComposerMutationUiState.Deferred) {
-                            composer.value = composer.value.copy(mutation = ComposerMutationUiState.Idle)
+                            composer.value = composer.value.copy(pendingModel = null, mutation = ComposerMutationUiState.Idle)
                         }
                         val projectId = createdProjectBySession.remove(sessionId) ?: selectedProjectId.value
                         if (projectId != null) runCatching { repository.refreshProjects() }
+                    }
+                    GatewaySubmitOutcome.VoiceStopped -> {
+                        // A consumed stop is not a sent message. Keep staged attachments
+                        // available, and do not manufacture a transcript/admission row.
+                        markAttachmentsUnsent(sessionId)
+                        if (activeSessionId.value == sessionId && cache.endpointGeneration.value == submitEndpoint) {
+                            noticeLine = "Voice chat ended."
+                        }
                     }
                     GatewaySubmitOutcome.Ambiguous -> {
                         markAttachmentsReviewRequired(sessionId, submittedPrompt)
@@ -3261,7 +3300,7 @@ internal class ChatViewModel(
                 throw cancelled
             } catch (failure: Throwable) {
                 val rpcFailure = failure as? GatewayRpcException
-                val ambiguous = rpcFailure?.requestMayHaveBeenAccepted == true
+                val ambiguous = failure.isAmbiguousGatewayMutation()
                 if (ambiguous) {
                     markAttachmentsReviewRequired(sessionId, submittedPrompt)
                 } else {
@@ -3858,6 +3897,7 @@ internal class ChatViewModel(
                         repository.steerAtEndpoint(sessionId, prompt, botEndpoint.cacheGeneration, observedTurn)
                     } else repository.steerAtEndpoint(sessionId, prompt, observedEndpoint, observedTurn)
                     when (result) {
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.VoiceStopped -> GatewayRedirectOutcome.VoiceStopped
                         com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.QueuedByGateway -> GatewayRedirectOutcome.QueuedByGateway
                         com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected -> GatewayRedirectOutcome.Rejected
                         com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Unsupported -> GatewayRedirectOutcome.Unsupported
@@ -3869,6 +3909,7 @@ internal class ChatViewModel(
                 } else repository.redirect(sessionId, prompt)
                 if (!stillOwnsBotEditor()) return@launch
                 when (outcome) {
+                    GatewayRedirectOutcome.VoiceStopped,
                     GatewayRedirectOutcome.Redirected,
                     GatewayRedirectOutcome.QueuedByGateway,
                     -> {
@@ -4066,6 +4107,7 @@ internal class ChatViewModel(
         viewModelScope.launch {
             try {
                 when (repository.redirect(sessionId, entry.text)) {
+                    GatewayRedirectOutcome.VoiceStopped,
                     GatewayRedirectOutcome.Redirected,
                     GatewayRedirectOutcome.QueuedByGateway,
                     -> composerQueueController.remove(sessionId, entryId)
@@ -4588,6 +4630,7 @@ internal class ChatViewModel(
             controls = if (live && retainControlsUntilSessionInfo) composer.value.controls
             else if (live) liveComposerControls?.applyTo(ModelControlsSnapshot()) ?: ModelControlsSnapshot()
             else freshDraftControls(),
+            pendingModel = null,
             isLiveSession = live,
             isManualNewDraft = !live && hasManualNewDraftChoice(),
             mutation = ComposerMutationUiState.Idle,
@@ -4667,15 +4710,16 @@ internal class ChatViewModel(
         val keepDeferred = current.mutation is ComposerMutationUiState.Deferred
         val authoritative = event.applyTo(current.controls)
         composer.value = composer.value.copy(
-            // Modern Gateways report the pending model in session.info; older
-            // busy-refusal Gateways report the still-running model. In both
-            // cases the local deferred pick remains the next-turn contract
-            // until an accepted submit crosses that boundary.
-            controls = if (keepDeferred) authoritative.copy(selection = current.controls.selection)
-            else authoritative,
+            // Effective controls always follow session.info; next-turn intent is separate.
+            controls = authoritative,
+            pendingModel = current.pendingModel.takeUnless { event.hasSelection &&
+                it?.model == event.selection?.model && it?.provider == event.selection?.provider },
             isLiveSession = true,
             isManualNewDraft = false,
-            mutation = if (keepDeferred) ComposerMutationUiState.Deferred else ComposerMutationUiState.Idle,
+            mutation = if (keepDeferred && (!event.hasSelection || current.pendingModel?.model != event.selection?.model ||
+                    current.pendingModel?.provider != event.selection?.provider)) ComposerMutationUiState.Deferred
+                else if (current.mutation is ComposerMutationUiState.ConfirmationRequired) current.mutation
+                else ComposerMutationUiState.Idle,
         )
     }
 

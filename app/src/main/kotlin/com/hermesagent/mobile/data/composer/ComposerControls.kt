@@ -158,6 +158,16 @@ sealed interface ControlMutationResult {
     data class Rejected(val safeMessage: String) : ControlMutationResult
 }
 
+/** A next-turn model outcome, not effective configuration. Consent is one-shot and owner-bound. */
+data class DeferredModelPick(
+    val durableId: String,
+    val endpointGeneration: Long,
+    val target: ComposerModelSelection?,
+    val safeMessage: String,
+    val consentInvalidated: Boolean = false,
+    val confirm: (suspend () -> ControlMutationResult)? = null,
+)
+
 enum class CompletionTrigger { Slash, At, Emoji }
 
 data class CompletionItem(

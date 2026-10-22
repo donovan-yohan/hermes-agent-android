@@ -1,8 +1,12 @@
 package com.hermesagent.mobile.data.gateway
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.serialization.json.*
 import org.junit.Assert.*
 import org.junit.Test
@@ -350,11 +354,414 @@ class CanonicalGatewayRpcTest {
         peer.rpc.close()
     }
 
+    @Test
+    fun `consumed canonical voice stop is not an ambiguous admission or phantom running message`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.submitResultOverride = buildJsonObject { put("voice_stopped", true) }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val before = cache.transcript(key)
+        assertEquals(GatewaySubmitOutcome.VoiceStopped, repository.submit(key, "stop"))
+        assertEquals(before, cache.transcript(key))
+        assertEquals(com.hermesagent.mobile.data.session.SessionStatus.Idle, cache.session(key)?.status)
+        assertTrue(repository.activeTurns.value.isEmpty())
+        assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("prompt.submit") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `voice stop rollback preserves newer canonical admission and metadata`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.submitResultOverride = buildJsonObject { put("voice_stopped", true) }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val before = cache.transcript(key)
+        peer.beforeSubmitReply = {
+            peer.rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","ref":{"profile_id":"public-owner","session_id":"canonical-public"},"session_id":"canonical-public","profile_id":"public-owner","replay_epoch":"public-session-epoch","seq":1,"execution_generation":3,"authority_epoch":2,"payload":{"running":false,"revision":8,"cwd":"/workspace/newer","pending":[{"admission_id":"other-client","input_id":"other-input","status":"queued","text":"Keep queued","sequence":2,"authority_epoch":2,"execution_generation":null,"ref":{"profile_id":"public-owner","session_id":"canonical-public"}}]}}}""")
+        }
+        val send = async { repository.submit(key, "stop") }
+        runCurrent()
+        assertEquals(GatewaySubmitOutcome.VoiceStopped, send.await())
+        assertEquals(before, cache.transcript(key))
+        assertEquals("other-client", cache.session(key)?.composerStatus?.gatewayAdmissions?.single()?.key?.admissionId)
+        assertEquals("/workspace/newer", cache.session(key)?.worktreePath)
+        assertTrue(repository.activeTurns.value.isEmpty())
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `voice stop receipt must be exact literal boolean and never hides unusable admission`() = runTest {
+        for (bad in listOf(buildJsonObject { put("voice_stopped", "true") },
+            buildJsonObject { put("voice_stopped", true); put("admission_id", "unusable") })) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            peer.submitResultOverride = bad
+            val key = peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+                .jsonObject.getValue("session_id").jsonPrimitive.content
+            val failure = runCatching { peer.rpc.request("prompt.submit", buildJsonObject {
+                put("session_id", key); put("text", "stop")
+            }) }.exceptionOrNull()
+            assertTrue(failure is GatewayRpcException && failure.requestMayHaveBeenAccepted)
+            peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `authoritative pending return from transfer restores queued admission and cancellation`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        fun pending(status: String, steering: Boolean) = JsonArray(listOf(buildJsonObject {
+            put("admission_id", "public-next"); put("input_id", "public-input-next")
+            put("status", status); put("steering", steering); put("execution_generation", JsonNull)
+            put("text", "Next public turn"); put("sequence", 2); put("authority_epoch", 2)
+            put("ref", buildJsonObject { put("profile_id", "public-owner"); put("session_id", "canonical-public") })
+        }))
+        peer.pendingRows = pending("queued", false)
+        val key = peer.rpc.request("session.resume", buildJsonObject {
+            put("session_id", "canonical-public"); put("profile", "work")
+        }).jsonObject.getValue("session_id").jsonPrimitive.content
+        peer.pendingRows = pending("started", true)
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", key) })
+        peer.pendingRows = pending("queued", false)
+        val restored = peer.rpc.request("session.resume", buildJsonObject { put("session_id", key) }).jsonObject
+        assertEquals(JsonPrimitive("queued"), restored.getValue("pending").jsonArray.single().jsonObject["status"])
+        peer.rpc.request("prompt.cancel", buildJsonObject { put("session_id", key); put("admission_id", "public-next") })
+        peer.pendingRows = pending("queued", false)
+        val after = peer.rpc.request("session.resume", buildJsonObject { put("session_id", key) }).jsonObject
+        assertTrue(after.getValue("pending").jsonArray.isEmpty())
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `real peer deferred receipt reaches repository as next turn intent not applied`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready(); it.deferModels = true }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        assertEquals(com.hermesagent.mobile.data.composer.ControlMutationResult.Deferred,
+            repository.setLiveModel(key, com.hermesagent.mobile.data.composer.ComposerModelSelection("public-next", "public-provider")))
+        assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `deferred event confirmation uses exact whole payload and token once on its owner`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val events = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { events += it } }
+        runCurrent()
+        val whole = buildJsonObject { put("model", "public-guarded"); put("provider", "public-provider"); put("reasoning", "high") }
+        peer.modelEvent(1, whole)
+        runCurrent()
+        assertEquals(1, events.size)
+        assertEquals(key, events.single().durableId)
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+        val forged = buildJsonObject { put("session_id", key); put("payload", whole); put("confirm", "wrong-token") }
+        assertTrue(runCatching { peer.rpc.request("session.model", forged) }.isFailure)
+        val partial = buildJsonObject { put("session_id", key); put("payload", JsonObject(whole - "reasoning")); put("confirm", "public-event-token") }
+        assertTrue(runCatching { peer.rpc.request("session.model", partial) }.isFailure)
+        assertEquals(com.hermesagent.mobile.data.composer.ControlMutationResult.Applied, events.single().confirm!!.invoke())
+        val mutation = peer.frames.last { it["method"] == JsonPrimitive("session.mutate") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("work"), mutation["profile"])
+        assertEquals(JsonPrimitive("canonical-public"), mutation["session_id"])
+        assertEquals(JsonObject(whole + ("confirm" to JsonPrimitive("public-event-token"))), mutation["payload"])
+        assertEquals(JsonPrimitive(3), mutation["expected_generation"])
+        assertTrue(events.single().confirm!!.invoke() is com.hermesagent.mobile.data.composer.ControlMutationResult.Rejected)
+        assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+        collector.cancel(); peer.rpc.close()
+    }
+
+    @Test
+    fun `older foreign and superseded deferred asks cannot grant consent and refusal revokes it`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready(); it.deferModels = true }
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+        val whole = buildJsonObject { put("model", "public-newer"); put("provider", "public-provider") }
+        peer.rpc.request("config.set", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work")
+            put("key", "model"); put("value", "public-newer --provider public-provider --session") })
+        val confirm = buildJsonObject { put("session_id", "canonical-public"); put("profile", "work"); put("payload", whole); put("confirm", "public-event-token") }
+        peer.modelEvent(1, whole, generation = 2)
+        assertTrue(runCatching { peer.rpc.request("session.model", confirm) }.isFailure)
+        peer.modelEvent(1, whole, sid = "foreign-session")
+        assertTrue(runCatching { peer.rpc.request("session.model", confirm) }.isFailure)
+        peer.modelEvent(1, whole, owner = "public-foreign-owner")
+        assertTrue(runCatching { peer.rpc.request("session.model", confirm) }.isFailure)
+        peer.modelEvent(2, buildJsonObject { put("model", "public-older"); put("provider", "public-provider") })
+        assertTrue(runCatching { peer.rpc.request("session.model", confirm) }.isFailure)
+        peer.modelEvent(3, whole)
+        peer.modelEvent(4, whole, status = "refused")
+        assertTrue(runCatching { peer.rpc.request("session.model", confirm) }.isFailure)
+        assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `new execution revokes event token and duplicate ask does not revive it`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+        val pick = buildJsonObject { put("model", "public-guarded"); put("provider", "public-provider") }
+        peer.modelEvent(1, pick)
+        peer.rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","session_id":"canonical-public","seq":2,"replay_epoch":"public-session-epoch","execution_generation":4,"payload":{"model":"public-model","running":true}}}""")
+        peer.modelEvent(1, pick)
+        assertTrue(runCatching { peer.rpc.request("session.model", buildJsonObject {
+            put("session_id", "canonical-public"); put("profile", "work"); put("payload", pick); put("confirm", "public-event-token")
+        }) }.isFailure)
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `refused next turn event restores committed controls and does not mutate`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val controls = mutableListOf<com.hermesagent.mobile.data.composer.SessionComposerControls>()
+        val outcomes = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+        val controlJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.composerControls.collect { controls += it } }
+        val outcomeJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { outcomes += it } }
+        runCurrent()
+        peer.rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.updated","session_id":"canonical-public","seq":1,"replay_epoch":"public-session-epoch","execution_generation":3,"payload":{"session_id":"canonical-public","operation":"model","status":"refused","target_model":"public-next","model":"public-committed","provider":"public-provider","reason":"model_resolution_failed"}}}""")
+        runCurrent()
+        assertEquals(key, outcomes.single().durableId)
+        assertNull(outcomes.single().confirm)
+        assertEquals("public-committed", controls.single().selection?.model)
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+        controlJob.cancel(); outcomeJob.cancel(); peer.rpc.close()
+    }
+
+    @Test
+    fun `same model late refusal cannot erase newer provider or combined reasoning intent`() = runTest {
+        for (combined in listOf(false, true)) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready(); it.deferModels = true }
+            val cache = com.hermesagent.mobile.data.session.SessionCache()
+            val repository = LiveGatewaySessionRepository(cache,
+                kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+            val key = repository.openSession("canonical-public", "work")
+            val outcomes = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+            val controls = mutableListOf<com.hermesagent.mobile.data.composer.SessionComposerControls>()
+            val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { outcomes += it } }
+            val controlsJob = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.composerControls.collect { controls += it } }
+            repository.setLiveModel(key, com.hermesagent.mobile.data.composer.ComposerModelSelection("public-same", "public-provider-a"))
+            repository.setLiveModel(key, com.hermesagent.mobile.data.composer.ComposerModelSelection("public-same", "public-provider-b"))
+            if (combined) peer.rpc.request("config.set", buildJsonObject {
+                put("session_id", key); put("key", "reasoning"); put("value", "high")
+            })
+            // Exact pinned producer refusal: no target provider, reasoning, request id or revision.
+            peer.refusedEvent(1, "public-same")
+            runCurrent()
+            assertTrue(outcomes.isEmpty())
+            assertTrue(controls.isEmpty())
+            val expected = buildJsonObject {
+                put("model", "public-same"); put("provider", "public-provider-b")
+                if (combined) put("reasoning", "high")
+            }
+            peer.modelEvent(2, expected)
+            runCurrent()
+            assertEquals("public-provider-b", outcomes.single().target?.provider)
+            assertNotNull(outcomes.single().confirm)
+            var sequence = 3
+            if (combined) {
+                peer.pickInfo(sequence++, "low")
+                peer.modelEvent(sequence++, JsonObject(expected + ("reasoning" to JsonPrimitive("low"))))
+                runCurrent()
+                assertEquals(1, outcomes.size)
+            }
+            peer.pickInfo(sequence++, "high")
+            peer.refusedEvent(sequence++, "public-same"); runCurrent()
+            assertEquals(1, outcomes.size)
+            assertEquals("public-provider-b", controls.last().selection?.provider)
+            peer.modelEvent(sequence, buildJsonObject { put("model", "public-other-viewer"); put("provider", "public-provider-c") })
+            runCurrent()
+            assertEquals(2, outcomes.size)
+            assertEquals("public-other-viewer", outcomes.last().target?.model)
+            assertNotNull(outcomes.last().confirm)
+            job.cancel(); controlsJob.cancel(); peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `gap and epoch loss revoke consent before held or failed resume`() = runTest {
+        for (kind in listOf("sequence", "epoch", "authority", "native")) for (fail in listOf(false, true)) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            val cache = com.hermesagent.mobile.data.session.SessionCache()
+            val repository = LiveGatewaySessionRepository(cache,
+                kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+            repository.openSession("canonical-public", "work")
+            val outcomes = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+            val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { outcomes += it } }
+            val whole = buildJsonObject { put("model", "public-next"); put("provider", "public-provider"); put("reasoning", "high") }
+            peer.modelEvent(1, whole); runCurrent()
+            val callback = outcomes.single().confirm!!
+            peer.holdResume = !fail; peer.failResume = fail
+            peer.gap(kind); runCurrent()
+            assertTrue(outcomes.last().consentInvalidated)
+            assertTrue(callback() is com.hermesagent.mobile.data.composer.ControlMutationResult.Rejected)
+            // No old-stream ask can re-arm consent while recovery is unresolved.
+            peer.modelEvent(2, whole); runCurrent()
+            assertNull(outcomes.last().confirm)
+            assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+            assertTrue(peer.frames.count { it["method"] == JsonPrimitive("session.resume") } >= 2)
+            job.cancel(); peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `authority revocation at held final wire admission prevents confirmed send`() = runTest {
+        for (kind in listOf("sequence", "epoch", "authority", "native")) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+            val whole = buildJsonObject { put("model", "public-next"); put("provider", "public-provider"); put("reasoning", "high") }
+            peer.modelEvent(1, whole)
+            val request = buildJsonObject {
+                put("session_id", "canonical-public"); put("profile", "work"); put("payload", whole); put("confirm", "public-event-token")
+            }
+            val result = runCatching { peer.rpc.requestAtEndpointDispatch("session.model", request) { finalSend ->
+                // The protocol already consumed the exact token and prepared the mutation.
+                // Revocation wins at the last dispatch boundary, before wire.send.
+                peer.gap(kind)
+                finalSend()
+            } }
+            assertTrue(result.isFailure)
+            assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+            assertTrue(runCatching { peer.rpc.request("session.model", request) }.isFailure)
+            peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `confirmation timeout or malformed receipt never automatically resends and needs a fresh ask`() = runTest {
+        for (malformed in listOf(false, true)) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            val cache = com.hermesagent.mobile.data.session.SessionCache()
+            val repository = LiveGatewaySessionRepository(cache,
+                kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+            repository.openSession("canonical-public", "work")
+            val outcomes = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+            val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { outcomes += it } }
+            val whole = buildJsonObject { put("model", "public-next"); put("provider", "public-provider") }
+            peer.modelEvent(1, whole); runCurrent()
+            peer.silenceNextMutation = !malformed; peer.malformedMutation = malformed
+            assertTrue(outcomes.single().confirm!!() is com.hermesagent.mobile.data.composer.ControlMutationResult.Rejected)
+            assertTrue(outcomes.single().confirm!!() is com.hermesagent.mobile.data.composer.ControlMutationResult.Rejected)
+            assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+            peer.malformedMutation = false
+            peer.modelEvent(2, whole, token = "public-fresh-event-token"); runCurrent()
+            assertEquals(com.hermesagent.mobile.data.composer.ControlMutationResult.Applied, outcomes.last().confirm!!())
+            assertEquals(2, peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+            job.cancel(); peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `combined guard warning remains whole and redacted or oversized native consent is refused`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        repository.openSession("canonical-public", "work")
+        val outcomes = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+        val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { outcomes += it } }
+        val whole = buildJsonObject { put("model", "public-next"); put("provider", "public-provider") }
+        val warning = "High cost.\nData policy warning.\nLarge context: next reply re-reads uncached at full-price input cost.\nConfirm only if you intend to switch now."
+        peer.modelEvent(1, whole, message = warning); runCurrent()
+        assertEquals(warning, outcomes.single().safeMessage)
+        assertNotNull(outcomes.single().confirm)
+        peer.modelEvent(2, whole, message = warning + "\npassword=synthetic-warning-marker", token = "public-second-event-token"); runCurrent()
+        assertFalse(outcomes.last().safeMessage.contains("synthetic-warning-marker"))
+        assertTrue(outcomes.last().safeMessage.contains(warning))
+        val previous = outcomes.last().confirm!!
+        peer.modelEvent(3, whole, message = "x".repeat(4097) + warning, token = "public-oversized-event-token"); runCurrent()
+        assertNull(outcomes.last().confirm)
+        assertTrue(outcomes.last().safeMessage.length <= 4096)
+        assertTrue(outcomes.last().safeMessage.contains("Review it in Hermes Desktop"))
+        assertTrue(previous() is com.hermesagent.mobile.data.composer.ControlMutationResult.Rejected)
+        assertTrue(peer.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+        job.cancel(); peer.rpc.close()
+    }
+
+    @Test
+    fun `event confirmed model can be deferred again and exact wire admission is single use`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready(); it.deferConfirmedModels = true }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        repository.openSession("canonical-public", "work")
+        val outcomes = mutableListOf<com.hermesagent.mobile.data.composer.DeferredModelPick>()
+        val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { repository.deferredModelPicks.collect { outcomes += it } }
+        val whole = buildJsonObject { put("model", "public-next"); put("provider", "public-provider"); put("reasoning", "high") }
+        peer.modelEvent(1, whole); runCurrent()
+        assertEquals(com.hermesagent.mobile.data.composer.ControlMutationResult.Deferred, outcomes.single().confirm!!())
+        assertEquals(JsonObject(whole + ("confirm" to JsonPrimitive("public-event-token"))),
+            peer.frames.single { it["method"] == JsonPrimitive("session.mutate") }.getValue("params").jsonObject["payload"])
+        peer.modelEvent(2, whole, token = "public-fresh-event-token"); runCurrent()
+        peer.rpc.requestAtEndpointDispatch("session.model", buildJsonObject {
+            put("session_id", "canonical-public"); put("profile", "work"); put("payload", whole); put("confirm", "public-fresh-event-token")
+        }) { send ->
+            val first = send()
+            assertTrue(first)
+            assertFalse(send())
+            first
+        }
+        assertEquals(2, peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+        job.cancel(); peer.rpc.close()
+    }
+
+    @Test
+    fun `synchronous model consent is revoked at gap or final admission and timeout never reuses it`() = runTest {
+        for (mode in listOf("gap", "held", "timeout")) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+            val pick = buildJsonObject {
+                put("session_id", "canonical-public"); put("profile", "work"); put("key", "model")
+                put("value", "public-next --provider public-provider --session")
+            }
+            assertEquals(JsonPrimitive(true), peer.rpc.request("config.set", pick).jsonObject["confirm_required"])
+            val confirmed = JsonObject(pick + ("confirm_expensive_model" to JsonPrimitive(true)))
+            if (mode == "gap") peer.gap("native")
+            if (mode == "timeout") peer.silenceNextMutation = true
+            val result = runCatching { peer.rpc.requestAtEndpointDispatch("config.set", confirmed) { send ->
+                if (mode == "held") peer.gap("native")
+                send()
+            } }
+            assertTrue(result.isFailure)
+            assertTrue(runCatching { peer.rpc.request("config.set", confirmed) }.isFailure)
+            assertEquals(if (mode == "timeout") 2 else 1,
+                peer.frames.count { it["method"] == JsonPrimitive("session.mutate") })
+            if (mode == "timeout") {
+                peer.rpc.request("config.set", pick)
+                assertFalse("confirm" in peer.frames.last().getValue("params").jsonObject.getValue("payload").jsonObject)
+            }
+            peer.rpc.close()
+        }
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
+        var deferModels = false
+        var deferConfirmedModels = false
         val frames = mutableListOf<JsonObject>()
         var refuseRegistryAfterCreate = false
         private var created = false
         var submitStatus: String? = null
+        var submitResultOverride: JsonObject? = null
+        var beforeSubmitReply: (() -> Unit)? = null
         var pendingRows = JsonArray(emptyList())
         var snapshotGeneration = 3
         var snapshotOwner: String? = "public-owner"
@@ -362,6 +769,9 @@ class CanonicalGatewayRpcTest {
         var requireAttachments = false
         var silenceNextSubmit = false
         var silenceNextMutation = false
+        var malformedMutation = false
+        var holdResume = false
+        var failResume = false
         private val mutations = linkedMapOf<String, JsonObject>()
         var expectedGeneration = 3
         private val admissions = linkedMapOf<String, JsonObject>()
@@ -384,13 +794,22 @@ class CanonicalGatewayRpcTest {
                     }
                     "session.control.read" -> """{"control":{"goal":null,"loop":null,"heartbeat":null,"revision":"","updated_at":0}}"""
                     "session.info" -> confirmationOwner?.let { """{"profile_id":"$it","desktop_protocol":"hermes-gateway-v1"}""" } ?: "{}"
-                    "session.resume" -> snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
+                    "session.resume" -> {
+                        if (holdResume) return true
+                        if (failResume) { replyError(frame); return true }
+                        snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
+                    }
                     "session.list" -> {
                         if (refuseRegistryAfterCreate && created) return false
                         """{"sessions":[],"scope":"${params["scope"]?.jsonPrimitive?.content ?: "live"}"}"""
                     }
                     "image.attach_bytes" -> """{"attached":true,"path":"/workspace/public/upload.png","mime":"image/png","name":"upload.png","count":1,"remainder":"","text":"[User attached image: upload.png]","bytes":8}"""
                     "prompt.submit" -> {
+                        submitResultOverride?.let {
+                            beforeSubmitReply?.invoke()
+                            rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":$it}""")
+                            return true
+                        }
                         if (requireAttachments && params["attachments"] !is JsonArray) { replyError(frame); return true }
                         val submission = (params["submission_id"] ?: params["input_id"]) as? JsonPrimitive
                         if (submission == null || submission.content.isBlank()) {
@@ -425,13 +844,20 @@ class CanonicalGatewayRpcTest {
                                 payload.forEach { (key, value) -> put(key, value) }
                             }
                             if (operation == "branch") { put("branched_session_id", "public-child"); put("copied_messages", 2) }
-                            if (operation == "model" && "confirm" !in payload) {
+                            if (operation == "model" && (deferConfirmedModels || deferModels && "confirm" !in payload)) {
+                                put("status", "deferred"); put("revision", 7); put("execution_generation", 3)
+                                put("model", payload.getValue("model"))
+                            } else if (operation == "model" && "confirm" !in payload) {
                                 put("status", "confirmation_required"); put("confirm_required", true)
                                 put("confirm", "public-confirmation"); put("confirm_message", "Confirm this model change.")
                                 put("target_model", "public-model"); put("target_provider", "public-provider"); put("warnings", JsonArray(emptyList()))
                             }
                         } }
                         if (silenceNextMutation) { silenceNextMutation = false; return true }
+                        if (malformedMutation) {
+                            rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":{}}""")
+                            return true
+                        }
                         receipt.toString()
                     }
                     "prompt.resolve_unknown", "prompt.cancel" -> {
@@ -461,6 +887,11 @@ class CanonicalGatewayRpcTest {
             rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"error":{"code":$code,"message":"invalid_params","data":{"reason":"invalid_params"}}}""")
         }
         fun ready() = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"gateway.ready","payload":{"session_authority":true,"change_events":true,"heartbeat":true,"replay_epoch":"public-global"}}}""")
+        fun modelEvent(seq: Int, pick: JsonObject, generation: Int = 3, sid: String = "canonical-public", status: String = "confirmation_required", owner: String = "public-owner", message: String = "Confirm this model change.", token: String = "public-event-token") =
+            rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.updated","session_id":"$sid","seq":$seq,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":$generation,"payload":{"session_id":"$sid","profile_id":"$owner","operation":"model","status":"$status","confirm":${JsonPrimitive(token)},"confirm_message":${JsonPrimitive(message)},"payload":$pick,"target_model":${pick.getValue("model")},"committed_model":"public-model"}}}""")
+        fun pickInfo(seq: Int, reasoning: String) = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","session_id":"canonical-public","seq":$seq,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":3,"payload":{"model":"public-same","provider":"public-provider-b","reasoning_effort":${JsonPrimitive(reasoning)}}}}""")
+        fun refusedEvent(seq: Int, model: String) = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.updated","session_id":"canonical-public","seq":$seq,"replay_epoch":"public-session-epoch","authority_epoch":2,"execution_generation":3,"payload":{"session_id":"canonical-public","operation":"model","status":"refused","target_model":${JsonPrimitive(model)},"model":"public-committed","provider":"public-provider-a","reason":"model_resolution_failed"}}}""")
+        fun gap(kind: String) = rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"${if (kind == "native") "session.replay_gap" else "session.info"}","session_id":"canonical-public","seq":${if (kind == "sequence") 4 else 2},"replay_epoch":"${if (kind == "epoch") "public-new-epoch" else "public-session-epoch"}","authority_epoch":${if (kind == "authority") 3 else 2},"execution_generation":3,"payload":{}}}""")
         private fun snapshot(sid: String = "canonical-public") = """{"session_id":"$sid","stored_session_id":"$sid","messages":[{"role":"assistant","content":"Raw public answer"}],"display_messages":[{"role":"assistant","text":"Display public answer"}],"message_count":1,"running":false,"authority_epoch":2,"replay_epoch":"public-session-epoch","last_sequence":0,"subscription_id":"public-subscription","revision":7,"execution_generation":$snapshotGeneration,"pending":$pendingRows,"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"work",${snapshotOwner?.let { "\"profile_id\":\"$it\"," }.orEmpty()}"model":"public-model","cwd":"/workspace/public"}}"""
     }
 }

@@ -369,7 +369,7 @@ internal class CorrelatedGatewayRpc(
         val sent = synchronized(lock) {
             if (isClosed) throw GatewayRpcException("The gateway connection is closed.")
             pending[id] = answer
-            runCatching { dispatch { wire.send(frame) } }.getOrElse {
+            runCatching { dispatch { canonicalProtocol.dispatchMutation(method, params) { wire.send(frame) } } }.getOrElse {
                 pending.remove(id)
                 throw GatewayRpcException("The gateway connection could not send the request.")
             }

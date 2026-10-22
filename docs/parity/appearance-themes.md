@@ -174,3 +174,32 @@ proves no Desktop/shared source changes since the preceding audit. All twelve
 registry entries match the new target, the focused theme tests passed again,
 and no historical rendered or semantic evidence was restamped. #292 and the
 Concern ceiling remain unchanged.
+
+## Bounded Settings source continuation (2026-10-22)
+
+This is not a theme repin or rendered review. The
+[Settings-depth inventory](desktop-control-reconciliation.md#settings-depth-continuation-2026-10-22)
+adds 41 source-read Appearance templates at Desktop
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa`, compared with native baseline
+`65080e8a37e8d546869528e43c162503015b94c7`. Exact UI, named-setter, writer,
+mount and native spans are in the `settings-depth.appearance.*` records.
+
+The reading follows Simple-mode shadow/session-reveal precedence, the backend
+mirrors for reactions/tips/tours, per-painted-appearance translucency, and the
+specialized font autosave/rollback controllers. None is certified by the generic
+config dispatcher or the twelve-theme registry check.
+
+Current-source scope findings under #266: Desktop skin and mode assign the live
+active profile, with named choices mirrored to global inheritance; native theme
+selection stamps a connection row, while native mode uses one DataStore key.
+The historical per-connection adaptation above remains historical and is not
+retroactively withdrawn. The records flag the newer source difference instead
+of calling the picker absent. Intro Splash has a native writer, but its current
+Switch-versus-native-segments visual treatment was not accepted by this audit.
+
+Other source-read Appearance controls remain provisional omissions under #157;
+no native non-goal was inferred from a platform gate. Language, tray/native
+material effects, Pet and contributed-card descendants, full theme conversion
+and mode-layout persistence consequences remain unverified. No production UI,
+private settings, theme installation, provider call or rendered capture changed.
+Existing source/visual pins and pending #292 retain their provenance.

@@ -29,13 +29,39 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private val descriptors = mutableMapOf<String, ConfirmedOwner>()
     private val snapshots = mutableMapOf<Owner, Snapshot>()
     private data class MutationKey(val owner: Owner, val operation: String, val payload: JsonObject)
-    private data class ModelConfirmation(val token: String, var sent: Boolean = false)
+    private data class ModelConfirmation(val token: String, val version: Long)
     private val mutations = mutableMapOf<MutationKey, JsonObject>()
     private val modelConfirmations = mutableMapOf<Pair<Owner, JsonObject>, ModelConfirmation>()
+    private data class DeferredConfirmation(val payload: JsonObject, val token: String, val generation: Long)
+    private val deferredConfirmations = mutableMapOf<Owner, DeferredConfirmation>()
+    private val latestModelPicks = mutableMapOf<Owner, JsonObject>()
+    private val localModelPickOwners = mutableSetOf<Owner>()
+    private val modelConsentVersions = mutableMapOf<Owner, Long>()
+    private val reconcilingOwners = mutableSetOf<Owner>()
+    private data class ModelDispatchLease(val owner: Owner, val version: Long, var used: Boolean = false)
+    private val modelDispatchLeases = mutableMapOf<String, ModelDispatchLease>()
+
+    private fun revokeModelConsent(owner: Owner) {
+        deferredConfirmations.remove(owner)
+        modelConfirmations.keys.removeAll { it.first == owner }
+        modelConsentVersions[owner] = (modelConsentVersions[owner] ?: 0) + 1
+    }
+
+    /** Called inside the final transport dispatch callback, not before a suspending lookup.
+     * The same lock serializes stream invalidation with admission to wire.send. */
+    fun dispatchMutation(method: String, params: JsonObject, send: () -> Boolean): Boolean = synchronized(stateLock) {
+        val id = params.text("request_id")
+        val lease = if (method == "session.mutate") modelDispatchLeases[id] else null
+        if (lease == null) send() else if (lease.used || modelConsentVersions[lease.owner] != lease.version) false else {
+            lease.used = true
+            send()
+        }
+    }
     private val mutationLocks = KeyedMutex<Owner>()
     private val preSnapshotEvents = mutableListOf<GatewayEvent>()
     private val admissionStatuses = linkedMapOf<Pair<Owner, String>, String>()
     private val pendingAdmissions = mutableMapOf<Owner, JsonArray>()
+    private val pendingRevisions = mutableMapOf<Owner, Long>()
     private val prompts = mutableMapOf<Pair<Owner, String>, JsonObject>()
     private val creates = mutableMapOf<JsonObject, String>()
     @Volatile var announced: Boolean = false
@@ -161,7 +187,12 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 val plain = JsonObject(params.filterKeys { it !in TRUNCATE_KEYS })
                 val prepared = if (plain.text("submission_id").isNullOrBlank() && plain.text("input_id").isNullOrBlank())
                     JsonObject(plain + ("submission_id" to JsonPrimitive(UUID.randomUUID().toString()))) else plain
-                admission(send(method, prepared), prepared, owner)
+                val pendingRevision = synchronized(stateLock) { pendingRevisions[owner] ?: 0L }
+                val result = send(method, prepared)
+                // Current owner may consume a local voice stop without admitting a turn.
+                // contracts/canonical_sessions.py:233-241 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+                if (result == buildJsonObject { put("voice_stopped", true) }) result
+                else admission(result, prepared, owner, pendingRevision)
             }
             "session.interrupt", "session.steer", "session.redirect" -> {
                 val owner = owner(profile, params.text("session_id") ?: unusable())
@@ -181,6 +212,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             value?.let { put(field, it) }
         }
         return when (method) {
+            "session.model" -> "model" to (params["payload"] as? JsonObject ?: unusable())
             "session.title" -> payload("rename", "title", params["title"])
             "session.archive" -> payload("archive", "archived", params["archived"])
             "session.delete" -> "delete" to buildJsonObject { }
@@ -226,13 +258,39 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         val sid = params.text("parent_session_id") ?: params.text("session_id") ?: params.text("session_key") ?: unusable()
         val owner = owner(params.text("profile").orEmpty(), sid)
         return mutationLocks.withLock(owner) {
+            var consentVersion: Long? = null
+            var requestConsentVersion: Long? = null
             val payload = synchronized(stateLock) {
-                val confirmation = modelConfirmations[owner to suppliedPayload]
-                if (operation == "model" && confirmation != null &&
-                    (params["confirm_expensive_model"] == JsonPrimitive(true) || confirmation.sent)) {
-                    confirmation.sent = true
-                    JsonObject(suppliedPayload + ("confirm" to JsonPrimitive(confirmation.token)))
-                } else suppliedPayload
+                if (method == "session.model") {
+                    val ask = deferredConfirmations[owner]
+                    if (ask == null || ask.payload != suppliedPayload || ask.token != params.text("confirm") ||
+                        ask.generation != snapshots[owner]?.generation)
+                        throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
+                    deferredConfirmations.remove(owner)
+                    consentVersion = modelConsentVersions.getOrPut(owner) { 0 }
+                    requestConsentVersion = consentVersion
+                    latestModelPicks[owner] = suppliedPayload
+                    localModelPickOwners.add(owner)
+                    JsonObject(ask.payload + ("confirm" to JsonPrimitive(ask.token)))
+                } else {
+                    val explicitConfirm = operation == "model" && params["confirm_expensive_model"] == JsonPrimitive(true)
+                    val confirmation = if (explicitConfirm) modelConfirmations.remove(owner to suppliedPayload) else null
+                    if (explicitConfirm) {
+                        if (confirmation == null || confirmation.version != modelConsentVersions[owner])
+                            throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
+                        consentVersion = confirmation.version
+                    } else if (operation in setOf("model", "reasoning")) revokeModelConsent(owner)
+                    if (operation == "model") {
+                        requestConsentVersion = modelConsentVersions.getOrPut(owner) { 0 }
+                        latestModelPicks[owner] = suppliedPayload
+                        localModelPickOwners.add(owner)
+                    } else if (operation == "reasoning") latestModelPicks[owner]?.let { pick ->
+                        suppliedPayload["effort"]?.let { latestModelPicks[owner] = JsonObject(pick + ("reasoning" to it)) }
+                    }
+                    if (explicitConfirm) {
+                        JsonObject(suppliedPayload + ("confirm" to JsonPrimitive(confirmation!!.token)))
+                    } else suppliedPayload
+                }
             }
             val key = MutationKey(owner, operation, payload)
             val prepared = synchronized(stateLock) {
@@ -247,11 +305,16 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                     }
                 }
             }
+            consentVersion?.let { version -> synchronized(stateLock) {
+                modelDispatchLeases[prepared.text("request_id")!!] = ModelDispatchLease(owner, version)
+            } }
             fun uncertain(): Nothing = throw GatewayRpcException("The Gateway returned an unusable mutation receipt.", requestMayHaveBeenAccepted = true)
             val value = try { send("session.mutate", prepared) as? JsonObject ?: uncertain() }
             catch (failure: GatewayRpcError) {
                 synchronized(stateLock) { mutations.remove(key) }
                 throw failure
+            } finally {
+                synchronized(stateLock) { modelDispatchLeases.remove(prepared.text("request_id")) }
             }
             val readOnly = (operation == "model" && value.text("status") == "confirmation_required") ||
                 (operation == "compress" && value.text("status") in setOf("preview", "noop"))
@@ -267,8 +330,10 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 if (operation == "model") {
                     if (payload.text("confirm") != null) modelConfirmations.remove(owner to suppliedPayload)
                     if (value.text("status") == "confirmation_required") {
+                        if (owner in reconcilingOwners || requestConsentVersion != modelConsentVersions[owner])
+                            throw GatewayRpcException("This model change could not be confirmed. Choose it again.")
                         val token = value.text("confirm")?.takeIf(String::isNotBlank) ?: uncertain()
-                        modelConfirmations[owner to suppliedPayload] = ModelConfirmation(token)
+                        modelConfirmations[owner to suppliedPayload] = ModelConfirmation(token, modelConsentVersions.getOrPut(owner) { 0 })
                     }
                 }
             }
@@ -278,6 +343,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 projected.forEach { (key, item) -> put(key, item) }
                 if (value.text("status") == "confirmation_required") put("confirm_required", true)
                 else put("ok", true)
+                if (value.text("status") == "deferred") put("deferred", true)
                 if (operation == "reasoning") value["effort"]?.let { put("value", it) }
                 if (operation == "branch") {
                     val child = value.text("branched_session_id")?.takeIf(String::isNotBlank) ?: unusable()
@@ -406,6 +472,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             snapshots[key] = if (stale) previous.copy(subscriptionId = subscription) else
                 Snapshot(revision, generation, epoch, sequence, subscription, stored, authority, retired)
             if (!stale) {
+                reconcilingOwners.remove(key)
+                revokeModelConsent(key)
                 reconcilePending(key, value["pending"] as? JsonArray ?: unusable())
                 prompts.keys.removeAll { it.first == key }
                 (value["prompts"] as? JsonArray).orEmpty().forEach { element ->
@@ -453,7 +521,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     /** Applies per-owner execution/replay fences before any consumer sees a frame. */
     fun event(event: GatewayEvent): GatewayEvent? {
         if (!announced || event.runtimeSessionId == null) return event
-        val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
+        var payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
         return synchronized(stateLock) {
             val matching = snapshots.keys.filter { it.sessionId == event.runtimeSessionId }
             val owner = matching.singleOrNull()
@@ -469,11 +537,57 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 if (event.authorityEpoch?.let { it < previous.authorityEpoch } == true ||
                     generation?.let { it < previous.generation } == true) return@synchronized null
                 if (event.replayEpoch != null && event.replayEpoch != previous.replayEpoch ||
-                    event.seq?.let { it > previous.lastSequence + 1 } == true) {
+                    event.seq?.let { it > previous.lastSequence + 1 } == true ||
+                    event.authorityEpoch?.let { it > previous.authorityEpoch } == true ||
+                    event.type == "session.replay_gap" || owner in reconcilingOwners) {
+                    reconcilingOwners.add(owner)
+                    revokeModelConsent(owner)
                     return@synchronized event.copy(type = "session.replay_gap", payload = JsonObject(emptyMap()),
                         runtimeSessionId = sessionIdentity.qualify(event.runtimeSessionId, route), canonical = true)
                 }
                 if (event.seq?.let { it <= previous.lastSequence } == true) return@synchronized null
+
+                // Whole-payload consent, scoped to this ordered owner stream and turn.
+                // gateway/session_deferred_pick.py:111-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+                if (generation != null && generation > previous.generation) revokeModelConsent(owner)
+                // Whole authoritative state settles local intent, including reasoning.
+                // Keep only an owner-level refusal tombstone afterwards: it must not
+                // suppress a genuinely new whole-payload ask from another viewer.
+                if (event.type == "session.info") latestModelPicks[owner]?.let { pick ->
+                    if (payload.text("model") == pick.text("model") &&
+                        (pick.text("provider") == null || payload.text("provider") == pick.text("provider")) &&
+                        (pick.text("reasoning") == null || payload["reasoning_effort"] == pick["reasoning"]))
+                        latestModelPicks.remove(owner)
+                }
+                if (event.type == "session.updated" && payload.text("operation") == "model" &&
+                    payload.text("status") in setOf("confirmation_required", "refused")) {
+                    val pick = payload["payload"] as? JsonObject
+                    val token = payload.text("confirm")
+                    val latest = latestModelPicks[owner]
+
+                    // Refusal has no target provider/reasoning, request id or rejection
+                    // revision. Committed provider is NOT target identity. Preserve local
+                    // intent until authoritative whole-selection state confirms it.
+                    // gateway/session_deferred_pick.py:128-136 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+                    val obsolete = if (payload.text("status") == "refused") owner in localModelPickOwners
+                    else latest != null && latest != pick
+                    if (payload.text("status") == "refused" && payload.text("session_id") == owner.sessionId &&
+                        payload.text("profile_id")?.let { it != descriptors[owner.profile]?.ownerId } != true)
+                        revokeModelConsent(owner)
+                    if (obsolete || payload.text("session_id") != owner.sessionId ||
+                        payload.text("profile_id")?.let { it != descriptors[owner.profile]?.ownerId } == true)
+                        payload = JsonObject(emptyMap())
+                    else {
+                        revokeModelConsent(owner)
+                        if (payload.text("status") == "refused") latestModelPicks.remove(owner)
+                        if (payload.text("status") == "confirmation_required") {
+                            if (event.seq == null || event.replayEpoch == null || generation == null ||
+                                pick?.text("model").isNullOrBlank() || token.isNullOrBlank() ||
+                                payload.text("session_id") != owner.sessionId) payload = JsonObject(emptyMap())
+                            else deferredConfirmations[owner] = DeferredConfirmation(pick!!, token, generation)
+                        }
+                    }
+                }
                 (payload["pending"] as? JsonArray)?.let { reconcilePending(owner, it) }
                 if (generation != null && generation > previous.generation) prompts.keys.removeAll { it.first == owner }
                 snapshots[owner] = previous.copy(generation = generation ?: previous.generation,
@@ -500,7 +614,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         }
     }
 
-    private fun admission(raw: JsonElement, params: JsonObject, owner: Owner): JsonObject {
+    private fun admission(raw: JsonElement, params: JsonObject, owner: Owner, pendingRevision: Long? = null): JsonObject {
         fun uncertain(): Nothing = throw GatewayRpcException("The Gateway returned an unusable admission receipt.", requestMayHaveBeenAccepted = true)
         val value = raw as? JsonObject ?: uncertain()
         val ref = value["ref"] as? JsonObject ?: uncertain()
@@ -524,7 +638,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             val id = value.text("admission_id") ?: uncertain()
             val status = value.text("status") ?: uncertain()
             val previousStatus = admissionStatuses[owner to id]
-            if (ADMISSION_RANK.getValue(status) >= (previousStatus?.let(ADMISSION_RANK::getValue) ?: -1)) {
+            val superseded = pendingRevision != null && pendingRevision != (pendingRevisions[owner] ?: 0L)
+            if (!superseded && ADMISSION_RANK.getValue(status) >= (previousStatus?.let(ADMISSION_RANK::getValue) ?: -1)) {
                 admissionStatuses[owner to id] = status
                 val rest = pendingAdmissions[owner].orEmpty().filter { (it as? JsonObject)?.text("admission_id") != id }
                 val row = if (status == "terminal") emptyList() else listOf(JsonObject(value + buildJsonObject {
@@ -543,6 +658,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
 
     /** A full owner pending fanout outranks delayed receipts and cannot resurrect settled inputs. */
     private fun reconcilePending(owner: Owner, rows: JsonArray) {
+        pendingRevisions[owner] = (pendingRevisions[owner] ?: 0L) + 1L
         val incoming = rows.mapNotNull { it as? JsonObject }
         val previous = pendingAdmissions[owner].orEmpty().mapNotNull { it as? JsonObject }
         val ids = incoming.mapNotNull { it.text("admission_id") }.toSet()
@@ -553,8 +669,11 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             val status = row.text("status") ?: return@mapNotNull null
             val rank = ADMISSION_RANK[status] ?: return@mapNotNull null
             val observed = admissionStatuses[owner to id]
-            if (rank < (observed?.let(ADMISSION_RANK::getValue) ?: -1))
-                previous.singleOrNull { it.text("admission_id") == id && observed != "terminal" }
+            val prior = previous.singleOrNull { it.text("admission_id") == id }
+            val returnedTransfer = observed == "started" && prior?.get("steering") == JsonPrimitive(true) &&
+                status == "queued" && row["steering"] != JsonPrimitive(true)
+            if (rank < (observed?.let(ADMISSION_RANK::getValue) ?: -1) && !returnedTransfer)
+                prior?.takeIf { observed != "terminal" }
             else { admissionStatuses[owner to id] = status; row.takeUnless { status == "terminal" } }
         }
         pendingAdmissions[owner] = JsonArray(accepted)

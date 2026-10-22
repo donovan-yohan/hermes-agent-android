@@ -185,6 +185,48 @@ class GitBoundsTest(unittest.TestCase):
         clone.assert_not_called()
         self.assertIn("a" * 40, m._materialized)
 
+    def test_shallow_source_to_historical_fetch_keeps_both_snapshots(self):
+        self._source_to_historical_fetch(shallow=True)
+
+    def test_complete_source_to_historical_fetch_keeps_both_snapshots(self):
+        self._source_to_historical_fetch(shallow=False)
+
+    def _source_to_historical_fetch(self, shallow):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            origin, source = root / "origin", root / "source"
+            def git(*args):
+                return subprocess.run(["git", *map(str, args)], capture_output=True,
+                                      text=True, check=True, timeout=10).stdout.strip()
+            git("init", "-q", origin)
+            def commit(text):
+                (origin / "one.py").write_text(text + "\n")
+                git("-C", origin, "add", ".")
+                git("-C", origin, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
+                    "commit", "--no-gpg-sign", "-qm", text)
+                return git("-C", origin, "rev-parse", "HEAD")
+            new = commit("new")
+            git("clone", *(["--depth=1"] if shallow else []), "--single-branch", "--no-tags", "--no-checkout", origin.as_uri(), source)
+            # This snapshot appears only after the read-only source was made.
+            old = commit("later historical target")
+            before = {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()}
+            with patch.object(m, "UPSTREAM", source):
+                try:
+                    m.materialize(new)
+                    self.assertIn(new, m._materialized)
+                    m.materialize(old)
+                    # A store handoff must not retain a completeness result for
+                    # bytes available only in the previous reference store.
+                    m._FETCH = True
+                    self.assertEqual(m.blob(old, "one.py"), ["later historical target"])
+                    self.assertEqual(m.blob(new, "one.py"), ["new"])
+                    self.assertFalse((m.read_root() / '.git/objects/info/alternates').exists())
+                    self.assertEqual(before, {str(p.relative_to(source)): p.read_bytes() for p in source.rglob('*') if p.is_file()})
+                finally:
+                    if m._SCRATCH is not None:
+                        m._SCRATCH.cleanup()
+                    m._SCRATCH = m._READ = None
+
     def test_materialization_once_per_immutable_revision(self):
         m._materialized.clear()
         with patch.object(m, "_has", return_value=False), patch.object(m, "_scratch_clone", return_value=pathlib.Path("scratch")), patch.object(m, "subprocess_run") as run:

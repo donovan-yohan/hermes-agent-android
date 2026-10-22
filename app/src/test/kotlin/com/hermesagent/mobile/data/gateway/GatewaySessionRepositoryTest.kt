@@ -5557,6 +5557,34 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `authority completions accept additive capacity and rate limit descriptors`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        for ((code, extra) in listOf(
+            "free_tier_at_capacity" to "\"message\":\"The free tier is full right now.\",",
+            "rate_limit" to "\"resets_at\":1900000000.0,",
+        )) {
+            repository.submit("durable-a", "synthetic request")
+            rpc.emit("message.start", "runtime-a", """{"id":"failure-$code","role":"assistant"}""")
+            rpc.emit("message.complete", "runtime-a",
+                """{"status":"error","text":"","error_surface":{"layer":"provider","code":"$code",${extra}"retryable":true,"provider":"nous","model":"free-model"}}""")
+            runCurrent()
+            val failure = cache.transcript("durable-a").filterIsInstance<AssistantTurn>().last()
+            assertEquals(code, failure.errorDetails?.code)
+            assertEquals("nous", failure.errorDetails?.provider)
+            assertEquals("free-model", failure.errorDetails?.model)
+            assertTrue(failure.errorDetails?.retryable == true)
+            assertNotNull(failure.error)
+            assertFalse(failure.streaming)
+            assertEquals(1, cache.transcript("durable-a").filterIsInstance<AssistantTurn>().count { it.id == "failure-$code" })
+        }
+    }
+
+    @Test
     fun `error event and error completion cache only mapped safe copy`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -6403,9 +6431,104 @@ class GatewaySessionRepositoryTest {
         assertEquals("at tool boundary", (cache.transcript("durable-a").last() as UserTurn).text)
 
         val beforeRejected = cache.transcript("durable-a")
-        rpc.redirectResult = """{"status":"rejected"}"""
+        rpc.redirectResult = """{"status":"rejected","delivered":false}"""
         assertEquals(GatewayRedirectOutcome.Rejected, repository.redirect("durable-a", "do not append"))
         assertEquals(beforeRejected, cache.transcript("durable-a"))
+        rpc.redirectResult = """{"status":"rejected"}"""
+        assertEquals(GatewayRedirectOutcome.Ambiguous, repository.redirect("durable-a", "may have landed"))
+        assertEquals(beforeRejected, cache.transcript("durable-a"))
+        rpc.redirectResult = """{"voice_stopped":true}"""
+        assertEquals(GatewayRedirectOutcome.VoiceStopped, repository.redirect("durable-a", "stop"))
+        rpc.steerResult = """{"voice_stopped":true}"""
+        assertEquals(GatewaySteerOutcome.VoiceStopped, repository.steer("durable-a", "stop"))
+        assertEquals(beforeRejected, cache.transcript("durable-a"))
+    }
+
+    @Test
+    fun `legacy forwarded queue receipt removes phantom working turn without inventing canonical admission`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { promptResponse = CompletableDeferred(json("""{"status":"queued","admission_id":"owner-admission","forwarded":true}""")) }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        val before = cache.transcript("durable-a")
+        assertEquals(GatewaySubmitOutcome.Accepted, repository.submit("durable-a", "forward once"))
+        assertEquals(before, cache.transcript("durable-a"))
+        assertEquals(SessionStatus.Idle, cache.session("durable-a")?.status)
+        assertTrue(repository.activeTurns.value.isEmpty())
+        assertEquals("forward once", cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.single()?.text)
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayAdmissions.orEmpty().isEmpty())
+        rpc.emit("session.info", "runtime-a", """{"stored_session_id":"durable-a","pending_submissions":[{"admission_id":"owner-admission","status":"queued","user":"forward once","input_id":"owner-input"}]}""")
+        runCurrent()
+        assertEquals(1, cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.size)
+        rpc.emit("session.info", "runtime-a", """{"pending_submissions":[]}""")
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant","id":"forwarded-answer"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+        assertTrue(repository.activeTurns.value.contains("durable-a"))
+        rpc.emit("message.complete", "runtime-a", """{"text":"forwarded done"}""")
+        runCurrent()
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+        assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `forwarded receipt arriving after relayed completion cannot recreate queued row`() = runTest {
+        val cache = SessionCache()
+        val response = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { promptResponse = response }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        val submitted = async { repository.submit("durable-a", "forward once") }; runCurrent()
+        rpc.emit("session.info", "runtime-a", """{"pending_submissions":[{"admission_id":"owner-admission","status":"queued","user":"forward once","input_id":"owner-input"}]}""")
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant","id":"forwarded-answer"}""")
+        rpc.emit("message.complete", "runtime-a", """{"text":"forwarded done"}""")
+        runCurrent()
+        response.complete(json("""{"status":"queued","admission_id":"owner-admission","forwarded":true}"""))
+        assertEquals(GatewaySubmitOutcome.Accepted, submitted.await())
+        assertTrue(cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts.orEmpty().isEmpty())
+        assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `repeated own-only forwarded pending does not reorder waiting occurrences`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        for (id in listOf("A", "B")) {
+            rpc.promptResponse = CompletableDeferred(json("""{"status":"queued","admission_id":"$id","forwarded":true}"""))
+            repository.submit("durable-a", "Question $id")
+        }
+        for (id in listOf("B", "A")) {
+            rpc.emit("session.info", "runtime-a", """{"pending_submissions":[{"admission_id":"$id","status":"queued","user":"Question $id","input_id":"input-$id"}]}""")
+        }
+        runCurrent()
+        assertEquals(listOf("Question A", "Question B"), cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.map { it.text })
+        rpc.emit("message.start", "runtime-a", """{"role":"assistant","id":"answer-A"}""")
+        rpc.emit("session.info", "runtime-a", """{"pending_submissions":[]}""")
+        runCurrent()
+        assertEquals(listOf("Question B"), cache.session("durable-a")?.composerStatus?.gatewayQueuedPrompts?.map { it.text })
+        assertEquals(2, rpc.calls.count { it.method == "prompt.submit" })
+    }
+
+    @Test
+    fun `legacy forwarded uncertainty remains ambiguous and is never retried`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { promptResponse = CompletableDeferred<JsonElement>().also {
+            it.completeExceptionally(GatewayRpcError(4090, "unconfirmed", "SESSION_OWNER_UNCONFIRMED"))
+        } }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent(); repository.openSession("durable-a")
+        assertEquals(GatewaySubmitOutcome.Ambiguous, repository.submit("durable-a", "forward once"))
+        assertEquals(1, rpc.calls.count { it.method == "prompt.submit" })
     }
 
     @Test

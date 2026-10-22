@@ -161,10 +161,39 @@ Desktop plugin states, Bots roster parity, footer behavior, or wide geometry.
 The clean Desktop sandbox lacks optional plugin/Terminal states. Full rendered
 parity remains pending; later changes need new exact-head evidence.
 
+## Later nested-filter source audit
+
+Separate from this page's historical visual pin, the control inventory reads
+Desktop `81a55437f3f31a9f12a30c53b6c5d49d420898aa` and Android baseline
+`65080e8a37e8d546869528e43c162503015b94c7`. It follows all current filter option
+templates, their actual visibility predicates and named setters, not merely the
+menu labels (`apps/desktop/src/app/chat/sidebar/filter-menu.tsx:116-232,255-452`;
+`apps/desktop/src/store/layout.ts:850-960`, both at that Desktop SHA).
+
+Profile/Status grouping, ordering/metadata, Inbox cards, Advanced-only rail,
+project-only show-all, status/profile/project/PR filters, customized-only reset
+and level-specific fold remain absent from the baseline's narrower native menu
+(`app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt:710-803`
+at the Android baseline). #142 owns its six specified missing-control pills;
+additional current option descendants remain under #73/#266. Generic grouping
+support must not mark all these children implemented.
+
+One equal label hides a different writer: Desktop Mark all as read clears only
+transient finished dots (`apps/desktop/src/store/session.ts:1522-1539` at the
+Desktop SHA), while Android calls per-row backend watermark writes
+(`app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt:2781-2797`
+at the baseline). This is drift under #266, not proof of equivalent semantics.
+Full project/search/native branches and comparators remain unverified omissions;
+[the bounded control report](desktop-control-reconciliation.md) names those
+residuals and exact owners. No newer-main delta or new visual acceptance is
+claimed, and existing captures retain their original pins.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
+| Later-source Mark all as read semantics (separate source audit, no visual repin) | drift | Native bulk action writes backend watermarks; later Desktop clears transient dots only | #266; exact writer spans in Later nested-filter source audit |
+| Later-source missing filter descendants | omission | Baseline menu remains Updated/Project, Search, Archived and Mark all as read only | pill-owed: #142 for its six named controls; additional descendants under #73/#266 as bounded in the control inventory |
 | Always-visible core rows at `sidebar/index.tsx:207-247` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Compact drawer keeps New session outside More/Less; measured chrome reserves a usable navigation area or selects whole-pane scrolling, with original order, WIP and callbacks | Real-drawer `MobileSidebarCollapseTest` verifies 400dp overview/selected search at 1.0/2.0 font scale, real profile/Gateway footer, 280dp callbacks, reopen and restoration; exact-head acceptance pending #72. No new paired-review approval. |
 | Project/session search results and empty copy | drift | Matching project retains both previews; `Nothing matches` differs from Desktop query-specific Results copy | Inherited before the cache; actual match/multiword-miss pixels in [report](../media/sidebar-projection-pr360/REPORT.md); dedicated behavior owner #367, Concern. |
 | Selected project branch/lane label | omission | Flat session list lacks Desktop `main` lane information | deferred: #359; actual selected pair in [report](../media/sidebar-projection-pr360/REPORT.md). Not approved as touch-density adaptation. |

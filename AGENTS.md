@@ -56,8 +56,8 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ## Non-obvious rules
 
 **Upstream is read-only.** The current Desktop implementation target is
-`ddabd3837862022a6053331fe3ba97cf9716b9e3` (scoped source audit, 2026-10-19;
-`docs/spikes/upstream-ddabd383-2026-10-19.md`). The theme repin certifies registry
+`41dfcf2c1bd7146d4ad46aea08b7dd007900602e` (observed-main audit, 2026-10-22;
+`docs/spikes/upstream-41dfcf2c-2026-10-22.md`). The theme repin certifies registry
 identity only, not newly ported appearance behaviour or rendered parity.
 Use a disposable checkout at that SHA for new ports. `~/.hermes/hermes-agent`
 remains a read-only reference: never write, fetch or check out inside it.

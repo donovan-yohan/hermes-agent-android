@@ -105,6 +105,34 @@ class PersistedTurnMetadataTest {
         assertNotNull(decodeRows(rows, true).filterIsInstance<AssistantTurn>().single().error)
     }
 
+    @Test fun `tool result followed by nonblank failed boundary keeps one error and later user on repeated refresh`() {
+        for (rest in listOf(false, true)) {
+            fun record(id: Int, role: String, text: String, extra: kotlinx.serialization.json.JsonObjectBuilder.() -> Unit = {}) = buildJsonObject {
+                put(if (rest) "id" else "row_id", id); put("role", role)
+                put(if (rest) "content" else "text", text); extra()
+            }
+            val rows = listOf(
+                record(40, "user", "Run a check"),
+                record(41, "assistant", "Checking") {
+                    put("tool_calls", JsonArray(listOf(buildJsonObject {
+                        put("id", "public-call"); put("type", "function")
+                        put("function", buildJsonObject { put("name", "terminal"); put("arguments", "{}") })
+                    })))
+                },
+                record(42, "tool", "Check output") { put("tool_call_id", "public-call"); put("name", "terminal") },
+                record(43, "assistant", "The check could not finish.") { put("display_kind", "failed_turn"); put("display_metadata", failure) },
+                record(44, "user", "A later request"),
+            )
+            val decoded = decodeRows(rows, rest)
+            assertEquals(1, decoded.filterIsInstance<AssistantTurn>().count { it.error != null })
+            assertTrue(decoded.filterIsInstance<AssistantTurn>().any { it.markdown == "The check could not finish." })
+            assertTrue(decoded.filterIsInstance<com.hermesagent.mobile.data.session.UserTurn>().any { it.text == "A later request" })
+            val refreshed = graftRefreshedTailOntoBackfill(decodeRows(rows, rest), decoded).entries
+            assertEquals(decoded, refreshed)
+            assertEquals(1, refreshed.filterIsInstance<AssistantTurn>().count { it.error != null })
+        }
+    }
+
     @Test fun `same error code on different boundaries remains distinct and overlapping pages dedupe`() {
         for (rest in listOf(false, true)) {
             val first = decode(failure, rest, "failed_turn", "boundary one", 41)

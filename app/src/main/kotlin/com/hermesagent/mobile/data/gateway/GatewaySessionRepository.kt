@@ -123,6 +123,7 @@ interface GatewaySessionRepository {
     val imageLoader: StateFlow<GatewayImageLoader?> get() = NO_IMAGE_LOADER
     val sessionRehomes: Flow<SessionRehome> get() = emptyFlow()
     val composerControls: Flow<SessionComposerControls> get() = emptyFlow()
+    val deferredModelPicks: Flow<com.hermesagent.mobile.data.composer.DeferredModelPick> get() = emptyFlow()
     /** Live required-action requests, keyed by generation/runtime/request/kind. */
     val pendingInputs: StateFlow<Map<PendingInputKey, PendingInputRequest>>
         get() = error("Pending inputs are not implemented by this repository.")
@@ -473,10 +474,13 @@ interface GatewaySessionRepository {
 
 sealed interface GatewaySubmitOutcome {
     data object Accepted : GatewaySubmitOutcome
+    /** The owner consumed a voice stop; no prompt/admission was created. */
+    data object VoiceStopped : GatewaySubmitOutcome
     data object Ambiguous : GatewaySubmitOutcome
 }
 
 sealed interface GatewayRedirectOutcome {
+    data object VoiceStopped : GatewayRedirectOutcome
     data object Redirected : GatewayRedirectOutcome
     data object QueuedByGateway : GatewayRedirectOutcome
     data object Rejected : GatewayRedirectOutcome
@@ -487,6 +491,7 @@ sealed interface GatewayRedirectOutcome {
 }
 
 sealed interface GatewaySteerOutcome {
+    data object VoiceStopped : GatewaySteerOutcome
     data object QueuedByGateway : GatewaySteerOutcome
     data object Rejected : GatewaySteerOutcome
     data object Unsupported : GatewaySteerOutcome
@@ -901,6 +906,8 @@ internal class LiveGatewaySessionRepository(
     override val sessionRehomes: Flow<SessionRehome> = rehomeEvents
     private val composerControlEvents = MutableSharedFlow<SessionComposerControls>(extraBufferCapacity = 16)
     override val composerControls: Flow<SessionComposerControls> = composerControlEvents
+    private val deferredModelEvents = MutableSharedFlow<com.hermesagent.mobile.data.composer.DeferredModelPick>(extraBufferCapacity = 16)
+    override val deferredModelPicks: Flow<com.hermesagent.mobile.data.composer.DeferredModelPick> = deferredModelEvents
     /**
      * Buffered and dropping: emitted from under `stateLock`, so it must never
      * suspend, and a follower slow enough to lose one has lost a notification
@@ -1004,6 +1011,9 @@ internal class LiveGatewaySessionRepository(
     private val composerStatusRuntimeIds = mutableSetOf<String>()
     /** A completed turn consumes its accepted head envelope at the next message.start. */
     private val queuedPromptDrainReadyBatchIdsByRuntime = mutableMapOf<String, String>()
+    // Legacy owner forwarding exposes admission identity in pending_submissions,
+    // but relays only its own execution frames (not the prior owner's settlement).
+    private val retiredForwardedAdmissions = mutableMapOf<String, MutableSet<String>>()
 
     /**
      * The profile scope the sidebar is in. App state, not connection state: it
@@ -3589,7 +3599,7 @@ internal class LiveGatewaySessionRepository(
                     ),
                 )
             }
-            OptimisticSubmit(previousSession, previousTranscript)
+            OptimisticSubmit(previousSession, previousTranscript, optimisticUser, observedTurnGenerations[binding.runtimeId] ?: 0L)
         }
 
         try {
@@ -3612,15 +3622,29 @@ internal class LiveGatewaySessionRepository(
                 val canonicalReceipt = (receipt as? JsonObject)?.takeIf {
                     (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null
                 }
-                val receiptStatus = canonicalReceipt?.string("status")
+                if (receipt == buildJsonObject { put("voice_stopped", JsonPrimitive(true)) }) {
+                    synchronized(stateLock) {
+                        ensureCurrent(connection)
+                        // No turn was admitted. Undo only this optimistic submit, never a
+                        // live authoritative turn that arrived while its reply was held.
+                        if (optimistic != null && binding.runtimeId !in liveTurnRuntimeIds &&
+                            optimisticUserByRuntime[binding.runtimeId] != null) {
+                            rollbackUnadmittedSubmit(binding, optimistic, wireText)
+                        }
+                    }
+                    return@withLock GatewaySubmitOutcome.VoiceStopped
+                }
+                val legacyForwarded = (receipt as? JsonObject)?.takeIf {
+                    canonicalReceipt == null && it["forwarded"] == JsonPrimitive(true) && it.string("status") == "queued"
+                }
+                val forwardedBeforeStart = synchronized(stateLock) {
+                    optimistic != null && observedTurnGenerations[binding.runtimeId] == optimistic.turnGeneration
+                }
+                val receiptStatus = canonicalReceipt?.string("status") ?: legacyForwarded?.string("status")
                 if (receiptStatus in setOf("queued", "unknown")) synchronized(stateLock) {
                     ensureCurrent(connection)
                     if (optimistic != null && binding.runtimeId !in liveTurnRuntimeIds) {
-                        releaseRuntimeGuard(binding.runtimeId)
-                        localSubmitStartedAtByRuntime.remove(binding.runtimeId)
-                        optimisticUserByRuntime.remove(binding.runtimeId)
-                        cache.setTranscript(binding.durableId, optimistic.transcript)
-                        optimistic.session?.let(cache::upsertSession)
+                        rollbackUnadmittedSubmit(binding, optimistic, wireText)
                     }
                     (canonicalReceipt?.get("pending") as? JsonArray)?.let { applyCanonicalAdmissions(binding.durableId, binding.runtimeId, it) }
                 }
@@ -3642,7 +3666,11 @@ internal class LiveGatewaySessionRepository(
                     }
                     val stoppedBeforeAcknowledgement =
                         (confirmedInterruptEpochByDurableId[binding.durableId] ?: 0L) > interruptEpoch
-                    if (optimistic == null && !stoppedBeforeAcknowledgement && canonicalReceipt == null) {
+                    if (legacyForwarded != null && forwardedBeforeStart && !stoppedBeforeAcknowledgement) {
+                        val admission = legacyForwarded.string("admission_id")
+                        if (!admission.isNullOrBlank()) projectForwardedAdmission(binding.durableId, binding.runtimeId, admission, optimisticText)
+                    }
+                    if (optimistic == null && legacyForwarded == null && !stoppedBeforeAcknowledgement && canonicalReceipt == null) {
                         // Strip only @image: lines; a @file: ref is real prompt
                         // content and must stay readable in the queue row.
                         val displayText = optimisticText
@@ -3713,6 +3741,44 @@ internal class LiveGatewaySessionRepository(
             }
             throw failure
         }
+    }
+
+    /** Undo only the exact speculative row; backend queue/metadata are newer authority. */
+    private fun rollbackUnadmittedSubmit(binding: SessionBinding, optimistic: OptimisticSubmit, wireText: String) {
+        if (optimisticUserByRuntime[binding.runtimeId] != optimistic.user) return
+        releaseRuntimeGuard(binding.runtimeId)
+        optimisticUserByRuntime.remove(binding.runtimeId)
+        cache.setTranscript(binding.durableId, cache.transcript(binding.durableId).filterNot { it.id == optimistic.user.id })
+        val previous = optimistic.session ?: return
+        cache.session(binding.durableId)?.let { current ->
+            cache.upsertSession(current.copy(
+                preview = if (current.preview == wireText) previous.preview else current.preview,
+                lastActiveAtMillis = if (current.lastActiveAtMillis == optimistic.user.atMillis) previous.lastActiveAtMillis else current.lastActiveAtMillis,
+                status = if (current.status == SessionStatus.Working) previous.status else current.status,
+                activityStartedAtMillis = if (current.activityStartedAtMillis == optimistic.user.atMillis) previous.activityStartedAtMillis else current.activityStartedAtMillis,
+                messageCount = if (current.messageCount == previous.messageCount + 1) previous.messageCount else current.messageCount,
+            ))
+        }
+    }
+
+    private fun projectForwardedAdmission(durableId: String, runtimeId: String, admission: String, text: String) {
+        if (admission in retiredForwardedAdmissions[runtimeId].orEmpty()) return
+        val id = "forwarded:$admission"
+        updateComposerStatus(durableId, runtimeId) { status ->
+            val existing = status.gatewayQueuedPrompts.indexOfFirst { it.id == id }
+            status.copy(gatewayQueuedPrompts = if (existing < 0)
+                status.gatewayQueuedPrompts + ComposerGatewayQueuedPrompt(id = id, text = text)
+            else status.gatewayQueuedPrompts.map { if (it.id == id) it.copy(text = text) else it })
+        }
+    }
+
+    private fun consumeForwardedAdmission(durableId: String, runtimeId: String) {
+        val first = cache.session(durableId)?.composerStatus?.gatewayQueuedPrompts
+            ?.firstOrNull { it.id.startsWith("forwarded:") } ?: return
+        val retired = retiredForwardedAdmissions.getOrPut(runtimeId, ::linkedSetOf)
+        retired += first.id.removePrefix("forwarded:")
+        if (retired.size > 1024) retired.remove(retired.first())
+        mutateGatewayQueuedPrompts(durableId) { rows -> rows.filterNot { it.id == first.id } }
     }
 
     private suspend fun requestPromptSubmit(
@@ -4334,6 +4400,7 @@ internal class LiveGatewaySessionRepository(
                 },
             ).asObject("session.redirect")
             if (!canMutateBoundSession(binding, connection)) return GatewayRedirectOutcome.Ambiguous
+            if (result == buildJsonObject { put("voice_stopped", JsonPrimitive(true)) }) return GatewayRedirectOutcome.VoiceStopped
             when (result.string("status")) {
                 "redirected" -> {
                     recordOptimisticCorrection(binding, connection, correction)
@@ -4345,7 +4412,8 @@ internal class LiveGatewaySessionRepository(
                     GatewayRedirectOutcome.QueuedByGateway
                 }
 
-                "rejected" -> GatewayRedirectOutcome.Rejected
+                "rejected" -> if (result["delivered"] == JsonPrimitive(false)) GatewayRedirectOutcome.Rejected
+                    else GatewayRedirectOutcome.Ambiguous
                 else -> GatewayRedirectOutcome.Failed
             }
         } catch (failure: Throwable) {
@@ -4407,13 +4475,15 @@ internal class LiveGatewaySessionRepository(
                 },
             ).asObject("session.steer")
             if (!canMutateBoundSession(binding, connection)) return GatewaySteerOutcome.Ambiguous
+            if (result == buildJsonObject { put("voice_stopped", JsonPrimitive(true)) }) return GatewaySteerOutcome.VoiceStopped
             when (result.string("status")) {
                 "queued" -> {
                     recordOptimisticCorrection(binding, connection, correction)
                     GatewaySteerOutcome.QueuedByGateway
                 }
 
-                "rejected" -> GatewaySteerOutcome.Rejected
+                "rejected" -> if (result["delivered"] == JsonPrimitive(false)) GatewaySteerOutcome.Rejected
+                    else GatewaySteerOutcome.Ambiguous
                 else -> GatewaySteerOutcome.Failed
             }
         } catch (failure: Throwable) {
@@ -5157,7 +5227,8 @@ internal class LiveGatewaySessionRepository(
             ).asObject("config.set")
             synchronized(stateLock) { ensureCurrent(connection) }
             if (modelSwitch && result.boolean("confirm_required") == true) {
-                ControlMutationResult.ConfirmationRequired(redact(result.string("confirm_message") ?: "This model switch needs confirmation."))
+                modelConfirmationMessage(result.string("confirm_message"))?.let(ControlMutationResult::ConfirmationRequired)
+                    ?: ControlMutationResult.Rejected(MODEL_WARNING_TOO_LONG)
             } else if (result.boolean("ok") == false || result.string("status") == "rejected") {
                 ControlMutationResult.Rejected(controlFailureMessage(key))
             } else if (modelSwitch && result.boolean("deferred") == true) {
@@ -5166,7 +5237,7 @@ internal class LiveGatewaySessionRepository(
                 ControlMutationResult.Applied
             }
         } catch (failure: Throwable) {
-            if (failure is CancellationException) throw failure
+            currentCoroutineContext().ensureActive()
             if (modelSwitch && failure.isLegacyBusyModelRefusal()) {
                 ControlMutationResult.Deferred
             } else {
@@ -5279,6 +5350,14 @@ internal class LiveGatewaySessionRepository(
         return true
     }
 
+    // Preserve the entire redacted warning, including combined cost/data/context guards.
+    // Never clip away a required warning merely to fit a dialog: oversized warnings
+    // refuse native consent instead. Wire payload/token are never display-normalized.
+    private fun modelConfirmationMessage(message: String?): String? =
+        redact(message ?: "This model switch needs confirmation.").takeIf { it.length <= 4096 }
+
+    private val MODEL_WARNING_TOO_LONG = "This model warning is too long to display. Review it in Hermes Desktop before switching."
+
     /** Returns true when authoritative list metadata should be refreshed. */
     private fun applyEvent(event: GatewayEvent): Boolean {
         val payload = event.payload as? JsonObject ?: JsonObject(emptyMap())
@@ -5295,6 +5374,10 @@ internal class LiveGatewaySessionRepository(
                     event.seq?.let { it <= previous.sequence } == true)) return false
             if (previous != null && event.replayEpoch != null && event.replayEpoch != previous.epoch) return false
             event.executionGeneration?.let { generation ->
+                if (previous != null && generation > previous.generation)
+                    deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+                        durableId, cache.endpointGeneration.value, null,
+                        "Session state changed. Choose the model again.", consentInvalidated = true))
                 mutablePendingInputs.value.keys.filter { it.runtimeSessionId == runtimeId && it.origin == PendingInputOrigin.Canonical &&
                     it.executionGeneration?.let { old -> old < generation } == true }.forEach(::removePendingInput)
             }
@@ -5327,8 +5410,54 @@ internal class LiveGatewaySessionRepository(
                 if (!hasPendingInput(runtimeId)) setStatus(durableId, if (runtimeId in activeRuntimeIds) SessionStatus.Working else SessionStatus.Idle)
                 false
             }
-            "session.updated" -> true
+            "session.updated" -> {
+                if (event.canonical && payload.string("operation") == "model") {
+                    val connection = connectionSnapshot()
+                    val endpoint = cache.endpointGeneration.value
+                    val profile = runtimeProfiles[runtimeId]
+                    val pick = payload.obj("payload")
+                    val token = payload.string("confirm")
+                    val target = pick?.string("model")?.let { ComposerModelSelection(it, pick.string("provider").orEmpty()) }
+                    val warning = modelConfirmationMessage(payload.string("confirm_message"))
+                    val requiresConfirmation = payload.string("status") == "confirmation_required"
+                    val ask = requiresConfirmation && target != null && !token.isNullOrBlank() && warning != null
+                    if (requiresConfirmation || payload.string("status") == "refused") {
+                        if (!ask) projectComposerControls(durableId, payload)?.let(composerControlEvents::tryEmit)
+                        deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+                            durableId, endpoint, target,
+                            if (ask) warning!! else if (requiresConfirmation && warning == null) MODEL_WARNING_TOO_LONG
+                            else controlFailureMessage("model"),
+                            confirm = if (!ask) null else suspend {
+                                try {
+                                    val result = requestAtEndpointDispatch(connection, endpoint, "session.model", buildJsonObject {
+                                        put("session_id", JsonPrimitive(runtimeId)); put("payload", pick!!); put("confirm", JsonPrimitive(token!!))
+                                        profile?.let { put("profile", JsonPrimitive(it)) }
+                                    }, consentDispatch = { send -> synchronized(stateLock) {
+                                        identities.durableFor(runtimeId) == durableId && runtimeProfiles[runtimeId] == profile &&
+                                            runtimeId !in replayReconciliations && send()
+                                    } }).asObject("session.model")
+                                    when {
+                                        result.boolean("deferred") == true -> ControlMutationResult.Deferred
+                                        result.boolean("ok") == true && result.string("status") != "refused" -> ControlMutationResult.Applied
+                                        else -> ControlMutationResult.Rejected(controlFailureMessage("model"))
+                                    }
+                                } catch (failure: Throwable) {
+                                    // An inner RPC timeout is uncertain, not cancellation of
+                                    // this owner's coroutine. Consume consent and show failure;
+                                    // never leave Saving parked or automatically resend.
+                                    currentCoroutineContext().ensureActive()
+                                    ControlMutationResult.Rejected(controlFailureMessage("model"))
+                                }
+                            },
+                        ))
+                    }
+                }
+                true
+            }
             "session.replay_gap" -> {
+                if (event.canonical) deferredModelEvents.tryEmit(com.hermesagent.mobile.data.composer.DeferredModelPick(
+                    durableId, cache.endpointGeneration.value, null,
+                    "Session state changed. Choose the model again after reconnecting.", consentInvalidated = true))
                 if (event.canonical && replayReconciliations.add(runtimeId)) {
                     val endpoint = cache.endpointGeneration.value
                     val generation = connectionGeneration
@@ -5347,6 +5476,12 @@ internal class LiveGatewaySessionRepository(
                 val canonicalId = eventDurable?.takeIf(String::isNotBlank) ?: durableId
                 val rehomed = canonicalId != durableId
                 if (rehomed) durableId = rehomeDurableSession(durableId, canonicalId, runtimeId)
+                if (!event.canonical) (payload["pending_submissions"] as? JsonArray)?.forEach { value ->
+                    val row = value as? JsonObject ?: return@forEach
+                    val admission = row.string("admission_id") ?: return@forEach
+                    val text = row.string("user") ?: return@forEach
+                    if (row.string("status") == "queued") projectForwardedAdmission(durableId, runtimeId, admission, text)
+                }
                 val running = payload.boolean("running")
                 if (running == true) {
                     markRuntimeLive(runtimeId)
@@ -5424,6 +5559,7 @@ internal class LiveGatewaySessionRepository(
                 )
                 if (timeline != null) {
                     advanceObservedTurn(runtimeId)
+                    consumeForwardedAdmission(durableId, runtimeId)
                     consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     cache.putEntry(durableId, TimelineEvent(
                         id = payload.messageId() ?: "gateway-timeline-${sequence.incrementAndGet()}",
@@ -5436,6 +5572,7 @@ internal class LiveGatewaySessionRepository(
                     setStatus(durableId, SessionStatus.Working)
                 } else if ((payload.string("role") ?: "assistant") == "assistant") {
                     advanceObservedTurn(runtimeId)
+                    consumeForwardedAdmission(durableId, runtimeId)
                     consumeGatewayQueuedPromptIfReady(durableId, runtimeId)
                     val turn = AssistantTurn(
                         id = payload.messageId() ?: "gateway-assistant-${sequence.incrementAndGet()}",
@@ -6911,6 +7048,7 @@ internal class LiveGatewaySessionRepository(
         progressRuntimeIds.clear()
         composerStatusRuntimeIds.clear()
         queuedPromptDrainReadyBatchIdsByRuntime.clear()
+        retiredForwardedAdmissions.clear()
         contextBreakdownBySession.clear()
         // The next backend is a different host with its own
         // approvals config; nothing read from the previous one may
@@ -7379,6 +7517,8 @@ internal class LiveGatewaySessionRepository(
     private data class OptimisticSubmit(
         val session: SessionSummary?,
         val transcript: List<TranscriptEntry>,
+        val user: UserTurn,
+        val turnGeneration: Long,
     )
 }
 
@@ -7988,8 +8128,9 @@ internal fun Throwable.isSessionNotOwned(): Boolean {
 internal const val SESSION_NOT_OWNED_REASON: String = "SESSION_NOT_OWNED"
 private const val SESSION_REFUSED_CODE = 4090
 
-private fun Throwable.isAmbiguousGatewayMutation(): Boolean =
-    this is GatewayRpcException && requestMayHaveBeenAccepted
+internal fun Throwable.isAmbiguousGatewayMutation(): Boolean =
+    (this is GatewayRpcException && requestMayHaveBeenAccepted) ||
+        (this is GatewayRpcError && reason == "SESSION_OWNER_UNCONFIRMED")
 
 private fun objectParams(name: String, value: String): JsonObject =
     buildJsonObject { put(name, JsonPrimitive(value)) }

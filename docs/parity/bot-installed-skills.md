@@ -36,6 +36,33 @@ the historical profile-config checklist. Source references at this pin:
   invoke roster refresh or write their drafts; both registered Bots routes wire
   the new editor additively.
 
+## Later source-template inventory
+
+The additional audit at Desktop `81a55437f3f31a9f12a30c53b6c5d49d420898aa`
+against Android `65080e8a37e8d546869528e43c162503015b94c7` does not replace the
+Pin/captures above. It follows `CapabilitiesView` into the actual unified catalog
+and its installed-action/detail adapters, then individual/bulk writes and
+editor/archive lifecycle
+(`apps/desktop/src/app/capabilities/skills/skills-tab.tsx:35-221,237-360`;
+`apps/desktop/src/app/capabilities/catalog/skill-catalog.tsx:269-322`, at that
+Desktop SHA). Bulk operates on the whole profile, not current search results.
+Full content reads and editable provenance differ: agent/external can edit and
+archive, bundled/hub cannot
+(`apps/desktop/src/app/capabilities/skills/skill-detail.tsx:24-64`;
+`apps/desktop/src/app/capabilities/skills/skill-provenance.ts:26-31`, same SHA).
+
+The baseline's Bot editor has only the bounded list/toggle plus disabled Browse,
+details/editing and bulk/archive parent actions
+(`app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt:19-54`
+at the Android baseline). These are not a general Capabilities page, a nested
+Save/Cancel/archive dialog or a catalog installer. Each missing child template
+is separately bounded under #73 in
+[the source reconciliation](desktop-control-reconciliation.md); no feature is
+counted from its WIP label. The active catalog filter strip was followed, but
+full discovery/details/install completion, scope resolution and query comparator
+remain unverified omissions under #73/#266. The unmounted older facet-rail
+component is not counted. Rendering remains pending under existing #194.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
