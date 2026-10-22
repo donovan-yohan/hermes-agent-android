@@ -1,4 +1,5 @@
 package com.hermesagent.mobile.plugins.kanban
+import com.hermesagent.mobile.data.ssh.redact
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -172,7 +173,7 @@ private fun FilterChoice(label: String, checked: Boolean, click: () -> Unit) {
         .padding(horizontal = HermesTheme.spacing.pageInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = HermesTheme.type.body, color = HermesTheme.tokens.textPrimary, modifier = Modifier.weight(1f))
+        Text(redact(label), style = HermesTheme.type.body, color = HermesTheme.tokens.textPrimary, modifier = Modifier.weight(1f))
         if (checked) HermesIconGlyph(HermesIcon.Check, color = HermesTheme.tokens.textSecondary)
     }
 }

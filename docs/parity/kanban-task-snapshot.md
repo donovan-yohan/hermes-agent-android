@@ -32,7 +32,7 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 
 ## Visual report
 
-- pending: #261 (implementation issue is the required evidence issue; no separate issue is necessary).
+- pending: #73. Historical implementation issue #261 is closed; its [explicit evidence-debt comment](https://github.com/donovan-yohan/hermes-agent-android/issues/261#issuecomment-5656598661) is not rendered approval. The open migration epic owns the pending comparison.
 
 ## Filtering source audit (2026-10-22)
 
@@ -43,7 +43,7 @@ New filtering behavior was inspected at `NousResearch/hermes-agent@81a55437f3f31
 - `plugins/kanban/dashboard/plugin_api.py:291-370`: board inventory and `include_archived` read contract.
 - `apps/desktop/src/plugins/kanban/i18n.ts:252-278`: verbatim labels and no-match copy.
 
-The historical Pin table and visual provenance above are unchanged. `KanbanFiltersTest` covers intersection, inventory parsing, archived query, endpoint clearing and obsolete snapshot rejection. The Compose journey exercises text search, profile choice and no-match recovery. No rendered approval is claimed: Concern, pending #261 (its existing comment explicitly retains visual-evidence debt).
+The historical Pin table and visual provenance above are unchanged. `KanbanFiltersTest` covers intersection, inventory parsing, archived query, endpoint clearing and obsolete snapshot rejection. Backend inventory labels pass through `redact()` at display, while exact unmodified values govern equality and selection. The Compose journey exercises text search, profile choice, no-match recovery and synthetic secret-label semantics with raw identity retained by the handler. No rendered approval is claimed: Concern, pending #73; closed #261 explicitly retains evidence debt, not approval.
 
 ## Executable evidence
 

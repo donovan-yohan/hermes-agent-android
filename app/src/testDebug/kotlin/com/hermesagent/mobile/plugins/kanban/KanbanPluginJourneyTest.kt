@@ -204,6 +204,22 @@ class KanbanPluginJourneyTest {
         compose.runOnIdle { assertEquals(tasks, state.columns.single().tasks) }
     }
 
+    @Test fun `filter semantics redact backend labels but selection retains exact identities`() {
+        val raw = "password=kanban-demo"
+        var state by mutableStateOf(KanbanUiState(KanbanPhase.Empty,
+            assignees = listOf(raw), tenants = listOf("Tenant password=tenant-demo")))
+        compose.setContent { HermesTheme {
+            KanbanScreen(state, {}, {}, {}, {}, onFilters = { state = state.copy(filters = it) })
+        } }
+        compose.onNodeWithTag("Kanban Board controls").performClick()
+        compose.onNodeWithText("Filters").performClick()
+        compose.onNodeWithText(raw, useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Tenant password=tenant-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Tenant password=<redacted>", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("password=<redacted>").performClick()
+        compose.runOnIdle { assertEquals(raw, state.filters.assignee) }
+    }
+
     private fun assertWipOrder(vararg labels: String) {
         val orderedLabels = labels.toList()
         val tops = orderedLabels.associateWith { label ->
