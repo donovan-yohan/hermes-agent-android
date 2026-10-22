@@ -1,4 +1,5 @@
 package com.hermesagent.mobile.plugins.kanban
+import com.hermesagent.mobile.data.ssh.redact
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -51,8 +52,8 @@ internal fun KanbanNewTaskScreen(state: KanbanCreation, close: () -> Unit, submi
             LabelledField("Priority", priority, "0", { priority = it }, keyboardType = KeyboardType.Number)
             KanbanWipMenuRow("Workspace")
             state.defaults?.let { defaults ->
-                Text("Board: ${defaults.board}", style = HermesTheme.type.caption, color = HermesTheme.tokens.textSecondary)
-                Text("Assignee: ${defaults.assignee}", style = HermesTheme.type.caption, color = HermesTheme.tokens.textSecondary)
+                Text(redact("Board: ${defaults.board}"), style = HermesTheme.type.caption, color = HermesTheme.tokens.textSecondary)
+                Text(redact("Assignee: ${defaults.assignee}"), style = HermesTheme.type.caption, color = HermesTheme.tokens.textSecondary)
             }
             Text("Uses this board's default workspace and assignee.", style = HermesTheme.type.caption, color = HermesTheme.tokens.textTertiary)
             listOf("Assignee", "Skills (comma-separated)", "Model", "Parent (blocks until it's done)",

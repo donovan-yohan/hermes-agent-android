@@ -134,6 +134,8 @@ class KanbanViewModel(
                 }
             }
             KanbanRead.Unavailable -> if (acceptBoard(endpointAtStart, operation)) {
+                closeCreate()
+                detailOperation++
                 _uiState.value = KanbanUiState(KanbanPhase.Unavailable)
             }
             else -> if (acceptBoard(endpointAtStart, operation)) {

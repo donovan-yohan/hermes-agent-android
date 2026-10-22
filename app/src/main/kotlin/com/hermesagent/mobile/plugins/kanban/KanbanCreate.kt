@@ -22,7 +22,7 @@ interface KanbanCreateScope : AutoCloseable {
     suspend fun submit(draft: KanbanNewTask): KanbanCreated?
     override fun close()
 }
-data class KanbanCreateDefaults(val board: String, val assignee: String)
+data class KanbanCreateDefaults(val board: String, val assignee: String, val workspaceKind: String = "scratch")
 data class KanbanNewTask(val title: String, val body: String = "", val priority: Int = 0)
 data class KanbanCreated(val task: KanbanTask, val dispatcherWarning: Boolean)
 object UnavailableKanbanCreate : KanbanCreate {
@@ -62,9 +62,13 @@ private class BoundCreate(
     override suspend fun prepare(): KanbanCreateDefaults? {
         val boards = exchange("boards") ?: return null
         val board = boards.text("current")?.takeIf { it.isNotBlank() } ?: return null
+        val metadata = (boards["boards"] as? JsonArray)?.mapNotNull { it as? JsonObject }
+            ?.singleOrNull { it.text("slug") == board } ?: return null
+        val workspaceKind = metadata.text("default_workspace_kind")
+            ?.takeIf { it in listOf("scratch", "dir", "worktree") } ?: return null
         val orchestration = exchange("orchestration") ?: return null
         val assignee = orchestration.text("resolved_default_assignee")?.takeIf { it.isNotBlank() } ?: return null
-        return if (current()) KanbanCreateDefaults(board, assignee).also { defaults = it } else null
+        return if (current()) KanbanCreateDefaults(board, assignee, workspaceKind).also { defaults = it } else null
     }
 
     override suspend fun submit(draft: KanbanNewTask): KanbanCreated? {
@@ -76,7 +80,8 @@ private class BoundCreate(
             put("priority", draft.priority); put("assignee", held.assignee)
             put("triage", false); put("goal_mode", false)
             put("parents", JsonArray(emptyList())); put("idempotency_key", idempotency)
-            // Workspace intentionally omitted: server inherits the explicit board's project.
+            // Explicit recommended kind; omit path so default_workdir-only boards inherit too.
+            put("workspace_kind", held.workspaceKind)
         }
         val reply = exchange("tasks", "POST", held.board, payload) ?: return null
         val task = parseCreated(reply["task"] as? JsonObject ?: return null) ?: return null

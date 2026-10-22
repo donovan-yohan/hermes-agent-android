@@ -33,7 +33,7 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 
 ## Visual report
 
-- pending: #261 (implementation issue is the required evidence issue; no separate issue is necessary).
+- pending: #73. Historical implementation issue #261 is closed; its [explicit evidence-debt comment](https://github.com/donovan-yohan/hermes-agent-android/issues/261#issuecomment-5656598661) is not rendered approval. The open migration epic owns the pending comparison.
 
 ## New task source audit (2026-10-22)
 
@@ -45,9 +45,11 @@ Basic task creation is additionally inspected at `NousResearch/hermes-agent@81a5
 - `hermes_cli/web_server.py:412-439,456-493`: plugin runtime gate behind token/native authentication.
 - `apps/desktop/src/plugins/kanban/i18n.ts:287-311`: form labels, Create task and Cancel.
 
-Android opens a typed, irrevocably closable endpoint-bound host scope, resolves the current board once, then sends all create/readback/nudge calls to `api/plugins/kanban` with that explicit board. Close and OkHttp enqueue share a revocation lock; endpoint teardown uses the existing dispatch fence. Guarded transport disables redirect/replay. A single dialog issues at most one POST, with an idempotency key. Success requires a fresh task GET matching the returned id/title; a lost, refused or malformed reply does not automatically retry and instructs the person to close and refresh. The server has no atomic create-plus-nudge transaction, so dispatcher availability is shown separately from confirmed creation.
+Android opens a typed, irrevocably closable endpoint-bound host scope, resolves the current board once, then sends all create/readback/nudge calls to `api/plugins/kanban` with that explicit board. Preparation binds that board's exact `default_workspace_kind`; submission sends it explicitly, omitting a path override so both project-linked and directory-only boards inherit their configured workspace. At the inspected SHA, this is `apps/desktop/src/plugins/kanban/board.tsx:565-583,645-657`, `plugins/kanban/dashboard/plugin_api.py:1381-1394,1411-1427` and `tests/plugins/test_kanban_dashboard_plugin.py:116-134`. Omitted kind is not equivalent for directory-only boards.
 
-Desktop's advanced fields remain visible WIP rather than being silently absent. Android adds a safe confirmation-failure sentence instead of displaying raw backend exceptions. `KanbanCreateTest` exercises the actual authenticated production transport and held-credential revocation, endpoint fencing, explicit board/idempotency payload and unconfirmed receipt. Compose covers New task -> form -> Create task and Cancel. No live-Gateway or rendered approval is claimed: Concern, pending #261.
+Close and OkHttp enqueue share a revocation lock; endpoint teardown uses the existing dispatch fence. A board-unavailable result that removes the form also closes the scope and rejects late continuations, including mutations still waiting for credentials. Guarded transport disables redirect/replay. A single dialog issues at most one POST, with an idempotency key. Success requires a fresh task GET matching the returned id/title; a lost, refused or malformed reply does not automatically retry and instructs the person to close and refresh. The server has no atomic create-plus-nudge transaction, so dispatcher availability is shown separately from confirmed creation. Backend board/assignee display labels pass through `redact()` without changing wire identities.
+
+Desktop's advanced fields remain visible WIP rather than being silently absent. Android adds a safe confirmation-failure sentence instead of displaying raw backend exceptions. `KanbanCreateTest` exercises the actual authenticated production transport, selected-board workspace kinds, raw assignee identity, endpoint fencing, explicit board/idempotency payload and unconfirmed receipt. `KanbanCreationStateTest` and `KanbanCreateRevocationTest` cover a held background board failure followed by late completion or credential release. Compose covers New task -> form -> Create task, Cancel, and redacted backend-label semantics. No live-Gateway or rendered approval is claimed: Concern, pending #73.
 
 ## Executable evidence
 

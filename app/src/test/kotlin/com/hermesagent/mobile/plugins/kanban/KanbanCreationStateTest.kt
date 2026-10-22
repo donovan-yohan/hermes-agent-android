@@ -31,6 +31,28 @@ class KanbanCreationStateTest {
         assertTrue(closed); assertEquals(1, reads)
     }
 
+    @Test fun `unavailable background board closes scope and late failure cannot restore form`() = runTest {
+        val board = CompletableDeferred<PluginRestResult>()
+        val submit = CompletableDeferred<KanbanCreated?>()
+        var closed = false
+        val api = object : KanbanCreate {
+            override fun open(expectedEndpoint: Long) = object : KanbanCreateScope {
+                override suspend fun prepare() = KanbanCreateDefaults("design", "planner")
+                override suspend fun submit(draft: KanbanNewTask) = submit.await()
+                override fun close() { closed = true }
+            }
+        }
+        val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> board.await() },
+            MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, api)
+        vm.refreshBoard(); runCurrent(); vm.openCreate(); runCurrent()
+        vm.submitTask(KanbanNewTask("Pearl")); runCurrent()
+        board.complete(PluginRestResult.UnavailableOnGateway); runCurrent()
+        assertTrue(closed); assertNull(vm.uiState.value.creation)
+        submit.complete(null); runCurrent()
+        assertNull(vm.uiState.value.creation)
+        assertEquals(KanbanPhase.Unavailable, vm.uiState.value.phase)
+    }
+
     @Test fun `endpoint change closes form and ignores late completion`() = runTest {
         val held = CompletableDeferred<KanbanCreateDefaults?>(); var closed = false
         val api = object : KanbanCreate {

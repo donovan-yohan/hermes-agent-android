@@ -197,6 +197,16 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithTag("Kanban refresh").assertExists()
     }
 
+    @Test fun `create defaults publish only redacted semantics`() {
+        compose.setContent { HermesTheme {
+            KanbanNewTaskScreen(KanbanCreation(KanbanCreateDefaults("password=board-demo", "password=assignee-demo")), {}, {})
+        } }
+        compose.onNodeWithText("Board: password=board-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Assignee: password=assignee-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Board: password=<redacted>", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Assignee: password=<redacted>", useUnmergedTree = true).assertExists()
+    }
+
     private fun assertWipOrder(vararg labels: String) {
         val orderedLabels = labels.toList()
         val tops = orderedLabels.associateWith { label ->

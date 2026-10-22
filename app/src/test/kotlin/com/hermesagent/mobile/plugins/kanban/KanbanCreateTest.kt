@@ -18,7 +18,7 @@ class KanbanCreateTest {
             val request = chain.request()
             synchronized(calls) { calls += request; payloads += request.body?.let { Buffer().also(it::writeTo).readUtf8() }.orEmpty() }
             val body = when (request.url.encodedPath) {
-                "/api/plugins/kanban/boards" -> """{"current":"design"}"""
+                "/api/plugins/kanban/boards" -> """{"current":"design","boards":[{"slug":"design","default_workspace_kind":"dir"}]}"""
                 "/api/plugins/kanban/orchestration" -> """{"resolved_default_assignee":"planner"}"""
                 "/api/plugins/kanban/dispatch" -> "{}"
                 else -> """{"task":{"id":"new-1","title":"Pearl","status":"ready","assignee":"planner"}}"""
@@ -26,7 +26,7 @@ class KanbanCreateTest {
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(body.toResponseBody()).build()
         }.build(), { "https://gateway.example" }, { "Authorization" to "synthetic" })
         val scope = GatewayKanbanCreate({ http }, MutableStateFlow(0L), EndpointDispatchFence()).open(0)!!
-        assertEquals(KanbanCreateDefaults("design", "planner"), scope.prepare())
+        assertEquals(KanbanCreateDefaults("design", "planner", "dir"), scope.prepare())
         assertEquals("new-1", scope.submit(KanbanNewTask(" Pearl ", "Description", 3))!!.task.id)
         assertNull(scope.submit(KanbanNewTask("Pearl")))
         assertEquals(listOf("GET", "GET", "POST", "GET", "POST"), calls.map { it.method })
@@ -36,7 +36,36 @@ class KanbanCreateTest {
         assertTrue(payload.contains("\"assignee\":\"planner\""))
         assertTrue(payload.contains("\"idempotency_key\""))
         assertFalse(payload.contains("workspace_path"))
+        assertTrue(payload.contains("\"workspace_kind\":\"dir\""))
         scope.close()
+    }
+
+    @Test fun `selected board recommendation and raw assignee survive display redaction boundary`() = runTest {
+        for (kind in listOf("dir", "worktree", "scratch")) {
+            var payload = ""
+            val http = object : EndpointDispatchingGatewayHttp {
+                override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult = error("unguarded")
+                override suspend fun executeAtDispatch(request: GatewayHttpRequest, dispatch: (() -> Boolean) -> Boolean): GatewayHttpResult {
+                    assertTrue(dispatch { true })
+                    val body = when {
+                        request.path.endsWith("boards") -> """{"current":"selected","boards":[{"slug":"other","default_workspace_kind":"scratch"},{"slug":"selected","default_workspace_kind":"$kind"}]}"""
+                        request.path.endsWith("orchestration") -> """{"resolved_default_assignee":"password=assignee-demo"}"""
+                        else -> {
+                            assertEquals("selected", request.query["board"])
+                            if (request.path.endsWith("tasks")) payload = Buffer().also { request.body!!.writeTo(it) }.readUtf8()
+                            """{"task":{"id":"x","title":"Pearl","status":"ready"}}"""
+                        }
+                    }
+                    return GatewayHttpResult.Success(200, body.toByteArray())
+                }
+            }
+            val scope = GatewayKanbanCreate({ http }, MutableStateFlow(0L), EndpointDispatchFence()).open(0)!!
+            assertEquals(kind, scope.prepare()!!.workspaceKind)
+            assertNotNull(scope.submit(KanbanNewTask("Pearl")))
+            assertTrue(payload.contains("\"workspace_kind\":\"$kind\""))
+            assertTrue(payload.contains("\"assignee\":\"password=assignee-demo\""))
+            assertFalse(payload.contains("workspace_path"))
+        }
     }
 
     @Test fun `close during credential resolution prevents any wire request`() = runTest {
@@ -59,7 +88,7 @@ class KanbanCreateTest {
             override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult = error("unguarded")
             override suspend fun executeAtDispatch(request: GatewayHttpRequest, dispatch: (() -> Boolean) -> Boolean): GatewayHttpResult {
                 if (!dispatch { requests += request; true }) return GatewayHttpResult.Rejected(0, "closed")
-                return GatewayHttpResult.Success(200, (if (request.path.endsWith("boards")) """{"current":"design"}"""
+                return GatewayHttpResult.Success(200, (if (request.path.endsWith("boards")) """{"current":"design","boards":[{"slug":"design","default_workspace_kind":"scratch"}]}"""
                     else """{"resolved_default_assignee":"planner"}""").toByteArray())
             }
         }
@@ -76,7 +105,7 @@ class KanbanCreateTest {
             override suspend fun executeAtDispatch(request: GatewayHttpRequest, dispatch: (() -> Boolean) -> Boolean): GatewayHttpResult {
                 dispatch { true }
                 val body = when {
-                    request.path.endsWith("boards") -> """{"current":"design"}"""
+                    request.path.endsWith("boards") -> """{"current":"design","boards":[{"slug":"design","default_workspace_kind":"worktree","project_id":"synthetic-project"}]}"""
                     request.path.endsWith("orchestration") -> """{"resolved_default_assignee":"planner"}"""
                     else -> { writes++; """{"task":null}""" }
                 }
