@@ -118,11 +118,13 @@ class CanonicalBranchRegressionTest {
             viewModel.branchFromReply(cache.transcript(parent).filterIsInstance<AssistantTurn>().last().id)
             runCurrent()
             assertNotNull(peer.parkedChildResume)
+            peer.disconnectEndpoint()
             cache.resetForEndpointSwitch()
             runCurrent()
             peer.releaseChildResume()
             runCurrent()
-            assertTrue(cache.state.value.sessions.values.isEmpty())
+            assertTrue("unexpected cache rows ${cache.state.value.sessions.keys}; methods ${peer.frames.map { it["method"] }}",
+                cache.state.value.sessions.values.isEmpty())
             assertEquals("parked response must not navigate away from the captured parent", parent, viewModel.uiState.value.activeSessionId)
             assertTrue(peer.calls("prompt.submit").isEmpty())
         }
@@ -132,12 +134,14 @@ class CanonicalBranchRegressionTest {
     fun `reply branch resolved before endpoint switch is refused before resume or mutation`() = runTest {
         fixture("work") { peer, cache, repository, _, parent ->
             val endpoint = cache.endpointGeneration.value
+            peer.disconnectEndpoint()
             cache.resetForEndpointSwitch()
             runCurrent()
             val before = peer.frames.toList()
             assertTrue(runCatching { repository.branchSessionFromReply(parent, 4, TranscriptRowId(4), endpoint) }.isFailure)
             assertEquals(before, peer.frames)
-            assertTrue(cache.state.value.sessions.isEmpty())
+            assertTrue("unexpected cache rows ${cache.state.value.sessions.keys}; methods ${peer.frames.map { it["method"] }}",
+                cache.state.value.sessions.isEmpty())
         }
     }
 
@@ -164,9 +168,17 @@ class CanonicalBranchRegressionTest {
         Dispatchers.setMain(dispatcher)
         val peer = BranchPeer(profile, projections, UnconfinedTestDispatcher(testScheduler))
         val cache = SessionCache()
+        val connection = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val clients = MutableStateFlow<GatewayRpcClient?>(peer.rpc)
+        // Match ConnectionSwitchController.leaveLocked: disconnect precedes the cache clear.
+        // Leaving the old socket Connected instead allows independent composer reads to reopen
+        // the parent after the reset; that is not a late branch-child adoption.
+        peer.disconnectEndpoint = {
+            connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+            clients.value = null
+        }
         val repository = LiveGatewaySessionRepository(cache,
-            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
-            MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { CLOCK }
+            connection, clients, backgroundScope) { CLOCK }
         try {
             val parent = profile?.let { repository.openSession("public-parent", it) } ?: repository.openSession("public-parent")
             val viewModel = ChatViewModel(cache, repository, clock = { CLOCK },
@@ -187,6 +199,7 @@ class CanonicalBranchRegressionTest {
         var wrongNextChildSnapshot = false
         var parkChildResume = false
         var parkedChildResume: JsonObject? = null
+        var disconnectEndpoint: () -> Unit = {}
         fun releaseChildResume() {
             val frame = requireNotNull(parkedChildResume)
             parkedChildResume = null
