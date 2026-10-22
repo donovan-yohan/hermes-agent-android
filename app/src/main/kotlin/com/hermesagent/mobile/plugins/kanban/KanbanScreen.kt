@@ -50,11 +50,19 @@ fun KanbanScreen(
     onRefresh: () -> Unit,
     onOpenTask: (KanbanTask) -> Unit,
     onCloseDetail: () -> Unit,
+    onMoveTask: () -> Unit = {},
+    onCloseMove: () -> Unit = {},
+    onConfirmMove: (String, String) -> Unit = { _, _ -> },
     onNewTask: () -> Unit = {},
     onCloseCreate: () -> Unit = {},
     onSubmitTask: (KanbanNewTask) -> Unit = {},
     onFilters: (KanbanFilters) -> Unit = {},
 ) {
+    state.move?.let { moving ->
+        BackHandler { onCloseMove() }
+        KanbanMoveScreen(moving, onCloseMove, onConfirmMove)
+        return
+    }
     state.creation?.let { creation ->
         BackHandler { onCloseCreate() }
         KanbanNewTaskScreen(creation, onCloseCreate, onSubmitTask)
@@ -75,7 +83,8 @@ fun KanbanScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             TextButton(label = "Refresh", onClick = onRefresh, modifier = Modifier.testTag("Kanban refresh"))
-            KanbanControlsMenu(showingDetail, state, onFilters, onNewTask) { searchFocus.requestFocus() }
+            KanbanControlsMenu(showingDetail, state, detail is KanbanDetail.Value && !detail.stale,
+                onMoveTask, onFilters, onNewTask) { searchFocus.requestFocus() }
         }
 
         if (!showingDetail) {
@@ -87,6 +96,7 @@ fun KanbanScreen(
                     .focusRequester(searchFocus).testTag("Kanban search"),
             )
             state.creationNotice?.let { Notice(it) }
+            state.moveNotice?.let { Notice(it) }
             if (state.stale) Notice(KANBAN_STALE)
             when (state.phase) {
                 KanbanPhase.Loading -> EmptyState("Loading board…", "Hermes is asking the Gateway for its current board.")
@@ -119,6 +129,8 @@ fun KanbanScreen(
 private fun KanbanControlsMenu(
     showingDetail: Boolean,
     state: KanbanUiState,
+    canMove: Boolean,
+    onMoveTask: () -> Unit,
     onFilters: (KanbanFilters) -> Unit,
     onNewTask: () -> Unit,
     onSearch: () -> Unit,
@@ -143,7 +155,10 @@ private fun KanbanControlsMenu(
                     )
                 }
                 actions.forEach { action ->
-                    if (!showingDetail && action in listOf("Filters", "Filter cards…")) {
+                    if (showingDetail && action == "Move to") TextButton("Move to", {
+                        expanded = false
+                        onMoveTask()
+                    }, enabled = canMove) else if (!showingDetail && action in listOf("Filters", "Filter cards…")) {
                         TextButton(label = action, onClick = {
                             expanded = false
                             if (action == "Filters") filtersOpen = true else onSearch()
