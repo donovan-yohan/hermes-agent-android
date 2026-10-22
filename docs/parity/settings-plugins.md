@@ -40,10 +40,15 @@ Production wiring is `HermesApplication.agentPluginsHost` → `MainActivity` →
 to that profile, endpoint generation and opaque ready-leg identity. No plugin
 inventory or preferences are persisted locally for the agent half.
 
-Every list/toggle/readback goes through `PluginHost.requestAtEndpointGuarded`.
-The guard rechecks owner liveness, concrete profile, endpoint and ready leg at
-immediate wire dispatch and on return. Closing or replacing the screen revokes
-the old store. A reconnect creates a new owner even at the same endpoint.
+Every list/toggle/readback goes through `PluginHost.requestAtEndpointOwned`.
+The host's typed irrevocable owner lease serializes close with immediate wire
+admission under one monitor, nested inside the existing endpoint fence. A close
+that completes first forbids the frame; an admitted handoff makes close wait for
+that handoff, never for its response. Predicates alone are not this boundary.
+Profile/host/endpoint/ready-leg replacement closes the previous store before
+opening its replacement; A → B → A and same-profile reopen cannot revive it.
+Endpoint and ready-leg checks also run on return. Already-admitted mutations
+cannot be retracted by closing the screen.
 
 The writer sends only `action: toggle`, the exact `key`, Boolean `enable`, and
 explicit `profile`. It never falls back to `name`; duplicate keyed inventories
@@ -91,6 +96,11 @@ Desktop JavaScript; [ADR 0003](../adr/0003-bundled-plugin-sdk.md) still applies.
   malformed/unsupported list; duplicate prevention; disposed/profile owner;
   endpoint switch and same-endpoint ready-leg reconnect at held wire dispatch;
   revoked late response.
+- `AgentPluginsAdmissionTest`: actual `CorrelatedGatewayRpc` + `GatewayPluginHost`
+  held final-predicate/close-first refusal and admitted-send/close-waits ordering;
+  same-profile reopen, profile A → B → A, endpoint A → B → A with monotonic
+  generation, and real virtual-time RPC timeout/cancellation uncertainty. No
+  response wait holds the owner monitor and no uncertain mutation is retried.
 - `AgentPluginsJourneyTest`: real Settings navigation with selected-profile
   propagation, enable/disable state, profile replacement, legacy read-only rows,
   failure + Refresh, and unsupported gateway state using production PluginHost.

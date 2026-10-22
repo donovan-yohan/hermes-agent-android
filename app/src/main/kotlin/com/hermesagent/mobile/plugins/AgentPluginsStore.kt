@@ -38,28 +38,27 @@ data class AgentPluginsState(
 class AgentPluginsStore(
     private val host: PluginHost,
     val profile: String,
-    private val ownerCurrent: () -> Boolean = { true },
 ) {
     private val endpoint = host.endpointGeneration.value
     private val leg = host.connectionToken.value
-    @Volatile private var closed = false
+    private val owner = PluginRequestOwner()
     private var operation = 0L
     private val mutable = MutableStateFlow(AgentPluginsState(
         phase = if (leg == null || profile.isBlank()) AgentPluginsPhase.Disconnected else AgentPluginsPhase.Loading,
     ))
     val state = mutable.asStateFlow()
 
-    fun close() { closed = true; operation++ }
-    private fun current(): Boolean = !closed && ownerCurrent() && profile.isNotBlank() && leg != null &&
+    fun close() { owner.close(); operation++ }
+    private fun current(): Boolean = owner.isCurrent() && profile.isNotBlank() && leg != null &&
         host.endpointGeneration.value == endpoint && host.connectionToken.value === leg
 
     private suspend fun call(action: String, key: String? = null, enable: Boolean? = null): PluginHostResult {
         if (!current()) return PluginHostResult.Refused(0, "Reconnect to load agent plugins.")
-        return host.requestAtEndpointGuarded(endpoint, "plugins.manage", buildJsonObject {
+        return host.requestAtEndpointOwned(endpoint, "plugins.manage", buildJsonObject {
             put("action", action); put("profile", profile)
             if (key != null) put("key", key)
             if (enable != null) put("enable", enable)
-        }, ::current)
+        }, owner, ::current)
     }
 
     suspend fun refresh() {

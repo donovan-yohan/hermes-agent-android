@@ -105,15 +105,15 @@ class AgentPluginsStoreTest {
         for (close in listOf(false, true)) {
             val rpc = Rpc()
             val host = GatewayPluginHost(backgroundScope, MutableStateFlow(rpc))
-            var owner = true
-            val store = AgentPluginsStore(host, "work") { owner }
+            val owner = AgentPluginsOwner()
+            val store = owner.open(host, "work")
             store.refresh()
             val gate = CompletableDeferred<Unit>()
             rpc.before = { gate.await() }
             val pending = async { store.toggle("image_gen/fal", true) }
             runCurrent()
             assertEquals("image_gen/fal", store.state.value.busyKey)
-            if (close) store.close() else owner = false
+            if (close) store.close() else owner.open(host, "other")
             gate.complete(Unit); pending.await()
             assertEquals(1, rpc.calls.size)
         }

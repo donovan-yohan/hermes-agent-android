@@ -18,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -34,7 +33,7 @@ import com.hermesagent.mobile.plugins.PluginKind
 import com.hermesagent.mobile.plugins.PluginRecord
 import com.hermesagent.mobile.plugins.PluginStatus
 import com.hermesagent.mobile.plugins.PluginStore
-import com.hermesagent.mobile.plugins.AgentPluginsStore
+import com.hermesagent.mobile.plugins.AgentPluginsOwner
 import com.hermesagent.mobile.plugins.PluginHost
 import com.hermesagent.mobile.plugins.UnavailablePluginHost
 import com.hermesagent.mobile.ui.common.Hairline
@@ -76,9 +75,9 @@ fun PluginsScreen(
     val records = store.records.collectAsStateWithLifecycle(emptyMap()).value
     val endpoint = agentHost.endpointGeneration.collectAsStateWithLifecycle().value
     val leg = agentHost.connectionToken.collectAsStateWithLifecycle().value
-    val currentProfile = rememberUpdatedState(selectedProfile)
+    val owner = remember { AgentPluginsOwner() }
     val agentStore = remember(agentHost, selectedProfile, endpoint, leg) {
-        AgentPluginsStore(agentHost, selectedProfile) { currentProfile.value == selectedProfile }
+        owner.open(agentHost, selectedProfile)
     }
     DisposableEffect(agentStore) { onDispose { agentStore.close() } }
     LaunchedEffect(agentStore) { agentStore.refresh() }
