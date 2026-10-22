@@ -11,12 +11,10 @@ package com.hermesagent.mobile.ui.settings
  * Upstream `61afcde8f9` folded Desktop's two half-pages into one: Capabilities ▸
  * Plugins now owns agent plugins, desktop plugins, install and the catalog, and
  * Settings ▸ Plugins was deleted along with the `settings.nav.plugins` key this
- * file used to quote. Only the naming ported (see
- * `docs/parity/settings-plugins.md`): the page is called **Plugins**, and what
- * this app ships is Desktop's *desktop half* — plugins that extend this app,
- * the same for every profile, gateway or machine. The agent half, its install
- * path and the catalog are not backed here; the agent half is marked rather
- * than hidden, per `docs/workflows/review-desktop-parity.md`.
+ * file used to quote. The historical naming port is retained. The agent list
+ * and toggles are now backed separately; their current source pin is documented
+ * beside AGENT_BLURB and in docs/parity/settings-plugins.md. Install and catalog
+ * remain outside this bounded capability.
  */
 object PluginsCopy {
     /**
@@ -91,19 +89,8 @@ object PluginsCopy {
     /** Verbatim `skills.plugins.agentTitle` (`en.ts:1589` @ the pin). */
     const val AGENT_TITLE: String = "Agent plugins"
 
-    /**
-     * Mobile adaptation of `skills.plugins.agentBlurb` (`en.ts:1590-1591` @ the
-     * pin), which reads "Extend the agent for the selected profile — tools,
-     * hooks, providers. Take effect after a gateway restart."
-     *
-     * Desktop scopes that sentence to the profile selector it draws in the Agent
-     * column header; this app has no such selector on this screen, so a promise
-     * about "the selected profile" would name a control that is not there. What
-     * is kept is the contrast the row exists to teach — this half extends the
-     * agent, the list above extends the app — mirroring
-     * `skills.plugins.halfDesktopHint` ("this app, same for every profile",
-     * `:1594`). The gateway-restart caveat is dropped: it is a fact about
-     * applying a change, and nothing here can be changed yet.
-     */
-    const val AGENT_BLURB: String = "Extend the agent, not this app — tools, hooks, providers."
+    /** Verbatim skills.plugins.agentBlurb, apps/desktop/src/i18n/en.ts:2105-2106
+     * @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa. */
+    const val AGENT_BLURB: String = "Extend the agent for the selected profile — tools, hooks, providers. " +
+        "Take effect after a gateway restart."
 }

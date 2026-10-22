@@ -14,7 +14,110 @@ as a Settings destination plus a bottom sheet:
 |---|---|---|
 | Desktop renderer, Gateway HTTP, CLI | `hermes-agent` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3` | read-only checkout; every citation taken with `git show <sha>:<path>` |
 
-Every `path:line` below is against that SHA.
+Historical panel/update citations below retain that SHA. The Recent logs
+implementation audit has its own explicitly scoped pin; it does not restamp
+the old panel/update source or any rendered evidence.
+
+## Recent logs implementation audit (2026-10-22)
+
+Inspected source: `81a55437f3f31a9f12a30c53b6c5d49d420898aa`.
+Every citation in this subsection is against that SHA.
+
+| Contract | Source |
+|---|---|
+| Four files and four levels, defaults agent/ALL | `apps/desktop/src/app/command-center/index.tsx:52-53,175-181` |
+| Refresh on entry/file/level; request 200 lines | `apps/desktop/src/app/command-center/index.tsx:212-233,258-278` |
+| Authenticated profile-scoped GET; ALL omitted from query | `apps/desktop/src/api/config.ts:94-128` |
+| Profile-owned path, missing file is successful empty; level filtering delegated to tail reader | `hermes_cli/web_routers/status.py:841-881` |
+| Profile query selects a directory scope, not a record-by-record isolation guarantee | `hermes_cli/web_server_profiles.py:277-324` |
+| File keys include desktop | `hermes_cli/logs.py:33-54` |
+| Backend minimum-severity ordering | `hermes_cli/logs.py:74-78` |
+| Actual log controls, error and tail | `apps/desktop/src/app/command-center/index.tsx:523-569` |
+| Current search highlights and steps, rather than hiding lines | `apps/desktop/src/components/chat/log-search.tsx:21-39,50-112` |
+| Literal, case-insensitive search and severity-column regression fixtures | `apps/desktop/src/lib/log-search.test.ts:5-41` |
+| Shared tail now adds jump/copy actions, follow-tail and severity rules | `apps/desktop/src/components/chat/log-tail.tsx:23-38,56-94,96-153` |
+| Heading/empty and current search placeholder | `apps/desktop/src/i18n/en.ts:2437-2439,2458-2460` |
+
+Android now enables the existing Recent logs block, not a new destination.
+It reads through the connection-owned authenticated `GatewayHttp`, including
+the cancellable guarded enqueue path. No origin, token, raw HTTP client or
+backend-written exception is exposed to this feature. ALL omits `level`;
+other levels send uppercase IDs. The backend owns minimum-level filtering.
+A legacy blank/unspecified profile is omitted; a concrete selection, including
+literal `default`, stays explicit so a Gateway launched in a named profile
+cannot silently serve that launch profile instead.
+
+Current upstream selects the profile's log directory; these are still host-produced
+file tails, not a client-enforced per-record authorization stream. Shared or
+unscoped records may appear in host log files, and unsupported older hosts may
+ignore the query. Selection/result fencing does not prove record isolation.
+
+The read captures ready-leg transport identity, endpoint generation, active
+in-memory profile plus its monotonic scope generation and a selection/lifecycle
+generation. The scope generation also fences a fast A → B → A switch whose
+intermediate StateFlow value is conflated. `isCurrent` checks
+these again after credential resolution and at enqueue; return publication
+checks them too. The profile comes from the chat scope's read-only host
+projection, not its asynchronously saved preference. File/level changes cancel
+the previous read and clear its tail. Leaving/resuming the destination or
+backgrounding/foregrounding the Activity revokes/restarts log work. Connection
+or profile changes clear the tail, selection and query. No log text is persisted.
+
+Bounds: request 200 rows, refuse a body over 512 KiB or a malformed/non-string
+row list or more than 200 rows, then redact before applying the existing
+per-line cap. Decode/sanitization runs on a separate Default dispatcher, with
+cancellation checks between passes, during identifier/value scans and per row.
+A monotonic credential tokenizer consumes each identifier/value once, rather
+than retrying long credential-key prefixes at every suffix. Whole-tail private
+key redaction precedes assignment parsing so complete/truncated PEM blocks and
+quoted multiline values are not split into visible continuations.
+Log-specific passes remove credential assignments (including AWS access-key,
+secret-key and session/security-token labels), Bearer/Basic headers, structured
+POSIX/Windows paths, URLs, hostname-shaped text, IPs and fingerprints. Single-label
+hosts are masked in explicit host/server/machine/node/peer/endpoint assignments
+and known connection/host phrases such as `connected to`.
+The conservative hostname rule also hides dotted logger/file names. This is
+not a claim to detect arbitrary unlabelled secrets or machine names in prose,
+nor to erase all
+immutable strings or HTTP stack buffers. The transferred response byte array
+is wiped, including on stale returns. Raw refusal envelopes are never painted.
+
+The guarded HTTP continuation remains suspended through bounded body consumption,
+not merely response headers. Cancelling a log read therefore cancels the actual
+OkHttp call while a chunked body is held; response ownership closes in `use`.
+Results abandoned during continuation resumption or the IO-to-caller return are
+explicitly wiped (both success bytes and captured refusal envelopes). This does
+not claim that the already admitted host request was retracted, or that okio's
+pooled segments and immutable decoded strings were erased. Unguarded legacy
+HTTP calls retain their existing blocking execution path; full-lifetime call
+cancellation here is a guarded-path guarantee.
+
+The requested substring filter remains local, literal, trimmed and
+case-insensitive over the redacted bounded tail. It does not send search text
+to the host or refetch. Current Desktop instead highlights matches and exposes
+previous/next controls (visible disabled with WIP here while filtering). This is documented drift under #127, not latest-source
+search parity. `Filter log lines...` remains the historical truthful filter
+copy; heading, file/level labels and `No logs loaded yet.` are unchanged at the
+new pin. Refresh is an explicit touch action replacing the Desktop refresh
+hotkey. Safe load/reconnect failure copy is Android-owned rather than a raw
+exception. Loading, successful empty, failure/retry and populated tails are
+distinct states.
+
+Focused evidence: `SystemLogsControllerTest` (virtual-time ownership, selection,
+redaction, empty/malformed/error/retry and buffer ownership),
+`SystemLogsTransportTest` (production authenticated transport, real bound,
+pre-enqueue revocation and post-header pause), `GatewayHttpBodyOwnershipTest`
+(held chunked socket body, success/refusal cancellation-race disposal and
+unknown-length streaming cap), `SystemLogsJourneyTest` (usable controls, selection,
+filter/clear, states and lifecycle disposal), and updated `SystemJourneyTest`.
+No emulator or physical-device operations were performed in this slice.
+Rendered logs evidence remains pending: #127, the existing open Recent logs
+owner. Review ceiling: Concern; independent review and device acceptance are
+not claimed. #127 also retains background update checks and contract-skew
+warning; this capability does not close the whole issue. The latest shared
+LogTail's top/bottom/copy controls are also visible disabled with WIP, rather
+than silently missing. Automatic follow-tail and severity gutter decoration
+remain explicit deferred details, not claimed as implemented by this read port.
 
 ## Paths that settled the port
 
@@ -74,8 +177,14 @@ Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the a
 | Overlay scrim is `bg-black/22` over a `0.125rem` backdrop blur, black in every skin (`app/overlays/overlay-view.tsx:77`; the session picker's is `bg-black/15` with a 1px blur, `components/session-picker.tsx:48`) | mobile-adaptation | Black at 32% with no blur, one `overlayScrim` token every sheet and the sessions drawer read | Desktop separates the overlay from the page twice — a wash *and* a blur — a `ModalBottomSheet` scrim on this minSdk has no blur to spend — `RenderEffect` only exists from API 31 and Compose exposes no backdrop blur for the content *behind* a modal — so the wash has to do both jobs alone; 0.32 is the weight that reads as separation on a 360 dp viewport where the sheet covers most of what is behind it. Black rather than the theme foreground is Desktop's own literal: seeding it from `textPrimary` made a dark skin's scrim *lighten* the transcript behind it. `ThemeSemanticParityTest` pins the token in both modes for every preset, and every sheet, the picker and the drawer pass it explicitly rather than leaning on Material's default. Rendered side-by-side: pending: #147 |
 | Panel's `Update Hermes` fire-and-forgets the POST and polls 21.6 s (`index.tsx:266-301`) | mobile-adaptation | Opens the updates sheet, driven by the app-scoped `runBackendUpdate` port | An apply takes minutes and the person puts the phone down; Desktop's own robust path for the same endpoint is `store/updates.ts:638-766` plus the overlay, which its `Update Hermes` toast action already routes to |
 | Budget exhausted mid-restart reports `applyStatus.failed` (`updates.ts:745-751`) | mobile-adaptation | Reports `applyStatus.noReturn` when the deadline expired while the host was not answering; `failed` otherwise | On the Remote route over a tunnel — the topology this app is built around (`docs/adr/0002-shared-remote-gateway.md`) — the restart blackout is the ordinary way an apply ends, so each of Desktop's two strings is used for the state it was written for rather than telling someone their working server failed |
-| `Recent logs`: heading, four file tabs, four level tabs, filter field, empty state | omission | All six render, all six disabled behind the `WIP` chip | pill-owed: #127 — log fetch, redaction and level filtering are that issue; the controls ship visible so the surface is not silently smaller |
-| Overlay footer `applyingClose` (`en.ts:2642`) | omission | Absent | non-goal: it describes an Electron window closing itself and the app relaunching, neither of which a phone does; saying it would describe something that will not happen |
+| Recent logs file/level reads | mobile-adaptation | Enabled authenticated bounded tail; lifecycle cancellation and connection/profile/selection fences | Touch destination lifetime replaces Desktop panel visibility; #127, scoped implementation audit above |
+| Current Desktop highlight log search | drift | Requested local substring filter retains historical filter copy | #127 — latest source search delta explicitly retained for follow-up, not claimed as parity |
+| Previous/next match navigation | omission | Visible disabled behind WIP when the filter has text; clear remains enabled | coming soon — #127 owns current Desktop search navigation; labels verbatim `apps/desktop/src/i18n/en.ts:663-665` at `81a55437f3f31a9f12a30c53b6c5d49d420898aa` |
+| Shared LogTail top/bottom/copy controls | omission | Visible disabled behind WIP in a scrollable touch row above the tail | coming soon — #127; `apps/desktop/src/components/chat/log-tail.tsx:96-123` and `apps/desktop/src/i18n/en.ts:5016-5020` at `81a55437f3f31a9f12a30c53b6c5d49d420898aa`; labels replace hover-only glyphs for discoverability on touch |
+| Shared LogTail auto-follow and severity gutter | omission | Manual scrolling and the backend's severity text only | deferred: #127 — `apps/desktop/src/components/chat/log-tail.tsx:23-38,56-94,138-153` at `81a55437f3f31a9f12a30c53b6c5d49d420898aa`; current tail decoration/scroll details are not claimed by this slice |
+| Desktop refresh hotkey, pointer tabs and flexible tail pane | mobile-adaptation | Explicit Refresh action, scrollable 48 dp tab targets and bounded-height tail | Phones have no refresh chord or hover and must keep controls reachable in a narrow destination |
+| Raw log/error text | mobile-adaptation | Redacted bounded tail and safe actionable error; conservative hostname masking can hide dotted logger names | Logs can carry credentials and machine identities; #127 explicitly owns the redaction contract |
+| Overlay footer `applyingClose` (`en.ts:2642` @ `3ca096de5f8183cb2e0ec23673f294d5978656a3`) | omission | Absent | non-goal: it describes an Electron window closing itself and the app relaunching, neither of which a phone does; saying it would describe something that will not happen |
 | Overlay `BrandMark` above the title (`updates-overlay.tsx:247`) | omission | Absent | non-goal: a 64 px logo at the top of a bottom sheet is a fifth of a phone's visible height, and the sheet is already inside Hermes — Desktop's overlay is a separate window that has to identify itself |
 | Blockers view and `formatBlockerCommandLine` (`updates-overlay.tsx:83,433-455`) | omission | Absent | non-goal: the blocker scan is an Electron-main spawn (`electron/main.ts:3882-3892`) with no HTTP route, and it is client-target only |
 | `Branch X · Commit Y` hint (`about-settings.tsx:204`) | omission | Absent | non-goal: it is the Electron clone's own git state; no Gateway route exposes a branch or a sha outside the update receipt |
@@ -85,11 +194,11 @@ Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the a
 | 30-minute background update poll and the `Update ready` toast (`updates.ts:956-997`, `:209-249`) | omission | Absent | out-of-scope: #127 — this app has no in-app notification stack (#73), so the surfacing decision belongs with that issue |
 | Backend contract-skew warning `REQUIRED_BACKEND_CONTRACT` (`updates.ts:95-108,151-180`) | omission | Absent | out-of-scope: #127 — a sticky toast with an `Update Hermes` action, which needs the same missing stack |
 | `pre_update` → `post_update` versions and `fresh_recovery.serve_units` | omission | Read and held in `GatewayUpdateState.receipt`, rendered nowhere | deferred: #127 — Desktop has no string for any of it, and inventing one is the drift this gate exists to catch |
-| `actionStartedWaiting` synthesised log line (`en.ts:1572`) | omission | Absent | non-goal: Desktop synthesises that line only when all 18 restart polls expire with no status; this surface renders no log tail |
+| `actionStartedWaiting` synthesised log line (`en.ts:1572`) | omission | Absent | non-goal: Desktop synthesises that line only when all 18 restart polls expire with no status; Android reports restart progress in its action state instead of injecting client-authored text into the host-produced Recent logs tail |
 
 The four log-file tabs are **not** a divergence: `desktop` is a real file the
 Gateway's own `/api/logs` serves (`hermes_cli/logs.py:32-41` @ the pin), so all
-four ship exactly as Desktop lists them, disabled with the rest of the block.
+four ship exactly as Desktop lists them, now enabled by the scoped logs port.
 
 ## Executable evidence
 
@@ -102,13 +211,14 @@ four ship exactly as Desktop lists them, disabled with the rest of the block.
 | The apply state machine: refusal, exit code, log marker, receipt proof, legacy fallback, budgets, adoption, reset | `GatewayUpdateControllerTest`, on virtual time |
 | The forced redial fires once on success and never on SSH, Local, or a user-driven Disconnected | `GatewayBackendUpdateRedialTest` |
 | The restart poll's 18 × 1200 ms cadence, and that it stops when the child exits | `SystemViewModelTest`, with a `waits` counter |
-| Row placement, traversal order, touch targets, spoken description, disabled row | `SystemJourneyTest` |
+| Row placement, traversal order, touch targets, spoken description and enabled log controls | `SystemJourneyTest`, `SystemLogsJourneyTest` |
 | Every sheet branch renders its verbatim Desktop copy; an apply offers no way out | `UpdatesOverlayJourneyTest` |
 
 ## Visual report
 
 - pending: #126 — the System panel and the backend updates sheet
 - pending: #147 — the `overlayScrim` wash, on every sheet and the sessions drawer
+- pending: #127 — the newly enabled Recent logs states at `81a55437f3f31a9f12a30c53b6c5d49d420898aa`
 
 Hermes Desktop was **not rendered** for this change.
 `.chalk/skills/port-hermes-desktop-surface/scripts/capture-desktop-reference.mjs`
@@ -131,7 +241,7 @@ What a renderer would compare, in order:
    both buttons, overflow line), applying (stage title, body, status line,
    indeterminate progress, log tail), manual, error, done.
 
-## Review verdict
+## Historical panel/update review verdict
 
 ```text
 Parity: System panel + updates overlay (backend) @ 3ca096de5f8183cb2e0ec23673f294d5978656a3

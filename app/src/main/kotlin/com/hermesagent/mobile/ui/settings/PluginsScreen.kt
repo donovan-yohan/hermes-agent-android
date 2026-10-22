@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -31,7 +33,9 @@ import com.hermesagent.mobile.plugins.PluginKind
 import com.hermesagent.mobile.plugins.PluginRecord
 import com.hermesagent.mobile.plugins.PluginStatus
 import com.hermesagent.mobile.plugins.PluginStore
-import com.hermesagent.mobile.ui.common.ComingSoonToggleRow
+import com.hermesagent.mobile.plugins.AgentPluginsOwner
+import com.hermesagent.mobile.plugins.PluginHost
+import com.hermesagent.mobile.plugins.UnavailablePluginHost
 import com.hermesagent.mobile.ui.common.Hairline
 import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.Pill
@@ -53,21 +57,33 @@ import kotlinx.coroutines.launch
  *
  * Desktop draws one row per *package* with a switch per half — Desktop (this
  * app, the same for every profile) and Agent (the selected profile's backend)
- * — plus install, folder, rescan and the catalog picker. This app backs exactly
- * the Desktop half: bundled Kotlin modules, no disk door and no install path
- * (`docs/adr/0003-bundled-plugin-sdk.md`). So the rows carry one switch, the
- * agent half is a marked, unbuilt row rather than a second column, and the
- * discovery controls are omitted as non-goals. Classified in
+ * — plus install, folder, rescan and the catalog picker. Android keeps bundled
+ * app plugins separate from profile-scoped agent plugins; no Android disk door.
+ * The agent list/toggle contract is audited at 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+ * Historical app-half citations above are unchanged. Classified in
  * `docs/parity/settings-plugins.md`.
  */
 @Composable
 fun PluginsScreen(
     store: PluginStore,
     modifier: Modifier = Modifier,
+    agentHost: PluginHost = UnavailablePluginHost,
+    selectedProfile: String = "default",
 ) {
     val tokens = HermesTheme.tokens
     val scope = rememberCoroutineScope()
     val records = store.records.collectAsStateWithLifecycle(emptyMap()).value
+    val endpoint = agentHost.endpointGeneration.collectAsStateWithLifecycle().value
+    val leg = agentHost.connectionToken.collectAsStateWithLifecycle().value
+    val owner = remember { AgentPluginsOwner() }
+    val agentStore = remember(agentHost, selectedProfile, endpoint, leg) {
+        owner.open(agentHost, selectedProfile)
+    }
+    DisposableEffect(agentStore) { onDispose { agentStore.close() } }
+    LaunchedEffect(agentStore) { agentStore.refresh() }
+    val agentState = androidx.compose.runtime.key(agentStore) {
+        agentStore.state.collectAsStateWithLifecycle().value
+    }
 
     val ordered = remember(records) {
         records.values.sortedWith(
@@ -77,7 +93,7 @@ fun PluginsScreen(
 
     Column(modifier.fillMaxSize().background(tokens.chatSurface)) {
         LazyColumn(
-            modifier = Modifier.fillMaxSize().then(modifier),
+            modifier = Modifier.fillMaxSize().then(modifier).testTag("plugins-list"),
             contentPadding = PaddingValues(
                 start = HermesTheme.spacing.pageInset,
                 end = HermesTheme.spacing.pageInset,
@@ -128,25 +144,10 @@ fun PluginsScreen(
                 }
             }
 
-            // Desktop's second half. `plugins-tab.tsx:305-352` @ the pin gives
-            // every package an Agent switch scoped to the selected profile,
-            // backed by `plugins.manage` over the gateway. That is a backend
-            // operation, not a disk door, so unlike Install from Git, the
-            // folder, Rescan and the catalog it is not a non-goal here — this
-            // app simply has not built it. A control a port is expected to have
-            // is drawn disabled and marked rather than omitted, because
-            // omitting it would claim the surface was never meant to have it
-            // (`docs/workflows/review-desktop-parity.md`). One row stands for
-            // the half: per-package agent switches would need rows this app
-            // cannot populate.
-            item {
-                Hairline(Modifier.padding(vertical = 10.dp))
-                ComingSoonToggleRow(
-                    label = PluginsCopy.AGENT_TITLE,
-                    description = PluginsCopy.AGENT_BLURB,
-                    modifier = Modifier.testTag(PLUGINS_AGENT_HALF_TAG),
-                )
-            }
+            agentPluginItems(agentState, selectedProfile,
+                onRefresh = { scope.launch { agentStore.refresh() } },
+                onToggle = { key, enabled -> scope.launch { agentStore.toggle(key, enabled) } },
+            )
         }
     }
 }
@@ -224,7 +225,7 @@ private fun PluginRow(
 }
 
 @Composable
-private fun PluginToggle(
+internal fun PluginToggle(
     checked: Boolean,
     enabled: Boolean,
     label: String,
@@ -255,7 +256,7 @@ private fun kindOrder(kind: PluginKind): Int = when (kind) {
 
 internal const val PLUGINS_TITLE_TAG: String = "plugins-title"
 
-/** The marked, unbuilt Agent half — Desktop's second switch column. */
+/** Profile-scoped agent list heading. */
 internal const val PLUGINS_AGENT_HALF_TAG: String = "plugins-agent-half"
 
 internal fun pluginRowTag(id: String): String = "plugins-row-$id"
