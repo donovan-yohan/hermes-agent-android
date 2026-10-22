@@ -3051,6 +3051,43 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `move dispatch preserves colliding foreign live runtime row and transcript`() = runTest {
+        val cache = SessionCache()
+        val held = CompletableDeferred<JsonElement>()
+        val rpc = FakeRpc().apply { workspaceMoveResponse = held }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a", "beta")
+        repository.submit("durable-a", "Beta private")
+        val active = requireNotNull(cache.session("durable-a"))
+        val transcript = cache.transcript(active.id)
+        val turns = repository.activeTurns.value
+        val source = active.copy(remoteProfile = "alpha", title = "Alpha preview")
+        val target = repository.sessionProjectTargets(source, cache.endpointGeneration.value).single()
+        rpc.resumeA = RESUME_A.replace("runtime-a", "runtime-alpha")
+        val moved = async { repository.moveSessionToProject(source, target, cache.endpointGeneration.value) }
+        runCurrent()
+        try {
+            assertTrue("move reaches the real dispatch", rpc.calls.any { it.method == "session.workspace.move" })
+            assertSame(active, cache.session(active.id))
+            assertSame(transcript, cache.transcript(active.id))
+            assertEquals(turns, repository.activeTurns.value)
+            assertEquals("alpha", rpc.call("session.workspace.move").params.string("profile"))
+        } finally {
+            held.complete(json("""{"cwd":"/work/hermes-mobile","branch":null}"""))
+        }
+        moved.await()
+        assertSame(active, cache.session(active.id))
+        assertSame(transcript, cache.transcript(active.id))
+        assertEquals(turns, repository.activeTurns.value)
+        rpc.emit("message.complete", "runtime-a", """{"text":"Beta finished","status":"complete"}""")
+        runCurrent()
+        assertTrue(cache.transcript(active.id).filterIsInstance<AssistantTurn>().any { it.markdown == "Beta finished" })
+    }
+
+    @Test
     fun `move readback preserves foreign foreground row and transcript`() = runTest {
         val cache = SessionCache()
         val held = CompletableDeferred<JsonElement>()

@@ -4698,20 +4698,9 @@ internal class LiveGatewaySessionRepository(
         if (session.remoteProfile == null && cache.session(session.id)?.remoteProfile != null) {
             throw GatewayRpcException("The selected session changed. Reopen Move to project.")
         }
-        val canonicalId = openSessionInternal(session.id, session.remoteProfile, expectedEndpointGeneration)
-        // Keep the shared runtime admission checks (including cron write
-        // refusal) after resolving the preview's explicit owner.
-        ensureRuntime(canonicalId, expectedEndpointGeneration)
         val (connection, profile, target) = navigationMutex.withLock {
         requireEndpoint(expectedEndpointGeneration)
-        val binding = synchronized(stateLock) {
-            val runtime = identities.runtimeFor(canonicalId)
-                ?: throw GatewayRpcException("Reopen Move to project.")
-            if (!runtimeProfiles.containsKey(runtime) || runtimeProfiles[runtime] != session.remoteProfile) {
-                throw GatewayRpcException("The selected session changed. Reopen Move to project.")
-            }
-            SessionBinding(canonicalId, runtime, connectionSnapshot())
-        }
+        val binding = resolveMoveRuntime(session, expectedEndpointGeneration)
         val connection = connectionSnapshot(binding)
         val targetId = binding.durableId
         val profile = session.remoteProfile
@@ -4732,11 +4721,13 @@ internal class LiveGatewaySessionRepository(
             ensureCurrent(connection)
             val cwd = result.string("cwd")?.takeIf(String::isNotBlank)
                 ?: throw GatewayRpcException("The Gateway did not confirm the move. Reopen the session to check.")
-            worktreeByDurableId[targetId] = cwd
             val branch = result.string("branch")
-            if (branch == null) branchByDurableId.remove(targetId) else branchByDurableId[targetId] = branch
             cache.session(targetId)?.takeIf { it.remoteProfile == profile }
-                ?.let { cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch)) }
+                ?.let {
+                    worktreeByDurableId[targetId] = cwd
+                    if (branch == null) branchByDurableId.remove(targetId) else branchByDurableId[targetId] = branch
+                    cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch))
+                }
         }
         Triple(connection, profile, target)
         }
@@ -4777,6 +4768,48 @@ internal class LiveGatewaySessionRepository(
             // A later project refresh repairs membership; the write was confirmed above.
         }
     }
+    /** A move is not navigation: never rebind or hydrate a colliding foreground slot. */
+    private suspend fun resolveMoveRuntime(session: SessionSummary, endpoint: Long): SessionBinding {
+        val connection = connectionSnapshot()
+        requireEndpoint(endpoint)
+        val profile = session.remoteProfile
+        val identity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        // Canonical channels require the endpoint/owner-qualified identity even when
+        // two profiles publish the exact same public session id.
+        val durableId = if (identity != null) {
+            connection.client.request("profiles.list", buildJsonObject {
+                profile?.let { put("profile", JsonPrimitive(it)) }
+                put("include_sessions", JsonPrimitive(false))
+            })
+            synchronized(stateLock) { ensureCurrent(connection) }
+            identity.qualify(session.id, profile)
+        } else session.id
+        if (session.source == "cron" || synchronized(stateLock) { cronWriteGateApplies(durableId, profile) }) {
+            val verdict = refreshCronAdmission(connection, durableId, profile).verdict
+            if (verdict != CronSessionVerdict.Writable) throw GatewayRpcException(cronRefusal(verdict))
+        }
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            identities.runtimeFor(durableId)?.takeIf {
+                runtimeProfiles.containsKey(it) && runtimeProfiles[it] == profile
+            }?.let { return SessionBinding(durableId, it, connection) }
+        }
+        val snapshot = requestAtEndpointDispatch(connection, endpoint, "session.resume", buildJsonObject {
+            put("session_id", JsonPrimitive(durableId))
+            profile?.let { put("profile", JsonPrimitive(it)) }
+        }).asObject("session.resume")
+        return synchronized(stateLock) {
+            ensureCurrent(connection)
+            val runtime = snapshot.string("session_id")
+                ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
+            if (runtimeProfiles.containsKey(runtime) && runtimeProfiles[runtime] != profile) {
+                throw GatewayRpcException("Hermes returned a runtime belonging to another profile.")
+            }
+            // Keep the transient binding local. Navigation owns identity/cache adoption.
+            SessionBinding(snapshot.canonicalDurableId() ?: durableId, runtime, connection)
+        }
+    }
+
     override suspend fun exportSession(durableId: String): ByteArray {
         val row = cache.session(durableId) ?: throw GatewayRpcException("That session is no longer available.")
         val profile = row.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
