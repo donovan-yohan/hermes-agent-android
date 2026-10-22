@@ -17,10 +17,10 @@ class ReadBudgetTest(unittest.TestCase):
         text = f'## Pin\n| Desktop | `{a}` |\n| narrower | `{b}` | *(registry)* |\n\n## Claims\n`lib/a.ts:1`\n`lib/b.ts:2` @ `{b}`\n`lib/c.ts:3` *(registry)*\n'
         plain = text.splitlines()
         cached = gate.AnalyzedLines(plain)
-        for number, path in ((7, 'lib/a.ts'), (8, 'lib/b.ts'), (9, 'lib/c.ts')):
+        for number, path in ((6, 'lib/a.ts'), (7, 'lib/b.ts'), (8, 'lib/c.ts')):
             self.assertEqual(gate.citation_pin(plain, number, [a, b], path),
                              gate.citation_pin(cached, number, [a, b], path))
-        self.assertEqual(gate.citation_pin(cached, 7, [a, b], 'lib/a.ts'), a)
+        self.assertEqual(gate.citation_pin(cached, 6, [a, b], 'lib/a.ts'), a)
 
     def test_repeated_declaration_scans_reuse_line_analysis(self):
         pin = 'a' * 40
