@@ -7,6 +7,17 @@ Upstream source and tests were read at
 Every upstream citation on this page names that revision. This is a functional
 contract audit, **not** a claim of all-feature or visual parity.
 
+## Current-baseline reading note (2026-10-22)
+
+The remainder list below describes its historical audit, not the whole current
+application. At Android `65080e8a37e8d546869528e43c162503015b94c7`, bounded
+avatar import/clear, model, toolset, installed-skill and configured-MCP editors,
+routine creation (including the reviewed one-shot payload) and the held-list
+routine inspector have later production paths. Their individual parity pages
+own the contracts and evidence limits. The [current source-family inventory](desktop-surface-audit.md)
+reconciles those paths without restamping this page's old citations or captures.
+Hosted-group send core still does not constitute production participation UI.
+
 ## Implemented production paths
 
 - **New bot:** `profiles.create`, explicit `mirror_credentials:true`, `share_auth:false`,

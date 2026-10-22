@@ -28,6 +28,7 @@ Transport failures exit 3, without publishing remote stderr or private paths.
 from __future__ import annotations
 
 import argparse
+from functools import lru_cache
 import json
 import os
 import signal
@@ -87,6 +88,8 @@ HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
 PIN_SECTION_RE = re.compile(r"^\s{0,3}#{1,6}\s*[Pp]in\b")
 
 _blobs: dict[tuple[str, str], list[str] | None] = {}
+_blob_objects: dict[str, list[str]] = {}
+_tree_objects: dict[str, dict[str, str]] = {}
 _tree_paths: dict[str, list[str]] = {}
 _ensured: set[str] = set()
 _READ: pathlib.Path | None = None
@@ -177,6 +180,10 @@ def blob(sha: str, path: str) -> list[str] | None:
         if path not in tree_paths(sha):
             _blobs[key] = None
             return None
+        oid = _tree_objects.get(sha, {}).get(path)
+        if oid is not None and oid in _blob_objects:
+            _blobs[key] = _blob_objects[oid]
+            return _blobs[key]
         done = subprocess_run(
             ["git", "-C", str(read_root()), "show", f"{sha}:{path}"],
             capture_output=True,
@@ -193,6 +200,8 @@ def blob(sha: str, path: str) -> list[str] | None:
         if body and body[-1] == "":
             body.pop()
         _blobs[key] = body
+        if oid is not None:
+            _blob_objects[oid] = body
     return _blobs[key]
 
 
@@ -230,9 +239,13 @@ def materialize(sha: str) -> None:
 
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
-        # A snapshot proved before switching stores must not disappear merely
-        # because the independent scratch store has not fetched it yet.
-        if _FETCH and sha in _ensured and not _has(sha):
+        # Store handoff invalidates bytes/completeness, not revision identity.
+        # Discovery also runs before ensure_sha(), so retain the read-only source
+        # probe for known pins not yet registered in _ensured.
+        if (_FETCH and FULL_SHA_RE.fullmatch(sha)
+                and (sha in _ensured or (_READ is not None and subprocess_run(
+                    ["git", "-C", str(UPSTREAM), "cat-file", "-e", f"{sha}^{{commit}}"]
+                ).returncode == 0))):
             materialize(sha)
         if not _has(sha):
             # Not a revision of the read checkout, so it has no tree to list.
@@ -244,12 +257,20 @@ def tree_paths(sha: str) -> list[str]:
         if _FETCH:
             materialize(sha)
         done = subprocess_run(
-            ["git", "-C", str(read_root()), "ls-tree", "-r", "--name-only", sha],
+            ["git", "-C", str(read_root()), "ls-tree", "-rz", sha],
             capture_output=True,
             text=True,
             check=True,
         )
-        _tree_paths[sha] = done.stdout.splitlines()
+        entries = {}
+        for entry in done.stdout.split("\0"):
+            if entry:
+                metadata, path = entry.split("\t", 1)
+                mode, kind, oid = metadata.split()
+                if kind == "blob":
+                    entries[path] = oid
+        _tree_objects[sha] = entries
+        _tree_paths[sha] = list(entries)
     return _tree_paths[sha]
 
 
@@ -258,9 +279,8 @@ def read_root() -> pathlib.Path:
 
     The reference checkout is read-only by policy — never `git fetch` inside it,
     never check anything out in it. A pin it does not have is obtained by fetching
-    into a temporary empty object store, and from then on reads come from
-    explicitly fetched snapshots. Shallow/partial references are never cloned
-    or traversed implicitly; only requested immutable SHAs are fetched.
+    into an independent scratch object store. Shallow/partial references and
+    their alternates are never inherited; each needed snapshot is materialized.
     """
     return _READ or UPSTREAM
 
@@ -309,6 +329,8 @@ def _scratch_clone() -> pathlib.Path:
     _materialized.clear()
     _tree_paths.clear()
     _blobs.clear()
+    _tree_objects.clear()
+    _blob_objects.clear()
     return target
 
 
@@ -524,6 +546,7 @@ def full_pins(text: str) -> set[str]:
     return set(re.findall(r"(?<![0-9a-fA-F])[0-9a-f]{40}(?![0-9a-fA-F])", text))
 
 
+@lru_cache(maxsize=32768)
 def _sha_tokens(line: str) -> list[str]:
     """Pin-shaped tokens on a line: a revision, not a decimal literal in code.
 
@@ -565,6 +588,7 @@ def _continuation_of_above(lines: list[str], number: int) -> bool:
     return number >= 2 and lines[number - 2].rstrip().endswith("@")
 
 
+@lru_cache(maxsize=32768)
 def _supplied_by_at(line: str) -> bool:
     """True when the line's revision is introduced by `@`: a citation's own pin.
 
@@ -575,6 +599,69 @@ def _supplied_by_at(line: str) -> bool:
         if line[: match.start()].rstrip("`").rstrip().endswith("@"):
             return True
     return False
+
+
+def _revision_tokens(line: str, cited: str | None = None, *, full: bool = False) -> list[str]:
+    """Keep an explicitly Android-labelled revision out of an upstream binding.
+
+    Only explicit repository labels disambiguate mixed prose; unknown labels and
+    unlabelled revisions retain the existing fail-closed resolution behavior.
+    This applies to BOTH sides of a range, not only newly annotated citations.
+    """
+    pattern = FULL_SHA_RE if full else PIN_RE
+    if cited is None:
+        return pattern.findall(line) if full else _sha_tokens(line)
+    result = []
+    eligible = set(pattern.findall(line) if full else _sha_tokens(line))
+    for match in pattern.finditer(line):
+        if match.group() not in eligible:
+            continue
+        prefix = line[:match.start()]
+        # Explicit @ always owns its citation. Consumer prose such as
+        # "Android adaptation consumes path @ SHA" is not a foreign declaration.
+        explicit = prefix.rstrip().rstrip("`").rstrip().endswith("@")
+        foreign = re.search(
+            r"\b(?:android|mobile)(?:\s+implementation)?"
+            r"(?:\s+(?:baseline|foundation|source|revision|commit|sha|pin|target))?"
+            r"\s*[:=]?\s*`?\s*$", prefix.replace("|", " "), re.I)
+        if foreign and not explicit:
+            continue
+        result.append(match.group())
+    return result
+
+
+class AnalyzedLines(list):
+    """Carrier-local memoization; no attribution or verdict is skipped."""
+    def __init__(self, lines):
+        super().__init__(lines)
+        self.revisions = {}
+        self.rows = None
+
+
+@lru_cache(maxsize=32768)
+def _named_paths(line: str):
+    return tuple(PATH_RE.finditer(line))
+
+
+def _line_revision_tokens(lines: list[str], index: int, cited: str | None = None, *, full: bool = False) -> list[str]:
+    key = (index, cited is not None, full)
+    if isinstance(lines, AnalyzedLines) and key in lines.revisions:
+        return lines.revisions[key]
+    line = lines[index]
+    # A wrapped declaration can put the label at the previous line's end:
+    # "Desktop <sha> and Android baseline" / "<sha> ...". Carry the LABEL,
+    # not the preceding revision, so two repositories remain distinguishable.
+    if index and re.match(r"^\s*`?[0-9a-f]{40}\b", line):
+        label = re.search(
+            r"\b((?:android|mobile|desktop|gateway|upstream)(?:\s+implementation)?"
+            r"(?:\s+(?:baseline|foundation|source|revision|commit|sha|pin|target))?)"
+            r"\s*[:=]?\s*$", lines[index - 1], re.I)
+        if label:
+            line = label.group(1) + " " + line
+    result = _revision_tokens(line, cited, full=full)
+    if isinstance(lines, AnalyzedLines):
+        lines.revisions[key] = result
+    return result
 
 
 def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | None:
@@ -602,12 +689,12 @@ def _path_pin_tokens(lines: list[str], number: int, cited: str) -> list[str] | N
             break
         if not any(
             match.group("path").rsplit("/", 1)[-1] == base
-            for match in PATH_RE.finditer(line)
+            for match in _named_paths(line)
         ):
             continue
-        tokens = _sha_tokens(line)
+        tokens = _line_revision_tokens(lines, index, cited)
         if not tokens and index + 1 < len(lines) and not PATH_RE.search(lines[index + 1]):
-            tokens = _sha_tokens(lines[index + 1])
+            tokens = _line_revision_tokens(lines, index + 1, cited)
         return tokens
     return None
 
@@ -624,6 +711,8 @@ def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
     general one is what let an added registry row re-point every unmarked
     citation in a file, turning honest merged history red (#280, #264).
     """
+    if isinstance(lines, AnalyzedLines) and lines.rows is not None:
+        return lines.rows
     rows: dict[int, tuple[str, str | None, bool]] = {}
     inside = False
     seen = False
@@ -632,7 +721,7 @@ def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
         if is_row != inside:
             inside = is_row
             seen = False
-        if not is_row or PATH_RE.search(line):
+        if not is_row or _named_paths(line):
             continue
         tokens = _sha_tokens(line)
         if not tokens:
@@ -640,6 +729,8 @@ def _table_rows(lines: list[str]) -> dict[int, tuple[str, str | None, bool]]:
         marker = MARKER_RE.search(line)
         rows[index] = (tokens[0], marker.group(1) if marker else None, not seen)
         seen = True
+    if isinstance(lines, AnalyzedLines):
+        lines.rows = rows
     return rows
 
 
@@ -669,12 +760,12 @@ def _borrowed_above(lines: list[str], number: int) -> bool:
         if not line.lstrip().startswith("|"):
             # The end of this table: the block above is a different one.
             return False
-        if PATH_RE.search(line) and _sha_tokens(line):
+        if _named_paths(line) and _sha_tokens(line):
             return True
     return False
 
 
-def _declaration(lines: list[str], number: int) -> str | None:
+def _declaration(lines: list[str], number: int, cited: str | None = None) -> str | None:
     """The full-SHA declaration nearest above, within the citation's section.
 
     A declaration is prose or a table row that assigns a revision — as opposed
@@ -696,25 +787,34 @@ def _declaration(lines: list[str], number: int) -> str | None:
         row = rows.get(index)
         if row is not None:
             pin, row_marker, general = row
-            if general:
+            if pin not in _line_revision_tokens(lines, index, cited, full=True):
+                continue
+            earlier = index - 1
+            while earlier >= 0 and lines[earlier].lstrip().startswith("|"):
+                prior = rows.get(earlier)
+                if prior and prior[0] in _line_revision_tokens(lines, earlier, cited, full=True):
+                    break
+                earlier -= 1
+            eligible_general = earlier < 0 or not lines[earlier].lstrip().startswith("|")
+            if eligible_general:
                 return pin
             if row_marker is not None and row_marker == marker_name:
                 return pin
             # A narrower row governs only the marker it names.
             continue
         if (
-            PATH_RE.search(line)
+            _named_paths(line)
             or _supplied_by_at(line)
             or _continuation_of_above(lines, index + 1)
         ):
             continue
-        named = FULL_SHA_RE.findall(line)
+        named = _line_revision_tokens(lines, index, cited, full=True)
         if named:
             return named[0]
     return None
 
 
-def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, bool]], marker: str | None) -> str | None:
+def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, bool]], marker: str | None, cited: str | None = None) -> str | None:
     """The pin a page declares in its own `## Pin` section, marker-aware.
 
     This is where a page states what governs the citations below it. Its first
@@ -737,17 +837,19 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
         row = rows.get(index - 1)
         if row is None:
             if (
-                PATH_RE.search(line)
+                _named_paths(line)
                 or _supplied_by_at(line)
                 or _continuation_of_above(lines, index)
             ):
                 continue
-            named = FULL_SHA_RE.findall(line)
+            named = _line_revision_tokens(lines, index - 1, cited, full=True)
             if named and general is None:
                 general = named[0]
             continue
         pin, row_marker, is_general = row
-        if is_general and general is None:
+        if pin not in _line_revision_tokens(lines, index - 1, cited, full=True):
+            continue
+        if general is None:
             general = pin
         elif row_marker is not None:
             by_marker.setdefault(row_marker, pin)
@@ -756,7 +858,7 @@ def _page_declaration(lines: list[str], rows: dict[int, tuple[str, str | None, b
     return general
 
 
-def _nearest_sha_above(lines: list[str], number: int) -> str | None:
+def _nearest_sha_above(lines: list[str], number: int, cited: str | None = None) -> str | None:
     """Last resort: the nearest revision-shaped token above, within the section.
 
     Reached only when nothing else has bound the citation — no revision on its
@@ -772,7 +874,7 @@ def _nearest_sha_above(lines: list[str], number: int) -> str | None:
     the text is talking *about*, not the revision the citation was taken at.
     """
     for index in range(number - 2, _section_start(lines, number) - 2, -1):
-        named = FULL_SHA_RE.findall(lines[index])
+        named = _line_revision_tokens(lines, index, cited, full=True)
         if named:
             return named[0]
     return None
@@ -807,13 +909,13 @@ def citation_pin(
     (only 26 name a single one), and a change that moves one stamp is not
     answerable for the citations that still name another.
     """
-    own = _sha_tokens(lines[number - 1])
+    own = _line_revision_tokens(lines, number - 1, cited)
     if not own:
         following = lines[number] if number < len(lines) else ""
         # A continuation line carries the pin and nothing else; a line that also
         # carries a citation is a citation of its own, not this one's tail.
-        if not PATH_RE.search(following):
-            own = _sha_tokens(following)
+        if number < len(lines) and not PATH_RE.search(following):
+            own = _line_revision_tokens(lines, number, cited)
     if own:
         return _match_pin(own, introduced)
 
@@ -827,7 +929,7 @@ def citation_pin(
             if matched is not None:
                 return matched
 
-    declaring = _declaration(lines, number)
+    declaring = _declaration(lines, number, cited)
     if declaring is not None:
         return _match_pin([declaring], introduced)
 
@@ -836,7 +938,7 @@ def citation_pin(
         following = lines[number]
         if not PATH_RE.search(following):
             marker = MARKER_RE.search(following)
-    page = _page_declaration(lines, _table_rows(lines), marker.group(1) if marker else None)
+    page = _page_declaration(lines, _table_rows(lines), marker.group(1) if marker else None, cited)
     if page is not None:
         return _match_pin([page], introduced)
     if _borrowed_above(lines, number):
@@ -845,7 +947,7 @@ def citation_pin(
         # against. Answering with the single pin the change introduced is how a
         # borrowed row's neighbour gets judged against a revision it never named.
         return None
-    fallback = _nearest_sha_above(lines, number)
+    fallback = _nearest_sha_above(lines, number, cited)
     if fallback is not None:
         return _match_pin([fallback], introduced)
     return introduced[0] if len(introduced) == 1 else None
@@ -1025,7 +1127,7 @@ def citation_bindings(
     ambiguous = 0
     if not pins:
         return out, ambiguous
-    lines = text.splitlines()
+    lines = AnalyzedLines(text.splitlines())
     for number, cited, ranges, _safe in located_citations(text, pins[0]):
         if not ranges:
             # A citation with no line span proves nothing about any revision, so it

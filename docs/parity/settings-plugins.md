@@ -74,7 +74,45 @@ key was `settings.nav.plugins`, removed during consolidation. The Plugins title
 still uses Desktop's page word. Android bundled Kotlin modules do not load
 Desktop JavaScript; [ADR 0003](../adr/0003-bundled-plugin-sdk.md) still applies.
 
+## Candidate-source registry audit (2026-10-22)
+
+The [nested-control reconciliation](desktop-control-reconciliation.md) inspects
+Desktop `81a55437f3f31a9f12a30c53b6c5d49d420898aa` separately from this page's
+historical Pin. At that source the Settings rail has a live Plugins entry with
+schema/contributed settings children (`apps/desktop/src/app/settings/index.tsx:400-408`;
+`apps/desktop/src/contrib/settings-pages.ts:192-256`). The consolidation prose
+above describes its old inspected revision, not the current rail.
+
+General Agent schema editing is not covered by a future list/toggle feature:
+`apps/desktop/src/app/settings/plugin-settings-form.tsx:155-279,281-422` dispatches
+six control templates and Save, while
+`apps/desktop/src/store/agent-plugins.ts:483-552` separates settings values from
+secret replacements. These remain #73 omissions; #234 retains its bounded
+Agent inventory/toggle scope. No private plugin schemas or secret values were read.
+
+The actual bundled discovery glob at the same candidate
+(`apps/desktop/src/contrib/plugins.ts:21-87`) matches Bots, Kanban and Radio.
+Radio is default-disabled shipping code (`apps/desktop/src/plugins/radio/plugin.js:684-697`),
+not a runtime example. `hello-runtime/plugin.runtime.js` does not match that glob.
+The new records enumerate Radio's conditional controls and preserve ADR 0003's
+separate runtime-JavaScript non-goal. Android still bundles Bots, Groups and
+Kanban at baseline `65080e8a37e8d546869528e43c162503015b94c7`; this is not a
+new rendered parity claim or an implementation change.
+
 ## Divergences
+
+### Later-source qualification (not a restamp of this page's Pin)
+
+The separately pinned [continuation](desktop-audit-continuation.md) follows
+the current catalog, install modal, Electron-local probe, host Agent install,
+uncertain completion and detail-only uninstall. This historical table's
+device-side JS-loader non-goal remains valid; its blanket catalog/install/deep-link
+rationale must **not** exclude backend Agent functionality. Server install,
+catalog, schema and update remain unimplemented under #73; #234 owns bounded
+inventory/toggle, not every package operation. No screenshot is relabelled.
+#227 is closed naming work, not an outstanding evidence owner; current Agent
+rendered acceptance belongs to #234. The continuation carries all newer source
+citations so this page's historical paths retain their actual Pin.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|

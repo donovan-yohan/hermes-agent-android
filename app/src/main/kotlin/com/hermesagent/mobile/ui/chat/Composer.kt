@@ -452,7 +452,7 @@ private fun ComposerModelControl(
 ) {
     ModelControl(
         catalog = (controls.catalog as? ComposerCatalogUiState.Ready)?.catalog,
-        controls = controls.controls,
+        controls = controls.pendingModel?.let { controls.controls.copy(selection = it) } ?: controls.controls,
         isLiveSession = controls.isLiveSession,
         isManualNewDraft = controls.isManualNewDraft,
         isLoading = controls.catalog is ComposerCatalogUiState.Loading,

@@ -18,14 +18,14 @@ citation is worthless without saying which one it is against.
 
 | Surface | Pin | Where it is recorded |
 |---|---|---|
-| UI structure, behaviour and copy — target for new ports | `ddabd3837862022a6053331fe3ba97cf9716b9e3` | `AGENTS.md` |
-| Built-in theme registry target (not a full semantic/render repin) | `ddabd3837862022a6053331fe3ba97cf9716b9e3` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
+| UI structure, behaviour and copy — target for new ports | `41dfcf2c1bd7146d4ad46aea08b7dd007900602e` | `AGENTS.md` |
+| Built-in theme registry target (not a full semantic/render repin) | `41dfcf2c1bd7146d4ad46aea08b7dd007900602e` | `DesktopThemeLedger.PINNED_SHA`, enforced by `ThemeParityTest` |
 | A per-surface pin of its own, where a page declares one | that page's `## Pin` table | e.g. `docs/parity/approval-mode.md` pins its Desktop source at `3ca096de` |
 
 Use the UI target for new ports and the theme target for registry/palette syncs.
 Neither target retroactively certifies per-surface evidence or historical token
 citations: keep those on the SHA actually inspected until their own audit moves
-them. The [latest-main follow-up audit](../spikes/upstream-ddabd383-2026-10-19.md)
+them. The [observed-main follow-up audit](../spikes/upstream-41dfcf2c-2026-10-22.md)
 records this refresh and its limits. Write that inspected SHA next to every
 `path:line`.
 
@@ -60,7 +60,7 @@ Desktop needs a dev renderer with CDP, run from a **disposable pinned export**
 so no real config, `.env` or auth is in reach:
 
 ```bash
-pin=ddabd3837862022a6053331fe3ba97cf9716b9e3 # new ports; use the declared surface pin for recaptures
+pin=41dfcf2c1bd7146d4ad46aea08b7dd007900602e # new ports; use the declared surface pin for recaptures
 export="${TMPDIR:?set TMPDIR to your scratch directory}/hermes-desktop-$pin"
 git clone --no-hardlinks --quiet --no-checkout \
   "${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}" "$export"

@@ -11,7 +11,7 @@ Every step here earned its place by being something a port gets wrong.
 
 ```bash
 HERMES_AGENT_UPSTREAM="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
-pin=ddabd3837862022a6053331fe3ba97cf9716b9e3 # current target for new ports
+pin=41dfcf2c1bd7146d4ad46aea08b7dd007900602e # observed target for new ports
 # Create a disposable clone at $pin as in review-desktop-parity.md §2.
 # For an existing surface, use its declared pin instead, not an automatic restamp.
 git -C "${export:?set export to the disposable pinned checkout}" rev-parse HEAD # must equal $pin
@@ -292,6 +292,14 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+For source inventories, follow imported primitives and the actual mount gate, not
+only the named page: `LogTail` adds Copy/jump actions and `SearchField` adds a
+conditional Clear button. Plain `.js` plugins can ship compiled `jsx`/`jsxs`
+factory calls rather than JSX tags. A menu factory's nonmac branch is not proof
+of shipping reachability when startup installs that menu only on macOS. Keep
+syntax candidates, reviewed control templates and rendered acceptance separate;
+see [the nested-control audit](../parity/desktop-control-reconciliation.md).
+
 For System logs, inspect the current search component as well as the panel:
 `apps/desktop/src/components/chat/log-search.tsx:21-39` at
 `81a55437f3f31a9f12a30c53b6c5d49d420898aa` highlights and steps matches,
@@ -301,6 +309,7 @@ labels. Read the active in-memory profile for request fencing, not a preference
 whose save can lag a profile switch. Use the host's cancellable guarded enqueue
 for lifecycle-bound log reads; whole-tail redaction must precede per-line caps
 so a multiline private key is not split into unrecognisable fragments.
+
 
 Core Cron uses full REST job records, not the lossy `cron.manage` preview.
 Readback must account for the server's normalized names and natural-language

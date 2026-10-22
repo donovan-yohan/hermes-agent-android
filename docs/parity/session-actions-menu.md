@@ -295,6 +295,8 @@ carries the argument and the citations.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
+| Later-source Archive/Unarchive direction and label | drift | Baseline menu remains unconditional Archive, unlike the separately audited later source | #266; Later source audit below, not a historical visual repin |
+| Later-source live deletion and rename busy-dismiss behavior | drift | Baseline refuses running deletion and busy rename dismissal; later Desktop handlers differ | #266; exact state/transport and shared-dialog spans in the bounded control report |
 | 20 px kebab, `opacity-0` until row hover (`session-row.tsx:319`) | mobile-adaptation | The same glyph at 14 sp inside a 48 dp target, always visible | Touch has no hover; visual weight and right-edge placement are unchanged |
 | Kebab `absolute right-0` over the trailing meta slot (`:320`) | mobile-adaptation | Overlay aligned `CenterEnd`, with the control's whole width reserved as end inset | The 48 dp target must not grow the row or reflow it, and the hit box is wider than the centred glyph |
 | `w-40` (160 px) content | mobile-adaptation | `widthIn(min = 220.dp)` | The phone type scale is ~1.15× Desktop's, and this matches the sidebar's existing dropdown so the two menus read as one system |
@@ -315,6 +317,39 @@ carries the argument and the citations.
 | Filled `Save` and `Delete` carry `--primary-foreground` / `--destructive-foreground` — `bg-primary text-primary-foreground` and `bg-destructive text-white` (`components/ui/button.tsx:19,21 @ 437116f9`) | mobile-adaptation | Both filled actions read a paired token: `tokens.filledActionInk` on the accent fill and `tokens.destructiveActionInk` on the destructive one, resolved by `filledActionInk(fill, paired)` (`ColorMath.kt`). Was **drift** until #140 — the label was `tokens.accentForeground`, the ink meant for the *tinted* accent surface (`#1F2328` in the default light theme), which measured **2.75:1** on `Save`'s `rgb(0,83,253)` and **2.95:1** on `Delete`'s `rgb(207,34,46)` | The fill and its ink are now chosen together, as Desktop chooses them, and the pairing is honoured only while it clears WCAG AA: `ThemeParityTest.filled action ink follows its fill and clears AA on every preset and mode` measures all 44 fill/mode pairs, and `PrimaryButtonInkTest` reads the painted pixels back. The Android half keeps the pre-#140 numbers above as its drift record; no fresh capture is claimed, so this row's evidence is the two tests rather than a rendered pair. Where the palette's own partner cannot clear AA there — `slate` dark destructive is `#CF4848`, white 4.49:1 and Desktop's near-black 4.03:1 — the row is a named exception with its ratio, not a silently lowered floor; pure black would reach 4.67:1, so the declaration is "Desktop's ink set cannot do it", not "nothing can". Desktop paints that action at `bg-destructive/60` (`button.tsx:21`), where white reaches 8.22:1, and the fill-side change is left to a follow-up rather than editing a builtin palette |
 | Dialogs carry a top-right `✕` close control (`components/ui/dialog.tsx`, visible in both dialog captures) | mobile-adaptation | No `✕`; the three ways out are Cancel, system back and a tap outside | Android's back gesture is the platform's own dismiss and every dialog on this surface honours it, so a fourth affordance would be a second spelling of a gesture the reader already has. `SessionActionsMenuJourneyTest` asserts all three exits and that none of them confirms |
 | `Appearance` (`:467-475`) and `Move to project` (`:488-496`) render live, with a trailing `›` submenu chevron; `Branch` (`:337-349`) and `Export` (`:350-358`) render live with no trailing mark | omission | All four are dimmed and carry the `WIP` chip in the trailing slot | coming soon — the pill ships (#101). One class for all four because the difference is one thing, not two: none of the four has an implementation here, so each row keeps Desktop's glyph, label and slot and loses its trailing affordance to the chip that says why. The chevron is the only trailing mark any of them had, and it promised a second level that a flattened menu does not have |
+
+## Later source audit — not a visual repin
+
+The nested-control continuation separately reads Desktop
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa` against Android baseline
+`65080e8a37e8d546869528e43c162503015b94c7`. The Pin and all historical captures
+above/below remain unchanged. Current source no longer supports reading the old
+unconditional-Archive explanation as a present-day claim.
+
+At that later Desktop SHA,
+`apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx:515-531` swaps to
+Unarchive for archived rows, and `apps/desktop/src/app/contrib/wiring.tsx:1085-1095`
+dispatches to restore. The baseline native menu still always says Archive and
+passes true (`app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt:250-277,495-507`
+at the Android baseline). This is drift under #266, not a new adaptation.
+
+The same audit traces rename/save/clear/focus and the imported enabled Close X,
+color swatch/clear, Branch/Export authority, target-project refresh/move, all tab
+predicates and confirmation. Desktop's actual live-delete handler interrupts and
+closes before deletion
+(`apps/desktop/src/app/session/hooks/use-session-actions/index.ts:3150-3255`
+at the later Desktop SHA); Android refuses running deletion
+(`app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt:4629-4658`
+at the Android baseline). The done beat in Desktop's confirmation is a void
+callback dispatch, not an awaited delete receipt. This difference and rename's
+busy-dismiss behavior are findings under #266. No policy is changed here.
+
+Exact control, mount, state/transport, native-boundary and existing-owner records
+are in [the bounded reconciliation](desktop-control-reconciliation.md#session-skills-and-owned-mcp-source-continuation).
+The four disabled parent verbs remain baseline WIP, not functioning nested
+editors; independent feature branches are not baseline evidence. Current renders
+remain Concern, with the existing #73 migration owner and #266 drift owner; no
+historical packet is restamped or newly approved.
 
 ## Visual report
 
