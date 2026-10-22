@@ -51,6 +51,8 @@ class ChatActions(
     val onDismissGatewayLogs: () -> Unit = {},
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
+    val onExportSession: (suspend (String) -> com.hermesagent.mobile.ui.sessions.PreparedSessionExport)? = null,
+    val onExportProjectSession: (suspend (com.hermesagent.mobile.data.session.SessionSummary, Long) -> com.hermesagent.mobile.ui.sessions.PreparedSessionExport)? = null,
     val onBranchSession: ((String) -> Unit)? = null,
     val onBranchProjectSession: ((com.hermesagent.mobile.data.session.SessionSummary) -> Unit)? = null,
     /**

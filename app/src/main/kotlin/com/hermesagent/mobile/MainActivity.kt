@@ -491,6 +491,8 @@ class MainActivity : ComponentActivity() {
                     onDismissGatewayLogs = chatViewModel::dismissGatewayLogs,
                     onRenameSession = chatViewModel::renameSessionAsync,
                     onDeleteSession = chatViewModel::deleteSessionAsync,
+                    onExportSession = chatViewModel::exportSession,
+                    onExportProjectSession = chatViewModel::exportProjectSession,
                     onBranchSession = chatViewModel::branchSession,
                     onBranchProjectSession = chatViewModel::branchProjectSession,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,
