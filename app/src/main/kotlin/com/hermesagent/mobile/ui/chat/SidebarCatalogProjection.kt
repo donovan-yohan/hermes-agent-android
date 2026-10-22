@@ -49,6 +49,7 @@ internal class SidebarCatalogProjection {
                     val owner = if (requestedCatalog.sessionProfiles.containsKey(id)) requestedCatalog.sessionProfiles[id]
                         else scope.sessionProfileParam
                     state.sessions[id]?.takeIf { it.remoteProfile == owner }
+                        ?: requestedCatalog.sessionRows[id]?.takeIf { it.remoteProfile == owner }
                 } ?: state.sessions.values.toList(),
             if (selected != null && omittedRoute) ALL_PROFILES else scope.key,
         )

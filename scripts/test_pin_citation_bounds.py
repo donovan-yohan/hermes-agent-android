@@ -64,6 +64,23 @@ class GitBoundsTest(unittest.TestCase):
         self.assertNotIn("SECRET", str(error.exception))
         self.assertNotIn("private", str(error.exception))
 
+    def test_fetch_failure_reports_only_allowlisted_cause(self):
+        cases = (
+            ("fatal: remote error: upload-pack: not our ref SECRET/private", "remote-object-unavailable"),
+            ("fatal: unable to access 'https://SECRET/private': The requested URL returned error: 503", "http-503"),
+            ("fatal: unable to access 'https://SECRET/private': Could not resolve host: SECRET", "dns"),
+            ("fatal: SECRET/private unrecognized failure", "unclassified"),
+        )
+        for stderr, cause in cases:
+            with self.subTest(cause=cause):
+                process = MagicMock(returncode=128)
+                process.communicate.return_value = ("", stderr)
+                with patch.object(m.subprocess, "Popen", return_value=process):
+                    with self.assertRaisesRegex(m.GitFailure, f"cause={cause}") as error:
+                        m.subprocess_run(["git", "fetch", "origin", "a" * 40], check=True)
+                self.assertNotIn("SECRET", str(error.exception))
+                self.assertNotIn("private", str(error.exception))
+
     def test_missing_blob_in_existing_carrier_is_not_skipped(self):
         replies = [subprocess.CompletedProcess([], 128, "", "blob-read failed"),
                    subprocess.CompletedProcess([], 0, "carrier.md\n", "")]
@@ -76,6 +93,33 @@ class GitBoundsTest(unittest.TestCase):
         with patch.object(m, "changed_files", return_value=["carrier.md"]), patch.object(m, "text_at", side_effect=["old", "new"]), patch.object(m, "citation_bindings", side_effect=[({}, 0), (binding, 0)]), patch.object(m, "ensure_sha", side_effect=m.GitFailure("git stage=fetch: timed out")):
             with self.assertRaisesRegex(m.GitFailure, "fetch: timed out"):
                 m.check_range("base", "head", fetch=True)
+
+    def test_line_shift_does_not_fetch_unchanged_citation_bindings(self):
+        sha = "a" * 40
+        text = f"// source.py:1 @ {sha}\n"
+        with patch.object(m, "changed_files", return_value=["carrier.kt"]), \
+                patch.object(m, "text_at", side_effect=[text, "// new code\n" + text]), \
+                patch.object(m, "ensure_sha", side_effect=m.GitFailure("unexpected fetch")) as ensure:
+            findings, counts, unreachable = m.check_range("base", "head", fetch=True)
+        ensure.assert_not_called()
+        self.assertEqual(findings, [])
+        self.assertEqual(unreachable, {})
+        self.assertEqual(counts["files"], 0)
+
+    def test_line_shift_with_changed_span_still_fetches_and_checks(self):
+        sha = "a" * 40
+        before = f"// source.py:1 @ {sha}\n"
+        after = f"// new code\n// source.py:2 @ {sha}\n"
+        with patch.object(m, "changed_files", return_value=["carrier.kt"]), \
+                patch.object(m, "text_at", side_effect=[before, after]), \
+                patch.object(m, "ensure_sha") as ensure, \
+                patch.object(m, "written_verdict", return_value=("out of bounds", "source.py")) as verdict:
+            findings, counts, unreachable = m.check_range("base", "head", fetch=True)
+        ensure.assert_called_once_with(sha, True)
+        verdict.assert_called_once_with(sha, "source.py", [(2, 2)])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].line, 2)
+        self.assertEqual(unreachable, {})
 
     def test_all_read_commands_are_offline_and_bounded(self):
         process = MagicMock(returncode=0)

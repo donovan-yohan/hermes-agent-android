@@ -254,6 +254,7 @@ fun sessionActionItems(
     pinned: Boolean = false,
     /** Either unread source: the backend's durable watermark or this client's finished-turn dot. */
     unread: Boolean = false,
+    moveAvailable: Boolean = false,
     exportAvailable: Boolean = false,
     branchAvailable: Boolean = false,
 ): List<SessionActionItem> {
@@ -273,7 +274,7 @@ fun sessionActionItems(
         },
         Branch.copy(available = branchAvailable),
         Export.copy(available = exportAvailable),
-        MoveToProject,
+        MoveToProject.copy(available = moveAvailable),
         Archive,
         Delete,
     )
@@ -406,6 +407,8 @@ internal fun SessionActionsControl(
     unread: Boolean = false,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
+    projectActions: SessionProjectActions? = null,
+    projectSession: com.hermesagent.mobile.data.session.SessionSummary? = null,
     onExport: (suspend () -> PreparedSessionExport)? = null,
     onBranch: (() -> Unit)? = null,
     /**
@@ -429,6 +432,7 @@ internal fun SessionActionsControl(
     if (!hasSessionActions(sessionId)) return
 
     var expanded by remember(sessionId) { mutableStateOf(false) }
+    var moveOpen by remember(sessionId) { mutableStateOf(false) }
     val exportSession = rememberSessionExport(sessionId, onExport)
     var renameOpen by remember(sessionId) { mutableStateOf(false) }
     var deleteOpen by remember(sessionId) { mutableStateOf(false) }
@@ -475,13 +479,18 @@ internal fun SessionActionsControl(
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
             items = { sessionActionItems(sessionId, copyStatus, pinned, unread,
-                exportAvailable = onExport != null, branchAvailable = onBranch != null) },
+                moveAvailable = projectActions != null, exportAvailable = onExport != null,
+                branchAvailable = onBranch != null) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
             },
             onSelect = { item ->
                 when (item) {
+                    MoveToProject.copy(available = true) -> {
+                        expanded = false
+                        moveOpen = true
+                    }
                     Export.copy(available = true) -> {
                         expanded = false
                         exportSession()
@@ -524,6 +533,14 @@ internal fun SessionActionsControl(
                     else -> error("unhandled session action: ${item.label}")
                 }
             },
+        )
+    }
+
+    if (moveOpen && projectActions != null) {
+        MoveSessionProjectDialog(
+            load = { projectActions.load(sessionId, projectSession) },
+            move = { projectActions.move(sessionId, it) },
+            onDismiss = { moveOpen = false },
         )
     }
 

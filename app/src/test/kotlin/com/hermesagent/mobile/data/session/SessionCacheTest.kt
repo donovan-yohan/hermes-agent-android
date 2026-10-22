@@ -216,6 +216,29 @@ class SessionCacheTest {
         assertEquals(SessionStatus.Working, cache.session("active")?.status)
     }
 
+    @Test
+    fun `project reads cannot replace foreign active row or transcript`() {
+        val beta = row("shared", "Beta active").copy(remoteProfile = "beta", status = SessionStatus.Working)
+        val alpha = row("shared", "Alpha catalog").copy(remoteProfile = "alpha")
+        cache.upsertSession(beta)
+        val active = cache.session("shared")
+        cache.setTranscript("shared", listOf(UserTurn("b", "Beta private", 0)))
+        val transcript = cache.transcript("shared")
+        val project = ProjectSummary("alpha-project", "Alpha", "/work/alpha", previewSessions = listOf(alpha))
+        cache.replaceProjectOverview(listOf(project), project.id, authoritativeSessionProfiles = true, scope = "alpha")
+        assertSame(active, cache.session("shared"))
+        cache.replaceProjectDetails(project, listOf(alpha), authoritativeSessionProfiles = true, scope = "alpha")
+        assertSame(active, cache.session("shared"))
+        cache.replaceProjectOverview(listOf(project.copy(previewSessions = listOf(alpha.copy(remoteProfile = null)))),
+            project.id, authoritativeSessionProfiles = true, scope = null)
+        cache.replaceProjectDetails(project, listOf(alpha.copy(remoteProfile = null)), authoritativeSessionProfiles = true, scope = null)
+        assertSame(active, cache.session("shared"))
+        assertSame(transcript, cache.transcript("shared"))
+        val catalog = com.hermesagent.mobile.ui.chat.SidebarCatalogProjection().derive(cache.state.value, 0,
+            com.hermesagent.mobile.data.profiles.ProfileScope(activeProfile = "alpha"), project.id, "")
+        assertEquals(listOf(alpha), catalog.scopedSessions)
+    }
+
     private fun row(id: String, title: String = "Session $id") =
         SessionSummary(id = id, title = title, preview = "", lastActiveAtMillis = 0)
 }

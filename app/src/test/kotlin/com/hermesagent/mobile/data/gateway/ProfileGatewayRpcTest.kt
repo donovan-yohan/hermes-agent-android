@@ -140,11 +140,52 @@ class ProfileGatewayRpcTest {
         graph.close()
     }
 
+    @Test
+    fun `move of equal canonical public id preserves beta runtime and owner channel`() = runTest {
+        val primary = Peer("alpha", UnconfinedTestDispatcher(testScheduler))
+        val beta = Peer("beta", UnconfinedTestDispatcher(testScheduler))
+        val graph = ProfileGatewayRpcClient(primary.rpc, backgroundScope) { beta.rpc }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(graph), backgroundScope)
+        runCurrent()
+        val betaId = repository.openSession("same", "beta")
+        beta.askSecret()
+        runCurrent()
+        val row = requireNotNull(cache.session(betaId))
+        val transcript = cache.transcript(betaId)
+        val pending = repository.pendingInputs.value
+        val source = row.copy(id = "same", remoteProfile = "alpha", title = "Alpha preview")
+        val target = repository.sessionProjectTargets(source, cache.endpointGeneration.value).single()
+        primary.beforeWorkspaceReply = {
+            assertSame(row, cache.session(betaId))
+            assertSame(transcript, cache.transcript(betaId))
+            assertEquals(pending, repository.pendingInputs.value)
+        }
+        repository.moveSessionToProject(source, target, cache.endpointGeneration.value)
+        assertSame(row, cache.session(betaId))
+        assertSame(transcript, cache.transcript(betaId))
+        assertEquals(pending, repository.pendingInputs.value)
+        val move = primary.frames.single { it["method"] == JsonPrimitive("session.mutate") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("same"), move["session_id"])
+        assertEquals(JsonPrimitive("alpha"), move["profile"])
+        assertEquals(JsonPrimitive("workspace"), move["operation"])
+        assertTrue(beta.frames.none { it["method"] == JsonPrimitive("session.mutate") })
+        val question = repository.pendingInputs.value.values.single()
+        assertEquals(PendingInputResponse.Stopping,
+            repository.respondToPendingInput(question.key, PendingInputAction.StopUnsupported))
+        assertEquals(1, beta.frames.count { it["method"] == JsonPrimitive("session.interrupt") })
+        assertTrue(primary.frames.none { it["method"] == JsonPrimitive("session.interrupt") })
+        graph.close()
+    }
+
     private fun params(profile: String) = buildJsonObject { put("profile", profile); put("session_id", "same") }
 
     private class Peer(private val owner: String, dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
         var closeCount = 0
+        var beforeWorkspaceReply: (() -> Unit)? = null
         val rpc: CorrelatedGatewayRpc = CorrelatedGatewayRpc(object : GatewayRpcWire {
             override fun send(text: String): Boolean {
                 val frame = Json.parseToJsonElement(text).jsonObject
@@ -161,6 +202,13 @@ class ProfileGatewayRpcTest {
                     "runtime.describe" -> """{"instance_id":"public-instance","profile_id":"public-owner-alpha","authority_epoch":2,"capabilities":["durable-admission-v1","event-replay-v1","local-cli-create-v1"],"skin":{}}"""
                     "session.resume" -> """{"session_id":"same","stored_session_id":"same","messages":[],"display_messages":[],"message_count":0,"running":false,"authority_epoch":2,"replay_epoch":"public-epoch-$profile","last_sequence":0,"subscription_id":"public-sub-$profile","revision":7,"execution_generation":3,"pending":[],"prompts":[],"info":{"desktop_protocol":"hermes-gateway-v1","profile_name":"$profile","profile_id":"public-owner-$profile"}}"""
                     "session.list" -> """{"sessions":[],"scope":"live"}"""
+                    "projects.tree" -> """{"projects":[{"id":"target","label":"Target","path":"/workspace/target","repos":[],"previewSessions":[]}]}"""
+                    "projects.project_sessions" -> """{"project":{"id":"target","label":"Target","path":"/workspace/target","repos":[],"previewSessions":[]}}"""
+                    "session.mutate" -> {
+                        beforeWorkspaceReply?.invoke()
+                        """{"session_id":"same","operation":"workspace","cwd":"/workspace/target","revision":8,"execution_generation":3}"""
+                    }
+                    "session.interrupt" -> """{"ref":{"profile_id":"public-owner-$profile","session_id":"same"},"instance_id":"public-instance","authority_epoch":2,"revision":7,"execution_generation":3,"execution_state":"idle"}"""
                     else -> "{}"
                 }
                 rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":$result}""")

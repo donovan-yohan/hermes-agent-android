@@ -424,6 +424,13 @@ interface GatewaySessionRepository {
 
     suspend fun renameSession(durableId: String, title: String): String =
         error("Session renaming is not implemented by this repository.")
+    suspend fun sessionProjectTargets(durableId: String): List<ProjectSummary> = emptyList()
+    suspend fun sessionProjectTargets(session: SessionSummary, expectedEndpointGeneration: Long): List<ProjectSummary> =
+        sessionProjectTargets(session.id)
+    suspend fun moveSessionToProject(session: SessionSummary, project: ProjectSummary, expectedEndpointGeneration: Long): Unit =
+        moveSessionToProject(session.id, project, expectedEndpointGeneration)
+    suspend fun moveSessionToProject(durableId: String, project: ProjectSummary, expectedEndpointGeneration: Long? = null): Unit =
+        error("Moving sessions is not implemented by this repository.")
     suspend fun exportSession(durableId: String): ByteArray =
         error("Session export is not implemented by this repository.")
     /** Export the displayed owner, never a possibly colliding shared raw-id slot. */
@@ -4659,6 +4666,150 @@ internal class LiveGatewaySessionRepository(
         }
     }
 
+    override suspend fun sessionProjectTargets(durableId: String): List<ProjectSummary> {
+        return sessionProjectTargets(cache.session(durableId) ?: SessionSummary(durableId, "", "", clock()), cache.endpointGeneration.value)
+    }
+
+    override suspend fun sessionProjectTargets(session: SessionSummary, expectedEndpointGeneration: Long): List<ProjectSummary> {
+        requireEndpoint(expectedEndpointGeneration)
+        val connection = connectionSnapshot()
+        val profile = session.remoteProfile
+        val result = connection.client.request("projects.tree", buildJsonObject {
+            put("preview_limit", JsonPrimitive(0))
+            profile?.let { put("profile", JsonPrimitive(it)) }
+        })
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val cwd = session.worktreePath
+        val currentProjectId = projectOwningCwd(result, cwd)
+        return parseProjectOverview(result, clock()).projects.filter {
+            !it.isHome && !it.path.isNullOrBlank() && it.id != currentProjectId
+        }
+    }
+
+    override suspend fun moveSessionToProject(durableId: String, project: ProjectSummary, expectedEndpointGeneration: Long?) {
+        moveSessionToProject(cache.session(durableId) ?: SessionSummary(durableId, "", "", clock()), project,
+            expectedEndpointGeneration ?: cache.endpointGeneration.value)
+    }
+
+    override suspend fun moveSessionToProject(session: SessionSummary, project: ProjectSummary, expectedEndpointGeneration: Long) {
+        requireEndpoint(expectedEndpointGeneration)
+        // Resolve the displayed owner explicitly, just like project-preview open.
+        // An omitted launch owner must never borrow a foreign cache slot.
+        if (session.remoteProfile == null && cache.session(session.id)?.remoteProfile != null) {
+            throw GatewayRpcException("The selected session changed. Reopen Move to project.")
+        }
+        val (connection, profile, target) = navigationMutex.withLock {
+        requireEndpoint(expectedEndpointGeneration)
+        val binding = resolveMoveRuntime(session, expectedEndpointGeneration)
+        val connection = connectionSnapshot(binding)
+        val targetId = binding.durableId
+        val profile = session.remoteProfile
+        // Refresh the actual owner's roster before accepting a picker snapshot.
+        val target = sessionProjectTargets(session, expectedEndpointGeneration).singleOrNull { it.id == project.id && it.path == project.path }
+            ?: throw GatewayRpcException("That project is no longer available. Reopen Move to project.")
+        synchronized(stateLock) { ensureCurrent(connection) }
+        val result = requestAtEndpointDispatch(connection, connection.endpointGeneration,
+            "session.workspace.move", buildJsonObject {
+                if ((connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity != null) {
+                    // Canonical adapter resolves this qualified runtime identity before session.mutate.
+                    put("session_id", JsonPrimitive(binding.runtimeId))
+                } else put("session_key", JsonPrimitive(binding.durableId))
+                put("cwd", JsonPrimitive(requireNotNull(target.path)))
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            }).asObject("session.workspace.move")
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            val cwd = result.string("cwd")?.takeIf(String::isNotBlank)
+                ?: throw GatewayRpcException("The Gateway did not confirm the move. Reopen the session to check.")
+            val branch = result.string("branch")
+            cache.session(targetId)?.takeIf { it.remoteProfile == profile }
+                ?.let {
+                    worktreeByDurableId[targetId] = cwd
+                    if (branch == null) branchByDurableId.remove(targetId) else branchByDurableId[targetId] = branch
+                    cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch))
+                }
+        }
+        Triple(connection, profile, target)
+        }
+        // The confirmed move is committed. Catalog repair must neither hold navigation
+        // across round trips nor turn a successful mutation into a retry invitation.
+        try {
+        // Read the moved owner's catalog, not the rail selected while the mutation was held.
+        // Overview reads preserve hydrated membership, so explicitly rehydrate those projects and
+        // the destination before publishing. Never infer source removal from cwd locally.
+        projectMutex.withLock {
+            val overview = parseProjectOverview(connection.client.request("projects.tree", buildJsonObject {
+                put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT))
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            }), clock())
+            val hydrated = synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.state.value.projectsForScope(profile).hydratedProjectIds + target.id
+            }
+            val details = overview.projects.filter { it.id in hydrated }.map { row ->
+                parseProjectDetails(connection.client.request("projects.project_sessions", buildJsonObject {
+                    put("project_id", JsonPrimitive(row.id))
+                    profile?.let { put("profile", JsonPrimitive(it)) }
+                }), clock())
+            }
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(profile) },
+                    overview.activeProjectId, authoritativeSessionProfiles = true, scope = profile)
+                details.forEach { detail ->
+                    cache.replaceProjectDetails(detail.project.inRequestProfile(profile),
+                        detail.sessions.map { it.copy(remoteProfile = it.remoteProfile ?: profile) },
+                        authoritativeSessionProfiles = true, scope = profile)
+                }
+            }
+        }
+        } catch (failure: Throwable) {
+            if (failure is CancellationException) throw failure
+            // A later project refresh repairs membership; the write was confirmed above.
+        }
+    }
+    /** A move is not navigation: never rebind or hydrate a colliding foreground slot. */
+    private suspend fun resolveMoveRuntime(session: SessionSummary, endpoint: Long): SessionBinding {
+        val connection = connectionSnapshot()
+        requireEndpoint(endpoint)
+        val profile = session.remoteProfile
+        val identity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        // Canonical channels require the endpoint/owner-qualified identity even when
+        // two profiles publish the exact same public session id.
+        val durableId = if (identity != null) {
+            connection.client.request("profiles.list", buildJsonObject {
+                profile?.let { put("profile", JsonPrimitive(it)) }
+                put("include_sessions", JsonPrimitive(false))
+            })
+            synchronized(stateLock) { ensureCurrent(connection) }
+            identity.qualify(session.id, profile)
+        } else session.id
+        if (session.source == "cron" || synchronized(stateLock) { cronWriteGateApplies(durableId, profile) }) {
+            val verdict = refreshCronAdmission(connection, durableId, profile).verdict
+            if (verdict != CronSessionVerdict.Writable) throw GatewayRpcException(cronRefusal(verdict))
+        }
+        synchronized(stateLock) {
+            ensureCurrent(connection)
+            identities.runtimeFor(durableId)?.takeIf {
+                runtimeProfiles.containsKey(it) && runtimeProfiles[it] == profile
+            }?.let { return SessionBinding(durableId, it, connection) }
+        }
+        val snapshot = requestAtEndpointDispatch(connection, endpoint, "session.resume", buildJsonObject {
+            put("session_id", JsonPrimitive(durableId))
+            profile?.let { put("profile", JsonPrimitive(it)) }
+        }).asObject("session.resume")
+        return synchronized(stateLock) {
+            ensureCurrent(connection)
+            val runtime = snapshot.string("session_id")
+                ?: throw GatewayRpcException("Hermes did not return a runtime session id.")
+            if (runtimeProfiles.containsKey(runtime) && runtimeProfiles[runtime] != profile) {
+                throw GatewayRpcException("Hermes returned a runtime belonging to another profile.")
+            }
+            // Keep the transient binding local. Navigation owns identity/cache adoption.
+            SessionBinding(snapshot.canonicalDurableId() ?: durableId, runtime, connection)
+        }
+    }
+
     override suspend fun exportSession(durableId: String): ByteArray {
         val row = cache.session(durableId) ?: throw GatewayRpcException("That session is no longer available.")
         val profile = row.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
@@ -7778,7 +7929,10 @@ private fun parseProject(root: JsonObject, nowMillis: Long): ProjectSummary {
     return ProjectSummary(
         id = id,
         label = root.string("label")?.ifBlank { id } ?: id,
-        path = root.string("path")?.takeIf(String::isNotBlank),
+        path = (root.string("path")?.takeIf(String::isNotBlank)
+            ?: (root["repos"] as? JsonArray).orEmpty().firstNotNullOfOrNull {
+                (it as? JsonObject)?.string("path")?.takeIf(String::isNotBlank)
+            })?.trim(),
         isAuto = root.boolean("isAuto") == true,
         isHome = root.boolean("isNoProject") == true,
         sessionCount = root.primitive("sessionCount")?.toIntOrNull() ?: previews.size,

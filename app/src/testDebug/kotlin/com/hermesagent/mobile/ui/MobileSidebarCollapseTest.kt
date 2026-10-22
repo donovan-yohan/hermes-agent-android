@@ -196,7 +196,8 @@ class MobileSidebarCollapseTest {
                         profileRail = com.hermesagent.mobile.ui.sessions.ProfileRailState(
                             profiles = listOf(com.hermesagent.mobile.data.profiles.HermesProfile("default", isDefault = true)), loaded = true),
                         connection = com.hermesagent.mobile.data.gateway.GatewayConnectionState(status = com.hermesagent.mobile.data.gateway.GatewayConnectionStatus.Connected)),
-                    actions = ChatActions(onCreateSession = { createClicks++ }, onSelectProject = { selectedProject = it }, onSelectSession = { selectedProject = it }),
+                    actions = ChatActions(onCreateSession = { createClicks++ }, onSelectProject = { selectedProject = it },
+                        onSelectSession = { selectedProject = it }, onSelectProjectSession = { selectedProject = it.id }),
                     onOpenSettings = {},
                     sidebarHeader = {
                         if (realFooter) ConnectionSwitcherBar(

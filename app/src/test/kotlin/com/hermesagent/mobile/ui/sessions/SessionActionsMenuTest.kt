@@ -180,12 +180,20 @@ class SessionActionsMenuTest {
             ),
             sessionActionItems("s-1").map { it.group },
         )
-        // The unbuilt four, and only those: everything else is a verb this
-        // build performs, and a fifth appearing here without a slice behind it
-        // would be a menu advertising something that does nothing.
+        // Without owner callbacks, Branch and Move remain unavailable alongside
+        // the two unbuilt verbs. Production supplies both callbacks together.
         assertEquals(
             listOf("Appearance", "Branch", "Export", "Move to project"),
             sessionActionItems("s-1").filterNot { it.available }.map { it.label },
+        )
+    }
+
+    @Test
+    fun `branch and move availability compose without enabling export`() {
+        assertEquals(
+            listOf("Appearance", "Export"),
+            sessionActionItems("s-1", moveAvailable = true, branchAvailable = true)
+                .filterNot { it.available }.map { it.label },
         )
     }
 

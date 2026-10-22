@@ -132,6 +132,20 @@ class ChatViewModelTest {
     fun tearDown() = Dispatchers.resetMain()
 
     @Test
+    fun `move survives removal of calling row coroutine`() = runTest(dispatcher) {
+        runCurrent()
+        val target = viewModel.sessionProjectTargets("session-a").single()
+        val caller = launch { viewModel.moveSessionToProject("session-a", target) }
+        runCurrent()
+        assertTrue(repository.moveStarted)
+        caller.cancel()
+        runCurrent()
+        repository.moveGate.complete(Unit)
+        runCurrent()
+        assertTrue("ViewModel must retain the accepted operation after row removal", repository.moveCompleted)
+    }
+
+    @Test
     fun `prepared export validity follows actual endpoint and row owner`() = runTest(dispatcher) {
         val prepared = viewModel.exportSession("session-a")
         assertTrue(prepared.isCurrent())
@@ -4408,6 +4422,16 @@ class ChatViewModelTest {
     }
 
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
+        val moveGate = CompletableDeferred<Unit>()
+        var moveStarted = false
+        var moveCompleted = false
+        override suspend fun sessionProjectTargets(session: SessionSummary, expectedEndpointGeneration: Long): List<ProjectSummary> =
+            listOf(ProjectSummary("target", "Target", "/work/target"))
+        override suspend fun moveSessionToProject(session: SessionSummary, project: ProjectSummary, expectedEndpointGeneration: Long) {
+            moveStarted = true
+            moveGate.await()
+            moveCompleted = true
+        }
         override suspend fun exportSession(durableId: String): ByteArray = "synthetic export".toByteArray()
         val goalCalls = mutableListOf<String>()
         var goalOutcome: com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Unsupported

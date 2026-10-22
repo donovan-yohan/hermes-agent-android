@@ -493,6 +493,9 @@ class MainActivity : ComponentActivity() {
                     onDismissGatewayLogs = chatViewModel::dismissGatewayLogs,
                     onRenameSession = chatViewModel::renameSessionAsync,
                     onDeleteSession = chatViewModel::deleteSessionAsync,
+                    sessionProjectActions = com.hermesagent.mobile.ui.sessions.SessionProjectActions(
+                        chatViewModel::sessionProjectTargets, chatViewModel::moveSessionToProject,
+                    ),
                     onExportSession = chatViewModel::exportSession,
                     onExportProjectSession = chatViewModel::exportProjectSession,
                     onBranchSession = chatViewModel::branchSession,

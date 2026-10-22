@@ -10,6 +10,9 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.hasAnyAncestor
 import com.hermesagent.mobile.data.gateway.*
 import com.hermesagent.mobile.data.prefs.TransientProfileScopeStore
 import com.hermesagent.mobile.data.profiles.HermesProfile
@@ -40,7 +43,13 @@ class CachedProjectPreviewJourneyTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = previewCollision(export = false)
+    fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = previewCollision()
+
+    @Test
+    fun `cached alpha preview move keeps owner while beta owns raw id`() = previewCollision(move = true)
+
+    @Test
+    fun `cached alpha move picker cannot dispatch after endpoint changes`() = previewCollision(move = true, staleEndpoint = true)
 
     @Test
     fun `cached alpha preview export reads alpha while revalidation waits over beta raw id`() = previewCollision(export = true)
@@ -51,7 +60,9 @@ class CachedProjectPreviewJourneyTest {
     @Test
     fun `cached alpha preview branch preserves alpha owner over beta raw id`() = previewCollision(export = false, branch = true)
 
-    private fun previewCollision(export: Boolean, switchEndpoint: Boolean = false, branch: Boolean = false) = runTest {
+    private fun previewCollision(export: Boolean = false, switchEndpoint: Boolean = false,
+        branch: Boolean = false, move: Boolean = false, staleEndpoint: Boolean = false) = runTest {
+        var loadedTargets = emptyList<com.hermesagent.mobile.data.session.ProjectSummary>()
         val frames = mutableListOf<JsonObject>()
         val heldTrees = mutableListOf<JsonObject>()
         val heldResumes = mutableListOf<JsonObject>()
@@ -65,7 +76,7 @@ class CachedProjectPreviewJourneyTest {
                 val method = frame["method"]?.jsonPrimitive?.content ?: return true
                 val params = frame["params"]?.jsonObject ?: JsonObject(emptyMap())
                 val profile = params["profile"]?.jsonPrimitive?.content ?: "launch"
-                if (method == "projects.tree" && profile == "alpha" && holdAlphaTree) {
+                if (method == "projects.tree" && profile == "alpha" && holdAlphaTree && params["preview_limit"] != JsonPrimitive(0)) {
                     heldTrees += frame
                     return true
                 }
@@ -75,7 +86,9 @@ class CachedProjectPreviewJourneyTest {
                 }
                 val result = when (method) {
                     "session.list" -> """{"sessions":[]}"""
-                    "projects.tree" -> """{"projects":[{"id":"p","label":"$profile project","sessionCount":1,"previewSessions":[{"id":"s","title":"$profile preview"}]}]}"""
+                    "projects.tree" -> """{"projects":[{"id":"p","label":"$profile project","path":"/work/$profile","sessionCount":1,"previewSessions":[{"id":"s","title":"$profile preview"}]}]}"""
+                    "session.workspace.move" -> """{"cwd":"/work/$profile","branch":null}"""
+                    "projects.project_sessions" -> """{"project":{"id":"p","label":"$profile project","path":"/work/$profile","previewSessions":[{"id":"s","title":"$profile preview"}]}}"""
                     "session.resume" -> """{"session_id":"runtime-$profile","session_key":"${params["session_id"]!!.jsonPrimitive.content}","title":"$profile opened","running":false}"""
                     "session.history" -> """{"messages":[],"count":0}"""
                     "session.branch_whole" -> """{"session_id":"runtime-child","stored_session_id":"child","title":"Child"}"""
@@ -121,6 +134,10 @@ class CachedProjectPreviewJourneyTest {
                     onBranchSession = viewModel::branchSession,
                     onBranchProjectSession = viewModel::branchProjectSession,
                     onSelectProfile = viewModel::selectProfile,
+                    sessionProjectActions = com.hermesagent.mobile.ui.sessions.SessionProjectActions(
+                        { id, row -> viewModel.sessionProjectTargets(id, row).also { loadedTargets = it } },
+                        viewModel::moveSessionToProject,
+                    ),
                     onExportSession = { id -> viewModel.exportSession(id).also { prepared = it } },
                     onExportProjectSession = { session, endpoint -> viewModel.exportProjectSession(session, endpoint).also { prepared = it } },
                 ), onOpenSettings = {})
@@ -143,6 +160,8 @@ class CachedProjectPreviewJourneyTest {
         runCurrent()
         compose.waitForIdle()
         compose.onNodeWithText("beta project").assertIsDisplayed()
+        // Catalog refresh cannot steal a foreign foreground raw-ID slot.
+        cache.upsertSession(com.hermesagent.mobile.data.session.SessionSummary("s", "beta preview", "", NOW, remoteProfile = "beta"))
         assertEquals("beta", cache.session("s")?.remoteProfile)
         cache.upsertSession(requireNotNull(cache.session("s")).copy(title = "beta live"))
         cache.setTranscript("s", listOf(com.hermesagent.mobile.data.session.AssistantTurn("beta-turn", "Beta private reply", NOW)))
@@ -168,6 +187,8 @@ class CachedProjectPreviewJourneyTest {
             assertEquals("The displayed alpha preview must never export beta", listOf("alpha"),
                 exports.map { it.query["profile"] })
             val payload = requireNotNull(prepared)
+            assertTrue("The displayed title, not beta's shared row, belongs in the export",
+                payload.bytes.decodeToString().contains("alpha preview"))
             assertTrue(payload.bytes.decodeToString().contains("alpha transcript"))
             assertFalse(payload.bytes.decodeToString().contains("beta transcript"))
             assertTrue(payload.isCurrent())
@@ -188,6 +209,45 @@ class CachedProjectPreviewJourneyTest {
             return@runTest
         }
         val beforeClick = frames.size
+        if (move) {
+            compose.onNodeWithContentDescription("Session actions").performClick()
+            compose.onNodeWithText("Move to project").performClick()
+            runCurrent()
+            compose.waitForIdle()
+            val targets = frames.drop(beforeClick).filter { it["method"] == JsonPrimitive("projects.tree") }
+            assertEquals("Picker must use the displayed owner, not the shared raw-id slot", listOf(JsonPrimitive("alpha")),
+                targets.map { it.getValue("params").jsonObject["profile"] })
+            assertSame(betaSessions, cache.state.value.sessions)
+            assertSame(betaTranscripts, cache.state.value.transcripts)
+            if (staleEndpoint) {
+                // Keep the actual picker-returned identity across retirement.
+                // Calling the VM directly avoids relying on dialog unmount as
+                // the safety fence (its coroutine scope is already cancelled).
+                cache.resetForEndpointSwitch()
+                val beforeMove = frames.size
+                assertTrue(runCatching { viewModel.moveSessionToProject("s", loadedTargets.single()) }.isFailure)
+                runCurrent()
+                compose.waitForIdle()
+                assertTrue(frames.drop(beforeMove).none { it["method"] == JsonPrimitive("session.resume") ||
+                    it["method"] == JsonPrimitive("session.workspace.move") })
+                rpc.close()
+                return@runTest
+            }
+            // Let only the move's authoritative readback finish; the older held
+            // alpha overview remains outstanding throughout the command.
+            holdAlphaTree = false
+            compose.onNode(hasText("alpha project") and hasAnyAncestor(isDialog())).performClick()
+            runCurrent()
+            compose.waitForIdle()
+            val writes = frames.drop(beforeClick).filter { it["method"] == JsonPrimitive("session.workspace.move") }
+            assertEquals(1, writes.size)
+            assertEquals(JsonPrimitive("alpha"), writes.single().getValue("params").jsonObject["profile"])
+            assertEquals(JsonPrimitive("/work/alpha"), writes.single().getValue("params").jsonObject["cwd"])
+            assertTrue(frames.drop(beforeClick).filter { it["method"] == JsonPrimitive("session.resume") }
+                .all { it.getValue("params").jsonObject["profile"] == JsonPrimitive("alpha") })
+            rpc.close()
+            return@runTest
+        }
         holdResume = true
         if (branch) {
             compose.onAllNodesWithContentDescription("Session actions")[0].performClick()

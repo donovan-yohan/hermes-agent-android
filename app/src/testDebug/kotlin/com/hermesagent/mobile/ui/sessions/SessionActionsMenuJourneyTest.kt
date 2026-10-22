@@ -29,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -75,6 +76,34 @@ class SessionActionsMenuJourneyTest {
     val compose = createComposeRule()
 
     @Test
+    fun `move opens fresh project picker and selected target dispatches once`() {
+        var loaded: String? = null
+        var moved: String? = null
+        var branches = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                SessionActionsControl(sessionId = FIRST_ID, onBranch = { branches++ }, projectActions = SessionProjectActions(
+                    load = { id, _ -> loaded = id; listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Demo project", "/work/demo")) },
+                    move = { id, project -> moved = "$id:${project.id}" },
+                ))
+            }
+        }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(1, branches)
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
+        compose.waitForIdle()
+        assertEquals(FIRST_ID, loaded)
+        compose.onNodeWithText("Demo project").performClick()
+        compose.waitForIdle()
+        assertEquals("$FIRST_ID:p", moved)
+        compose.onNodeWithText("Demo project").assertDoesNotExist()
+    }
+
+    @Test
     fun `export prepares selected session and dismisses menu even on refusal`() {
         var exports = 0
         compose.setContent {
@@ -113,6 +142,57 @@ class SessionActionsMenuJourneyTest {
     }
 
     @Test
+    fun `compact header composes export move and branch together`() = combinedActionsJourney(drawer = false)
+
+    @Test
+    fun `compact ordinary row composes export move and branch together`() = combinedActionsJourney(drawer = true)
+
+    @Test
+    @Config(qualifiers = "w1000dp-h891dp")
+    fun `wide header composes export move and branch together`() = combinedActionsJourney(drawer = false)
+
+    private fun combinedActionsJourney(drawer: Boolean) {
+        val dispatches = mutableListOf<String>()
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(
+                    state = ChatUiState(activeSession = if (drawer) null else session(FIRST_ID, FIRST_TITLE),
+                        sessionRows = if (drawer) listOf(SessionListRow.Row(session(FIRST_ID, FIRST_TITLE))) else emptyList()),
+                    actions = ChatActions(
+                        onExportSession = { id -> dispatches += "export:$id"; error("synthetic refusal") },
+                        sessionProjectActions = SessionProjectActions(
+                            load = { id, row ->
+                                assertEquals(if (drawer) FIRST_ID else null, row?.id)
+                                dispatches += "load:$id"
+                                listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Combined project", "/work/demo"))
+                            },
+                            move = { id, project -> dispatches += "move:$id:${project.id}" },
+                        ),
+                        onBranchSession = { id -> dispatches += "branch:$id" },
+                    ),
+                    onOpenSettings = {},
+                )
+            }
+        }
+        if (drawer) compose.onNodeWithContentDescription("Open sessions").performClick()
+        fun openActions() { compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick() }
+        openActions()
+        compose.onNodeWithText(EXPORT).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+        openActions()
+        compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Combined project").performClick()
+        compose.waitForIdle()
+        openActions()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("export:$FIRST_ID", "load:$FIRST_ID", "move:$FIRST_ID:p", "branch:$FIRST_ID"), dispatches)
+        if (drawer) compose.onNodeWithTag("Session row $FIRST_ID").assertIsNotDisplayed()
+    }
+
+    @Test
     fun `branch is live only with an owner and dismisses before dispatch`() {
         var branches = 0
         compose.setContent {
@@ -125,6 +205,43 @@ class SessionActionsMenuJourneyTest {
         compose.waitForIdle()
         assertEquals(1, branches)
         compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun `bot chat leaves other ordinary row move available`() {
+        var moved = false
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(state = ChatUiState(botChat = true,
+                    sessionRows = listOf(SessionListRow.Row(session(FIRST_ID, FIRST_TITLE)))),
+                    actions = ChatActions(sessionProjectActions = SessionProjectActions(
+                        { _, _ -> listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Destination", "/work/destination")) },
+                        { id, _ -> assertEquals(FIRST_ID, id); moved = true })), onOpenSettings = {})
+            }
+        }
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onNodeWithTag("Session row $FIRST_ID").assertIsDisplayed()
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
+        compose.onNodeWithText("Destination").performClick()
+        compose.waitForIdle()
+        assertTrue(moved)
+    }
+
+    @Test
+    @Config(qualifiers = "w891dp-h320dp")
+    fun `short move picker keeps cancel reachable with many projects`() {
+        var dismissed = false
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                MoveSessionProjectDialog(load = { (1..30).map {
+                    com.hermesagent.mobile.data.session.ProjectSummary("p$it", "Destination $it", "/work/$it")
+                } }, move = {}, onDismiss = { dismissed = true })
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Cancel").performScrollTo().assertIsDisplayed().performClick()
+        assertTrue(dismissed)
     }
 
     @Test

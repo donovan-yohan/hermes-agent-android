@@ -126,6 +126,7 @@ import com.hermesagent.mobile.data.session.buildSessionRows
 import com.hermesagent.mobile.data.session.displayStatus
 import com.hermesagent.mobile.data.composer.maskComposerReferences
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -2788,13 +2789,49 @@ internal class ChatViewModel(
         }
     }
 
+    private data class MoveProjectSource(val session: SessionSummary, val endpoint: Long)
+    private val moveTargetSources = java.util.IdentityHashMap<ProjectSummary, MoveProjectSource>()
+
+    suspend fun sessionProjectTargets(id: String, displayedSession: SessionSummary? = null): List<ProjectSummary> {
+        val endpoint = cache.endpointGeneration.value
+        val source = displayedSession ?: cache.session(id) ?: error("Reopen Move to project.")
+        check(source.id == id)
+        val targets = repository.sessionProjectTargets(source, endpoint)
+        check(cache.endpointGeneration.value == endpoint)
+        moveTargetSources.clear()
+        targets.forEach { moveTargetSources[it] = MoveProjectSource(source, endpoint) }
+        return targets
+    }
+
+    suspend fun moveSessionToProject(id: String, project: ProjectSummary) {
+        refuseBotChatMutation(id)?.let { throw it }
+        val source = moveTargetSources[project] ?: error("Reopen Move to project.")
+        check(source.session.id == id)
+        // The preview can disappear during authoritative membership repair. The
+        // ViewModel owns this operation; cancelling its UI waiter cannot cancel it.
+        viewModelScope.async {
+            try {
+                repository.moveSessionToProject(source.session, project, source.endpoint)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                noticeLine = "Could not move session. Reopen the session to check, then try again."
+                throw failure
+            }
+        }.await()
+    }
+
     suspend fun exportProjectSession(session: SessionSummary, expectedEndpointGeneration: Long): com.hermesagent.mobile.ui.sessions.PreparedSessionExport {
         val scope = profileScopeGeneration
         val route = profileScope.value.sessionProfileParam
-        fun isCurrent(): Boolean = cache.endpointGeneration.value == expectedEndpointGeneration &&
-            profileScopeGeneration == scope && cache.state.value.projectsForScope(route).projects.values.any { project ->
-                project.previewSessions.any { it.id == session.id && it.remoteProfile == session.remoteProfile }
-            }
+        fun isCurrent(): Boolean {
+            val catalog = cache.state.value.projectsForScope(route)
+            return cache.endpointGeneration.value == expectedEndpointGeneration && profileScopeGeneration == scope &&
+                (catalog.projects.values.any { project ->
+                    project.previewSessions.any { it.id == session.id && it.remoteProfile == session.remoteProfile }
+                } || catalog.sessionRows[session.id]?.remoteProfile == session.remoteProfile &&
+                    catalog.memberships.values.any { session.id in it })
+        }
         check(isCurrent())
         val bytes = repository.exportSessionAtEndpoint(session, expectedEndpointGeneration)
         return com.hermesagent.mobile.ui.sessions.PreparedSessionExport(bytes, ::isCurrent)
