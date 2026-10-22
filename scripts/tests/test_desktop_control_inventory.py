@@ -113,5 +113,43 @@ class ControlInventoryTest(unittest.TestCase):
         self.assertTrue(any(p.endswith('/radio/plugin.js') for p in plugin_roots))
         self.assertFalse(any('hello-runtime' in p for p in plugin_roots))
 
+    def test_nested_authority_differences_remain_findings(self):
+        # Record-regression checks, NOT independent verification of the source reading.
+        rows = {r['id']: r for r in json.loads((ROOT / 'docs/parity/desktop-control-records.json').read_text())['controls']}
+        for name in ('nested.session.archive', 'nested.session.delete-confirm',
+                     'nested.filter.mark-all-read'):
+            self.assertEqual(rows[name]['android_status'], 'drift', name)
+        self.assertIn('transient', rows['nested.filter.mark-all-read']['authority'])
+        self.assertIn('backend watermark', rows['nested.filter.mark-all-read']['android_boundary'])
+        self.assertIn('whole map', rows['nested.mcp.enabled']['handler'])
+        self.assertEqual(rows['nested.mcp.enabled']['android_status'], 'implemented-bounded')
+        self.assertIn('Approved mobile-adaptation', rows['nested.mcp.enabled']['android_boundary'])
+        self.assertIn('activeGatewayProfile', rows['nested.mcp.logs-source']['authority'])
+
+    def test_nested_templates_do_not_claim_unread_trees(self):
+        rows = {r['id']: r for r in json.loads((ROOT / 'docs/parity/desktop-control-records.json').read_text())['controls']}
+        self.assertEqual(rows['nested.skills.edit-open']['android_status'], 'WIP')
+        self.assertEqual(rows['nested.skills.edit-save']['android_status'], 'omission')
+        self.assertEqual(rows['nested.session.move-open']['android_status'], 'WIP')
+        self.assertEqual(rows['nested.session.move-target']['android_status'], 'omission')
+        self.assertIn('unverified', rows['nested.filter.new-profile']['android_boundary'])
+        self.assertIn('unverified', rows['nested.catalog.sort']['authority'])
+        self.assertFalse(any(s['path'].endswith('/catalog-filters.tsx')
+                             for r in rows.values() for s in r['source']))
+
+    def test_registry_overlap_never_promotes_unknown_android_status(self):
+        families = json.loads((ROOT / 'docs/parity/desktop-surface-audit.json').read_text())
+        ledger = json.loads((ROOT / 'docs/parity/desktop-control-candidates.json').read_text())
+        records = json.loads((ROOT / 'docs/parity/desktop-control-records.json').read_text())
+        joined = controls.reconcile(ledger, records, families)
+        self.assertFalse(joined['semantic_complete'])
+        entries = [e for root in joined['registries'] for e in root['entries']]
+        self.assertTrue(entries)
+        self.assertTrue(any(e['overlapping_reviewed_ui_records'] for e in entries))
+        for entry in entries:
+            self.assertEqual(entry['status'], 'unverified-omission-requires-reachability-and-handler-review')
+            self.assertTrue(entry['issue_owner'])
+            self.assertTrue(entry['parity_pages'])
+
 if __name__ == '__main__':
     unittest.main()

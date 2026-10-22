@@ -2,7 +2,7 @@
   "upstream_sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
   "android_sha": "65080e8a37e8d546869528e43c162503015b94c7",
   "semantic_complete": false,
-  "scope": "Source-read nested control templates: root route registry; Command Center/Maintenance/log match navigation; Settings rail/footer; generic schema dispatcher; Agent plugin schema templates/save; Notifications including all seven static kinds; native menus gated by actual macOS startup; contribution templates; foreign session import; Webhooks; bundled Radio; structured goal/criteria/loop/heartbeat stack. Other candidate trees and imported specialized children remain uncertified.",
+  "scope": "Source-read nested control templates: root route registry; Command Center/Maintenance/log match navigation; Settings rail/footer; generic schema dispatcher; Agent plugin schema templates/save; Notifications including all seven static kinds; native menus gated by actual macOS startup; contribution templates; foreign session import; Webhooks; bundled Radio; structured goal/criteria/loop/heartbeat stack. Other candidate trees and imported specialized children remain uncertified. Continuation: shared session action row/tab predicates, rename/delete dialog controls and authority differences, session color/move children, complete filter-menu option templates and named setters/consumer boundary. Unread/pin lifecycle and profile import downstream remain bounded, not family acceptance. Installed Skills scoped toggle/bulk/edit/archive and active catalog filter/view templates; owned local-MCP Advanced JSON/removal/log nested controls. Public feed installation pipeline, hosted OAuth/account/tool trees and specialized editor internals remain unverified.",
   "source_tests_read": [
     {
       "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
@@ -52,6 +52,41 @@
       "start": 293,
       "end": 339,
       "claim": "Action rejection alert and hidden continuation dispatch test setup. Read, not executed."
+    },
+    {
+      "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+      "path": "apps/desktop/src/app/chat/sidebar/filter-menu.test.tsx",
+      "start": 31,
+      "end": 61,
+      "claim": "Locale changes preserve status selection and manual ordering; real dropdown controls. Read, not executed."
+    },
+    {
+      "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+      "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.test.ts",
+      "start": 62,
+      "end": 161,
+      "claim": "Active/tile/state runtime rename, clear-title REST and RPC failure ladder. Read, not executed."
+    },
+    {
+      "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+      "path": "apps/desktop/src/app/capabilities/index.test.tsx",
+      "start": 186,
+      "end": 265,
+      "claim": "Scoped skill toggle and full-body read, read not executed."
+    },
+    {
+      "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+      "path": "apps/desktop/src/app/capabilities/mcp/mcp-logs.test.ts",
+      "start": 5,
+      "end": 18,
+      "claim": "Stdio filtering accepts older and timestamped server banners, read not executed."
+    },
+    {
+      "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+      "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.test.tsx",
+      "start": 263,
+      "end": 378,
+      "claim": "Unarchive label, Enter/Escape confirmation and renameable=false omission. Read, not executed."
     }
   ],
   "controls": [
@@ -10530,6 +10565,3744 @@
           "end": 58
         }
       ]
+    },
+    {
+      "id": "nested.session.new-tab",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Open in new tab",
+      "mount": "Row surface only; absent when selected main or any tile already holds this stored id; disabled for empty id",
+      "handler": "openSession(..., tab) clears transient read, focuses existing surface or opens center tile",
+      "authority": "Renderer pane/session-tile state; not a new backend session",
+      "android_status": "non-goal",
+      "android_boundary": "Historical Android menu ledger declares tab/window groups non-goals; no tab surface in baseline. This does not exclude portable Branch/Export.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 298,
+          "end": 322
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/open-session.ts",
+          "start": 113,
+          "end": 142
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/open-session.ts",
+          "start": 171,
+          "end": 205
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.new-window",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Open session in new window",
+      "mount": "Bridge canOpenSessionWindow must exist; disabled empty session id; browser-hosted capture omits this",
+      "handler": "openSession window intent -> openSessionInNewWindow, otherwise tab fallback",
+      "authority": "Electron typed bridge and session owner routing; not Android window API",
+      "android_status": "non-goal",
+      "android_boundary": "Native multiwindow action excluded by standing ledger, not evidence Desktop lacks it.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 323,
+          "end": 335
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/windows.ts",
+          "start": 171,
+          "end": 175
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/open-session.ts",
+          "start": 131,
+          "end": 142
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.terminal",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Resume in own terminal",
+      "mount": "canOpenSessionInTerminal bridge AND connection mode not remote; disabled empty id",
+      "handler": "Lazily resolve row cwd, pass stored id/cwd/profile to openSessionInTerminal",
+      "authority": "Electron own-terminal handoff, not in-app terminal pane and never remote-host terminal",
+      "android_status": "non-goal",
+      "android_boundary": "No Android own-terminal handoff in baseline menu; standing non-goal is separate from Gateway terminal capabilities.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 336,
+          "end": 360
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/windows.ts",
+          "start": 187,
+          "end": 192
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.rename-open",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Open rename dialog",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Rename omitted when renameable=false, not merely disabled; empty id disables item",
+      "handler": "Set suppressCloseFocusRef then renameOpen; consume focus suppression once when menu closes",
+      "authority": "Renderer dialog focus; no mutation until submit",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Android mounts Rename and seeds dialog; Bot Chat refusal in ViewModel. Focus mechanics differ by native dialog; not claimed identical.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 363,
+          "end": 381
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 613,
+          "end": 630
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-row.tsx",
+          "start": 329,
+          "end": 370
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2618,
+          "end": 2621
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/RenameSessionDialog.kt",
+          "start": 78,
+          "end": 105
+        }
+      ]
+    },
+    {
+      "id": "nested.session.rename-edit",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Edit rename title",
+      "mount": "Rename dialog open; input disabled while submitting; current title re-seeds and selects on each open",
+      "handler": "setValue; Enter submit via isSubmitEnter; Escape closes",
+      "authority": "Renderer draft, no live session write on typing",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native field and IME Done path exist, disabled during submit; inline error rather than Desktop toast.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 736,
+          "end": 748
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 792,
+          "end": 807
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/RenameSessionDialog.kt",
+          "start": 80,
+          "end": 105
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/RenameSessionDialog.kt",
+          "start": 130,
+          "end": 145
+        }
+      ]
+    },
+    {
+      "id": "nested.session.rename-save",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Save renamed session",
+      "mount": "Save disabled while submitting; empty id/busy guard; unchanged trimmed title closes with no request",
+      "handler": "Resolve active/tile/state runtime; nonempty title uses owned session.title then REST fallback; clear uses REST PATCH; patch session AND project caches",
+      "authority": "Runtime-owned RPC vs persisted owner-profile REST; backend final title wins",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Android has RPC/REST/clear ladder and cache updates. Full multi-connection Desktop ownership and project-cache equivalence are not certified here.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 95,
+          "end": 154
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 750,
+          "end": 783
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/sessions.ts",
+          "start": 719,
+          "end": 721
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4542,
+          "end": 4627
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2618,
+          "end": 2621
+        }
+      ]
+    },
+    {
+      "id": "nested.session.rename-cancel",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Cancel or dismiss rename",
+      "mount": "Rename dialog open; Cancel/input disabled while submitting, but shared DialogContent still supplies enabled Close X and unguarded onOpenChange.",
+      "handler": "Cancel/onOpenChange(false) dismiss; imported Radix Close routes through same callback; disabled input Escape is not claimed reachable during submission.",
+      "authority": "Renderer dismissal",
+      "android_status": "drift",
+      "android_boundary": "Native Cancel and onDismissRequest block while submitting. Desktop shared Close X has no busy guard and Rename Dialog passes unguarded onOpenChange. Scoped dismissal drift, not a claim that disabled input handles Escape.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 787,
+          "end": 814
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/dialog.tsx",
+          "start": 72,
+          "end": 98
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/dialog.tsx",
+          "start": 155,
+          "end": 156
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/RenameSessionDialog.kt",
+          "start": 108,
+          "end": 110
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/RenameSessionDialog.kt",
+          "start": 179,
+          "end": 189
+        }
+      ]
+    },
+    {
+      "id": "nested.session.pin",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Pin or unpin session",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Disabled if no onPin; label from pinned prop",
+      "handler": "Callback pinSession/unpinSession; persistent durable-id pin order; sidebar also reconciles backend flags",
+      "authority": "Renderer pin order plus backend reconciliation, not title-derived identity",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Android durable pin writes backend and paints/rolls back; local ordering/storage equivalence not claimed.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 382,
+          "end": 390
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 996,
+          "end": 1007
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 690,
+          "end": 723
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/session-pin-sync.ts",
+          "start": 1,
+          "end": 21
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2658,
+          "end": 2664
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4713,
+          "end": 4744
+        }
+      ]
+    },
+    {
+      "id": "nested.session.unread",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Mark read or unread",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Disabled if no id or neither persisted-toggle callback nor transient unread; label/action uses either source",
+      "handler": "Read clears transient family + ack; persisted watermark toggles only when needed; unread marks persisted; rollback on PATCH error",
+      "authority": "Backend unread watermark and separate renderer finish-marker authority",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Both unread sources feed one native row and repository writer; no claim that tab menus expose identical persisted callbacks.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 391,
+          "end": 418
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 500,
+          "end": 511
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/session-unread-remote.ts",
+          "start": 37,
+          "end": 62
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2677,
+          "end": 2682
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4766,
+          "end": 4799
+        }
+      ]
+    },
+    {
+      "id": "nested.session.appearance",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Open session Appearance submenu",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Subtrigger disabled empty id; open subtree alone subscribes to colors",
+      "handler": "Mount SessionColorSwatches -> durable lineage override",
+      "authority": "Renderer-local color override wins over inherited project color",
+      "android_status": "WIP",
+      "android_boundary": "Baseline mounts disabled Appearance with WIP; no color writer.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 192,
+          "end": 210
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 558,
+          "end": 566
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/session-color.ts",
+          "start": 9,
+          "end": 31
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 314,
+          "end": 324
+        }
+      ]
+    },
+    {
+      "id": "nested.session.swatch",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Pick session color",
+      "mount": "Appearance submenu open; reusable ColorSwatches mounted with PROFILE_SWATCHES and current durable override",
+      "handler": "onChange(swatch) -> setSessionColorOverride(durableId,color)",
+      "authority": "Renderer persistentAtom keyed durable lineage; no session RPC",
+      "android_status": "omission",
+      "android_boundary": "Only disabled parent Appearance exists, not mounted swatch/clear children. pill-owed under #73; parent WIP is not functioning nested editor.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/color-swatches.tsx",
+          "start": 25,
+          "end": 38
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 196,
+          "end": 210
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/session-color.ts",
+          "start": 20,
+          "end": 48
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 314,
+          "end": 324
+        }
+      ]
+    },
+    {
+      "id": "nested.session.clear-color",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Clear session color override",
+      "mount": "Appearance submenu open; reusable ColorSwatches mounted with PROFILE_SWATCHES and current durable override",
+      "handler": "onChange(null) removes override, restoring project inheritance",
+      "authority": "Renderer persistentAtom keyed durable lineage; no session RPC",
+      "android_status": "omission",
+      "android_boundary": "Only disabled parent Appearance exists, not mounted swatch/clear children. pill-owed under #73; parent WIP is not functioning nested editor.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/color-swatches.tsx",
+          "start": 40,
+          "end": 47
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 196,
+          "end": 210
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/session-color.ts",
+          "start": 20,
+          "end": 48
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 314,
+          "end": 324
+        }
+      ]
+    },
+    {
+      "id": "nested.session.copy-id",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Copy session id",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. CopyButton disabled empty id",
+      "handler": "CopyButton receives sessionId and notifyError; clipboard status stays in shared primitive",
+      "authority": "OS clipboard, not session mutation",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native clipboard row has idle/copied/failed states; full shared CopyButton retry internals remain outside this increment.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 567,
+          "end": 576
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 271
+        }
+      ]
+    },
+    {
+      "id": "nested.session.branch",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Branch stored conversation",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Disabled absent onBranch; sidebar callback dispatches branchStoredSession",
+      "handler": "Resolve cached/remote owner; ensure exact connection/profile; forkBranch uses branch_stored or live branch_whole/branch with per-attempt idempotency; missing-method fallback only",
+      "authority": "Owning Gateway creates child; transcript materialization fallback is compatibility, not invented endpoint",
+      "android_status": "WIP",
+      "android_boundary": "Baseline Branch is explicitly unavailable; existing parent feature work is not baseline implementation.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 421,
+          "end": 434
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1099,
+          "end": 1100
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-session-actions/index.ts",
+          "start": 3023,
+          "end": 3066
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-session-actions/index.ts",
+          "start": 2641,
+          "end": 2750
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 326,
+          "end": 341
+        }
+      ]
+    },
+    {
+      "id": "nested.session.export",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Export complete stored transcript",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Export disabled empty id",
+      "handler": "exportSession -> getAllSessionMessages oldest-first 500-row pages including compacted; 32M JSON-char limit; Blob JSON download and revoke",
+      "authority": "Profile-scoped backend history read, renderer file download",
+      "android_status": "WIP",
+      "android_boundary": "Disabled Export in frozen Android menu; no export writer. Parent branch is separate.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 435,
+          "end": 443
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/lib/session-export.ts",
+          "start": 29,
+          "end": 58
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/sessions.ts",
+          "start": 668,
+          "end": 712
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 326,
+          "end": 341
+        }
+      ]
+    },
+    {
+      "id": "nested.session.move-open",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Open Move to project submenu",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Disabled empty id; submenu refreshes project tree even before warm timer",
+      "handler": "Mount MoveToProjectItems, derive current owner from cwd and exclude current/Home/folderless targets",
+      "authority": "Backend project tree determines real destinations; no inferred phone directories",
+      "android_status": "WIP",
+      "android_boundary": "Disabled Move to project parent only; old comment saying no projects roster is stale relative to baseline project grouping.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 219,
+          "end": 240
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 579,
+          "end": 587
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 343,
+          "end": 350
+        }
+      ]
+    },
+    {
+      "id": "nested.session.move-target",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Move session to chosen project",
+      "mount": "Open submenu; target != current owner, not Home, root cwd exists; empty-target row disabled",
+      "handler": "moveSessionToProject -> session.workspace.move {cwd,session_key,profile?}; map session_busy; update cwd/branch/repo then refresh",
+      "authority": "Owning backend moves workspace; project identity is not just label",
+      "android_status": "omission",
+      "android_boundary": "No mounted target picker or workspace-move writer at baseline; pill-owed under #73, not inferred from displaying projects.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 242,
+          "end": 258
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/projects.ts",
+          "start": 791,
+          "end": 822
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 343,
+          "end": 350
+        }
+      ]
+    },
+    {
+      "id": "nested.session.tab-reload",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Reload tab",
+      "mount": "Tab surface with tabPaneId; close family enablement from closeTargets counts; shared tab menu actually mounted by session-tile.tsx:897-910",
+      "handler": "reloadTreePane increments remount epoch without moving tab",
+      "authority": "Renderer pane tree; never delete backend conversation",
+      "android_status": "non-goal",
+      "android_boundary": "No Android tab-strip family under standing historical non-goal; do not conflate tab close and session deletion.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 452,
+          "end": 463
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 702,
+          "end": 724
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 736,
+          "end": 740
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/session-tile.tsx",
+          "start": 890,
+          "end": 914
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.tab-close-others",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Close other tabs",
+      "mount": "Tab surface with tabPaneId; close family enablement from closeTargets counts; shared tab menu actually mounted by session-tile.tsx:897-910",
+      "handler": "closeOtherTreeTabs excludes uncloseable/hide-only siblings",
+      "authority": "Renderer pane tree; never delete backend conversation",
+      "android_status": "non-goal",
+      "android_boundary": "No Android tab-strip family under standing historical non-goal; do not conflate tab close and session deletion.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 477,
+          "end": 487
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 702,
+          "end": 724
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 752,
+          "end": 754
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/session-tile.tsx",
+          "start": 890,
+          "end": 914
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.tab-close-right",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Close tabs to right",
+      "mount": "Tab surface with tabPaneId; close family enablement from closeTargets counts; shared tab menu actually mounted by session-tile.tsx:897-910",
+      "handler": "closeTreeTabsToRight uses sibling position and excludes protected panes",
+      "authority": "Renderer pane tree; never delete backend conversation",
+      "android_status": "non-goal",
+      "android_boundary": "No Android tab-strip family under standing historical non-goal; do not conflate tab close and session deletion.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 488,
+          "end": 496
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 702,
+          "end": 724
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 756,
+          "end": 758
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/session-tile.tsx",
+          "start": 890,
+          "end": 914
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.tab-close-all",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Close all tabs",
+      "mount": "Tab surface with tabPaneId; close family enablement from closeTargets counts; shared tab menu actually mounted by session-tile.tsx:897-910",
+      "handler": "closeAllOpenSessionTiles first prevents Bot rehydration, then closeAllTreeTabs",
+      "authority": "Renderer pane tree; never delete backend conversation",
+      "android_status": "non-goal",
+      "android_boundary": "No Android tab-strip family under standing historical non-goal; do not conflate tab close and session deletion.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 497,
+          "end": 509
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 702,
+          "end": 724
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/pane-shell/tree/store.ts",
+          "start": 760,
+          "end": 766
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/session-tile.tsx",
+          "start": 890,
+          "end": 914
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.tab-close",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Close this session tab",
+      "mount": "Tab surface AND onClose callback present; absent on row/main without callback",
+      "handler": "Invoke onClose; no delete RPC",
+      "authority": "Owning renderer surface callback; downstream tab placement not audited",
+      "android_status": "non-goal",
+      "android_boundary": "No baseline Android tab menu under standing non-goal. Callback existence does not certify every tab owner.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 464,
+          "end": 476
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/session-tile.tsx",
+          "start": 897,
+          "end": 914
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.hide-tabbar",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Hide tab bar",
+      "mount": "Only when supplied onHideTabBar; separate final separator/action",
+      "handler": "onHideTabBar callback; main-tab escape hatch",
+      "authority": "Renderer chrome callback; full supplying owner not traced, downstream unverified",
+      "android_status": "omission",
+      "android_boundary": "No native tab bar or callback. Historical general tab non-goal does not prove every new portable chrome policy; unverified omission #73 pending owner trace.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 596,
+          "end": 609
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/session-tile.tsx",
+          "start": 897,
+          "end": 914
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        }
+      ]
+    },
+    {
+      "id": "nested.session.archive",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Archive or unarchive from menu",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Disabled absent onArchive; archived prop flips label AND glyph; wiring dispatches by row/archived-store state",
+      "handler": "archiveSession optimistic evicts/tombstones, PATCH flag, close tile on success, rollback; unarchive PATCH false restores correct slice",
+      "authority": "Backend archive flag plus renderer cache lifecycle",
+      "android_status": "drift",
+      "android_boundary": "Baseline native menu always says Archive and sends archive direction; separate archived-row restore exists. Historical statement Desktop never swaps is not current parity.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 515,
+          "end": 531
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1085,
+          "end": 1095
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-session-actions/index.ts",
+          "start": 3296,
+          "end": 3405
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 250,
+          "end": 277
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2667,
+          "end": 2674
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4745,
+          "end": 4765
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 495,
+          "end": 507
+        }
+      ]
+    },
+    {
+      "id": "nested.session.delete-open",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Ask before deleting",
+      "mount": "Shared action kit mounted by row kebab and context menu (session-row.tsx:329-370); tab mount separately qualified. Disabled absent onDelete; click opens deleteOpen, no mutation yet",
+      "handler": "DeleteSessionDialog uses shared ConfirmDialog; cancel/dismiss is separate",
+      "authority": "Renderer confirmation gate",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native Delete dialog and async repository exist; delete-running contract differs, separately recorded.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 532,
+          "end": 550
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 632,
+          "end": 674
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 353,
+          "end": 364
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2635,
+          "end": 2642
+        }
+      ]
+    },
+    {
+      "id": "nested.session.delete-confirm",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Confirm irreversible deletion",
+      "mount": "Delete dialog open; ConfirmDialog locks while saving/done and closes 600ms after callback resolution",
+      "handler": "Shared menu wraps onDelete in void callback; wiring void removeSession. Async runtime interrupt/close then DELETE, rollback on refusal occurs outside dialog await",
+      "authority": "Exact owner connection/profile; backend owns deletion. Dialog done is callback dispatch, not proof HTTP deletion finished",
+      "android_status": "drift",
+      "android_boundary": "Android refuses active turn then session.delete (stored id) or REST. Desktop first interrupts/clears blocking input/closes runtime before DELETE. No equivalence for running deletion.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 632,
+          "end": 641
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/confirm-dialog.tsx",
+          "start": 97,
+          "end": 139
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1102,
+          "end": 1109
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-session-actions/index.ts",
+          "start": 3069,
+          "end": 3140
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-session-actions/index.ts",
+          "start": 3150,
+          "end": 3255
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4629,
+          "end": 4690
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2635,
+          "end": 2642
+        }
+      ]
+    },
+    {
+      "id": "nested.session.delete-cancel",
+      "family": "session-actions",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Cancel or dismiss delete confirmation",
+      "mount": "Delete dialog open; Cancel/backdrop disabled while shared saving/done; Enter OR Space anywhere confirms",
+      "handler": "onClose -> deleteOpen false; shared secondaryAction is NOT supplied by DeleteSessionDialog",
+      "authority": "Renderer dismissal only; no secondary delete alternative instantiated",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native confirmation is present; exact keyboard behavior not certified and no invented secondary control counted.",
+      "parity_page": "docs/parity/session-actions-menu.md",
+      "issue": "#266",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/session-actions-menu.tsx",
+          "start": 658,
+          "end": 674
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/confirm-dialog.tsx",
+          "start": 130,
+          "end": 149
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/confirm-dialog.tsx",
+          "start": 166,
+          "end": 195
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2635,
+          "end": 2642
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionActionsMenu.kt",
+          "start": 353,
+          "end": 364
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.open",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Open sidebar view menu",
+      "mount": "Mounted in session section header after Add; dropdown trigger always present in this header branch",
+      "handler": "DropdownMenuTrigger opens menu; option rows preventDefault to remain open",
+      "authority": "Renderer menu state",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native filter trigger and menu exist; subset of options only.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 1917,
+          "end": 1942
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 88,
+          "end": 114
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 234,
+          "end": 275
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.grouping",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Choose grouping Updated/Profile/Project/Status",
+      "mount": "Grouping submenu; four values in SIDEBAR_GROUPING_ORDER; profile caption comes from gatewayGroups",
+      "handler": "setSidebarGrouping: profile enables all-profiles and targets that scope; project toggles project grouping; otherwise scoped flat grouping",
+      "authority": "Renderer persisted per-scope presentation, backend catalog membership",
+      "android_status": "drift",
+      "android_boundary": "Android Updated/Project only; Profile and Status have no disabled rows. Not full grouping parity.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 120,
+          "end": 127
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 204,
+          "end": 206
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 255,
+          "end": 275
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 850,
+          "end": 876
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 736,
+          "end": 755
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2017,
+          "end": 2035
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.ordering",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Choose session ordering",
+      "mount": "Updated/created/status/tokens/cost/manual template; manual only if already manual; cost if spend exists or selected",
+      "handler": "setSidebarOrdering manual flag or clear saved hand-order then set sort key",
+      "authority": "Renderer persisted ordering; actual within-group comparator not fully read in this increment",
+      "android_status": "omission",
+      "android_boundary": "No ordering rows in native menu; unverified downstream comparator coverage remains #73/#266, no implemented claim.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 129,
+          "end": 136
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 210,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 277,
+          "end": 289
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 884,
+          "end": 896
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.metadata",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Toggle row metadata",
+      "mount": "Advanced chrome only; updated/preview/tokens/cost/PR/profile template; preview only cards, cost if present/selected, PR if bridge capability",
+      "handler": "toggleSidebarRowMeta adds/removes atom entry; PR wanted derived from metadata/filter",
+      "authority": "Renderer row preference; host git capability gates PR",
+      "android_status": "omission",
+      "android_boundary": "No Show metadata control in native menu. Existing age readout is not this toggle.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 138,
+          "end": 145
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 221,
+          "end": 232
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 291,
+          "end": 305
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 908,
+          "end": 910
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 954,
+          "end": 960
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.show-all-sessions",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Show all sessions within project grouping",
+      "mount": "Only grouping=project; checkbox stays open",
+      "handler": "setSidebarShowAllSessions(!showAllSessions)",
+      "authority": "Renderer persisted preview/full-tree preference; membership is backend-owned",
+      "android_status": "omission",
+      "android_boundary": "No matching checkbox in native menu; owning body projection still unverified.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 307,
+          "end": 313
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 358,
+          "end": 360
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.cards",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Toggle Inbox-style cards",
+      "mount": "Always-present checkbox independent of grouping; keepOpen",
+      "handler": "setSidebarCardRows(!cardRows)",
+      "authority": "Renderer persisted render variant, not grouping",
+      "android_status": "omission",
+      "android_boundary": "Native filter menu lacks Inbox/cards selector.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 315,
+          "end": 321
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 362,
+          "end": 364
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.rail",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Toggle profile rail",
+      "mount": "Advanced chrome only",
+      "handler": "toggleProfileRailVisible -> modeBound persistent preference; hidden rail has separate statusbar door per source",
+      "authority": "Renderer mode-bound local preference, no profile mutation",
+      "android_status": "omission",
+      "android_boundary": "Native profile rail exists but no rail-visibility toggle; statusbar fallback mount not traced here.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 323,
+          "end": 332
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/profile-rail-prefs.ts",
+          "start": 4,
+          "end": 18
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.status",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Filter by session status",
+      "mount": "Status submenu; needs-input/working/unread/draft/idle option template; keepOpen",
+      "handler": "toggleSidebarStatusFilter; consumer sessionStatusBucket(dotStates[session.id]) predicate",
+      "authority": "Backend/runtime dot state interpreted as renderer filter, not a new status RPC",
+      "android_status": "omission",
+      "android_boundary": "No status filter in native menu.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 155,
+          "end": 161
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 340,
+          "end": 352
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 912,
+          "end": 914
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 610,
+          "end": 625
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.pr",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Filter by pull-request state",
+      "mount": "prAvailable AND advanced chrome; open/draft/merged/closed/none template",
+      "handler": "toggleSidebarPrFilter; consumer pullRequestBucket of sessionPrKey lookup",
+      "authority": "Host repository PR read authority; renderer filter, not arbitrary local gh call on Android",
+      "android_status": "omission",
+      "android_boundary": "No PR filter UI in native menu. Host git path not certified by label.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 147,
+          "end": 153
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 184,
+          "end": 190
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 354,
+          "end": 370
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 924,
+          "end": 926
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 627,
+          "end": 633
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.profiles",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Narrow unified view by profile",
+      "mount": "All-profiles AND >1 known normalized profile; otherwise boxes hidden but Create/Import remain",
+      "handler": "toggleSidebarProfileFilter; consumer ignores stale boxes when not unified",
+      "authority": "Backend profile roster, local filter names",
+      "android_status": "omission",
+      "android_boundary": "Android unified profile scope exists but no per-profile narrowing checkbox set.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 170,
+          "end": 174
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 372,
+          "end": 396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 920,
+          "end": 922
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 621,
+          "end": 625
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.projects",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Filter by project membership",
+      "mount": "Only projects.length>1; dynamic project row including translated Home",
+      "handler": "toggleSidebarProjectFilter; consumer sessionMatchesProjectFilter shared with grouped view",
+      "authority": "Backend project owners first; cwd fallback in called predicate not fully traced here",
+      "android_status": "omission",
+      "android_boundary": "Project grouping is not matching filter control; no project-checkbox submenu at baseline.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 398,
+          "end": 417
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 916,
+          "end": 918
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/index.tsx",
+          "start": 635,
+          "end": 650
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.all-profiles",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Toggle all-profiles view",
+      "mount": "Visible if multiple profiles OR already enabled, preventing stranded state",
+      "handler": "toggleShowAllProfiles flips atom without changing concrete profile",
+      "authority": "Renderer scope broadening; roster backend authoritative",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native showAllProfiles action exists outside filter menu; location adaptation, not all-profile-checkbox subtree equivalence.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#182",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 419,
+          "end": 430
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/profile.ts",
+          "start": 1125,
+          "end": 1131
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2037,
+          "end": 2065
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.archived",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Toggle archived pool",
+      "mount": "Always-present checkbox; keepOpen",
+      "handler": "setSidebarShowArchived; archived pool lifecycle separate from normal recents",
+      "authority": "Backend archived rows, renderer pool selection",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native checkbox and explicit loading/failure pool exist; broader project/search interactions not certified.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 432,
+          "end": 436
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 898,
+          "end": 900
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 782,
+          "end": 792
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2694,
+          "end": 2732
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.reset",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Reset customized view",
+      "mount": "Only viewCustomized; ordinary action dismisses menu",
+      "handler": "resetSidebarView resets both grouping scopes/project flags/order/metadata/cards/show-all/filter sets; does NOT reset every profile preference",
+      "authority": "Renderer presentation reset; not backend config reset",
+      "android_status": "omission",
+      "android_boundary": "No Reset view item in baseline menu.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 438,
+          "end": 440
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 928,
+          "end": 952
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.fold",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Collapse or expand current level",
+      "mount": "Only foldIds nonempty: project ids for project grouping; date/status list ids otherwise; no profile-group fold and never Pinned/Cron",
+      "handler": "setWorkspaceNodesOpen(foldIds,foldCollapsed) writes chosen ids in one merged map",
+      "authority": "Renderer local expansion, no server operation",
+      "android_status": "omission",
+      "android_boundary": "No collapse/expand-all native menu action.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 192,
+          "end": 202
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 445,
+          "end": 449
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/layout.ts",
+          "start": 486,
+          "end": 494
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.mark-all-read",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Clear finished-unread dots",
+      "mount": "Always mounted, disabled if transient unreadIds empty",
+      "handler": "markAllSessionsRead clears only $unreadFinishedSessionIds; not a batch backend watermark PATCH",
+      "authority": "Renderer transient unread paint, NOT all backend read flags",
+      "android_status": "drift",
+      "android_boundary": "Native Mark all as read enumerates in-scope unread rows and calls repository.setSessionUnread(false), which PATCHes backend watermark. Desktop clears only transient unread atom; same label is not same write contract.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#142",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 450,
+          "end": 452
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/session.ts",
+          "start": 1522,
+          "end": 1539
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 793,
+          "end": 802
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt",
+          "start": 2781,
+          "end": 2797
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt",
+          "start": 4766,
+          "end": 4794
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.new-profile",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Request new profile",
+      "mount": "Profile submenu action remains even when narrowing boxes hidden",
+      "handler": "requestProfileCreate increments request atom; downstream dialog lifecycle not traced in this increment",
+      "authority": "Renderer request signal; backend creation not certified",
+      "android_status": "omission",
+      "android_boundary": "No native Create action in baseline filter menu; unverified downstream omission under migration owner.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 391,
+          "end": 394
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/profile.ts",
+          "start": 1191,
+          "end": 1193
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.filter.import-profile",
+      "family": "sidebar-catalog-and-projects",
+      "group": "session-sidebar-source-continuation",
+      "operation": "Import a profile archive",
+      "mount": "Profile submenu action; native selectPaths optional; no path/cancel returns null",
+      "handler": "runImportProfileFlow -> select archive -> importProfileBundle -> refreshActiveProfile -> selectProfile; errors notify",
+      "authority": "Electron file selection and profile bundle import; bundle validation downstream unverified",
+      "android_status": "omission",
+      "android_boundary": "No baseline native filter archive import; source template read without reading any archive or private profile data.",
+      "parity_page": "docs/parity/desktop-sidebar.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/chat/sidebar/filter-menu.tsx",
+          "start": 391,
+          "end": 394
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/store/profile-share.ts",
+          "start": 191,
+          "end": 218
+        }
+      ],
+      "review": "Source-read mounted template and named callback boundary; not rendered, not upstream test execution, not a whole-family parity claim.",
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/SessionList.kt",
+          "start": 710,
+          "end": 803
+        }
+      ]
+    },
+    {
+      "id": "nested.capability.tabs",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Select Skills/Plugins/Connectors/Toolsets",
+      "mount": "Real Capabilities route or embedded view; embedded uses local state instead of URL tab; scoped child key forces remount",
+      "handler": "setMode; dispatch one tab; connectors receives null reload socket on cross-backend scope",
+      "authority": "Renderer navigation; connection/profile scope determines every child read/write except explicitly noted imported logs",
+      "android_status": "omission",
+      "android_boundary": "No general Capabilities page in frozen Android routing; Bot editors are narrower, not this page.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 61,
+          "end": 95
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 130,
+          "end": 188
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/HermesApp.kt",
+          "start": 88,
+          "end": 99
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/settings/SettingsScreen.kt",
+          "start": 27,
+          "end": 100
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.toggle",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Enable or disable installed skill",
+      "mount": "Installed catalog action resolves actual SkillInfo; disabled busy/pending/error; scoped controller remounts",
+      "handler": "applyEnabled serialized with bulk, cancel queries, optimistic exact-name row update, PUT toggle, conditional rollback, refetch",
+      "authority": "Backend disabled list shared by individual and bulk writes; profileScopeKey cache isolates owner",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Bot editor offers named list/toggle with scoped host readback; not generic Capabilities page or optimistic UI parity.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 35,
+          "end": 133
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 260,
+          "end": 268
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 14,
+          "end": 43
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/skill-catalog.tsx",
+          "start": 311,
+          "end": 320
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 19,
+          "end": 54
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsSkillsViewModel.kt",
+          "start": 36,
+          "end": 94
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.bulk",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Enable or disable all installed skills",
+      "mount": "ListStripMenu toggle disabled pending/error/busy/empty; checked only if all installed rows enabled",
+      "handler": "applyEnabled on entire profile rows differing from requested state, serially; not search-filtered subset; partial work may complete before failure",
+      "authority": "Backend disabled list; no atomic batch guarantee",
+      "android_status": "WIP",
+      "android_boundary": "Bulk actions and archive WIP label exists, no writer for bulk.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 77,
+          "end": 148
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 237,
+          "end": 252
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.disable-unused",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Disable unused skills",
+      "mount": "ListStripMenu action disabled unless an enabled skill usageOf==0; absent usage is zero",
+      "handler": "applyEnabled on enabled zero-usage rows for whole profile; serialize writes and invalidate completions",
+      "authority": "Backend usage list drives selection; renderer does not infer active skill usage from labels",
+      "android_status": "WIP",
+      "android_boundary": "Bulk WIP only; no unused-skill selector.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 237,
+          "end": 248
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-data.ts",
+          "start": 30,
+          "end": 30
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 79,
+          "end": 133
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.detail",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Read full installed skill body",
+      "mount": "Catalog resolves installed SkillInfo in detail, all provenances; edit/archive controls only agent or external",
+      "handler": "getSkillContent scoped query, parseFrontmatter, render body without frontmatter; loading separately",
+      "authority": "Backend raw skill content, not description or local phone skill file",
+      "android_status": "WIP",
+      "android_boundary": "Skill details and editing is disabled parent; no full body reader.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skill-detail.tsx",
+          "start": 24,
+          "end": 64
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 21,
+          "end": 31
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/skill-catalog.tsx",
+          "start": 316,
+          "end": 320
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skill-provenance.ts",
+          "start": 26,
+          "end": 31
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.edit-open",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Open installed skill editor",
+      "mount": "Only editable provenance agent OR external; not bundled/hub; saving or same editor skips new read",
+      "handler": "getLearningNode(name,profile); editorRequest generation and mounted guard drop stale response, then seed node content",
+      "authority": "Captured scope and backend content; external origin is not read-only policy",
+      "android_status": "WIP",
+      "android_boundary": "Native detail/editing WIP has no learning-node editor.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skill-detail.tsx",
+          "start": 43,
+          "end": 54
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skill-provenance.ts",
+          "start": 26,
+          "end": 31
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 150,
+          "end": 171
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 62,
+          "end": 67
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.edit-buffer",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Edit skill source text",
+      "mount": "Selected detail skill matches skillEditor name; CodeEditor read-only while skillSaving",
+      "handler": "setSkillDraft on change; onSave dispatches saveSkillEdit; no write on each keystroke",
+      "authority": "Renderer editor draft held in scope-remounted controller",
+      "android_status": "omission",
+      "android_boundary": "No mounted editor field behind native WIP; pill-owed nested editing controls.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 285,
+          "end": 310
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/code-editor.tsx",
+          "start": 247,
+          "end": 279
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.edit-save",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Save edited skill",
+      "mount": "Editor open and saving.current false; Save disabled while saving",
+      "handler": "PUT learning/node {content,id}; validate result.ok; invalidate content/list/completions; close only matching request and refresh",
+      "authority": "Captured backend profile scope; applies to new sessions, not live running skill",
+      "android_status": "omission",
+      "android_boundary": "Only native detail/editing WIP; no Save endpoint caller.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 178,
+          "end": 221
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 285,
+          "end": 310
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 78,
+          "end": 89
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.edit-close",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Close or cancel skill editor",
+      "mount": "DetailPane close and CodeEditor Escape share closeSkillEditor; no busy guard in close function",
+      "handler": "Increment editorRequest, clear editor selection; in-flight save completion cannot close newer editor by request id",
+      "authority": "Renderer disposal fence, not cancellation of already-dispatched write",
+      "android_status": "omission",
+      "android_boundary": "No native skill editing dialog or cancel semantics.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 173,
+          "end": 176
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 285,
+          "end": 310
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/code-editor.tsx",
+          "start": 254,
+          "end": 265
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.archive-open",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Ask to archive editable skill",
+      "mount": "Only agent/external provenance detail; saving.current suppresses archive target",
+      "handler": "Set archiveTarget; mount ArchiveSkillConfirmDialog",
+      "authority": "Renderer confirmation targeting captured skill name/profile",
+      "android_status": "WIP",
+      "android_boundary": "Bulk actions and archive WIP only; archive is reversible backend operation, not Android file deletion.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skill-detail.tsx",
+          "start": 43,
+          "end": 54
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 274,
+          "end": 283
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 315,
+          "end": 360
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.archive-confirm",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Archive skill after confirmation",
+      "mount": "archiveTarget exists; shared dialog dismissOnConfirm optimistic path",
+      "handler": "Optimistically remove only row, close its editor; DELETE learning/node; false ok rejects; background failure restores only snapshot row without clobbering other toggles",
+      "authority": "Scoped backend archive with curator restore, not hub uninstall; success notice only after response",
+      "android_status": "omission",
+      "android_boundary": "No native archive confirmation/writer at baseline. WIP parent is not proof nested control exists.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 315,
+          "end": 360
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/learning/archive-skill-confirm-dialog.tsx",
+          "start": 6,
+          "end": 25
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/learning/archive-skill-confirm-dialog.tsx",
+          "start": 55,
+          "end": 76
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/skills.ts",
+          "start": 69,
+          "end": 76
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.skills.retry-list",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Retry failed installed skill list",
+      "mount": "CatalogAlert on installedError; Pending is distinct loader",
+      "handler": "onRefresh invalidates skills/toolsets/official lists and completions, refreshes tool-call usage",
+      "authority": "Profile-scoped cached host reads, not a new mutation",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Native Refresh skills plus read failure messages and stale read fencing exist; no broader catalog retry parity.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/skills/skills-tab.tsx",
+          "start": 223,
+          "end": 229
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 85,
+          "end": 95
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 28,
+          "end": 54
+        },
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsSkillsViewModel.kt",
+          "start": 46,
+          "end": 64
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.view",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Switch skills catalog cards/list",
+      "mount": "Catalog search header, not older CatalogFilters component; toggle always mounted here",
+      "handler": "close detail dialog and flip $catalogCardView; list and cards share selected/action projection",
+      "authority": "Renderer persisted catalog presentation; no host write",
+      "android_status": "omission",
+      "android_boundary": "Browse/install parent WIP, no view selector.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 174,
+          "end": 215
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 448,
+          "end": 459
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.search",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Search catalog",
+      "mount": "CapabilitySearch in catalog header; controlled query; deferred lowercased trimmed query; nonempty query clears selection",
+      "handler": "onQueryChange to shell; filterCatalog/sortCatalog consumer; chip search uses searchFor and resetSelection",
+      "authority": "Public catalog metadata + installed identities, local search; exact query parser remains unverified",
+      "android_status": "WIP",
+      "android_boundary": "Browse and install WIP; no catalog search. Do not count generic Bot roster search as this.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 198,
+          "end": 214
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 325,
+          "end": 350
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 365,
+          "end": 388
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/index.tsx",
+          "start": 152,
+          "end": 162
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.facet-mode",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Switch category/source facet chips",
+      "mount": "Active CatalogFilterBar rendered by CatalogBrowser, sources for skills rather than plugin trust tiers",
+      "handler": "setMode selects which facet is edited; selection itself is unchanged",
+      "authority": "Renderer local filter strip mode",
+      "android_status": "omission",
+      "android_boundary": "No native catalog facet mode selector.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 460,
+          "end": 474
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 33,
+          "end": 62
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.facet-chips",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Select category or source filters",
+      "mount": "First three OR selected chips visible; All clears; choosing last unselected value normalizes to All",
+      "handler": "onSelect -> category/source toggle -> update facets and reset paging/selection",
+      "authority": "Renderer multi-select facets; dynamic rows are templates, not installed registry entries",
+      "android_status": "omission",
+      "android_boundary": "No native category/source chip editor.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 44,
+          "end": 66
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/use-catalog-filters.ts",
+          "start": 17,
+          "end": 35
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 334,
+          "end": 341
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.more-facets",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Open overflow facet choices",
+      "mount": "Only overflow.length>0; selected chips remain visible even beyond first three",
+      "handler": "Popover more state; same onSelect as visible chip rows",
+      "authority": "Renderer disclosure, not page fetch",
+      "android_status": "omission",
+      "android_boundary": "No native catalog overflow popover.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 55,
+          "end": 72
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/use-catalog-filters.ts",
+          "start": 22,
+          "end": 35
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.filter-popover",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Open expanded catalog filters",
+      "mount": "Always-present filter trigger; badge counts category/source/tag selections, not installedOnly",
+      "handler": "setExpanded; mounts clear/sort/installed/tag/actions subtree",
+      "authority": "Renderer filter dialog; no general config write",
+      "android_status": "omission",
+      "android_boundary": "Native browse WIP only; no expanded controls.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 74,
+          "end": 105
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 460,
+          "end": 474
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.clear",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Clear catalog query and facets",
+      "mount": "Expanded filters Clear OR no-results clear action; not reset-all-preferences",
+      "handler": "clearFilters empties controlled query and filters.clear EMPTY_FACETS; sort is retained",
+      "authority": "Renderer search/facets only",
+      "android_status": "omission",
+      "android_boundary": "No catalog clear action.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 84,
+          "end": 87
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 287,
+          "end": 303
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 380,
+          "end": 383
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/use-catalog-filters.ts",
+          "start": 29,
+          "end": 39
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.installed-only",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Limit catalog to installed entries",
+      "mount": "Installed button in expanded popover; remains independent of category/source strip",
+      "handler": "toggleInstalled -> facets.installedOnly; isInstalled uses scoped official/source identities not arbitrary matching display name",
+      "authority": "Renderer installed filter over backend-scoped installed roster and source lock map",
+      "android_status": "omission",
+      "android_boundary": "Native installed-only editor is not a catalog toggle.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 92,
+          "end": 95
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/use-catalog-filters.ts",
+          "start": 36,
+          "end": 36
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/skill-catalog.tsx",
+          "start": 208,
+          "end": 238
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.tags",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Toggle catalog tag filters",
+      "mount": "Only props.tags nonempty in expanded popover; max tag list supplied by parent",
+      "handler": "toggleTag updates facet and resets selection/page; selected tags remain in tag enumeration",
+      "authority": "Renderer facet selection; full query algorithm unverified here",
+      "android_status": "omission",
+      "android_boundary": "No tag filter control at baseline.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-filter-bar.tsx",
+          "start": 96,
+          "end": 101
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/use-catalog-filters.ts",
+          "start": 22,
+          "end": 35
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 460,
+          "end": 474
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.sort",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Sort catalog entries",
+      "mount": "Sort select in expanded filter popover; options from catalogSortOptions, labels discover/stars/newest/updated/name",
+      "handler": "filters.setSort -> resetSelection; sortCatalog consumer",
+      "authority": "Renderer order; conditional option availability and comparator remain explicit unverified debt",
+      "android_status": "omission",
+      "android_boundary": "No catalog ordering selector.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 136,
+          "end": 171
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 365,
+          "end": 370
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 439,
+          "end": 439
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/use-catalog-filters.ts",
+          "start": 29,
+          "end": 32
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.more-results",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Show more local catalog results",
+      "mount": "Filtered cards or list when filtered.length>limit; discovery shelves are separate subtree",
+      "handler": "Increase limit by PAGE_SIZE=60; no new backend page endpoint",
+      "authority": "Renderer pagination over loaded feed",
+      "android_status": "omission",
+      "android_boundary": "No catalog More control; no invented remote paging API.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 63,
+          "end": 67
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 219,
+          "end": 253
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 494,
+          "end": 531
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.back",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Return from narrow list detail",
+      "mount": "List mode detail column; button hidden at sm and above",
+      "handler": "setDetailOpen(false), retains selection",
+      "authority": "Renderer narrow responsive branch, not a new route",
+      "android_status": "omission",
+      "android_boundary": "No native catalog detail page; Desktop already has narrow master/detail mechanics.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/catalog-browser.tsx",
+          "start": 511,
+          "end": 541
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.catalog.retry-identities",
+      "family": "capabilities-skills-and-catalog",
+      "group": "capability-source-continuation",
+      "operation": "Retry installed-source identity reads",
+      "mount": "officialError OR hubError; hub source request only if installed hub skills exist",
+      "handler": "Refresh only errored official/source query; captured capabilityScoped profile carries connection",
+      "authority": "Backend official and source-lock roster identity; public catalog feed is distinct",
+      "android_status": "omission",
+      "android_boundary": "No catalog source-identity retry; native Refresh skills does not read these inventories.",
+      "parity_page": "docs/parity/bot-installed-skills.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/skill-catalog.tsx",
+          "start": 64,
+          "end": 96
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/catalog/skill-catalog.tsx",
+          "start": 279,
+          "end": 305
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotSkillsEditor.kt",
+          "start": 20,
+          "end": 55
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.enabled",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Enable owned configured MCP server",
+      "mount": "Connector header local/no hosted, installed, no plugin, callback exists",
+      "handler": "setServerEnabled -> writeEntry transforms withEnabled; persist whole map PUT then silentReload; enabling triggers probe",
+      "authority": "Backend config map replacement; reload only when matching gateway supplied",
+      "android_status": "implemented-bounded",
+      "android_boundary": "Approved mobile-adaptation in ADR 0006: Bot editor uses named enabled PUT with provenance and readback rather than Desktop whole-map/reload. This bounded existing selection is not full Connectors parity or an accidental drift finding.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connector-dialog.tsx",
+          "start": 199,
+          "end": 206
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 68,
+          "end": 83
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts",
+          "start": 228,
+          "end": 287
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts",
+          "start": 316,
+          "end": 320
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-doc.ts",
+          "start": 30,
+          "end": 40
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/mcp.ts",
+          "start": 36,
+          "end": 49
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts",
+          "start": 149,
+          "end": 159
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/lib/mcp-reload.ts",
+          "start": 22,
+          "end": 56
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.advanced",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Expand owned-server advanced controls",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced.",
+      "handler": "Native details/summary exposes JSON/log/remove children already supplied",
+      "authority": "Renderer disclosure; not a server mutation",
+      "android_status": "omission",
+      "android_boundary": "No Advanced JSON/log editor in native MCP list; missing control under #73, not blanket plugin source edit.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connector-dialog.tsx",
+          "start": 371,
+          "end": 408
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-slots.tsx",
+          "start": 17,
+          "end": 35
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.json-edit",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Edit MCP JSON map",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. JSON editor read-only while controller.saving.",
+      "handler": "setDraft marks dirty; setCursor selects scanner block; changing text does not persist",
+      "authority": "Renderer full-map draft; seeded config scoped, not a credential-file read",
+      "android_status": "omission",
+      "android_boundary": "No arbitrary JSON editor in native configured-MCP surface.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 21,
+          "end": 54
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-draft.ts",
+          "start": 37,
+          "end": 66
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-draft.ts",
+          "start": 169,
+          "end": 172
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.json-format",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Format MCP JSON",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. Imported JsonDocumentEditor adds Format JSON button, disabled during save.",
+      "handler": "editorApi.formatJson -> CodeEditor applyFormatJson; errors notify; only draft changes",
+      "authority": "Renderer editor format; no host write or install",
+      "android_status": "omission",
+      "android_boundary": "No JSON-format control; imported generic affordance counted only at this actual mounted path.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/json-document-editor.tsx",
+          "start": 58,
+          "end": 93
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/code-editor.tsx",
+          "start": 228,
+          "end": 235
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/code-editor.tsx",
+          "start": 291,
+          "end": 307
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 21,
+          "end": 54
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.json-save",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Save full MCP JSON map",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. Save disabled saving OR !dirty; keyboard-save still invokes controller.saveDoc directly.",
+      "handler": "parseServersDoc accepts mcpServers/mcp_servers/bare map, rejects single unnamed server; PUT replaces map; profileEpoch gates completion; reset draft, retain probes, reload",
+      "authority": "Captured capability profile REST writer; unlike named-toggle API this intentionally replaces whole map",
+      "android_status": "omission",
+      "android_boundary": "No full-map Save in native MCP editor. No transport parity claimed from enabled toggle.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 41,
+          "end": 51
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts",
+          "start": 228,
+          "end": 240
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts",
+          "start": 364,
+          "end": 396
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-doc.ts",
+          "start": 8,
+          "end": 28
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/mcp.ts",
+          "start": 36,
+          "end": 49
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.remove-open",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Ask to remove owned MCP server",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced.",
+      "handler": "LocalAdvanced Remove -> setRemoveServer(openCard); mount RemoveServerConfirm",
+      "authority": "Renderer confirmation; does not yet change config",
+      "android_status": "WIP",
+      "android_boundary": "Remove MCP server WIP exists; no nested confirmation yet.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-slots.tsx",
+          "start": 17,
+          "end": 35
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 218
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 259,
+          "end": 266
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.remove-confirm",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Confirm MCP server removal",
+      "mount": "RemoveServerConfirm open iff card nonnull; name via localServerName; shared ConfirmDialog busy/cancel contract",
+      "handler": "controller.removeServer deletes name from full map, persist/reload, mirror dirty draft removal, reset cursor/catalog; false return throws and keeps dialog error",
+      "authority": "Backend config whole-map replacement; plugin-owned entries excluded by mount",
+      "android_status": "omission",
+      "android_boundary": "No native removal dialog or writer; WIP parent not a completed action.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-slots.tsx",
+          "start": 45,
+          "end": 69
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts",
+          "start": 329,
+          "end": 362
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/api/mcp.ts",
+          "start": 36,
+          "end": 49
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.logs-source",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Switch MCP stdio/agent log source",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. McpLogPane mounts stdio/agent TextTabs, default stdio.",
+      "handler": "setSource -> useMcpLogLines poll: mcp 500 lines filtered by server banners OR agent 300 search server; every 2s",
+      "authority": "IMPORTANT: hook uses activeGatewayProfile and getLogs without capability scope, unlike pinned MCP config. Cross-owner log correctness NOT certified.",
+      "android_status": "omission",
+      "android_boundary": "No native MCP log panel. Existing System logs work in another branch is not this baseline or this scope guarantee.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 61,
+          "end": 98
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-logs.tsx",
+          "start": 8,
+          "end": 56
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.logs-search",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Search fetched MCP log lines",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. LogSearchField always present; query owned by pane.",
+      "handler": "setQuery -> useLogSearch finds hits; Enter next/Shift-Enter previous; close clears query",
+      "authority": "Renderer search over fetched active-profile log tail; not scoped log query on each keystroke",
+      "android_status": "omission",
+      "android_boundary": "No native MCP log-search control.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 61,
+          "end": 98
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/log-search.tsx",
+          "start": 26,
+          "end": 69
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.logs-clear",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Clear MCP log search",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. SearchField adds Clear only nonempty value and not loading.",
+      "handler": "SearchField clear -> onChange empty; reset active hit by needle",
+      "authority": "Renderer query only",
+      "android_status": "omission",
+      "android_boundary": "No imported clear action in native MCP list.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 73,
+          "end": 79
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/ui/search-field.tsx",
+          "start": 114,
+          "end": 128
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.logs-hit-nav",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Previous/next MCP log match",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. Search query nonempty; buttons disabled zero hits; hit cursor wraps.",
+      "handler": "search.previous/next -> modular step; LogTail receives same search model",
+      "authority": "Renderer highlight navigation, no remote request",
+      "android_status": "omission",
+      "android_boundary": "No native MCP previous/next match buttons; not equivalent to displaying logs text.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 73,
+          "end": 79
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/log-search.tsx",
+          "start": 26,
+          "end": 39
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/log-search.tsx",
+          "start": 77,
+          "end": 106
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.logs-jump",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Jump to top/bottom of MCP logs",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. LogTail actions remain mounted for loading/empty content.",
+      "handler": "scrollRef.scrollTo top 0 or scrollHeight; onScroll updates tail-stick proximity",
+      "authority": "Renderer scroll; not changing server log selection",
+      "android_status": "omission",
+      "android_boundary": "No native MCP jump controls.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 96,
+          "end": 96
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/log-tail.tsx",
+          "start": 90,
+          "end": 131
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
+    },
+    {
+      "id": "nested.mcp.logs-copy",
+      "family": "connectors-and-mcp",
+      "group": "capability-source-continuation",
+      "operation": "Copy fetched MCP log tail",
+      "mount": "Open local connector dialog with no hosted way; owned means plugin undefined AND local way installed. Advanced disclosure supplies LocalAdvanced. LogTail mounts inline CopyButton, no label.",
+      "handler": "text callback joins fetched lines or empty array, not filtered hit text",
+      "authority": "OS clipboard of active-profile fetched tail; no export endpoint",
+      "android_status": "omission",
+      "android_boundary": "No native MCP copy-tail action; privacy/redaction requirements remain implementation work.",
+      "parity_page": "docs/parity/bot-configured-mcp.md",
+      "issue": "#73",
+      "source": [
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/mcp/mcp-editor.tsx",
+          "start": 96,
+          "end": 96
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/components/chat/log-tail.tsx",
+          "start": 116,
+          "end": 122
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/connectors-tab.tsx",
+          "start": 206,
+          "end": 219
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/capabilities/connectors/local-dialog.tsx",
+          "start": 45,
+          "end": 83
+        }
+      ],
+      "android_evidence": [
+        {
+          "sha": "65080e8a37e8d546869528e43c162503015b94c7",
+          "path": "app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt",
+          "start": 20,
+          "end": 65
+        }
+      ],
+      "review": "Hand-read production template and named owner; no installed rows, credentials, network mutation, test fixture as shipping evidence or rendered approval."
     }
   ]
 }

@@ -182,10 +182,10 @@ def reconcile(ledger, records, data):
                             'literal_identity': c.get('literal_identity', {}), 'registry': c.get('registry'),
                             'family': c['family'], 'parity_pages': owner['parity_pages'], 'issue_owner': owner['owner'],
                             'overlapping_reviewed_ui_records': matches,
-                            'status': 'syntax-only-requires-reachability-and-handler-review'})
+                            'status': 'unverified-omission-requires-reachability-and-handler-review'})
         roots.append({'id': root['id'], 'path': root['path'], 'source_sha256': root['source_sha256'], 'entries': entries})
     return {'upstream_sha': family.PIN, 'android_sha': family.BASE, 'semantic_complete': False,
-            'meaning': 'All configured registry roots reconciled syntactically; overlap is a navigation aid, never semantic acceptance. Repeated entrypoints are not distinct features.',
+            'meaning': 'All configured registry roots reconciled syntactically; overlap is a navigation aid, never semantic acceptance. Unresolved entries are provisional unverified omissions under their existing family owner and migration/drift #73/#266, not proof Android lacks every candidate. Repeated entrypoints are not distinct features.',
             'registries': roots}
 
 

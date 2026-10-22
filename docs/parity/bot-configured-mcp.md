@@ -48,6 +48,38 @@ Inspected actual target source, not the historical staged checklist:
   possible secret-looking name is detected or that HTTP memory is secret-free.
   Raw transport metadata still enters host memory before typed projection.
 
+## Later owned-MCP nested-control inventory
+
+A separate source audit at Desktop `81a55437f3f31a9f12a30c53b6c5d49d420898aa`
+and Android baseline `65080e8a37e8d546869528e43c162503015b94c7` preserves the
+historical Pin and packets. Local Advanced is actually supplied only for an
+installed, non-plugin local server, not every connector
+(`apps/desktop/src/app/capabilities/connectors/local-dialog.tsx:45-83`;
+`apps/desktop/src/app/capabilities/connectors/connector-dialog.tsx:371-408`, at
+that Desktop SHA). It mounts JSON with an imported Format button, Save, log
+stdio/agent tabs/search and Remove confirmation. Log children also add Clear,
+previous/next match, Copy and top/bottom actions. Exact mount/handler citations
+are in [the bounded control reconciliation](desktop-control-reconciliation.md).
+
+Whole-map save/removal is not the named-toggle API
+(`apps/desktop/src/app/capabilities/mcp/use-mcp-servers.ts:228-287,316-396`;
+`apps/desktop/src/api/mcp.ts:36-49`, same Desktop SHA). This page's approved
+ADR 0006 selection adaptation remains deliberate, not accidental drift. No
+broader JSON/log management implementation follows from the native toggle.
+The frozen native surface still only has list/config-source toggles and six WIP
+parents (`app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotMcpEditor.kt:20-65`
+at the Android baseline). Missing JSON, Format, Save and log navigation are
+controls owing pills under #73, not just omitted descriptive details.
+
+An authority concern remains upstream: the imported log hook observes
+`activeGatewayProfile` and calls `getLogs` without the selected capability scope
+(`apps/desktop/src/app/capabilities/mcp/mcp-logs.tsx:34-53` at the later Desktop
+SHA). Reading a fixed-profile config therefore does not certify its displayed
+logs belong to that same owner. Hosted account/OAuth/probe/per-tool/Add flows
+remain unverified omissions under #73/#266, not certified by reading controller
+method definitions. No installed config, server, credential or log was read;
+current rendering remains Concern under existing #194.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
@@ -56,7 +88,8 @@ Inspected actual target source, not the historical staged checklist:
 | Directory/detail layout and richer status | mobile-adaptation | Inline Configured MCP servers section in the phone's existing editor, 48dp Switch rows; no fabricated health/status | `BotMcpEditor`; Compose semantics journeys |
 | Immediate persistence with outer editor controls | mobile-adaptation | Explicit Cancel-does-not-undo copy and future-session success wording to distinguish independent autosave from drafts | Registered route Cancel/reopen journey |
 | Catalog, add, OAuth/credentials, remove, probe, per-tool controls | omission | Six visible disabled WIP actions; no new host doors | coming soon — bounded selection only |
-| Raw JSON editor, MCP logs and usage/cost detail | omission | Not included in this bounded existing-Bot selection section | deferred: #194 — broader Desktop management acceptance |
+| Raw JSON editor, Format/Save and MCP log controls (later source inventory, not a repin) | omission | No nested controls behind the bounded selection surface | pill-owed: #73; exact owned mount, callbacks and imported log actions in the source reconciliation |
+| MCP usage/cost descriptive detail | omission | Not included in this bounded existing-Bot selection section | deferred: #194 — broader Desktop management acceptance |
 | Plugin-owned or unknown provenance | mobile-adaptation | Explicit read-only source labels rather than implying every returned row is a mutable config entry | VM refusal and Compose disabled-row tests |
 
 ## Visual report

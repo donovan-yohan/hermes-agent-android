@@ -32,7 +32,7 @@ python3 scripts/desktop_surface_inventory.py --require-semantic-complete
 ## Nested-control continuation
 
 The [nested-control reconciliation](desktop-control-reconciliation.md) adds
-`desktop-control-records.json` (212 source-read entrypoint/control templates),
+`desktop-control-records.json` (295 source-read entrypoint/control templates),
 `desktop-control-candidates.json` (3283 uncertified syntax candidates), and
 `desktop-registry-reconciliation.json` (21 actual root registries). These are
 three different evidence layers, not a feature count or a completeness percentage.
@@ -43,6 +43,15 @@ conflict, and the macOS-only native-menu startup gate. Nonmac menu-factory
 branches are not claimed as currently mounted controls. The old file census and
 all visual pins remain unchanged. Exhaustive semantic acceptance remains withheld;
 the companion page names the remaining trees that still need read-through.
+The latest 83-template increment preserves the first 212 records and follows
+session row/tab dialogs and callbacks, current filter-menu predicates, installed
+Skills management and the actually mounted owned-MCP Advanced subtree. It finds
+live-delete, unread-bulk and busy-dismiss authority differences; explicit
+unverified-omission statuses remain on every unresolved registry entry. The
+approved Android named-MCP-toggle adaptation is not relabelled accidental drift.
+Providers/models/connections, composer/transcript and the other named residuals
+remain unverified beyond the earlier bounded records. No later-main delta or
+exhaustive semantic acceptance is asserted.
 
 ## Baseline findings that must survive the repin
 
