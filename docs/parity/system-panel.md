@@ -29,6 +29,7 @@ Every citation in this subsection is against that SHA.
 | Refresh on entry/file/level; request 200 lines | `apps/desktop/src/app/command-center/index.tsx:212-233,258-278` |
 | Authenticated profile-scoped GET; ALL omitted from query | `apps/desktop/src/api/config.ts:94-128` |
 | Profile-owned path, missing file is successful empty; level filtering delegated to tail reader | `hermes_cli/web_routers/status.py:841-881` |
+| Profile query selects a directory scope, not a record-by-record isolation guarantee | `hermes_cli/web_server_profiles.py:277-324` |
 | File keys include desktop | `hermes_cli/logs.py:33-54` |
 | Backend minimum-severity ordering | `hermes_cli/logs.py:74-78` |
 | Actual log controls, error and tail | `apps/desktop/src/app/command-center/index.tsx:523-569` |
@@ -46,6 +47,11 @@ A legacy blank/unspecified profile is omitted; a concrete selection, including
 literal `default`, stays explicit so a Gateway launched in a named profile
 cannot silently serve that launch profile instead.
 
+Current upstream selects the profile's log directory; these are still host-produced
+file tails, not a client-enforced per-record authorization stream. Shared or
+unscoped records may appear in host log files, and unsupported older hosts may
+ignore the query. Selection/result fencing does not prove record isolation.
+
 The read captures ready-leg transport identity, endpoint generation, active
 in-memory profile plus its monotonic scope generation and a selection/lifecycle
 generation. The scope generation also fences a fast A → B → A switch whose
@@ -59,13 +65,32 @@ or profile changes clear the tail, selection and query. No log text is persisted
 
 Bounds: request 200 rows, refuse a body over 512 KiB or a malformed/non-string
 row list or more than 200 rows, then redact before applying the existing
-per-line cap. Whole-tail redaction handles multiline private keys before
-splitting; log-specific passes additionally remove credential assignments,
-authorization headers, URLs, hostname-shaped text, IPs and fingerprints.
+per-line cap. Decode/sanitization runs on a separate Default dispatcher, with
+cancellation checks between passes, during identifier/value scans and per row.
+A monotonic credential tokenizer consumes each identifier/value once, rather
+than retrying long credential-key prefixes at every suffix. Whole-tail private
+key redaction precedes assignment parsing so complete/truncated PEM blocks and
+quoted multiline values are not split into visible continuations.
+Log-specific passes remove credential assignments (including AWS access-key,
+secret-key and session/security-token labels), Bearer/Basic headers, structured
+POSIX/Windows paths, URLs, hostname-shaped text, IPs and fingerprints. Single-label
+hosts are masked in explicit host/server/machine/node/peer/endpoint assignments
+and known connection/host phrases such as `connected to`.
 The conservative hostname rule also hides dotted logger/file names. This is
-not a claim to detect arbitrary unlabelled secrets in prose, nor to erase all
+not a claim to detect arbitrary unlabelled secrets or machine names in prose,
+nor to erase all
 immutable strings or HTTP stack buffers. The transferred response byte array
 is wiped, including on stale returns. Raw refusal envelopes are never painted.
+
+The guarded HTTP continuation remains suspended through bounded body consumption,
+not merely response headers. Cancelling a log read therefore cancels the actual
+OkHttp call while a chunked body is held; response ownership closes in `use`.
+Results abandoned during continuation resumption or the IO-to-caller return are
+explicitly wiped (both success bytes and captured refusal envelopes). This does
+not claim that the already admitted host request was retracted, or that okio's
+pooled segments and immutable decoded strings were erased. Unguarded legacy
+HTTP calls retain their existing blocking execution path; full-lifetime call
+cancellation here is a guarded-path guarantee.
 
 The requested substring filter remains local, literal, trimmed and
 case-insensitive over the redacted bounded tail. It does not send search text
@@ -80,8 +105,10 @@ distinct states.
 
 Focused evidence: `SystemLogsControllerTest` (virtual-time ownership, selection,
 redaction, empty/malformed/error/retry and buffer ownership),
-`SystemLogsTransportTest` (production authenticated transport, real bound and
-pre-enqueue revocation), `SystemLogsJourneyTest` (usable controls, selection,
+`SystemLogsTransportTest` (production authenticated transport, real bound,
+pre-enqueue revocation and post-header pause), `GatewayHttpBodyOwnershipTest`
+(held chunked socket body, success/refusal cancellation-race disposal and
+unknown-length streaming cap), `SystemLogsJourneyTest` (usable controls, selection,
 filter/clear, states and lifecycle disposal), and updated `SystemJourneyTest`.
 No emulator or physical-device operations were performed in this slice.
 Rendered logs evidence remains pending: #127, the existing open Recent logs
@@ -167,7 +194,7 @@ Classified for `scripts/check-parity-evidence.py`; the ledgers above carry the a
 | 30-minute background update poll and the `Update ready` toast (`updates.ts:956-997`, `:209-249`) | omission | Absent | out-of-scope: #127 — this app has no in-app notification stack (#73), so the surfacing decision belongs with that issue |
 | Backend contract-skew warning `REQUIRED_BACKEND_CONTRACT` (`updates.ts:95-108,151-180`) | omission | Absent | out-of-scope: #127 — a sticky toast with an `Update Hermes` action, which needs the same missing stack |
 | `pre_update` → `post_update` versions and `fresh_recovery.serve_units` | omission | Read and held in `GatewayUpdateState.receipt`, rendered nowhere | deferred: #127 — Desktop has no string for any of it, and inventing one is the drift this gate exists to catch |
-| `actionStartedWaiting` synthesised log line (`en.ts:1572`) | omission | Absent | non-goal: Desktop synthesises that line only when all 18 restart polls expire with no status; this surface renders no log tail |
+| `actionStartedWaiting` synthesised log line (`en.ts:1572`) | omission | Absent | non-goal: Desktop synthesises that line only when all 18 restart polls expire with no status; Android reports restart progress in its action state instead of injecting client-authored text into the host-produced Recent logs tail |
 
 The four log-file tabs are **not** a divergence: `desktop` is a real file the
 Gateway's own `/api/logs` serves (`hermes_cli/logs.py:32-41` @ the pin), so all
@@ -184,7 +211,7 @@ four ship exactly as Desktop lists them, now enabled by the scoped logs port.
 | The apply state machine: refusal, exit code, log marker, receipt proof, legacy fallback, budgets, adoption, reset | `GatewayUpdateControllerTest`, on virtual time |
 | The forced redial fires once on success and never on SSH, Local, or a user-driven Disconnected | `GatewayBackendUpdateRedialTest` |
 | The restart poll's 18 × 1200 ms cadence, and that it stops when the child exits | `SystemViewModelTest`, with a `waits` counter |
-| Row placement, traversal order, touch targets, spoken description, disabled row | `SystemJourneyTest` |
+| Row placement, traversal order, touch targets, spoken description and enabled log controls | `SystemJourneyTest`, `SystemLogsJourneyTest` |
 | Every sheet branch renders its verbatim Desktop copy; an apply offers no way out | `UpdatesOverlayJourneyTest` |
 
 ## Visual report

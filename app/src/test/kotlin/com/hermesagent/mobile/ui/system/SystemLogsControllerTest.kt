@@ -35,7 +35,7 @@ class SystemLogsControllerTest {
     @Test fun `defaults and selected file level use bounded scoped authenticated GET`() = runTest {
         val host = Host()
         val owners = MutableStateFlow(SystemLogsOwner(host, 4, "work"))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         assertTrue(controller.state.value.loading)
         val first = host.requests.single()
@@ -64,7 +64,7 @@ class SystemLogsControllerTest {
     @Test fun `legacy unspecified profile is omitted but explicit default remains explicit`() = runTest {
         val host = Host()
         val owners = MutableStateFlow(SystemLogsOwner(host, 1, null))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         controller.selectFile("arbitrary"); controller.selectLevel("debug"); controller.selectFile("agent")
         runCurrent()
@@ -79,7 +79,7 @@ class SystemLogsControllerTest {
     @Test fun `old file result cannot replace newly selected file even when cancellation is ignored`() = runTest {
         val host = Host().apply { ignoreCancellation = true }
         val owners = MutableStateFlow(SystemLogsOwner(host, 1, null))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         controller.selectFile("errors"); runCurrent()
         host.answer(1, """{"lines":["new"]}"""); runCurrent()
@@ -92,7 +92,7 @@ class SystemLogsControllerTest {
     @Test fun `same endpoint reconnect and profile switch invalidate admission before observer runs`() = runTest {
         val host = Host().apply { ignoreCancellation = true }
         val owners = MutableStateFlow(SystemLogsOwner(host, 1, "work"))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         val oldRequest = host.requests.single()
         owners.value = owners.value.copy(profile = "personal")
@@ -115,7 +115,7 @@ class SystemLogsControllerTest {
     @Test fun `rapid profile round trip is fenced even when intermediate flow value is conflated`() = runTest {
         val host = Host().apply { ignoreCancellation = true }
         val owners = MutableStateFlow(SystemLogsOwner(host, 1, "work", 1))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         val pending = host.requests.single()
         owners.value = owners.value.copy(profile = "personal", profileGeneration = 2)
@@ -133,7 +133,7 @@ class SystemLogsControllerTest {
     @Test fun `endpoint switch disconnect and pause wipe content and revoke pending calls`() = runTest {
         val host = Host()
         val owners = MutableStateFlow(SystemLogsOwner(host, 1, null))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         host.answer(0, """{"lines":["old host"]}"""); runCurrent()
         owners.value = SystemLogsOwner(null, 2, null); runCurrent()
@@ -154,7 +154,7 @@ class SystemLogsControllerTest {
     @Test fun `errors malformed replies and retries are explicit not an empty success`() = runTest {
         val host = Host()
         val owners = MutableStateFlow(SystemLogsOwner(host, 1, null))
-        val controller = SystemLogsController(backgroundScope, owners) { owners.value }
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
         controller.resume(); runCurrent()
         val envelope = "sensitive exception".encodeToByteArray()
         host.replies[0].complete(GatewayHttpResult.Rejected(401, "raw private error", envelope)); runCurrent()
@@ -195,6 +195,93 @@ class SystemLogsControllerTest {
         }
         assertTrue(result.lines().all { it.length <= 1000 })
         assertTrue(result.contains("INFO"))
+    }
+
+    @Test fun `raw structured private data crosses JSON parser to UI state only after masking`() = runTest {
+        val pemFence = "-".repeat(5)
+        val completePem = "$pemFence${"BEGIN PRIVATE KEY"}$pemFence\nsynthetic-key-body\n$pemFence${"END PRIVATE KEY"}$pemFence"
+        val truncatedPem = "$pemFence${"BEGIN RSA PRIVATE KEY"}$pemFence\nsynthetic-unterminated-key"
+        val raw = listOf(
+            "2026-10-22 12:34:56,123 INFO reading /Users/synthetic-person/private/project",
+            "INFO failed at /home/synthetic-person/workspace",
+            "INFO Windows C:\\Users\\synthetic-person\\private\\project",
+            "INFO quoted \"C:\\Users\\synthetic-person\\private space\\project\"",
+            "INFO connected to synthetic-host",
+            "INFO server=synthetic-server peer: synthetic-peer",
+            "aws_secret_access_key=synthetic-aws-secret aws_access_key_id=synthetic-aws-id",
+            "aws_session_token=synthetic-aws-session aws_security_token=synthetic-aws-security",
+            "Authorization: Bearer synthetic-bearer",
+            "Authorization: Basic c3ludGhldGljLWJhc2lj",
+            "api_key='synthetic first secret\nsynthetic continuation'",
+            completePem,
+            "INFO after complete key",
+            truncatedPem,
+        )
+        assertTrue(completePem.contains("synthetic-key-body"))
+        assertTrue(completePem.startsWith(pemFence + "BEGIN PRIVATE KEY"))
+        assertTrue(truncatedPem.contains("synthetic-unterminated-key"))
+        assertTrue(raw.any { it.contains("synthetic-bearer") })
+        assertTrue(raw.any { it.contains("c3ludGhldGljLWJhc2lj") })
+        val host = Host()
+        val owners = MutableStateFlow(SystemLogsOwner(host, 1, null))
+        val controller = SystemLogsController(backgroundScope, owners, kotlinx.coroutines.test.StandardTestDispatcher(testScheduler)) { owners.value }
+        controller.resume(); runCurrent()
+        val envelope = kotlinx.serialization.json.JsonObject(mapOf("lines" to
+            kotlinx.serialization.json.JsonArray(raw.map { kotlinx.serialization.json.JsonPrimitive(it) }))).toString()
+        val bytes = host.answer(0, envelope)
+        runCurrent()
+        val visible = controller.state.value.lines.joinToString("\n")
+        assertNull(controller.state.value.error)
+        assertTrue(visible.startsWith("2026-10-22 12:34:56,123 INFO"))
+        assertTrue(visible.contains("INFO after complete key"))
+        assertFalse(visible.contains("synthetic"))
+        assertFalse(visible.contains("c3ludGhldGljLWJhc2lj"))
+        // Shared SSH redaction can retain a PEM-shaped placeholder. Its markers
+        // are not secret material; assert on actual synthetic body bytes above.
+        assertFalse(visible.contains("synthetic-key-body"))
+        assertFalse(visible.contains("synthetic-unterminated-key"))
+        assertTrue(bytes.all { it == 0.toByte() })
+        controller.pause()
+    }
+
+    @Test fun `decode queued on separate dispatcher is cancelled and acquired bytes wiped on pause`() = runTest {
+        val queued = java.util.ArrayDeque<Runnable>()
+        val decoder = object : kotlinx.coroutines.CoroutineDispatcher() {
+            override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) {
+                queued.addLast(block)
+            }
+        }
+        val host = Host()
+        val owners = MutableStateFlow(SystemLogsOwner(host, 1, null))
+        val controller = SystemLogsController(backgroundScope, owners, decoder) { owners.value }
+        controller.resume(); runCurrent()
+        val bytes = host.answer(0, """{"lines":["INFO ready"]}""")
+        runCurrent()
+        assertTrue(controller.state.value.loading)
+        controller.pause()
+        while (queued.isNotEmpty()) queued.removeFirst().run()
+        runCurrent()
+        assertEquals(SystemLogsState(), controller.state.value)
+        assertTrue(bytes.all { it == 0.toByte() })
+    }
+
+    @Test(timeout = 5000) fun `alphabetic and almost credential nonmatches consume a bounded tail`() {
+        val alphabetic = "a".repeat(250000)
+        val almost = "a".repeat(250000) + "_tokenn=harmless"
+        var checkpoints = 0
+        val safe = sanitizeLogTail(listOf(alphabetic, almost)) { checkpoints++ }
+        assertEquals(2, safe.size)
+        assertTrue(safe.all { it.length <= 1000 })
+        assertTrue(checkpoints > 100)
+    }
+
+    @Test fun `sanitizer checks cancellation during token scanning`() {
+        var checkpoints = 0
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            sanitizeLogTail(listOf("word ".repeat(100000))) {
+                if (++checkpoints == 10) throw kotlinx.coroutines.CancellationException("synthetic cancellation")
+            }
+        }
     }
 
     @Test fun `truncated quoted credentials redact the remainder rather than leaking words`() {

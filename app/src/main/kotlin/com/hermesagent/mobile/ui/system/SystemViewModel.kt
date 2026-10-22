@@ -108,7 +108,7 @@ internal class SystemViewModel(
     logOwners: kotlinx.coroutines.flow.Flow<SystemLogsOwner> = kotlinx.coroutines.flow.flowOf(SystemLogsOwner(null, 0, null)),
     currentLogOwner: () -> SystemLogsOwner = { SystemLogsOwner(null, 0, null) },
 ) : ViewModel() {
-    internal val logs = SystemLogsController(viewModelScope, logOwners, currentLogOwner)
+    internal val logs = SystemLogsController(viewModelScope, logOwners, currentOwner = currentLogOwner)
 
     private val own = MutableStateFlow(OwnState())
 

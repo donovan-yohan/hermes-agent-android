@@ -5,8 +5,9 @@ import com.hermesagent.mobile.data.gateway.GatewayHttpRequest
 import com.hermesagent.mobile.data.gateway.GatewayHttpResult
 import com.hermesagent.mobile.data.gateway.EndpointDispatchingGatewayHttp
 import com.hermesagent.mobile.data.gateway.consumeBody
-import com.hermesagent.mobile.data.ssh.redact
-import com.hermesagent.mobile.data.updates.safeBackendLine
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -45,6 +46,7 @@ data class SystemLogsState(
 internal class SystemLogsController(
     private val scope: CoroutineScope,
     private val owners: Flow<SystemLogsOwner>,
+    private val decodeDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val currentOwner: () -> SystemLogsOwner,
 ) {
     private val mutable = MutableStateFlow(SystemLogsState())
@@ -118,7 +120,12 @@ internal class SystemLogsController(
                 http.executeAtDispatch(request) { admit -> current() && admit() }
             } else GatewayHttpResult.Rejected(0, LOAD_FAILED)
             val result = when (response) {
-                is GatewayHttpResult.Success -> response.consumeBody { bytes -> parseLogTail(bytes) }
+                is GatewayHttpResult.Success -> response.consumeBody { bytes ->
+                    withContext(decodeDispatcher) {
+                        val decodeContext = coroutineContext
+                        parseLogTail(bytes) { decodeContext.ensureActive() }
+                    }
+                }
                 is GatewayHttpResult.Rejected -> {
                     response.envelopeBytes.fill(0)
                     null
@@ -146,28 +153,10 @@ internal class SystemLogsController(
 }
 
 /** Reject malformed tails; never render a raw envelope or transport exception. */
-internal fun parseLogTail(bytes: ByteArray): List<String>? = try {
+internal fun parseLogTail(bytes: ByteArray, checkpoint: () -> Unit = {}): List<String>? = try {
+    checkpoint()
     val root = Json.parseToJsonElement(bytes.decodeToString()) as? JsonObject
     val lines = root?.get("lines") as? JsonArray
     if (lines == null || lines.size > 200 || lines.any { it !is JsonPrimitive || !it.isString }) null
-    else sanitizeLogTail(lines.map { (it as JsonPrimitive).content })
+    else sanitizeLogTail(lines.map { (it as JsonPrimitive).content }, checkpoint)
 } catch (_: IllegalArgumentException) { null }
-
-// Logs carry more than SSH diagnostics. Redact across line boundaries before capping,
-// so truncated PEMs and quoted credentials cannot leave their continuation visible.
-private val LOG_CREDENTIAL = Regex(
-    "(?i)(?<![a-z_])([\\\"']?(?:authorization|bearer|[a-z_]*(?:token|password|secret|api[_-]?key))[\\\"']?\\s*[:=]\\s*)(?:\\\"[^\\\"]*(?:\\\"|$)|'[^']*(?:'|$)|[^\\s,;]+)",
-)
-private val LOG_AUTH = Regex("(?im)(authorization[\\\"']?\\s*[:=]\\s*)[^\\r\\n]+|\\bBearer\\s+[^\\s\\\"',;]+")
-private val LOG_HOST = Regex("(?i)((?:host(?:name)?|fingerprint)[\\\"']?\\s*[:=]\\s*)(?:\\\"[^\\\"]*\\\"|'[^']*'|[^\\s,;]+)")
-// product-copy-allow: This is a bounded network-identity redaction regex, never rendered product copy.
-private val LOG_ADDRESS = Regex("(?i)(?:https?|wss?|ssh)://[^\\s\\\"'<>]+|SHA256:[A-Za-z0-9+/=]+|\\b(?:[a-z0-9_-]+\\.){1,127}[a-z][a-z0-9-]*\\b|\\b(?:[0-9]{1,3}\\.){3}[0-9]{1,3}\\b|(?<![a-z0-9])(?=[0-9a-f:]{0,39}::)(?:[0-9a-f]{0,4}:){2,8}[0-9a-f:]{0,39}|(?<![a-z0-9])(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}(?![a-z0-9])", RegexOption.IGNORE_CASE)
-internal fun sanitizeLogTail(lines: List<String>): List<String> {
-    if (lines.isEmpty()) return emptyList()
-    var text = redact(lines.joinToString("\n"))
-    text = LOG_AUTH.replace(text, "<redacted>")
-    text = LOG_CREDENTIAL.replace(text, "$1<redacted>")
-    text = LOG_HOST.replace(text, "$1<redacted>")
-    text = LOG_ADDRESS.replace(text, "<redacted>")
-    return text.lines().take(200).map { safeBackendLine(it).filter { ch -> !ch.isISOControl() || ch == '\t' } }
-}
