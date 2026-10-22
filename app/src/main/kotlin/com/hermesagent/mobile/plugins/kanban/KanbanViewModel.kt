@@ -32,6 +32,8 @@ data class KanbanUiState(
     val columns: List<KanbanColumn> = emptyList(),
     val detail: KanbanDetail = KanbanDetail.None,
     val stale: Boolean = false,
+    val move: KanbanMoving? = null,
+    val moveNotice: String? = null,
     val creation: KanbanCreation? = null,
     val creationNotice: String? = null,
     val filters: KanbanFilters = KanbanFilters(),
@@ -45,6 +47,7 @@ class KanbanViewModel(
     connected: StateFlow<Boolean>,
     private val endpointGeneration: StateFlow<Long>,
     private val pluginScope: CoroutineScope? = null,
+    private val move: KanbanMove = UnavailableKanbanMove,
     private val create: KanbanCreate = UnavailableKanbanCreate,
 ) : ViewModel() {
     private val scope: CoroutineScope
@@ -55,6 +58,25 @@ class KanbanViewModel(
     private var endpoint = endpointGeneration.value
     private var boardOperation = 0L
     private var detailOperation = 0L
+    private var moveScope: KanbanMoveScope? = null
+
+    fun openMove() {
+        ensureEndpoint()
+        val detail = _uiState.value.detail as? KanbanDetail.Value ?: return
+        if (detail.stale) return
+        closeMove()
+        val bound = move.open(endpointGeneration.value)
+        moveScope = bound
+        _uiState.update { it.copy(move = KanbanMoving(loading = true), moveNotice = null) }
+        scope.launch {
+            val choices = bound?.prepare(detail.detail.task)
+            if (moveScope === bound && _uiState.value.move != null) _uiState.update {
+                it.copy(move = KanbanMoving(choices = choices,
+                    error = if (choices == null) "Task could not be loaded for moving. Close and refresh to try again." else null))
+            }
+        }
+    }
+
     private var createScope: KanbanCreateScope? = null
 
     fun openCreate() {
@@ -67,6 +89,33 @@ class KanbanViewModel(
             val defaults = bound?.prepare()
             if (createScope === bound && _uiState.value.creation != null) _uiState.update {
                 it.copy(creation = KanbanCreation(defaults = defaults, error = if (defaults == null) "New task is unavailable. Reconnect and try again." else null))
+            }
+        }
+    }
+
+    fun closeMove() {
+        moveScope?.close()
+        moveScope = null
+        _uiState.update { it.copy(move = null) }
+    }
+
+    fun moveTask(status: String, summary: String = "") {
+        val dialog = _uiState.value.move ?: return
+        val bound = moveScope ?: return
+        if (dialog.loading || dialog.submitted || status !in dialog.choices?.statuses.orEmpty()) return
+        if (status == "done" && dialog.choices?.task?.status != "review" &&
+            dialog.choices?.task?.result.isNullOrBlank() && summary.isBlank()) return
+        _uiState.update { it.copy(move = dialog.copy(loading = true, submitted = true)) }
+        scope.launch {
+            val result = bound.move(status, summary)
+            if (moveScope !== bound) return@launch
+            if (result == null) _uiState.update { it.copy(move = dialog.copy(submitted = true,
+                error = "Task move could not be confirmed. Close and refresh before trying again.")) }
+            else {
+                closeMove()
+                closeDetail()
+                _uiState.update { it.copy(moveNotice = "Task moved.") }
+                refreshBoard()
             }
         }
     }
@@ -139,6 +188,7 @@ class KanbanViewModel(
                 }
             }
             KanbanRead.Unavailable -> if (acceptBoard(endpointAtStart, operation)) {
+                closeMove()
                 closeCreate()
                 detailOperation++
                 _uiState.value = KanbanUiState(KanbanPhase.Unavailable)
@@ -173,7 +223,7 @@ class KanbanViewModel(
         val held = (_uiState.value.detail as? KanbanDetail.Value)?.detail
         _uiState.update { it.copy(detail = KanbanDetail.Loading(task)) }
 
-        when (val read = repository.task(task.id)) {
+        when (val read = repository.task(task.id, task.boardSlug)) {
             is KanbanRead.Value -> if (acceptDetail(endpointAtStart, operation)) {
                 _uiState.update { it.copy(detail = KanbanDetail.Value(read.value)) }
             }
@@ -196,6 +246,7 @@ class KanbanViewModel(
     }
 
     fun closeDetail() {
+        closeMove()
         detailOperation++
         _uiState.update { it.copy(detail = KanbanDetail.None) }
     }
@@ -211,6 +262,8 @@ class KanbanViewModel(
     }
 
     private fun clear(generation: Long) {
+        moveScope?.close()
+        moveScope = null
         createScope?.close()
         createScope = null
         endpoint = generation

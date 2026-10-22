@@ -18,6 +18,7 @@ data class KanbanTask(
     val body: String? = null,
     val latestSummary: String? = null,
     val result: String? = null,
+    val boardSlug: String? = null,
     val tenant: String? = null,
 )
 
@@ -26,6 +27,7 @@ data class KanbanBoard(
     val columns: List<KanbanColumn>,
     val assignees: List<String> = emptyList(),
     val tenants: List<String> = emptyList(),
+    val boardSlug: String? = null,
 )
 data class KanbanTaskDetail(
     val task: KanbanTask,
@@ -45,22 +47,37 @@ sealed interface KanbanRead<out T> {
 class KanbanPluginRepository(
     private val rest: suspend (String, PluginRestOptions) -> PluginRestResult,
 ) {
-    suspend fun board(includeArchived: Boolean = false): KanbanRead<KanbanBoard> = decode(
-        rest("board", options().copy(query = if (includeArchived) mapOf("include_archived" to "true") else emptyMap())),
-        ::parseBoard,
-    )
+    suspend fun board(includeArchived: Boolean = false): KanbanRead<KanbanBoard> {
+        val selected = decode(rest("boards", options())) { bytes ->
+            objectOf(bytes)?.string("current")?.takeIf { it.isNotBlank() }
+        }
+        if (selected !is KanbanRead.Value) return when (selected) {
+            KanbanRead.Unavailable -> KanbanRead.Unavailable
+            else -> KanbanRead.Refused
+        }
+        val slug = selected.value
+        val query = mapOf("board" to slug) +
+            if (includeArchived) mapOf("include_archived" to "true") else emptyMap()
+        return decode(rest("board", options().copy(query = query))) { bytes ->
+            parseBoard(bytes)?.let { board -> board.copy(boardSlug = slug,
+                columns = board.columns.map { column -> column.copy(tasks = column.tasks.map { it.copy(boardSlug = slug) }) }) }
+        }
+    }
 
-    suspend fun task(id: String): KanbanRead<KanbanTaskDetail> {
+
+    suspend fun task(id: String, boardSlug: String? = null): KanbanRead<KanbanTaskDetail> {
         if (id.isBlank()) return KanbanRead.Refused
 
         val encodedId = URLEncoder.encode(id, Charsets.UTF_8.name()).replace("+", "%20")
-        return when (val result = rest("tasks/$encodedId", options(captureEnvelope = true))) {
+        return when (val result = rest("tasks/$encodedId", options(captureEnvelope = true)
+            .copy(query = boardSlug?.let { mapOf("board" to it) } ?: emptyMap()))) {
             PluginRestResult.UnavailableOnGateway -> KanbanRead.Unavailable
             is PluginRestResult.Refused -> {
                 if (result.statusCode == 404) KanbanRead.Gone else KanbanRead.Refused
             }
             is PluginRestResult.Success -> {
-                parseDetail(result.bodyBytes)?.let { KanbanRead.Value(it) } ?: KanbanRead.Refused
+                parseDetail(result.bodyBytes)?.let { KanbanRead.Value(it.copy(task = it.task.copy(boardSlug = boardSlug),
+                    childResults = it.childResults.map { child -> child.copy(boardSlug = boardSlug) })) } ?: KanbanRead.Refused
             }
         }
     }
