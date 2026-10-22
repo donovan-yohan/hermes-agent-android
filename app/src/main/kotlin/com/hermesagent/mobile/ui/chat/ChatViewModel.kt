@@ -2383,7 +2383,7 @@ internal class ChatViewModel(
 
     /** Explicit roster owner. Never inherits another profile's model pin or project cwd.
      * Desktop newBotChat data.ts:1297-1325 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa. */
-    fun newBotSession(profile: String, expectedEndpoint: Long, onFinished: (Boolean) -> Unit) {
+    fun newBotSession(profile: String, expectedEndpoint: Long, isCurrent: () -> Boolean = { true }, onFinished: (Boolean) -> Unit) {
         if (profile.isBlank() || profile != profile.trim() ||
             expectedEndpoint != cache.endpointGeneration.value ||
             repository.connectionState.value.status != GatewayConnectionStatus.Connected ||
@@ -2394,7 +2394,7 @@ internal class ChatViewModel(
         val generation = ++navigationGeneration
         val connection = connectionGeneration()
         val scopeGeneration = profileScopeGeneration
-        fun stillOwns() = generation == navigationGeneration && connection == connectionGeneration() &&
+        fun stillOwns() = isCurrent() && generation == navigationGeneration && connection == connectionGeneration() &&
             expectedEndpoint == cache.endpointGeneration.value && scopeGeneration == profileScopeGeneration
         viewModelScope.launch {
             try {
@@ -2406,8 +2406,6 @@ internal class ChatViewModel(
                 inertBotOpens += id
                 ordinaryBotOwner.value = OrdinaryBotOwner(id, profile)
                 composerScope?.let { bindComposerScope(it, normalizeProfileKey(profile).takeIf { it != DEFAULT_PROFILE }) }
-                queueScopeSwitch?.join()
-                if (!stillOwns()) { onFinished(false); return@launch }
                 rehome(id, applyOpenSideEffects = false)
                 refreshComposer(id)
                 onFinished(true)
@@ -2870,7 +2868,10 @@ internal class ChatViewModel(
     }
 
     private fun rehome(id: String?, applyOpenSideEffects: Boolean = true) {
-        if (ordinaryBotOwner.value?.id != id) ordinaryBotOwner.value = null
+        ordinaryBotOwner.value = id?.let { target ->
+            cache.session(target)?.let { OrdinaryBotOwner(target, it.remoteProfile ?: DEFAULT_PROFILE) }
+                ?: ordinaryBotOwner.value?.takeIf { it.id == target }
+        }
         sessionSelectionFence.invalidate()
         invalidateRecentImagesScope()
         activeSessionId.value?.let(composerHistoryController::reset)

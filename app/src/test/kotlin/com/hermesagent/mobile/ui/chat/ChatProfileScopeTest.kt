@@ -410,6 +410,35 @@ class ChatProfileScopeTest {
         assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
     }
 
+    @Test
+    fun `revoked shell lifetime leaves foreground and draft untouched`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectSession("lab-row"); runCurrent()
+        viewModel.setDraft("preserve foreground")
+        val before = viewModel.uiState.value.activeSessionId
+        val gate = CompletableDeferred<Unit>(); repository.sessionCreateGate = gate
+        var current = true
+        val result = mutableListOf<Boolean>()
+        viewModel.newBotSession("work", cache.endpointGeneration.value, { current }) { result += it }
+        runCurrent(); current = false; gate.complete(Unit); runCurrent()
+        assertEquals(before, viewModel.uiState.value.activeSessionId)
+        assertEquals("preserve foreground", viewModel.uiState.value.draft)
+        assertEquals(listOf(false), result)
+    }
+
+    @Test
+    fun `ordinary session rail reopening restores authoritative queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+        viewModel.selectSession("lab-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "lab"), queueScopes.last())
+        viewModel.selectSession("work-row"); runCurrent()
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "work"), queueScopes.last())
+        assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())
