@@ -117,6 +117,15 @@ interface PluginHost {
         dispatchAllowed: () -> Boolean,
     ): PluginHostResult = PluginHostResult.Refused(0, RECONNECT_MESSAGE)
 
+    /** Revocation and wire admission share this typed lease; unsupported hosts fail closed. */
+    suspend fun requestAtEndpointOwned(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+        owner: PluginRequestOwner,
+        dispatchAllowed: () -> Boolean,
+    ): PluginHostResult = PluginHostResult.Refused(0, RECONNECT_MESSAGE)
+
     /** Ready-leg identity; a transport reconnect changes it without changing endpointGeneration. */
     val connectionToken: StateFlow<PluginConnectionToken?> get() = NO_READY_LEG
 
@@ -435,6 +444,23 @@ internal class GatewayPluginHost(
         method: String,
         params: JsonObject,
         dispatchAllowed: () -> Boolean,
+    ): PluginHostResult = requestGuarded(expectedGeneration, method, params, dispatchAllowed, null)
+
+    override suspend fun requestAtEndpointOwned(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+        owner: PluginRequestOwner,
+        dispatchAllowed: () -> Boolean,
+    ): PluginHostResult = requestGuarded(expectedGeneration, method, params,
+        { owner.isCurrent() && dispatchAllowed() }, owner)
+
+    private suspend fun requestGuarded(
+        expectedGeneration: Long,
+        method: String,
+        params: JsonObject,
+        dispatchAllowed: () -> Boolean,
+        owner: PluginRequestOwner?,
     ): PluginHostResult {
         val normalized = normalizePluginHostMethod(CALLER, method)
         val rpc = endpointBoundClient(expectedGeneration) ?: return refusedWithoutRoute()
@@ -452,6 +478,7 @@ internal class GatewayPluginHost(
             params = params,
             lease = lease,
             stillOwns = stillOwns,
+            owner = owner,
         )
     }
 
@@ -491,13 +518,14 @@ internal class GatewayPluginHost(
         params: JsonObject,
         lease: Long,
         stillOwns: () -> Boolean,
+        owner: PluginRequestOwner? = null,
     ): PluginHostResult {
         val call = scope.async {
             // This is a useful early refusal, but not the dispatch decision:
             // `requestAtEndpointDispatch` calls the shared fence around the
             // immediate wire send below.
             if (!stillOwns()) return@async refusedWithoutRoute()
-            val outcome = exchangeAtEndpoint(rpc, normalized, params, lease, stillOwns)
+            val outcome = exchangeAtEndpoint(rpc, normalized, params, lease, stillOwns, owner)
             // A frame may have left before a later switch; its answer never
             // becomes current endpoint truth.
             if (!stillOwns()) return@async refusedWithoutRoute()
@@ -533,10 +561,13 @@ internal class GatewayPluginHost(
         params: JsonObject,
         lease: Long,
         stillOwns: () -> Boolean,
+        owner: PluginRequestOwner?,
     ): PluginHostResult = try {
         PluginHostResult.Success(
             rpc.requestAtEndpointDispatch(method, params) { send ->
-                endpointDispatchFence.dispatchIfCurrent(lease, stillOwns, send)
+                endpointDispatchFence.dispatchIfCurrent(lease, stillOwns) {
+                    if (owner == null) send() else owner.dispatch(send)
+                }
             },
         )
     } catch (cancelled: CancellationException) {
