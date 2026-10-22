@@ -682,6 +682,10 @@ internal class ChatViewModel(
     private var archivedPoolJob: Job? = null
     /** UI-only authority, restored from and saved to a preference. */
     private val profileScope = MutableStateFlow(ProfileScope())
+    /** Read-only host scope for lifecycle-bound System logs; never wait for disk persistence. */
+    internal val systemLogProfileScope: StateFlow<ProfileScope> get() = profileScope
+    private val logProfileGeneration = MutableStateFlow(0L)
+    internal val systemLogProfileGeneration: StateFlow<Long> get() = logProfileGeneration
     private val composer = MutableStateFlow(ComposerUiState())
     /** Engine-owned voice state; contains no media bytes. */
     private val voice = MutableStateFlow<VoiceUiState>(VoiceUiState.Idle)
@@ -2095,6 +2099,7 @@ internal class ChatViewModel(
 
     private fun applyProfileScope(scope: ProfileScope) {
         profileScopeGeneration += 1
+        logProfileGeneration.value = profileScopeGeneration
         if (profileScope.value == scope) return
         profileScope.value = scope
         viewModelScope.launch {
@@ -2455,6 +2460,48 @@ internal class ChatViewModel(
                 if (stillOwnsCreate()) {
                     noticeLine = "A new session could not be started. Check the Gateway and try again."
                 }
+            }
+        }
+    }
+
+    private val branchingSessions = mutableSetOf<String>()
+
+    /** Whole-history branching uses the repository's backend-owned copy, never the visible page. */
+    fun branchSession(id: String) {
+        branchSessionInternal(id, null)
+    }
+
+    fun branchProjectSession(session: SessionSummary) {
+        val owner = session.remoteProfile
+        if (owner == null && cache.session(session.id)?.remoteProfile != null) return
+        branchSessionInternal(session.id, owner)
+    }
+
+    private fun branchSessionInternal(id: String, owner: String?) {
+        if (refuseBotChatMutation(id) != null) return
+        if (id.isBlank() || !branchingSessions.add(id)) return
+        val endpoint = cache.endpointGeneration.value
+        val selected = activeSessionId.value
+        val navigation = navigationGeneration
+        val profile = profileScopeGeneration
+        viewModelScope.launch {
+            try {
+                val child = if (owner == null) repository.branchSessionAtEndpoint(id, endpoint)
+                    else repository.branchProjectSessionAtEndpoint(id, owner, endpoint)
+                if (cache.endpointGeneration.value == endpoint && activeSessionId.value == selected &&
+                    navigationGeneration == navigation && profileScopeGeneration == profile) {
+                    selectSession(child)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Throwable) {
+                if (cache.endpointGeneration.value == endpoint) {
+                    noticeLine = if ((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+                        "Branch outcome is unknown. Check the session list before branching again."
+                    else "Branch failed. Check the Gateway and try again."
+                }
+            } finally {
+                branchingSessions.remove(id)
             }
         }
     }

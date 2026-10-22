@@ -1381,9 +1381,117 @@ class GatewaySessionRepositoryTest {
 
         // without count
         repository.branchSession("durable-a", null)
-        val paramsWithoutCount = rpc.calls.last { it.method == "session.branch" }.params
+        val paramsWithoutCount = rpc.calls.last { it.method == "session.branch_whole" }.params
         assertEquals("runtime-a", paramsWithoutCount.string("session_id"))
         assertFalse("count" in paramsWithoutCount)
+        assertTrue(paramsWithoutCount.string("idempotency_key")?.isNotBlank() == true)
+    }
+
+    @Test
+    fun `whole branch falls back only for missing method and keeps retry key`() = runTest {
+        for (code in listOf(-32601, -32000)) {
+            val cache = SessionCache()
+            val rpc = FakeRpc().apply {
+                branchResult = CREATE
+                wholeBranchFailure = GatewayRpcError(code, "synthetic refusal")
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+            runCurrent()
+            repository.openSession("durable-a")
+            val result = runCatching { repository.branchSession("durable-a", null) }
+            val first = rpc.calls.last { it.method == "session.branch_whole" }.params
+            if (code == -32601) {
+                assertTrue(result.isSuccess)
+                assertEquals(first, rpc.calls.last { it.method == "session.branch" }.params)
+            } else {
+                assertTrue(result.isFailure)
+                assertTrue(rpc.calls.none { it.method == "session.branch" })
+                runCatching { repository.branchSession("durable-a", null) }
+                assertEquals(first, rpc.calls.last { it.method == "session.branch_whole" }.params)
+            }
+        }
+    }
+
+    @Test
+    fun `uncertain whole branch refuses blind retry after same endpoint reconnect`() = runTest {
+        val cache = SessionCache()
+        val first = FakeRpc().apply { wholeBranchFailure = GatewayRpcException("Lost receipt", requestMayHaveBeenAccepted = true) }
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        assertTrue(runCatching { repository.branchSession("durable-a", null) }.isFailure)
+        clients.value = null
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        val second = FakeRpc()
+        clients.value = second
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        val failure = runCatching { repository.branchSession("durable-a", null) }.exceptionOrNull()
+        assertTrue((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+        assertTrue(second.calls.none { it.method in setOf("session.branch", "session.branch_whole", "session.mutate") })
+    }
+
+    @Test
+    fun `compressed root whole branch refuses reconnect retry through resolved tip`() = runTest {
+        val cache = SessionCache().apply {
+            upsertSession(SessionSummary("parent-root", "Long chat", "", CLOCK))
+        }
+        val first = FakeRpc().apply {
+            resumeA = RESUME_COMPRESSION_TIP
+            wholeBranchFailure = GatewayRpcException("Lost receipt", requestMayHaveBeenAccepted = true)
+        }
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        assertTrue(runCatching { repository.branchSession("parent-root", null) }.isFailure)
+        assertEquals("runtime-a", first.calls.single { it.method == "session.branch_whole" }.params.string("session_id"))
+        assertNotNull(cache.session("continuation-tip"))
+        clients.value = null
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        val second = FakeRpc().apply { resumeA = RESUME_COMPRESSION_TIP }
+        clients.value = second
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        val failure = runCatching { repository.branchSession("continuation-tip", null) }.exceptionOrNull()
+        assertTrue((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+        assertTrue(second.calls.none { it.method in setOf("session.branch", "session.branch_whole", "session.mutate") })
+    }
+
+    @Test
+    fun `menu whole branch resumes unopened stored row without reentrant navigation lock`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc().apply { branchResult = CREATE }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val child = repository.branchSessionAtEndpoint("durable-a", cache.endpointGeneration.value)
+        assertTrue(child.isNotBlank())
+        assertTrue(rpc.calls.any { it.method == "session.resume" })
+        assertTrue(rpc.calls.any { it.method == "session.branch_whole" })
+    }
+
+    @Test
+    fun `menu whole branch stale endpoint is refused before resolving runtime`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        val endpoint = cache.endpointGeneration.value
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        val before = rpc.calls.toList()
+        assertTrue(runCatching { repository.branchSessionAtEndpoint("durable-a", endpoint) }.isFailure)
+        assertEquals(before, rpc.calls)
     }
 
     @Test
@@ -9688,6 +9796,7 @@ class GatewaySessionRepositoryTest {
     }
 
     private class FakeRpc : EndpointDispatchingGatewayRpcClient {
+        var wholeBranchFailure: Throwable? = null
         private val eventChannel = Channel<GatewayEvent>(capacity = 1_024)
         override val events = eventChannel.receiveAsFlow()
         val calls = mutableListOf<RpcCall>()
@@ -9799,6 +9908,7 @@ class GatewaySessionRepositoryTest {
                 }
                 "session.create" -> json(createResult)
                 "session.branch" -> json(branchResult)
+                "session.branch_whole" -> { wholeBranchFailure?.let { throw it }; json(branchResult) }
                 "model.options" -> modelOptionsResponse?.await() ?: json(modelOptionsResult)
                 "config.get" -> when (params.string("key")) {
                     "provider" -> json(providerResult)

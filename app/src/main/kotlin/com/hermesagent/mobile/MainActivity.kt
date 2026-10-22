@@ -135,7 +135,22 @@ class MainActivity : ComponentActivity() {
      * cancel an apply by going away.
      */
     private val systemViewModel: SystemViewModel by viewModels {
-        SystemViewModel.factory(api = app.systemApi, updates = app.updateController)
+        SystemViewModel.factory(
+            api = app.systemApi, updates = app.updateController,
+            logOwners = kotlinx.coroutines.flow.combine(
+                app.gatewayConnection.gatewayHttp, app.cache.endpointGeneration, chatViewModel.systemLogProfileScope,
+                chatViewModel.systemLogProfileGeneration,
+            ) { http, endpoint, profile, profileGeneration ->
+                com.hermesagent.mobile.ui.system.SystemLogsOwner(http, endpoint, profile.sessionProfileParam, profileGeneration)
+            },
+            currentLogOwner = {
+                com.hermesagent.mobile.ui.system.SystemLogsOwner(
+                    app.gatewayHttp, app.cache.endpointGeneration.value,
+                    chatViewModel.systemLogProfileScope.value.sessionProfileParam,
+                    chatViewModel.systemLogProfileGeneration.value,
+                )
+            },
+        )
     }
     private val keyImports = KeyImportGate()
     private var pendingPickerToken: Long? = null
@@ -383,6 +398,12 @@ class MainActivity : ComponentActivity() {
                     onCheckUpdates = systemViewModel::checkForUpdates,
                     onApplyUpdate = systemViewModel::applyUpdate,
                     onCloseUpdates = systemViewModel::closeUpdates,
+                    onLogsResume = systemViewModel.logs::resume,
+                    onLogsPause = systemViewModel.logs::pause,
+                    onLogsRefresh = systemViewModel.logs::refresh,
+                    onLogFile = systemViewModel.logs::selectFile,
+                    onLogLevel = systemViewModel.logs::selectLevel,
+                    onLogQuery = systemViewModel.logs::filter,
                 )
             }
             val connectionsActions = remember {
@@ -470,6 +491,8 @@ class MainActivity : ComponentActivity() {
                     onDismissGatewayLogs = chatViewModel::dismissGatewayLogs,
                     onRenameSession = chatViewModel::renameSessionAsync,
                     onDeleteSession = chatViewModel::deleteSessionAsync,
+                    onBranchSession = chatViewModel::branchSession,
+                    onBranchProjectSession = chatViewModel::branchProjectSession,
                     onSetSessionPinned = chatViewModel::setSessionPinnedAsync,
                     onSetSessionUnread = chatViewModel::setSessionUnreadAsync,
                     onSetSessionArchived = chatViewModel::setSessionArchivedAsync,
