@@ -1415,6 +1415,28 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `uncertain whole branch refuses blind retry after same endpoint reconnect`() = runTest {
+        val cache = SessionCache()
+        val first = FakeRpc().apply { wholeBranchFailure = GatewayRpcException("Lost receipt", requestMayHaveBeenAccepted = true) }
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a")
+        assertTrue(runCatching { repository.branchSession("durable-a", null) }.isFailure)
+        clients.value = null
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        val second = FakeRpc()
+        clients.value = second
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        val failure = runCatching { repository.branchSession("durable-a", null) }.exceptionOrNull()
+        assertTrue((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+        assertTrue(second.calls.none { it.method in setOf("session.branch", "session.branch_whole", "session.mutate") })
+    }
+
+    @Test
     fun `menu whole branch resumes unopened stored row without reentrant navigation lock`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { branchResult = CREATE }

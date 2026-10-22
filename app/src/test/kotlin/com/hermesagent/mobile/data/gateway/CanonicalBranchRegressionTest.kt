@@ -129,6 +129,31 @@ class CanonicalBranchRegressionTest {
     }
 
     @Test
+    fun `canonical lost child receipt cannot create another child after socket replacement`() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val first = BranchPeer("work", false, UnconfinedTestDispatcher(testScheduler))
+        val second = BranchPeer("work", false, UnconfinedTestDispatcher(testScheduler))
+        val clients = MutableStateFlow<GatewayRpcClient?>(first.rpc)
+        val cache = SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), clients, backgroundScope) { CLOCK }
+        try {
+            val parent = repository.openSession("public-parent", "work")
+            first.failNextChildResume = true
+            assertTrue(runCatching { repository.branchSession(parent, null) }.isFailure)
+            assertEquals(1, first.calls("session.mutate").size)
+            clients.value = null
+            runCurrent()
+            clients.value = second.rpc
+            runCurrent()
+            repository.openSession(parent, "work")
+            val failure = runCatching { repository.branchSession(parent, null) }.exceptionOrNull()
+            assertTrue((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+            assertTrue(second.calls("session.mutate").isEmpty())
+        } finally { first.rpc.close(); second.rpc.close() }
+    }
+
+    @Test
     fun `endpoint switch while child snapshot parked cannot adopt or send into child`() = runTest {
         fixture("work") { peer, cache, _, viewModel, parent ->
             peer.parkChildResume = true

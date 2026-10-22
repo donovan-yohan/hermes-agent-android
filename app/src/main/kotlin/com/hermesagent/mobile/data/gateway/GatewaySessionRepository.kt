@@ -2665,7 +2665,8 @@ internal class LiveGatewaySessionRepository(
         parseHistory(historyResult, binding.runtimeId, clock())
     }
 
-    private val wholeBranchRequests = mutableMapOf<Pair<Long, String>, String>()
+    private data class WholeBranchAttempt(val connectionGeneration: Long, val key: String)
+    private val wholeBranchRequests = mutableMapOf<Pair<Long, String>, WholeBranchAttempt>()
 
     override suspend fun branchSessionAtEndpoint(durableId: String, expectedEndpointGeneration: Long): String =
         branchSessionInternal(durableId, null, null, fromReply = false, expectedEndpointGeneration)
@@ -2705,8 +2706,16 @@ internal class LiveGatewaySessionRepository(
                 put("session_id", JsonPrimitive(binding.runtimeId))
                 if (count == null) {
                     val key = synchronized(stateLock) {
-                        wholeBranchRequests.keys.removeAll { it.first != connection.generation }
-                        wholeBranchRequests.getOrPut(connection.generation to durableId) { java.util.UUID.randomUUID().toString() }
+                        wholeBranchRequests.keys.removeAll { it.first != connection.endpointGeneration }
+                        val attempt = wholeBranchRequests.getOrPut(connection.endpointGeneration to durableId) {
+                            WholeBranchAttempt(connection.generation, java.util.UUID.randomUUID().toString())
+                        }
+                        // Canonical prepared revision/generation belongs to the old socket adapter.
+                        // Until a retained receipt can be reconciled, never blindly create a second child.
+                        if (attempt.connectionGeneration != connection.generation) {
+                            throw GatewayRpcException("Branch outcome is unknown. Check the session list before branching again.", requestMayHaveBeenAccepted = true)
+                        }
+                        attempt.key
                     }
                     put("idempotency_key", JsonPrimitive(key))
                 }
@@ -2737,7 +2746,7 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.bind(newDurableId, newRuntimeId)
-            if (count == null) wholeBranchRequests.remove(connection.generation to durableId)
+            if (count == null) wholeBranchRequests.remove(connection.endpointGeneration to durableId)
             runtimeProfiles[newRuntimeId] = profile
             // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
             cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId).let { row ->

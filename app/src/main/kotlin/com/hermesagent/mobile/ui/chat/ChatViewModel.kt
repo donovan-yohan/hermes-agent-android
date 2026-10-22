@@ -2448,9 +2448,11 @@ internal class ChatViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Throwable) {
+            } catch (failure: Throwable) {
                 if (cache.endpointGeneration.value == endpoint) {
-                    noticeLine = "Branch failed. Check the Gateway and try again."
+                    noticeLine = if ((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+                        "Branch outcome is unknown. Check the session list before branching again."
+                    else "Branch failed. Check the Gateway and try again."
                 }
             } finally {
                 branchingSessions.remove(id)

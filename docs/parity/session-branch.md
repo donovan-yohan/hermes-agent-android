@@ -21,12 +21,23 @@ The ViewModel coalesces repeated presses until settlement and opens the child on
 while endpoint and foreground selection still match the initiating context. Failure
 uses the existing safe notice. The operation outlives a row leaving composition.
 
+An unresolved whole-branch attempt survives same-endpoint reconnect as an explicit
+uncertain outcome, not permission for another mutation. The new socket's canonical
+adapter cannot reconstruct the old prepared revision/generation, so retry is refused
+with a check-the-session-list notice. This conservative refusal applies to both
+canonical and legacy transports until endpoint reset; it is not automatic receipt
+reconciliation. Same-socket hydration retry retains its existing request identity.
+`tui_gateway/methods_session_branch.py:84-99,126-139` and
+`hermes_state_mutation_branch.py:64-86` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`
+establish why minting a new request after losing the receipt is not a safe retry.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
 | Branch in the Work group | mobile-adaptation | Same label, glyph and order; enabled only when an owner callback exists | Touch uses the existing 48dp menu target; absent owner retains WIP rather than a dead enabled action |
 | Whole-session branch from stored rows | mobile-adaptation | Existing repository resolves the parent's runtime first | Shared canonical/runtime identity path prevents a second branch implementation and preserves parent profile ownership |
+| Lost receipt across reconnect | mobile-adaptation | Explicit uncertain-outcome refusal; inspect the session list, no blind second write | Repository tests replace both legacy and canonical sockets after an unresolved child attempt |
 | Rendered live Branch states | drift | Fresh side-by-side evidence not captured | #72 owns exact-head surface acceptance; Concern, not visual acceptance |
 
 ## Visual report
