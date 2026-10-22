@@ -36,6 +36,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
     private val preSnapshotEvents = mutableListOf<GatewayEvent>()
     private val admissionStatuses = linkedMapOf<Pair<Owner, String>, String>()
     private val pendingAdmissions = mutableMapOf<Owner, JsonArray>()
+    private val pendingRevisions = mutableMapOf<Owner, Long>()
     private val prompts = mutableMapOf<Pair<Owner, String>, JsonObject>()
     private val creates = mutableMapOf<JsonObject, String>()
     @Volatile var announced: Boolean = false
@@ -161,7 +162,12 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
                 val plain = JsonObject(params.filterKeys { it !in TRUNCATE_KEYS })
                 val prepared = if (plain.text("submission_id").isNullOrBlank() && plain.text("input_id").isNullOrBlank())
                     JsonObject(plain + ("submission_id" to JsonPrimitive(UUID.randomUUID().toString()))) else plain
-                admission(send(method, prepared), prepared, owner)
+                val pendingRevision = synchronized(stateLock) { pendingRevisions[owner] ?: 0L }
+                val result = send(method, prepared)
+                // Current owner may consume a local voice stop without admitting a turn.
+                // contracts/canonical_sessions.py:233-241 @ 81a55437f3f31a9f12a30c53b6c5d49d420898aa.
+                if (result == buildJsonObject { put("voice_stopped", true) }) result
+                else admission(result, prepared, owner, pendingRevision)
             }
             "session.interrupt", "session.steer", "session.redirect" -> {
                 val owner = owner(profile, params.text("session_id") ?: unusable())
@@ -500,7 +506,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
         }
     }
 
-    private fun admission(raw: JsonElement, params: JsonObject, owner: Owner): JsonObject {
+    private fun admission(raw: JsonElement, params: JsonObject, owner: Owner, pendingRevision: Long? = null): JsonObject {
         fun uncertain(): Nothing = throw GatewayRpcException("The Gateway returned an unusable admission receipt.", requestMayHaveBeenAccepted = true)
         val value = raw as? JsonObject ?: uncertain()
         val ref = value["ref"] as? JsonObject ?: uncertain()
@@ -524,7 +530,8 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             val id = value.text("admission_id") ?: uncertain()
             val status = value.text("status") ?: uncertain()
             val previousStatus = admissionStatuses[owner to id]
-            if (ADMISSION_RANK.getValue(status) >= (previousStatus?.let(ADMISSION_RANK::getValue) ?: -1)) {
+            val superseded = pendingRevision != null && pendingRevision != (pendingRevisions[owner] ?: 0L)
+            if (!superseded && ADMISSION_RANK.getValue(status) >= (previousStatus?.let(ADMISSION_RANK::getValue) ?: -1)) {
                 admissionStatuses[owner to id] = status
                 val rest = pendingAdmissions[owner].orEmpty().filter { (it as? JsonObject)?.text("admission_id") != id }
                 val row = if (status == "terminal") emptyList() else listOf(JsonObject(value + buildJsonObject {
@@ -543,6 +550,7 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
 
     /** A full owner pending fanout outranks delayed receipts and cannot resurrect settled inputs. */
     private fun reconcilePending(owner: Owner, rows: JsonArray) {
+        pendingRevisions[owner] = (pendingRevisions[owner] ?: 0L) + 1L
         val incoming = rows.mapNotNull { it as? JsonObject }
         val previous = pendingAdmissions[owner].orEmpty().mapNotNull { it as? JsonObject }
         val ids = incoming.mapNotNull { it.text("admission_id") }.toSet()
@@ -553,8 +561,11 @@ internal class CanonicalSessionProtocol(identity: GatewaySessionIdentity = Gatew
             val status = row.text("status") ?: return@mapNotNull null
             val rank = ADMISSION_RANK[status] ?: return@mapNotNull null
             val observed = admissionStatuses[owner to id]
-            if (rank < (observed?.let(ADMISSION_RANK::getValue) ?: -1))
-                previous.singleOrNull { it.text("admission_id") == id && observed != "terminal" }
+            val prior = previous.singleOrNull { it.text("admission_id") == id }
+            val returnedTransfer = observed == "started" && prior?.get("steering") == JsonPrimitive(true) &&
+                status == "queued" && row["steering"] != JsonPrimitive(true)
+            if (rank < (observed?.let(ADMISSION_RANK::getValue) ?: -1) && !returnedTransfer)
+                prior?.takeIf { observed != "terminal" }
             else { admissionStatuses[owner to id] = status; row.takeUnless { status == "terminal" } }
         }
         pendingAdmissions[owner] = JsonArray(accepted)

@@ -1,6 +1,8 @@
 package com.hermesagent.mobile.data.gateway
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
@@ -350,11 +352,95 @@ class CanonicalGatewayRpcTest {
         peer.rpc.close()
     }
 
+    @Test
+    fun `consumed canonical voice stop is not an ambiguous admission or phantom running message`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.submitResultOverride = buildJsonObject { put("voice_stopped", true) }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val before = cache.transcript(key)
+        assertEquals(GatewaySubmitOutcome.VoiceStopped, repository.submit(key, "stop"))
+        assertEquals(before, cache.transcript(key))
+        assertEquals(com.hermesagent.mobile.data.session.SessionStatus.Idle, cache.session(key)?.status)
+        assertTrue(repository.activeTurns.value.isEmpty())
+        assertEquals(1, peer.frames.count { it["method"] == JsonPrimitive("prompt.submit") })
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `voice stop rollback preserves newer canonical admission and metadata`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        peer.submitResultOverride = buildJsonObject { put("voice_stopped", true) }
+        val cache = com.hermesagent.mobile.data.session.SessionCache()
+        val repository = LiveGatewaySessionRepository(cache,
+            kotlinx.coroutines.flow.MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            kotlinx.coroutines.flow.MutableStateFlow<GatewayRpcClient?>(peer.rpc), backgroundScope) { 1800000000000 }
+        val key = repository.openSession("canonical-public", "work")
+        val before = cache.transcript(key)
+        peer.beforeSubmitReply = {
+            peer.rpc.receive("""{"jsonrpc":"2.0","method":"event","params":{"type":"session.info","ref":{"profile_id":"public-owner","session_id":"canonical-public"},"session_id":"canonical-public","profile_id":"public-owner","replay_epoch":"public-session-epoch","seq":1,"execution_generation":3,"authority_epoch":2,"payload":{"running":false,"revision":8,"cwd":"/workspace/newer","pending":[{"admission_id":"other-client","input_id":"other-input","status":"queued","text":"Keep queued","sequence":2,"authority_epoch":2,"execution_generation":null,"ref":{"profile_id":"public-owner","session_id":"canonical-public"}}]}}}""")
+        }
+        val send = async { repository.submit(key, "stop") }
+        runCurrent()
+        assertEquals(GatewaySubmitOutcome.VoiceStopped, send.await())
+        assertEquals(before, cache.transcript(key))
+        assertEquals("other-client", cache.session(key)?.composerStatus?.gatewayAdmissions?.single()?.key?.admissionId)
+        assertEquals("/workspace/newer", cache.session(key)?.worktreePath)
+        assertTrue(repository.activeTurns.value.isEmpty())
+        peer.rpc.close()
+    }
+
+    @Test
+    fun `voice stop receipt must be exact literal boolean and never hides unusable admission`() = runTest {
+        for (bad in listOf(buildJsonObject { put("voice_stopped", "true") },
+            buildJsonObject { put("voice_stopped", true); put("admission_id", "unusable") })) {
+            val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+            peer.submitResultOverride = bad
+            val key = peer.rpc.request("session.resume", buildJsonObject { put("session_id", "canonical-public"); put("profile", "work") })
+                .jsonObject.getValue("session_id").jsonPrimitive.content
+            val failure = runCatching { peer.rpc.request("prompt.submit", buildJsonObject {
+                put("session_id", key); put("text", "stop")
+            }) }.exceptionOrNull()
+            assertTrue(failure is GatewayRpcException && failure.requestMayHaveBeenAccepted)
+            peer.rpc.close()
+        }
+    }
+
+    @Test
+    fun `authoritative pending return from transfer restores queued admission and cancellation`() = runTest {
+        val peer = CanonicalPeer(UnconfinedTestDispatcher(testScheduler)).also { it.ready() }
+        fun pending(status: String, steering: Boolean) = JsonArray(listOf(buildJsonObject {
+            put("admission_id", "public-next"); put("input_id", "public-input-next")
+            put("status", status); put("steering", steering); put("execution_generation", JsonNull)
+            put("text", "Next public turn"); put("sequence", 2); put("authority_epoch", 2)
+            put("ref", buildJsonObject { put("profile_id", "public-owner"); put("session_id", "canonical-public") })
+        }))
+        peer.pendingRows = pending("queued", false)
+        val key = peer.rpc.request("session.resume", buildJsonObject {
+            put("session_id", "canonical-public"); put("profile", "work")
+        }).jsonObject.getValue("session_id").jsonPrimitive.content
+        peer.pendingRows = pending("started", true)
+        peer.rpc.request("session.resume", buildJsonObject { put("session_id", key) })
+        peer.pendingRows = pending("queued", false)
+        val restored = peer.rpc.request("session.resume", buildJsonObject { put("session_id", key) }).jsonObject
+        assertEquals(JsonPrimitive("queued"), restored.getValue("pending").jsonArray.single().jsonObject["status"])
+        peer.rpc.request("prompt.cancel", buildJsonObject { put("session_id", key); put("admission_id", "public-next") })
+        peer.pendingRows = pending("queued", false)
+        val after = peer.rpc.request("session.resume", buildJsonObject { put("session_id", key) }).jsonObject
+        assertTrue(after.getValue("pending").jsonArray.isEmpty())
+        peer.rpc.close()
+    }
+
     private class CanonicalPeer(dispatcher: kotlinx.coroutines.CoroutineDispatcher) {
         val frames = mutableListOf<JsonObject>()
         var refuseRegistryAfterCreate = false
         private var created = false
         var submitStatus: String? = null
+        var submitResultOverride: JsonObject? = null
+        var beforeSubmitReply: (() -> Unit)? = null
         var pendingRows = JsonArray(emptyList())
         var snapshotGeneration = 3
         var snapshotOwner: String? = "public-owner"
@@ -391,6 +477,11 @@ class CanonicalGatewayRpcTest {
                     }
                     "image.attach_bytes" -> """{"attached":true,"path":"/workspace/public/upload.png","mime":"image/png","name":"upload.png","count":1,"remainder":"","text":"[User attached image: upload.png]","bytes":8}"""
                     "prompt.submit" -> {
+                        submitResultOverride?.let {
+                            beforeSubmitReply?.invoke()
+                            rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":$it}""")
+                            return true
+                        }
                         if (requireAttachments && params["attachments"] !is JsonArray) { replyError(frame); return true }
                         val submission = (params["submission_id"] ?: params["input_id"]) as? JsonPrimitive
                         if (submission == null || submission.content.isBlank()) {

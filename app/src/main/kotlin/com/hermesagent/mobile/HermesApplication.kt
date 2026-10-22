@@ -396,7 +396,8 @@ class HermesApplication : Application() {
             submitter = object : ComposerQueueSubmitter {
                 override suspend fun submitQueued(durableSessionId: String, entry: com.hermesagent.mobile.data.composer.QueuedPrompt): QueueSubmissionOutcome = try {
                     when (sessionRepository.submitIdentified(durableSessionId, entry.text, queued = true, submissionId = entry.submissionId)) {
-                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted -> QueueSubmissionOutcome.Accepted
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted,
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.VoiceStopped -> QueueSubmissionOutcome.Accepted
                         com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Ambiguous -> QueueSubmissionOutcome.Ambiguous
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -406,7 +407,8 @@ class HermesApplication : Application() {
                 }
                 override suspend fun submitQueued(durableSessionId: String, text: String): QueueSubmissionOutcome = try {
                     when (sessionRepository.submit(durableSessionId, text, queued = true)) {
-                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted -> QueueSubmissionOutcome.Accepted
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Accepted,
+                        com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.VoiceStopped -> QueueSubmissionOutcome.Accepted
                         com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome.Ambiguous -> QueueSubmissionOutcome.Ambiguous
                     }
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {

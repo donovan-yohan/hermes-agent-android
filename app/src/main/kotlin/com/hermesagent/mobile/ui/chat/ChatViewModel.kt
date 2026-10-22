@@ -80,6 +80,7 @@ import com.hermesagent.mobile.data.gateway.selectedSavedBranchRow
 import com.hermesagent.mobile.data.gateway.deriveBranchCount
 import com.hermesagent.mobile.data.gateway.GatewaySessionRepository
 import com.hermesagent.mobile.data.gateway.GatewaySubmitOutcome
+import com.hermesagent.mobile.data.gateway.isAmbiguousGatewayMutation
 import com.hermesagent.mobile.data.gateway.GatewayInterruptOutcome
 import com.hermesagent.mobile.data.gateway.RegeneratePlan
 import com.hermesagent.mobile.data.gateway.planRegenerate
@@ -3035,6 +3036,7 @@ internal class ChatViewModel(
             ?.takeIf { botChatSessionId == sessionId }
             ?.cacheGeneration
         val selection = captureSessionSelection(sessionId)
+        val submitEndpoint = cache.endpointGeneration.value
         if (cronSendKey == null) clearDraftAfterDelivery(sessionId)
         noticeLine = if (compactBotChat) {
             "Bot chats are one continuous conversation — compacting instead. For a throwaway session with this bot, use Sessions mode."
@@ -3078,6 +3080,14 @@ internal class ChatViewModel(
                         val projectId = createdProjectBySession.remove(sessionId) ?: selectedProjectId.value
                         if (projectId != null) runCatching { repository.refreshProjects() }
                     }
+                    GatewaySubmitOutcome.VoiceStopped -> {
+                        // A consumed stop is not a sent message. Keep staged attachments
+                        // available, and do not manufacture a transcript/admission row.
+                        markAttachmentsUnsent(sessionId)
+                        if (activeSessionId.value == sessionId && cache.endpointGeneration.value == submitEndpoint) {
+                            noticeLine = "Voice chat ended."
+                        }
+                    }
                     GatewaySubmitOutcome.Ambiguous -> {
                         markAttachmentsReviewRequired(sessionId, submittedPrompt)
                         noticeLine = "This message may have been sent. Check this session and wait for Hermes before trying again."
@@ -3088,7 +3098,7 @@ internal class ChatViewModel(
                 throw cancelled
             } catch (failure: Throwable) {
                 val rpcFailure = failure as? GatewayRpcException
-                val ambiguous = rpcFailure?.requestMayHaveBeenAccepted == true
+                val ambiguous = failure.isAmbiguousGatewayMutation()
                 if (ambiguous) {
                     markAttachmentsReviewRequired(sessionId, submittedPrompt)
                 } else {
@@ -3685,6 +3695,7 @@ internal class ChatViewModel(
                         repository.steerAtEndpoint(sessionId, prompt, botEndpoint.cacheGeneration, observedTurn)
                     } else repository.steerAtEndpoint(sessionId, prompt, observedEndpoint, observedTurn)
                     when (result) {
+                        com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.VoiceStopped -> GatewayRedirectOutcome.VoiceStopped
                         com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.QueuedByGateway -> GatewayRedirectOutcome.QueuedByGateway
                         com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Rejected -> GatewayRedirectOutcome.Rejected
                         com.hermesagent.mobile.data.gateway.GatewaySteerOutcome.Unsupported -> GatewayRedirectOutcome.Unsupported
@@ -3696,6 +3707,7 @@ internal class ChatViewModel(
                 } else repository.redirect(sessionId, prompt)
                 if (!stillOwnsBotEditor()) return@launch
                 when (outcome) {
+                    GatewayRedirectOutcome.VoiceStopped,
                     GatewayRedirectOutcome.Redirected,
                     GatewayRedirectOutcome.QueuedByGateway,
                     -> {
@@ -3891,6 +3903,7 @@ internal class ChatViewModel(
         viewModelScope.launch {
             try {
                 when (repository.redirect(sessionId, entry.text)) {
+                    GatewayRedirectOutcome.VoiceStopped,
                     GatewayRedirectOutcome.Redirected,
                     GatewayRedirectOutcome.QueuedByGateway,
                     -> composerQueueController.remove(sessionId, entryId)

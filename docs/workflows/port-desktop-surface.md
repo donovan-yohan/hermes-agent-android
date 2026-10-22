@@ -11,7 +11,7 @@ Every step here earned its place by being something a port gets wrong.
 
 ```bash
 HERMES_AGENT_UPSTREAM="${HERMES_AGENT_UPSTREAM:-$HOME/.hermes/hermes-agent}"
-pin=ddabd3837862022a6053331fe3ba97cf9716b9e3 # current target for new ports
+pin=81a55437f3f31a9f12a30c53b6c5d49d420898aa # current target for new ports
 # Create a disposable clone at $pin as in review-desktop-parity.md §2.
 # For an existing surface, use its declared pin instead, not an automatic restamp.
 git -C "${export:?set export to the disposable pinned checkout}" rev-parse HEAD # must equal $pin

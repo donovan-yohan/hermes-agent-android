@@ -1490,6 +1490,30 @@ class ChatViewModelTest {
         assertFalse(viewModel.uiState.value.notice?.text.orEmpty().contains("not sent"))
     }
 
+    @Test
+    fun `consumed voice stop clears editor without ambiguous notice or fallback queue`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        repository.submitOutcome = GatewaySubmitOutcome.VoiceStopped
+        viewModel.setDraft("stop"); runCurrent()
+        viewModel.submit(); runCurrent()
+        assertEquals(listOf("session-a" to "stop"), repository.submitted)
+        assertEquals("", viewModel.uiState.value.draft)
+        assertEquals("Voice chat ended.", viewModel.uiState.value.notice?.text)
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+    }
+
+    @Test
+    fun `owner forward uncertainty does not restore a retryable draft`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        repository.submitFailure = GatewayRpcError(4090, "refused", "SESSION_OWNER_UNCONFIRMED")
+        viewModel.setDraft("forward once"); runCurrent()
+        viewModel.submit(); runCurrent()
+        assertEquals("", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.notice?.text.orEmpty().contains("may have been sent"))
+        assertNull(viewModel.uiState.value.notice?.action)
+        assertEquals(1, repository.submitAttempts)
+    }
+
     /**
      * #220. Another surface holds the lease, so the send is refused for as long
      * as it does: the notice has to carry the way out, not just the news.
@@ -3145,6 +3169,29 @@ class ChatViewModelTest {
         releaseFirstSubmit.complete(QueueSubmissionOutcome.Accepted)
         runCurrent()
         assertEquals(listOf("session-a" to "first"), submitted)
+    }
+
+    @Test
+    fun `consumed voice stop correction never enters ready fallback queue`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        repository.redirectOutcome = GatewayRedirectOutcome.VoiceStopped
+        viewModel.setDraft("stop"); runCurrent()
+        viewModel.redirectDraftFromUi(); runCurrent()
+        assertEquals("", viewModel.uiState.value.draft)
+        assertTrue(viewModel.uiState.value.composer.runtime.queueEntries.isEmpty())
+        assertEquals(1, repository.redirects.size)
+    }
+
+    @Test
+    fun `uncertain correction stays review required rather than automatic ready queue`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        cache.upsertSession(requireNotNull(cache.session("session-a")).copy(status = SessionStatus.Working))
+        repository.redirectOutcome = GatewayRedirectOutcome.Ambiguous
+        viewModel.setDraft("maybe delivered"); runCurrent()
+        viewModel.redirectDraftFromUi(); runCurrent()
+        assertEquals(QueuedPromptDelivery.Ambiguous, viewModel.uiState.value.composer.runtime.queueEntries.single().delivery)
+        assertTrue(viewModel.uiState.value.notice?.text.orEmpty().contains("may have reached"))
     }
 
     @Test
