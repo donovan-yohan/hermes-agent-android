@@ -14,7 +14,7 @@ All upstream paths/ranges below refer to the Desktop source target above.
 | Consumer | Finding at Android baseline | Remediation / boundary | Owner |
 |---|---|---|---|
 | Submit and busy correction | `tui_gateway/contracts/canonical_sessions.py:233-245,269-283` permits a consumed voice stop without an admission. The old adapter rejects it as uncertain; correction falls back into a ready queue. | Exact literal `voice_stopped:true` becomes a no-admission outcome. Its own optimistic submit rolls back without stopping another authoritative execution; correction settles without replay. Applies to canonical and legacy owner-forward replies. Correlated RPC/repository and ViewModel regressions cover this shape. | #266 |
-| Busy model selection | `gateway/session_deferred_pick.py:16-43,92-136` defers selection and can ask for confirmation at the next boundary. | Isolated follow-up is being implemented and tested. No claim of new-backend compatibility until explicit consent and effective-state fencing are verified. | #266 |
+| Busy model selection | `gateway/session_deferred_pick.py:16-43,92-136` defers selection and can ask for confirmation at the next boundary. | Implemented candidate: deferred next-turn intent is separate from effective session.info controls; exact whole-payload confirmation is single-use and owner/profile/endpoint/generation bound. Consent is rechecked at final wire admission and revoked on supersession, replay/authority gaps and execution changes. Underspecified refusal cannot identify a newer target; a fresh whole-payload owner ask remains eligible after settlement. See [deferred model picks](parity/deferred-model-picks.md) for source spans, regression scope and pending rendered evidence. Synthetic peer/repository/ViewModel coverage is not live new-backend acceptance. | #266 |
 | Observing transferred queued work | `gateway/session_queued_controls.py:65-78,175-214` can return unconsumed steering work to FIFO. | Accept a newer authoritative pending return only for a known `started,steering:true` row. Pending publication revisions fence delayed submit receipts; terminal remains non-resurrectable. This is observer support, not new queued-control UI. | #266 |
 | Uncertain correction rejection | `gateway/session_busy_controls.py:202-217` distinguishes proven `delivered:false` from rejection that may follow delivery. | Only explicit false permits definite-negative recovery. Plain rejected becomes Ambiguous; ready fallback never follows uncertain delivery. Existing typed outcomes retain pre-dispatch refusal behavior. | #266 |
 | Legacy owner forwarding | `tui_gateway/methods_prompt.py:709-762` may queue work at the live owner or answer `SESSION_OWNER_UNCONFIRMED` after a possibly durable handoff. | Unconfirmed is potentially accepted throughout repository and composer. A successful forwarded queued receipt removes only its phantom local running turn and uses the existing Gateway queue projection, never a fabricated canonical admission. Repeated own-only pending observations preserve occurrence placement. Legacy relays omit admission identity from starts, so cross-relay start reordering cannot be certified by this projection; canonical admission-backed sessions remain the stronger identity contract. | #266 |
@@ -39,9 +39,16 @@ and owners, and pending rendered comparisons remain Concern.
 - Theme registry source comparison is byte-identical from the previous UI target.
 - ThemeParityTest ran 13 tests with zero failures/errors/skips before production
   remediations were added. It is not compatibility evidence for those changes.
-- The committed first review-remediation focused set ran 550 tests with zero
+- Historical first review-remediation focused set: 550 tests with zero
   failures/errors/skips (22 canonical-peer, 305 repository, 223 ViewModel).
-  A later multiple-forwarded-order regression and source fix require a fresh run.
-  Full check/APK and live new-backend certification remain separate and pending.
+- Packaged candidate including F2, forwarded occurrence order and the additive
+  7b9 error descriptor: Debug compilation, focused tests and debug APK assembly
+  pass. The focused set executes 584 tests with zero failures/errors/skips:
+  34 canonical-peer, 307 repository, 230 ViewModel and 13 theme tests. The
+  descriptor regression is in the repository suite. Offline registry verification
+  matches all 12 presets against 7b9. Native repository invariants and bounded
+  inventory/AST reconciliation pass; semantic inventory acceptance remains false.
+- Full exact-head check, independent candidate review and live new-backend
+  certification are separate gates; focused success does not close them.
 - No live provider, update, restart, installed app or physical-device operation
   was performed by this audit.
