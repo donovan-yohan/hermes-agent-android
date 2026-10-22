@@ -106,3 +106,30 @@ run, and these counts do not promote the pending visual report to acceptance.
   are historical build stages, not the final gate. No Gradle rerun for publication.
 - Whole-Bot parity, live Gateway and physical-device acceptance remain outside
   this report; fresh review and exact-head CI remain separate gates.
+
+## Separate Settings main-model source boundary (2026-10-22)
+
+The [Settings-depth inventory](desktop-control-reconciliation.md#settings-depth-continuation-2026-10-22)
+compares specialized Desktop Settings main-model controls at
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa` with Android baseline
+`65080e8a37e8d546869528e43c162503015b94c7`. It does not move the Bot-editor
+pin or restamp this page's accepted historical packet.
+
+Eleven source-read templates cover main provider/model/custom entry, key/setup
+handoffs, guarded Apply, and applied-model-gated profile reasoning/speed defaults.
+The exact mounted path includes ConfigSettingsInner's connection/profile key;
+subpage changes preserve the specialized controller. Assignment and sparse
+config writers are recorded separately, not inferred from ConfigField.
+
+The native named-Bot editor already has manual/catalog pairs, explicit consent
+and `profiles.configure` readback. That implemented bounded behavior is not an
+omission. The missing built-in Settings main-model/config-default editor is a
+different provisional omission under #73. Credentials/account management and
+custom-endpoint authoring are likewise not delivered by the native model-only
+writer. The structured records cite both the native form and its repository,
+rather than treating a missing Settings destination as proof no model editing
+exists anywhere.
+
+Auxiliary/MoA/fallback/delegation editors, OAuth completion and host-local model
+installation remain unverified by this increment. No model/key save, network
+call, Gradle/device run or new rendered acceptance was performed.

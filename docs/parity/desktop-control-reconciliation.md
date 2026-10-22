@@ -11,7 +11,7 @@ These are analysis revisions, not replacements for historical visual/source pins
 The [family inventory](desktop-surface-audit.md) remains the ownership index.
 This continuation adds three separate artifacts:
 
-- [Reviewed control records](desktop-control-records.json): 295 source-read operation/entrypoint/control templates (83 added in the session/Skills/MCP continuation), with exact immutable UI and handler/state/transport spans, mount predicates, Android baseline citations, status, parity page and existing issue. Repeated entrypoints are recorded separately, not counted as separate features. A route entry proves access to a destination, not implementation of everything inside it.
+- [Reviewed control records](desktop-control-records.json): 375 source-read operation/entrypoint/control templates (the original 295 plus 80 Settings-depth templates), with exact immutable UI and handler/state/transport spans, mount predicates, Android baseline citations, status, parity page and existing issue. The original 295 serialized objects and identifiers are unchanged. Repeated entrypoints are recorded separately, not counted as separate features. A route entry proves access to a destination, not implementation of everything inside it.
 - [Syntax census](desktop-control-candidates.json): 3283 syntax candidates across production-source candidates, extracted using TypeScript 5.9.3 without evaluating upstream modules. JSX attributes, compiled `jsx`/`jsxs`/`createElement` props, action objects, native roles, registrations, Settings manifest properties and dynamic spreads are separate kinds. File/name/import references are navigation aids, not a resolved interprocedural call graph or proof of mounting.
 - [Registry reconciliation](desktop-registry-reconciliation.json): 21 root registries joined to their actual syntax entries, source hashes, existing parity/issue owners and overlapping reviewed UI spans. An overlap never upgrades a candidate to semantic acceptance. The root counts are not control or feature counts.
 
@@ -202,7 +202,7 @@ SHA; all Android citations are at that Android baseline.
 The machine inventory is not exhaustive yet. In particular the following still require complete mounted-tree and callback reading, not a signal scan:
 
 - Session menu supplying owners outside row/tab wrappers (header/Bot canonical variants), full tab close/re-home consequences, pin-sync reconciliation beyond its read contract, profile-create/import completion and archive-pool failure lifecycle; full Sidebar project menus, search merge, native gestures and comparators.
-- All Appearance rows and their actual store setters, provider/OAuth/key/custom-endpoint forms, host-local model subtrees, vault sources and billing/step-up states. These Settings children are still provisional unverified omissions under #73/#266, not implementation certified by the generic dispatcher.
+- Appearance Language, tray/native effects, Pet and contributed-card children; full theme conversion/native material implementation and mode-layout persistence consequences. The 41 Appearance templates below narrow the previous all-rows debt, not eliminate it. Provider OAuth/onboarding completion, documentation-link/native-opening behavior, host-local model subtrees, auxiliary/MoA/fallback/delegation editors, vault and billing/step-up states remain unverified under #73/#266. The 13 Accounts/Keys, 15 custom-endpoint and 11 main-model templates below are source-read controls, not delivered specialized editors or certification by the generic dispatcher.
 - Kanban's complete board/drawer menus/forms, Bots roster/identity/editor children, routines/group/Screen subtrees and plugin-specific contributions.
 - Capabilities scope-selector resolution, full public catalog query/comparator/discovery/detail-link/install/update completion, toolset/provider forms, Agent-plugin package/schema children, hosted connector accounts/OAuth/directory/probe/per-tool/Add dialogs. Only the installed Skills management and owned local-MCP Advanced paths described above were followed. The standalone `McpEditorPane` and older `CatalogFilters` exports are not counted merely because their definitions exist.
 - Messaging/pairing; Cron blueprint/delivery/history branches; Agents transcript controls; Starmap and Artifacts nested viewers.
@@ -222,18 +222,161 @@ status. The original 3283-candidate snapshot is unchanged.
 | Registry roots | Bounded reading already recorded | Remaining obligation |
 |---|---|---|
 | Routes / sidebar | Route dispatch; current filter templates; row and tab action kits | Destination children; sidebar project/search/native trees; owning action lifecycles |
-| Settings navigation / manifest / schema / subpages (including appearance/config/other) | Rail/footer, generic dispatcher and earlier plugin-schema templates | Every specialized row/editor/setter, especially providers/models, connections, vault and billing; zero-entry subpage roots still require their imported children |
+| Settings navigation / manifest / schema / subpages (including appearance/config/other) | Rail/footer, generic dispatcher, plugin-schema templates; the bounded Appearance, Accounts/Keys, custom-endpoint and main-model controls below | Remaining Appearance/imported/native/plugin children; OAuth completion, local models, auxiliary/MoA/delegation, connections, vault and billing. Zero-entry subpage roots still require their imported children |
 | Statusbar / palette / keybinds | Earlier ownership census only; structured stack is a different subtree | Trace each actual registration's enable gate and handler, including portable plugin contribution kernels |
 | Native menu / window menu | macOS startup gate and common callbacks/roles | OS-supplied role children and portable-operation descendants not inspected above |
 | Contribution root / plugin host / discovery / settings | Shipping glob, root ownership and earlier Agent settings templates | Each contribution's actual owner, mount and disposal; no dynamic runtime contents assumed |
 | Bundled Bots / Kanban / Radio | Radio lifecycle and controls from prior increment | Bots/Kanban full nested trees, and Radio descendants beyond those explicit spans |
 
 The structured records cover 22 families only in these bounded senses. Their
-295 entries classify as 37 implemented-bounded, 15 WIP, 224 omission, 11
-standing non-goal and eight drift. These are template/entrypoint records, not
+375 entries classify as 38 implemented-bounded, 15 WIP, 301 omission, 11
+standing non-goal and ten drift. These are template/entrypoint records, not
 feature totals, and not a claim that the remaining families are empty.
 
 Every syntactic candidate has a family review owner and every reviewed control has an existing issue/page, but that is weaker than resolving these semantic gaps. Existing #73 owns the broader remainder; #184 owns its six specific stances; #266's requested old-to-new drift engine/workflow remains separate and is not delivered by this ledger. Independent inventory review and parent exact-head compatibility acceptance are still outstanding.
+
+## Settings-depth continuation (2026-10-22)
+
+This bounded increment appends 80 templates: 41 Appearance (including four font
+field/reset templates), 13 Providers Accounts/Keys, 15 custom-endpoint and 11
+main-model form templates. None comes from the generic config dispatcher.
+The first 295 serialized records and ids, the 3283 syntax candidates, the
+source-ownership census and historical visual pins remain byte-identical.
+An immutable baseline is not a claim about every later main.
+
+All Desktop citations in this section are at
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa`. Native comparisons use Android
+`65080e8a37e8d546869528e43c162503015b94c7`. Every machine record carries both
+full revisions explicitly. The new rows classify as 77 provisional omissions,
+two current-source scope drifts and one implemented-bounded preference writer.
+They deliver no new app capability and no rendered acceptance.
+
+### Appearance writers and overrides
+
+The actual Settings dispatch mounts Appearance directly, not ConfigField
+(`apps/desktop/src/app/settings/index.tsx:89-99,538-558`). Subpage predicates
+come from `apps/desktop/src/app/settings/appearance-settings.tsx:471-474`.
+Named setters were followed for mode/skin, search/Clear/removal/marketplace
+handoff, scale, interface/density/tab/action layout, six Clear/Glass levers,
+bubble/direction, backdrop/timeline/intro/pricing/Files/pop-out/resume,
+reactions/tips/reset/tours/hearts/tool view/diffs/reasoning and embed mode/reset.
+Imported font fields and Reset buttons use their own autosave controllers.
+
+- Simple is not a destructive preset. The effective value is session reveal,
+  then mode policy, then preference; shadowed changes are memory-only and reset
+  on mode change (`apps/desktop/src/store/interface-mode.ts:106-135,157-207`).
+  The Files setter also restores tree-side/narrow-pane state; a matching Boolean
+  label alone would lose those consequences.
+- Reactions, tips and tours also mirror to profile-routed `config.set`.
+  Failures are swallowed for retry on change/connect; only touched keys are
+  pushed on reconnect. They are not purely local switches or an atomic config
+  transaction (`apps/desktop/src/store/display-toggles.ts:38-72`). #157/#73 own
+  the missing native rows, not an invented Android provider/config endpoint.
+- Chat/UI and terminal fonts publish a live family, debounce a sparse config
+  PUT 550ms, retain the read-origin write scope and roll back a current-version
+  failure. A profile stamp latch prevents stale seeding. Timer cleanup does not
+  prove cancellation of already-dispatched writes
+  (`apps/desktop/src/app/settings/chat-font-setting.tsx:35-144`;
+  `apps/desktop/src/app/settings/terminal-font-setting.tsx:29-149`;
+  `apps/desktop/src/app/hooks/use-config-record.ts:66-125`).
+- Translucency values belong to the painted palette appearance, not simply the
+  requested light/dark mode. Resolved state paints/dispatches immediately; book
+  persistence is debounced and flushed on pagehide. Pointer peek is reset when
+  subpage/unmount removes a slider
+  (`apps/desktop/src/store/translucency.ts:99-148,263-299,346-409`;
+  `apps/desktop/src/app/settings/appearance-settings.tsx:451-469,795-875`).
+  This follows renderer setters/bridge requests, not native material acceptance.
+- Current mode/skin scope differs from the native baseline: Desktop assigns the
+  live active profile and mirrors named choices into a global inheritance slot
+  (`apps/desktop/src/themes/context.tsx:100-123,628-645`). Android mode uses one
+  DataStore key, and theme selection stamps the tapped connection row
+  (`app/src/main/kotlin/com/hermesagent/mobile/MainActivity.kt:542-564`;
+  `app/src/main/kotlin/com/hermesagent/mobile/data/prefs/HermesPreferences.kt:360-370,393-397`).
+  These are #266 current-source scope findings, not retrospective rejection of
+  the documented historical per-connection adaptation. Intro Splash does have
+  a native writer; its segmented-versus-Switch visual treatment is not accepted
+  by this functional record. All other recorded missing Appearance controls
+  remain provisional omissions under #157, with #292 rendering still separate.
+
+### Accounts/Keys, endpoints and main model
+
+- Providers is keyed by selected profile at its Settings mount. Accounts excludes
+  free-tier identity from Connected; CLI-owned removal requires a terminal bridge
+  and confirmation, then hands off visibly to the terminal. That notification is
+  not proof the account disconnected. The API-owned removal path instead checks
+  `ok`, refreshes status and clears busy in finally
+  (`apps/desktop/src/app/settings/providers-settings.tsx:181-194,274-341,465-530,550-558`;
+  `apps/desktop/src/app/settings/index.tsx:550-558`). OAuth entries stop at the
+  manual-overlay state writer, not OAuth completion.
+- Provider key grouping expands backend provider profiles but keeps the original
+  env-var writer id; card-specific draft identity is different from that id.
+  Primary and expanded advanced fields start masked edits empty, save through
+  `setEnvVar` and remove through a confirmed `deleteEnvVar`. They do not silently
+  invoke credential validation or Reveal. GET cancellation is not a per-mutation
+  fence; Enter is dirty-gated but not independently busy-gated
+  (`apps/desktop/src/app/settings/credential-key-ui.tsx:63-138,258-369`;
+  `apps/desktop/src/app/settings/env-credentials.tsx:69-125,157-175`;
+  `apps/desktop/src/api/config.ts:213-234`). No runtime key row/value was read.
+- Endpoint edit/use/delete and every form input were followed to payload and
+  concrete REST helpers. Blank replacement key means undefined, not delete;
+  direct-config rows have no Trash; Use disables the current/matching-busy row.
+  Test can adopt a resolved base URL, fill a blank model and retain alias details
+  for Save. Test and Save disable only their own operation; fields and row picks
+  remain enabled. A mounted ref is not a form-version fence
+  (`apps/desktop/src/app/settings/custom-endpoints-settings.tsx:70-104,183-330,341-522`;
+  `apps/desktop/src/api/config.ts:265-312`). No Test, Save, provider/network call
+  or credential operation was executed. These absent built-in Settings forms
+  remain #73 omissions, not native non-goals.
+- ModelSettings is a specialized controller, mounted under ConfigSettingsInner's
+  connection/profile key. Sibling subpage visibility does not remount it
+  (`apps/desktop/src/app/settings/config-settings.tsx:65-88,388-397`). Main-provider
+  switching clears the old model; custom entry remembers a local slug but does
+  not Apply. Apply uses the guarded assignment helper and one explicit consent
+  resend, with optional catalog base URL. Reasoning/speed defaults are sparse
+  config writes gated by the applied model's capabilities, not the draft pick
+  (`apps/desktop/src/app/settings/model-settings.tsx:104-188,753-929,1076-1179`;
+  `apps/desktop/src/app/settings/model-select.tsx:64-161`;
+  `apps/desktop/src/store/model-assignment.ts:11-83`). Named success paths have
+  epoch checks, but not every draft-clear/catch/finally does; keyed remount and
+  profile epoch are not universal cancellation of pending callbacks.
+- The native comparison is not “Android has no model forms.” Its named-Bot
+  editor has catalog/manual pairs, consent and readback through
+  `profiles.configure`
+  (`app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotModelEditor.kt:24-64`;
+  `app/src/main/kotlin/com/hermesagent/mobile/plugins/bots/BotsModelRepository.kt:26-61`).
+  The built-in Settings destination list lacks these specialized main-model,
+  account/key and endpoint forms
+  (`app/src/main/kotlin/com/hermesagent/mobile/ui/settings/SettingsScreen.kt:27-100`).
+  Existing bounded Bot acceptance stays intact; #73 owns the missing Settings
+  forms, and the Bot model page now records that distinction.
+
+Source tests read, not executed: the endpoint scope, alias/Test and late-save
+cases (`apps/desktop/src/app/settings/custom-endpoints-settings.test.tsx:120-200,214-264`)
+and chat-font sparse-patch/rollback/profile-stamp cases
+(`apps/desktop/src/app/settings/chat-font-setting.test.tsx:84-128`). They are not
+shipping-control records or runtime evidence.
+
+The existing registry join was regenerated with the existing script. Its bytes
+are unchanged: these new first/UI spans are leaf components, not new overlaps in
+those 21 root files. Adding broad mount spans as first/UI evidence merely to
+increase registry overlap would manufacture coverage. Registry status remains
+provisional and `semantic_complete` remains false.
+
+### Later-source delta is separate from this inventory pin
+
+A byte/hash comparison of the 58 distinct new cited/read Desktop paths against
+`944c3a434071f43e64b443d033f3eba30c64434c` found 57 identical paths. The
+Appearance, provider, custom-endpoint, main-model components and their named
+preference/config writers are unchanged in that comparison. The newly followed
+shared API client is not: the entire diff adds `isDesktopLocal()` returning
+`this.canonical` at `apps/desktop/src/api/client.ts:330-332` at that later SHA.
+This was read explicitly. The routing-helper bodies cited at the inventory pin
+are unchanged but move four lines later. Connection/protocol consequences were
+not executed or revalidated; this is not a later-source semantic acceptance.
+
+That expanded path set does not rewrite the parent's earlier observation that
+only Electron main changed among its 81 reviewed paths. Neither the historical
+observation nor this inventory is restamped to the later revision.
 
 ## Reproduce
 
@@ -263,6 +406,27 @@ JSON citations are checked by their explicit per-record revision; the Markdown
 range gate remains a separate Concern for parent review. Exhaustive-semantic
 acceptance still deliberately exits 1.
 
+### Settings-depth verification
+
+The Settings-depth continuation ran 41 focused inventory tests with no failures
+or skips, using the existing isolated TypeScript 5.9.3 parser. AST equality,
+immutable Desktop/Android record bounds, the existing 21-root reconciliation,
+and the unchanged 2133-path source ledger pass. Five regression tests protect
+serialized preservation, bounded counts and the named authority/error limits;
+they are scaffolding, not independent semantic review. Copy/parity gates and
+their self-tests pass. No citation-gate implementation or application code changed.
+
+The first range check after adding the separate later-source delta exited 2:
+the baseline-only source checkout could not read the later revision. Its failed
+receipt is retained. Retrying against the already-present disposable later-source
+checkout (which has both revisions), without fetch, exits 0. That receipt reports
+24 citations true, 207 left on their own pin and 412 unattributable; exit 0 is
+not an assertion those unattributable citations were proved. Structured JSON
+citations are independently checked using each explicit immutable revision and
+span bounds. General prose attribution remains an independent-review limit.
+The exhaustive-semantic gate still deliberately exits 1. Parent integration,
+independent review, exact-head acceptance and publication remain separate.
+
 ## Citation-origin gate follow-up
 
 The earlier exit-2 observation above belongs to the original inventory candidate.
@@ -283,6 +447,7 @@ parity certification. Unattributable shorthand and the coverage debt above remai
 The initially overbroad consumer-word filter was independently rejected and then
 narrowed; a successful range alone was not treated as independent approval.
 
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
@@ -293,6 +458,9 @@ narrowed; a successful range alone was not treated as independent approval.
 | Current-source Archive/Unarchive, live deletion and busy rename dismissal | drift | Historical baseline differs from the later source's actual handlers | #266; later-source section and immutable structured records; no historical packet restamp |
 | Current-source Mark all as read writer | drift | Per-row backend watermark writes rather than only transient-dot clearing | #266; exact Desktop/Android writer spans in the continuation |
 | Nested Skills editing/archive and owned-MCP JSON/log controls | omission | Parent WIP labels or narrower selection only, no corresponding nested writers | pill-owed: #73; source-read child templates do not count as delivered features |
+| Specialized Appearance rows, named setters and font editors in the Settings-depth increment | omission | Only native mode/skin/Intro Splash controls are mounted in the compared Appearance tree | pill-owed: #157; 38 new provisional omission templates, not approved native non-goals |
+| Current per-profile skin/mode assignment and inheritance | drift | Native skin is saved on a connection row; mode uses one global DataStore key | #266; two current-source scope records; historical per-connection adaptation and visual pins remain historical |
+| Providers Accounts/Keys, endpoint forms and specialized Settings main-model defaults | omission | No corresponding built-in Settings tree; native named-Bot model-only editing still exists | pill-owed: #73; 39 new provisional omission templates with actual native form/repository comparisons |
 | Arbitrary runtime Desktop JavaScript loading | omission | Compiled Kotlin plugins only | non-goal: ADR 0003 and #166 explicitly reject runtime JavaScript loading; Agent management is a different capability |
 
 ## Visual report
