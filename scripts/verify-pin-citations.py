@@ -304,6 +304,9 @@ def _scratch_clone() -> pathlib.Path:
         raise
     _SCRATCH = scratch
     _READ = target
+    # Completeness proved in the source store does not imply presence in this
+    # independent store; retain identity knowledge but re-prove materialization.
+    _materialized.clear()
     _tree_paths.clear()
     _blobs.clear()
     return target
