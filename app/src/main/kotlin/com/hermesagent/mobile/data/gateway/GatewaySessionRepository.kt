@@ -4587,8 +4587,35 @@ internal class LiveGatewaySessionRepository(
             if (branch == null) branchByDurableId.remove(targetId) else branchByDurableId[targetId] = branch
             cache.session(targetId)?.let { cache.upsertSession(it.copy(worktreePath = cwd, gitBranch = branch)) }
         }
-        // Membership is backend-owned; do not infer it from a path on the phone.
-        refreshProjects()
+        // Read the moved owner's catalog, not the rail selected while the mutation was held.
+        // Overview reads preserve hydrated membership, so explicitly rehydrate those projects and
+        // the destination before publishing. Never infer source removal from cwd locally.
+        projectMutex.withLock {
+            val overview = parseProjectOverview(connection.client.request("projects.tree", buildJsonObject {
+                put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT))
+                profile?.let { put("profile", JsonPrimitive(it)) }
+            }), clock())
+            val hydrated = synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.state.value.projectsForScope(profile).hydratedProjectIds + target.id
+            }
+            val details = overview.projects.filter { it.id in hydrated }.map { row ->
+                parseProjectDetails(connection.client.request("projects.project_sessions", buildJsonObject {
+                    put("project_id", JsonPrimitive(row.id))
+                    profile?.let { put("profile", JsonPrimitive(it)) }
+                }), clock())
+            }
+            synchronized(stateLock) {
+                ensureCurrent(connection)
+                cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(profile) },
+                    overview.activeProjectId, authoritativeSessionProfiles = true, scope = profile)
+                details.forEach { detail ->
+                    cache.replaceProjectDetails(detail.project.inRequestProfile(profile),
+                        detail.sessions.map { it.copy(remoteProfile = it.remoteProfile ?: profile) },
+                        authoritativeSessionProfiles = true, scope = profile)
+                }
+            }
+        }
     }
     }
 

@@ -367,6 +367,9 @@ class CanonicalGatewayRpcTest {
         assertEquals(buildJsonObject { put("cwd", "/workspace/target") }, move["payload"])
         assertNotNull(move["expected_revision"])
         assertEquals("/workspace/target", cache.session(key)?.worktreePath)
+        val readback = peer.frames.last { it["method"] == JsonPrimitive("projects.project_sessions") }.getValue("params").jsonObject
+        assertEquals(JsonPrimitive("work"), readback["profile"])
+        assertTrue(cache.state.value.projectsForScope("work").memberships["public-project"].orEmpty().contains(key))
         peer.rpc.request("session.interrupt", buildJsonObject { put("session_id", key); put("profile", "work") })
         assertEquals(JsonPrimitive(4), peer.frames.last().getValue("params").jsonObject["execution_generation"])
         peer.rpc.close()
@@ -406,6 +409,7 @@ class CanonicalGatewayRpcTest {
                     }
                     "session.control.read" -> """{"control":{"goal":null,"loop":null,"heartbeat":null,"revision":"","updated_at":0}}"""
                     "projects.tree" -> """{"projects":[{"id":"public-project","label":"Public project","path":"/workspace/target","repos":[],"previewSessions":[]}]}"""
+                    "projects.project_sessions" -> """{"project":{"id":"public-project","label":"Public project","path":"/workspace/target","repos":[{"id":"public-repo","path":"/workspace/target","groups":[{"id":"main","sessions":[{"id":"canonical-public","title":"Public session","profile":"work"}]}]}],"previewSessions":[]}}"""
                     "session.info" -> confirmationOwner?.let { """{"profile_id":"$it","desktop_protocol":"hermes-gateway-v1"}""" } ?: "{}"
                     "session.resume" -> snapshot(params["session_id"]?.jsonPrimitive?.content ?: "canonical-public")
                     "session.list" -> {

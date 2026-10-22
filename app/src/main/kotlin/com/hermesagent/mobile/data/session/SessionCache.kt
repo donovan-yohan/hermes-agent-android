@@ -18,8 +18,8 @@ data class SessionCacheState(
     val projects: ProjectCatalogState get() = projectsForScope(activeProjectScope)
     fun projectsForScope(profile: String?): ProjectCatalogState = projectSnapshots[profile] ?: UNKNOWN_PROJECTS
 
-    internal fun withProjects(catalog: ProjectCatalogState): SessionCacheState =
-        if (catalog == projects) this else copy(projectSnapshots = projectSnapshots + (activeProjectScope to catalog))
+    internal fun withProjects(catalog: ProjectCatalogState, scope: String? = activeProjectScope): SessionCacheState =
+        if (catalog == projectsForScope(scope)) this else copy(projectSnapshots = projectSnapshots + (scope to catalog))
 }
 
 private val UNKNOWN_PROJECTS = ProjectCatalogState()
@@ -91,14 +91,16 @@ class SessionCache {
         rows: List<ProjectSummary>,
         activeProjectId: String?,
         authoritativeSessionProfiles: Boolean = false,
+        scope: String? = state.value.activeProjectScope,
     ) {
         _state.update { current ->
+            val previous = current.projectsForScope(scope)
             val projectIds = rows.mapTo(linkedSetOf(), ProjectSummary::id)
-            val existingHydrated = current.projects.hydratedProjectIds.intersect(projectIds)
+            val existingHydrated = previous.hydratedProjectIds.intersect(projectIds)
             val memberships = rows.associateTo(linkedMapOf()) { project ->
                 val previewIds = project.previewSessions.map(SessionSummary::id)
                 val ids = if (project.id in existingHydrated) {
-                    current.projects.memberships[project.id].orEmpty()
+                    previous.memberships[project.id].orEmpty()
                 } else {
                     previewIds
                 }
@@ -123,14 +125,14 @@ class SessionCache {
                 available = true,
                 sessionProfiles = buildMap {
                     val retainedIds = memberships.values.flatten().toSet()
-                    putAll(current.projects.sessionProfiles.filterKeys { it in retainedIds })
+                    putAll(previous.sessionProfiles.filterKeys { it in retainedIds })
                     rows.flatMap(ProjectSummary::previewSessions).forEach { put(it.id, it.remoteProfile) }
                 },
             )
-            if (sessions == current.sessions && catalog == current.projects) {
+            if (sessions == current.sessions && catalog == previous) {
                 current
             } else {
-                current.withProjects(catalog).copy(sessions = sessions)
+                current.withProjects(catalog, scope).copy(sessions = sessions)
             }
         }
     }
@@ -146,9 +148,11 @@ class SessionCache {
         project: ProjectSummary,
         sessions: List<SessionSummary>,
         authoritativeSessionProfiles: Boolean = false,
+        scope: String? = state.value.activeProjectScope,
     ) {
         _state.update { current ->
-            val existingProject = current.projects.projects[project.id]
+            val previous = current.projectsForScope(scope)
+            val existingProject = previous.projects[project.id]
             val mergedProject = if (project.previewSessions.isEmpty() && existingProject != null) {
                 project.copy(previewSessions = existingProject.previewSessions)
             } else {
@@ -175,17 +179,17 @@ class SessionCache {
                     )
                 }
             }
-            val catalog = current.projects.copy(
-                projects = current.projects.projects + (project.id to mergedProject),
-                memberships = current.projects.memberships + (project.id to sessions.map(SessionSummary::id)),
-                hydratedProjectIds = current.projects.hydratedProjectIds + project.id,
+            val catalog = previous.copy(
+                projects = previous.projects + (project.id to mergedProject),
+                memberships = previous.memberships + (project.id to sessions.map(SessionSummary::id)),
+                hydratedProjectIds = previous.hydratedProjectIds + project.id,
                 available = true,
-                sessionProfiles = current.projects.sessionProfiles + sessions.associate { it.id to it.remoteProfile },
+                sessionProfiles = previous.sessionProfiles + sessions.associate { it.id to it.remoteProfile },
             )
-            if (mergedSessions == current.sessions && catalog == current.projects) {
+            if (mergedSessions == current.sessions && catalog == previous) {
                 current
             } else {
-                current.withProjects(catalog).copy(sessions = mergedSessions)
+                current.withProjects(catalog, scope).copy(sessions = mergedSessions)
             }
         }
     }

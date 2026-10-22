@@ -23,6 +23,12 @@ revalidates that target before mutation. The shared runtime resolver and canonic
 mutation adapter preserve durable identity and enforce backend revision/busy policy.
 The confirmed response replaces workspace/branch metadata; backend project refresh
 owns membership. Unknown/folderless/stale targets never produce a speculative write.
+After mutation, owner-scoped tree and project-details reads replace every previously
+hydrated membership plus the target membership, even when profile navigation changes
+while the move is held. The cache publishes to that owner's snapshot without switching
+or refreshing the active rail. Source removal is asserted from backend details, never
+inferred from the returned cwd. Android does not yet model git_repo_root; cwd/branch
+receipt assertions do not certify git-root readback or actual-router acceptance.
 Errors stay generic and actionable; an uncertain move asks the reader to reopen the
 session rather than claiming rollback.
 
@@ -52,3 +58,6 @@ selected target dispatch and dismissal. No live backend mutation is claimed by m
 and asserts exact raw owner, workspace operation, cwd payload and revision fence.
 `SessionProjectTargetsTest` covers longest root, linked worktree, prefix boundaries,
 Windows separators/case and POSIX case sensitivity.
+The held-mutation regression seeds distinct owner catalogs and hydrated source membership,
+changes profile navigation, then asserts owner-only reads, source removal and target
+membership without unrelated catalog publication.

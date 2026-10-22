@@ -2787,6 +2787,47 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `move readback repairs hydrated owner memberships while navigation changes`() = runTest {
+        val cache = SessionCache()
+        val held = CompletableDeferred<JsonElement>()
+        val source = ProjectSummary("project-source", "Source", path = "/work/source")
+        val rpc = FakeRpc().apply {
+            workspaceMoveResponse = held
+            projectTreeResult = PROJECT_TREE.replace("\"projects\":[", "\"projects\":[{\"id\":\"project-source\",\"label\":\"Source\",\"path\":\"/work/source\",\"repos\":[],\"previewSessions\":[]},")
+            projectDetailsById[source.id] = """{"project":{"id":"project-source","label":"Source","path":"/work/source","repos":[],"previewSessions":[]}}"""
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        runCurrent()
+        repository.openSession("durable-a", "research")
+        val row = requireNotNull(cache.session("durable-a"))
+        cache.replaceProjectDetails(source, listOf(row), authoritativeSessionProfiles = true, scope = "research")
+        cache.replaceProjectDetails(source.copy(id = "launch-only"), emptyList(), scope = null)
+        val launchBefore = cache.state.value.projectsForScope(null)
+        val target = repository.sessionProjectTargets("durable-a").single { it.id == "project-mobile" }
+        val moved = async { repository.moveSessionToProject("durable-a", target) }
+        runCurrent()
+        assertTrue(rpc.calls.any { it.method == "session.workspace.move" })
+        repository.setProfileRouting(ProfileRouting(activeProfile = "other", listProfiles = listOf("other")))
+        runCurrent()
+        val otherBefore = cache.state.value.projectsForScope("other")
+        rpc.calls.clear()
+        held.complete(json("""{"cwd":"/work/hermes-mobile","branch":null,"git_repo_root":null}"""))
+        moved.await()
+        val reads = rpc.calls.filter { it.method.startsWith("projects.") }
+        assertTrue(reads.isNotEmpty())
+        assertTrue(reads.all { it.params.string("profile") == "research" })
+        assertEquals(setOf("project-source", "project-mobile"), reads.filter { it.method == "projects.project_sessions" }.map { it.params.string("project_id") }.toSet())
+        val owner = cache.state.value.projectsForScope("research")
+        assertFalse(owner.memberships[source.id].orEmpty().contains("durable-a"))
+        assertTrue(owner.memberships[target.id].orEmpty().contains("durable-a"))
+        assertEquals(launchBefore, cache.state.value.projectsForScope(null))
+        assertEquals(otherBefore, cache.state.value.projectsForScope("other"))
+        assertEquals("other", cache.state.value.activeProjectScope)
+    }
+
+    @Test
     fun `move project rejects stale picker path without mutation`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()
@@ -9638,6 +9679,8 @@ class GatewaySessionRepositoryTest {
         var projectTreeFailure: Throwable? = null
         var projectTreeResponse: CompletableDeferred<JsonElement>? = null
         var projectDetailsResponse: CompletableDeferred<JsonElement>? = null
+        var workspaceMoveResponse: CompletableDeferred<JsonElement>? = null
+        val projectDetailsById = mutableMapOf<String, String>()
         var projectCreateResponse: CompletableDeferred<JsonElement>? = null
         var promptResponse: CompletableDeferred<JsonElement>? = null
         var redirectResult = """{"status":"redirected"}"""
@@ -9706,8 +9749,8 @@ class GatewaySessionRepositoryTest {
                     projectTreeFailure?.let { throw it }
                     projectTreeResponse?.await() ?: json(projectTreeResult)
                 }
-                "session.workspace.move" -> json("""{"cwd":"/work/hermes-mobile","branch":null,"git_repo_root":null}""")
-                "projects.project_sessions" -> projectDetailsResponse?.await() ?: json(projectDetailsResult)
+                "session.workspace.move" -> workspaceMoveResponse?.await() ?: json("""{"cwd":"/work/hermes-mobile","branch":null,"git_repo_root":null}""")
+                "projects.project_sessions" -> projectDetailsResponse?.await() ?: json(projectDetailsById[params.string("project_id")] ?: projectDetailsResult)
                 "projects.create" -> projectCreateResponse?.await() ?: json(projectCreateResult)
                 "session.resume" -> {
                     if (resumeFailures > 0) {
