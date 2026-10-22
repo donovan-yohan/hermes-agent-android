@@ -439,6 +439,81 @@ class ChatProfileScopeTest {
         assertEquals("lab", viewModel.uiState.value.profileRail.scope.activeProfile)
     }
 
+    @Test
+    fun `failed ordinary create preserves open conversation queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        viewModel.setDraft("keep work draft")
+        val scopesBefore = queueScopes.toList()
+        repository.onSessionCreated = { error("create refused") }
+
+        viewModel.createSession(); runCurrent()
+
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals("keep work draft", viewModel.uiState.value.draft)
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals("lab", repository.createdProfile)
+    }
+
+    @Test
+    fun `disconnected ordinary create preserves open conversation queue owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        repository.connectionState.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        viewModel.setDraft("offline work draft")
+        runCurrent()
+        val scopesBefore = queueScopes.toList()
+        val composerBefore = viewModel.uiState.value.composer
+
+        viewModel.createSession(); runCurrent()
+
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals(composerBefore, viewModel.uiState.value.composer)
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals("offline work draft", viewModel.uiState.value.draft)
+        assertNull(repository.createdProfile)
+    }
+
+    @Test
+    fun `pending and stale ordinary create preserve current queue owner until accepted rehome`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        viewModel.setDraft("work draft")
+        val scopesBefore = queueScopes.toList()
+        val gate = CompletableDeferred<Unit>()
+        repository.sessionCreateGate = gate
+        repository.onSessionCreated = { cache.upsertSession(row("created", 4_000, "lab")) }
+
+        viewModel.createSession(); runCurrent()
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        // Same-row navigation revokes creation without replacing its owner.
+        viewModel.selectSession("work-row"); runCurrent()
+        gate.complete(Unit); runCurrent()
+
+        assertEquals(scopesBefore, queueScopes)
+        assertEquals("work-row", viewModel.uiState.value.activeSessionId)
+        assertEquals("work draft", viewModel.uiState.value.draft)
+        assertEquals("lab", cache.session("created")?.remoteProfile)
+    }
+
+    @Test
+    fun `successful ordinary create rehomes queue to authoritative new row owner`() = runTest(dispatcher) {
+        collectState(); runCurrent()
+        viewModel.selectProfile("lab"); runCurrent()
+        viewModel.selectSession("work-row"); runCurrent()
+        repository.onSessionCreated = { cache.upsertSession(row("created", 4_000, "lab")) }
+
+        viewModel.createSession(); runCurrent()
+
+        assertEquals("created", viewModel.uiState.value.activeSessionId)
+        assertEquals(ComposerQueueScope.forConnectionProfile("transient", "default", "lab"), queueScopes.last())
+    }
+
     private class FakeRepository : GatewaySessionRepository {
         override val connectionState = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
         override val pendingInputs = MutableStateFlow<Map<PendingInputKey, PendingInputRequest>>(emptyMap())

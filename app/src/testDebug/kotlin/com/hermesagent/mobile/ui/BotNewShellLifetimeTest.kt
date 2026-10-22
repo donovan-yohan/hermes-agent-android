@@ -22,6 +22,50 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34])
 class BotNewShellLifetimeTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun `disposed shell revokes held bot foreground adoption and completion`() {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        try {
+            val store = PluginStore(scope, object : PluginDecisionStore {
+                override val pluginDecisions = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+                override suspend fun savePluginDecision(id: String, enabled: Boolean) = Unit
+            })
+            val registry = ContributionRegistry()
+            var mounted by mutableStateOf(true)
+            var isCurrent: (() -> Boolean)? = null
+            var completion: ((Boolean) -> Unit)? = null
+            val outcomes = mutableListOf<Boolean>()
+            registry.register(Contribution("fixture:dispose", PluginAreas.ROUTES_AREA, render = {
+                val nav = LocalPluginNavigation.current
+                com.hermesagent.mobile.ui.common.TextButton("Start held bot action", {
+                    nav.onNewBotSession("work", 0L) { outcomes += it }
+                })
+            }))
+            compose.setContent {
+                if (mounted) HermesApp(ChatUiState(), GatewaySettingsUiState(), SshUiState(),
+                    AppearanceSelection(), chatActions = ChatActions(onNewBotSession = { _, _, current, done ->
+                        isCurrent = current
+                        completion = done
+                    }), appearanceActions = AppearanceActions(), gatewayActions = GatewayActions(),
+                    sshActions = SshActions(), pluginRegistry = registry, pluginStore = store,
+                    navigationAsk = HermesNavigationAsk(HermesDestination.Route("fixture:dispose"), 1L))
+                else Text("Replacement shell")
+            }
+            compose.onNodeWithText("Start held bot action").performClick()
+            compose.runOnIdle {
+                assertTrue(isCurrent!!())
+                mounted = false
+            }
+            compose.onNodeWithText("Replacement shell").assertIsDisplayed()
+            compose.runOnIdle {
+                assertFalse("Disposed composition must revoke ViewModel adoption", isCurrent!!())
+                completion!!(true)
+                assertEquals(listOf(false), outcomes)
+            }
+        } finally {
+            scope.cancel()
+        }
+    }
+
     @Test fun `held success cannot override later shell navigation or leave return ABA`() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         val store = PluginStore(scope, object : PluginDecisionStore {

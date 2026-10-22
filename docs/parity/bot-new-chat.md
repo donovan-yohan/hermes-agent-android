@@ -25,11 +25,13 @@ endpoint revocation and unknown owners. Compose drives the actual menu action.
 
 ## Navigation and private queue ownership
 
-An asynchronous completion captures the shell navigation epoch, including
-leave-and-return ABA; it cannot drag a newer Settings/plugin destination back
-to Chat. The same lifetime predicate reaches the ViewModel before foreground
-adoption, not merely the completion callback. Every ordinary rail re-entry
-restores the backend row's queue owner. The ordinary session's queue binds to its explicit bot owner while
+An asynchronous completion captures the shell navigation epoch, invalidated on
+composition disposal as well as leave-and-return ABA; it cannot drag a newer
+Settings/plugin destination back to Chat. The same lifetime predicate reaches the ViewModel before foreground
+adoption, not merely the completion callback. Failed, disconnected and stale
+ordinary New Chat attempts retain the open conversation's composer/queue owner;
+only an accepted create rehomes to the authoritative new row. Every ordinary
+rail re-entry restores the backend row's queue owner. The ordinary session's queue binds to its explicit bot owner while
 the browsing rail remains unchanged. Opening suppresses automatic queue drain
 through hydration, scope binding and reconnect until an explicit send/resume.
 These boundaries have focused VM/controller and real-shell Compose regressions;
