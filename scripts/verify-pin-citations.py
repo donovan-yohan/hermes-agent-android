@@ -254,9 +254,9 @@ def read_root() -> pathlib.Path:
 
     The reference checkout is read-only by policy — never `git fetch` inside it,
     never check anything out in it. A pin it does not have is obtained by fetching
-    into a temporary clone that borrows its object store (`--reference`), and from
-    then on reads come from that clone, which can see everything the reference
-    checkout had plus what was fetched.
+    into a temporary empty object store, and from then on reads come from
+    explicitly fetched snapshots. Shallow/partial references are never cloned
+    or traversed implicitly; only requested immutable SHAs are fetched.
     """
     return _READ or UPSTREAM
 
@@ -286,16 +286,13 @@ def _scratch_clone() -> pathlib.Path:
             ["git", "-C", str(UPSTREAM), "config", "--get", "remote.origin.url"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
-        clone = subprocess_run(
-            ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
-             "--reference", str(UPSTREAM), str(UPSTREAM), str(target)],
-            capture_output=True, text=True,
-        )
-        if clone.returncode != 0:
-            raise GitFailure(clone.stderr)
+        # An empty store supports shallow/partial read-only sources without
+        # --reference (which rejects shallow stores) or local clone's implicit
+        # promisor traversal. materialize() fetches only requested exact SHAs.
+        subprocess_run(["git", "init", "--quiet", str(target)], check=True)
         if origin:
             subprocess_run(
-                ["git", "-C", str(target), "remote", "set-url", "origin", origin],
+                ["git", "-C", str(target), "remote", "add", "origin", origin],
                 capture_output=True, text=True, check=True,
             )
     except BaseException:

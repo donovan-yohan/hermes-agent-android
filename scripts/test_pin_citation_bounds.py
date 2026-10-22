@@ -112,7 +112,8 @@ class GitBoundsTest(unittest.TestCase):
             git("-C", origin, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid",
                 "commit", "--no-gpg-sign", "-qm", "fixture")
             sha = git("-C", origin, "rev-parse", "HEAD")
-            git("clone", "--filter=blob:none", "--no-checkout", origin.as_uri(), partial)
+            git("clone", "--depth=1", "--single-branch", "--no-tags",
+                "--filter=blob:none", "--no-checkout", origin.as_uri(), partial)
             def snapshot():
                 return {str(p.relative_to(partial)): p.read_bytes()
                         for p in partial.rglob("*") if p.is_file()}
