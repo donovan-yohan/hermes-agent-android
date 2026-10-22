@@ -292,6 +292,16 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+For System logs, inspect the current search component as well as the panel:
+`apps/desktop/src/components/chat/log-search.tsx:21-39` at
+`81a55437f3f31a9f12a30c53b6c5d49d420898aa` highlights and steps matches,
+while the original disabled Android block promised a substring filter. Record
+that difference instead of claiming current search parity from unchanged tab
+labels. Read the active in-memory profile for request fencing, not a preference
+whose save can lag a profile switch. Use the host's cancellable guarded enqueue
+for lifecycle-bound log reads; whole-tail redaction must precede per-line caps
+so a multiline private key is not split into unrecognisable fragments.
+
 Core Cron uses full REST job records, not the lossy `cron.manage` preview.
 Readback must account for the server's normalized names and natural-language
 schedules, and a finite run may remain as a disabled completed record. A profile
@@ -393,6 +403,19 @@ clears at authoritative turn settlement, while a completed/cancelled list
 lingers for four seconds so the final checkmark can land. Keep the queue
 profile-scoped and session-keyed locally, and keep runtime IDs and Android URIs
 out of its durable records.
+
+Agent plugin toggles use canonical registry keys, never display names: category
+plugins can share the same leaf name. Keep legacy keyless rows read-only, bind
+every request to a concrete profile plus endpoint/ready-leg/visible owner, and
+confirm a mutation with a fresh exact-key/status inventory readback. A predicate
+inside the endpoint fence does not serialize visible-owner disposal: owner close
+and immediate wire handoff must share their own irrevocable monitor, nested
+inside that fence. Replacement must close the previous lease before opening the
+next, including A → B → A and same-profile reopen. Exercise the actual correlated
+RPC with a held final predicate and a held send; timeout/cancel after admission
+remains uncertain, not permission to replay. The current
+source audit and historical visual provenance are separated in
+[`settings-plugins.md`](../parity/settings-plugins.md).
 
 Two things about *panels* came out of the profiles slice, and both are the same
 mistake in different clothes: reading only the wide layout. Desktop's `Panel`

@@ -170,6 +170,8 @@ internal class OkHttpGatewayHttp(
             .callTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)
             .readTimeout(request.timeoutMillis, TimeUnit.MILLISECONDS)
             .build()
+        // Ownership transfers only after withContext returns to the caller.
+        var completed: GatewayHttpResult? = null
         return try {
             val builder = Request.Builder()
                 .url(url)
@@ -202,9 +204,7 @@ internal class OkHttpGatewayHttp(
             withContext(ioDispatcher) {
                 if (!request.isCurrent()) return@withContext GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
                 val call = scoped.newCall(builder.build())
-                val reply = if (dispatch == null) call.execute() else call.awaitAdmission(dispatch)
-                    ?: return@withContext GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)
-                reply.use { response ->
+                val consume: (okhttp3.Response) -> GatewayHttpResult = { reply -> reply.use { response ->
                 if (response.isSuccessful) {
                     val body = response.body
                     if (body == null) {
@@ -243,8 +243,15 @@ internal class OkHttpGatewayHttp(
                         },
                     )
                 }
-                }
+                } }
+                (if (dispatch == null) consume(call.execute()) else call.awaitAdmission(dispatch, consume)
+                    ?: GatewayHttpResult.Rejected(0, RECONNECT_MESSAGE)).also { completed = it }
             }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            // Prompt cancellation at the dispatcher return can discard a result
+            // that was received on IO but never transferred to the feature.
+            completed?.discardBytes()
+            throw cancelled
         } catch (_: IOException) {
             GatewayHttpResult.Rejected(0, "The Gateway route could not be reached. Check the connection and try again.")
         }
@@ -263,16 +270,26 @@ private class OneShotBody(private val delegate: RequestBody) : RequestBody() {
  * The fence protects that immediate admission, NOT DNS/socket IO or the response.
  * Once admitted, revocation cannot retract the request or promise it did not run.
  */
-private suspend fun okhttp3.Call.awaitAdmission(
+internal suspend fun okhttp3.Call.awaitAdmission(
     dispatch: (() -> Boolean) -> Boolean,
-): okhttp3.Response? = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    consume: (okhttp3.Response) -> GatewayHttpResult,
+): GatewayHttpResult? = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
+    // Stay suspended through body consumption, not just response headers.
+    // Cancellation now interrupts held socket reads; consume owns response.use.
     continuation.invokeOnCancellation { cancel() }
     val callback = object : okhttp3.Callback {
-        override fun onFailure(call: okhttp3.Call, error: IOException) {
-            continuation.resumeWith(Result.failure(error))
+        override fun onFailure(call: okhttp3.Call, e: IOException) {
+            continuation.resumeWith(Result.failure(e))
         }
         override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-            continuation.resume(response) { _, abandoned, _ -> abandoned?.close() }
+            if (!continuation.isActive) { response.close(); return }
+            val result = try { consume(response) } catch (error: Throwable) {
+                continuation.resumeWith(Result.failure(error))
+                return
+            }
+            // Includes cancellation racing EOF or queued resumption. No bytes
+            // transfer to a caller whose continuation never receives the result.
+            continuation.resume(result) { _, abandoned, _ -> abandoned?.discardBytes() }
         }
     }
     val admitted = dispatch {
@@ -282,6 +299,13 @@ private suspend fun okhttp3.Call.awaitAdmission(
         }
     }
     if (!admitted) continuation.resumeWith(Result.success(null))
+}
+
+private fun GatewayHttpResult.discardBytes() {
+    when (this) {
+        is GatewayHttpResult.Success -> bodyBytes.fill(0)
+        is GatewayHttpResult.Rejected -> envelopeBytes.fill(0)
+    }
 }
 
 internal fun okhttp3.ResponseBody.readBounded(maxBytes: Long): ByteArray? {
