@@ -61,3 +61,10 @@ Windows separators/case and POSIX case sensitivity.
 The held-mutation regression seeds distinct owner catalogs and hydrated source membership,
 changes profile navigation, then asserts owner-only reads, source removal and target
 membership without unrelated catalog publication.
+`CachedProjectPreviewJourneyTest` opens the real project-preview row menu over a
+colliding foreign-profile raw-id slot while overview revalidation is held. It verifies
+owner-scoped target loading without rewriting shared rows/transcripts, explicit-owner
+resume and mutation, and rejection of the picker-returned target after an endpoint
+switch. The picker retains its source owner and endpoint, not whichever profile the
+rail or shared cache names at selection time. This wiring-only repair changes no copy,
+menu order or presentation; the existing `pending: #72` visual gate remains unchanged.

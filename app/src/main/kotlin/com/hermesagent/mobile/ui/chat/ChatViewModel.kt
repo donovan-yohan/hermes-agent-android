@@ -2615,21 +2615,25 @@ internal class ChatViewModel(
         }
     }
 
-    private val moveTargetEndpoints = java.util.IdentityHashMap<ProjectSummary, Long>()
+    private data class MoveProjectSource(val session: SessionSummary, val endpoint: Long)
+    private val moveTargetSources = java.util.IdentityHashMap<ProjectSummary, MoveProjectSource>()
 
-    suspend fun sessionProjectTargets(id: String): List<ProjectSummary> {
+    suspend fun sessionProjectTargets(id: String, displayedSession: SessionSummary? = null): List<ProjectSummary> {
         val endpoint = cache.endpointGeneration.value
-        val targets = repository.sessionProjectTargets(id)
+        val source = displayedSession ?: cache.session(id) ?: error("Reopen Move to project.")
+        check(source.id == id)
+        val targets = repository.sessionProjectTargets(source, endpoint)
         check(cache.endpointGeneration.value == endpoint)
-        moveTargetEndpoints.clear()
-        targets.forEach { moveTargetEndpoints[it] = endpoint }
+        moveTargetSources.clear()
+        targets.forEach { moveTargetSources[it] = MoveProjectSource(source, endpoint) }
         return targets
     }
 
     suspend fun moveSessionToProject(id: String, project: ProjectSummary) {
         refuseBotChatMutation(id)?.let { throw it }
-        val endpoint = moveTargetEndpoints[project] ?: error("Reopen Move to project.")
-        repository.moveSessionToProject(id, project, endpoint)
+        val source = moveTargetSources[project] ?: error("Reopen Move to project.")
+        check(source.session.id == id)
+        repository.moveSessionToProject(source.session, project, source.endpoint)
     }
 
     suspend fun renameSessionAsync(id: String, newTitle: String): String {

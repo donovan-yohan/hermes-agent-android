@@ -406,6 +406,7 @@ internal fun SessionActionsControl(
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
     projectActions: SessionProjectActions? = null,
+    projectSession: com.hermesagent.mobile.data.session.SessionSummary? = null,
     /**
      * Pin, read-state and archive, all deliberately **not** `suspend`.
      *
@@ -522,7 +523,7 @@ internal fun SessionActionsControl(
 
     if (moveOpen && projectActions != null) {
         MoveSessionProjectDialog(
-            load = { projectActions.load(sessionId) },
+            load = { projectActions.load(sessionId, projectSession) },
             move = { projectActions.move(sessionId, it) },
             onDismiss = { moveOpen = false },
         )

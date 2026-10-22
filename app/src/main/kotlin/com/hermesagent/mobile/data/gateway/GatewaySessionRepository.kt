@@ -418,6 +418,10 @@ interface GatewaySessionRepository {
     suspend fun renameSession(durableId: String, title: String): String =
         error("Session renaming is not implemented by this repository.")
     suspend fun sessionProjectTargets(durableId: String): List<ProjectSummary> = emptyList()
+    suspend fun sessionProjectTargets(session: SessionSummary, expectedEndpointGeneration: Long): List<ProjectSummary> =
+        sessionProjectTargets(session.id)
+    suspend fun moveSessionToProject(session: SessionSummary, project: ProjectSummary, expectedEndpointGeneration: Long): Unit =
+        moveSessionToProject(session.id, project, expectedEndpointGeneration)
     suspend fun moveSessionToProject(durableId: String, project: ProjectSummary, expectedEndpointGeneration: Long? = null): Unit =
         error("Moving sessions is not implemented by this repository.")
     suspend fun deleteSession(durableId: String): Unit =
@@ -4543,14 +4547,19 @@ internal class LiveGatewaySessionRepository(
     }
 
     override suspend fun sessionProjectTargets(durableId: String): List<ProjectSummary> {
+        return sessionProjectTargets(cache.session(durableId) ?: SessionSummary(durableId, "", "", clock()), cache.endpointGeneration.value)
+    }
+
+    override suspend fun sessionProjectTargets(session: SessionSummary, expectedEndpointGeneration: Long): List<ProjectSummary> {
+        requireEndpoint(expectedEndpointGeneration)
         val connection = connectionSnapshot()
-        val profile = owningProfileParam(durableId)
+        val profile = session.remoteProfile
         val result = connection.client.request("projects.tree", buildJsonObject {
             put("preview_limit", JsonPrimitive(0))
             profile?.let { put("profile", JsonPrimitive(it)) }
         })
         synchronized(stateLock) { ensureCurrent(connection) }
-        val cwd = cache.session(durableId)?.worktreePath
+        val cwd = session.worktreePath
         val currentProjectId = projectOwningCwd(result, cwd)
         return parseProjectOverview(result, clock()).projects.filter {
             !it.isHome && !it.path.isNullOrBlank() && it.id != currentProjectId
@@ -4558,15 +4567,36 @@ internal class LiveGatewaySessionRepository(
     }
 
     override suspend fun moveSessionToProject(durableId: String, project: ProjectSummary, expectedEndpointGeneration: Long?) {
+        moveSessionToProject(cache.session(durableId) ?: SessionSummary(durableId, "", "", clock()), project,
+            expectedEndpointGeneration ?: cache.endpointGeneration.value)
+    }
+
+    override suspend fun moveSessionToProject(session: SessionSummary, project: ProjectSummary, expectedEndpointGeneration: Long) {
         requireEndpoint(expectedEndpointGeneration)
-        val binding = ensureRuntime(durableId, expectedEndpointGeneration)
+        // Resolve the displayed owner explicitly, just like project-preview open.
+        // An omitted launch owner must never borrow a foreign cache slot.
+        if (session.remoteProfile == null && cache.session(session.id)?.remoteProfile != null) {
+            throw GatewayRpcException("The selected session changed. Reopen Move to project.")
+        }
+        val canonicalId = openSessionInternal(session.id, session.remoteProfile, expectedEndpointGeneration)
+        // Keep the shared runtime admission checks (including cron write
+        // refusal) after resolving the preview's explicit owner.
+        ensureRuntime(canonicalId, expectedEndpointGeneration)
         navigationMutex.withLock {
         requireEndpoint(expectedEndpointGeneration)
+        val binding = synchronized(stateLock) {
+            val runtime = identities.runtimeFor(canonicalId)
+                ?: throw GatewayRpcException("Reopen Move to project.")
+            if (!runtimeProfiles.containsKey(runtime) || runtimeProfiles[runtime] != session.remoteProfile) {
+                throw GatewayRpcException("The selected session changed. Reopen Move to project.")
+            }
+            SessionBinding(canonicalId, runtime, connectionSnapshot())
+        }
         val connection = connectionSnapshot(binding)
         val targetId = binding.durableId
-        val profile = owningProfileParam(targetId)
+        val profile = session.remoteProfile
         // Refresh the actual owner's roster before accepting a picker snapshot.
-        val target = sessionProjectTargets(targetId).singleOrNull { it.id == project.id && it.path == project.path }
+        val target = sessionProjectTargets(session, expectedEndpointGeneration).singleOrNull { it.id == project.id && it.path == project.path }
             ?: throw GatewayRpcException("That project is no longer available. Reopen Move to project.")
         synchronized(stateLock) { ensureCurrent(connection) }
         val result = requestAtEndpointDispatch(connection, connection.endpointGeneration,

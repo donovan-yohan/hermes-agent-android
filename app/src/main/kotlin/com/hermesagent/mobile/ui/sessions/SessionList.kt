@@ -1574,6 +1574,7 @@ private fun SessionRow(
             onRename = onRename,
             onDelete = onDelete,
             projectActions = projectActions,
+            projectSession = session,
             onSetPinned = onSetPinned,
             onSetUnread = onSetUnread,
             onSetArchived = onSetArchived,

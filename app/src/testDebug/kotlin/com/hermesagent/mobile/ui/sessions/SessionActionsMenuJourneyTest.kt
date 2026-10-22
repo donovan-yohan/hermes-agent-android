@@ -80,7 +80,7 @@ class SessionActionsMenuJourneyTest {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
                 SessionActionsControl(sessionId = FIRST_ID, projectActions = SessionProjectActions(
-                    load = { loaded = it; listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Demo project", "/work/demo")) },
+                    load = { id, _ -> loaded = id; listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Demo project", "/work/demo")) },
                     move = { id, project -> moved = "$id:${project.id}" },
                 ))
             }

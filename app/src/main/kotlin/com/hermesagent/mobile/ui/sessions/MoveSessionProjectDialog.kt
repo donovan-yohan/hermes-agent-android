@@ -19,7 +19,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 data class SessionProjectActions(
-    val load: suspend (String) -> List<ProjectSummary>,
+    val load: suspend (String, com.hermesagent.mobile.data.session.SessionSummary?) -> List<ProjectSummary>,
     val move: suspend (String, ProjectSummary) -> Unit,
 )
 
