@@ -263,6 +263,26 @@ JSON citations are checked by their explicit per-record revision; the Markdown
 range gate remains a separate Concern for parent review. Exhaustive-semantic
 acceptance still deliberately exits 1.
 
+## Citation-origin gate follow-up
+
+The earlier exit-2 observation above belongs to the original inventory candidate.
+The later checker correction distinguishes an explicitly labelled Android
+foundation/baseline from the Desktop authority, on both sides of a range.
+An explicit `@` citation pin remains authoritative even when consumer prose says
+Android. Wrapped declarations and Android-first Pin tables have separate fixtures.
+No Android objects are fetched from the upstream repository, and no historical
+source/visual pin is changed to make the checker pass.
+
+The final correction runs 33 citation-range fixture tests and 12 transport/budget
+boundary fixtures without failures. A separate two-repository probe exercises
+four declaration shapes with both byte-true and moved spans: each true move
+checks a citation and exits zero; each moved boundary exits one. The original
+mixed-origin inventory range now runs without an unreadable Android pin.
+These are gate-correctness receipts, not exhaustive citation resolution or semantic
+parity certification. Unattributable shorthand and the coverage debt above remain.
+The initially overbroad consumer-word filter was independently rejected and then
+narrowed; a successful range alone was not treated as independent approval.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
