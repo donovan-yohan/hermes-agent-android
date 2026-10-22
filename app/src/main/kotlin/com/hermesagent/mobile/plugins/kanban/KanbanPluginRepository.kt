@@ -18,10 +18,15 @@ data class KanbanTask(
     val body: String? = null,
     val latestSummary: String? = null,
     val result: String? = null,
+    val tenant: String? = null,
 )
 
 data class KanbanColumn(val name: String, val tasks: List<KanbanTask>)
-data class KanbanBoard(val columns: List<KanbanColumn>)
+data class KanbanBoard(
+    val columns: List<KanbanColumn>,
+    val assignees: List<String> = emptyList(),
+    val tenants: List<String> = emptyList(),
+)
 data class KanbanTaskDetail(
     val task: KanbanTask,
     val parentIds: List<String>,
@@ -40,7 +45,10 @@ sealed interface KanbanRead<out T> {
 class KanbanPluginRepository(
     private val rest: suspend (String, PluginRestOptions) -> PluginRestResult,
 ) {
-    suspend fun board(): KanbanRead<KanbanBoard> = decode(rest("board", options()), ::parseBoard)
+    suspend fun board(includeArchived: Boolean = false): KanbanRead<KanbanBoard> = decode(
+        rest("board", options().copy(query = if (includeArchived) mapOf("include_archived" to "true") else emptyMap())),
+        ::parseBoard,
+    )
 
     suspend fun task(id: String): KanbanRead<KanbanTaskDetail> {
         if (id.isBlank()) return KanbanRead.Refused
@@ -87,7 +95,7 @@ private fun parseBoard(bytes: ByteArray): KanbanBoard? {
             parseTask(task as? JsonObject ?: return null) ?: return null
         } ?: return null
         KanbanColumn(name, tasks)
-    })
+    }, assignees = root.stringList("assignees"), tenants = root.stringList("tenants"))
 }
 
 private fun parseDetail(bytes: ByteArray): KanbanTaskDetail? {
@@ -126,6 +134,7 @@ private fun parseTask(row: JsonObject): KanbanTask? = KanbanTask(
     body = row.string("body"),
     latestSummary = row.string("latest_summary"),
     result = row.string("result"),
+    tenant = row.string("tenant"),
 )
 
 private fun objectOf(bytes: ByteArray): JsonObject? = runCatching {
