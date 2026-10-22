@@ -423,6 +423,11 @@ interface GatewaySessionRepository {
 
     suspend fun renameSession(durableId: String, title: String): String =
         error("Session renaming is not implemented by this repository.")
+    suspend fun exportSession(durableId: String): ByteArray =
+        error("Session export is not implemented by this repository.")
+    /** Export the displayed owner, never a possibly colliding shared raw-id slot. */
+    suspend fun exportSessionAtEndpoint(session: SessionSummary, expectedEndpointGeneration: Long): ByteArray =
+        error("Owner-scoped session export is not implemented by this repository.")
     suspend fun deleteSession(durableId: String): Unit =
         error("Session deletion is not implemented by this repository.")
 
@@ -4580,6 +4585,53 @@ internal class LiveGatewaySessionRepository(
                 } else {
                     GatewayGoalStatusOutcome.Failed
                 }
+            }
+        }
+    }
+
+    override suspend fun exportSession(durableId: String): ByteArray {
+        val row = cache.session(durableId) ?: throw GatewayRpcException("That session is no longer available.")
+        val profile = row.remoteProfile ?: synchronized(stateLock) { profileRouting.activeProfile }
+        return exportSessionAtEndpoint(row.copy(remoteProfile = profile), cache.endpointGeneration.value)
+    }
+
+    override suspend fun exportSessionAtEndpoint(session: SessionSummary, expectedEndpointGeneration: Long): ByteArray {
+        val connection = connectionSnapshot()
+        val scopeRevision = synchronized(stateLock) { projectScopeRevision }
+        fun requireCurrentExport() = synchronized(stateLock) {
+            ensureCurrent(connection)
+            check(connection.endpointGeneration == expectedEndpointGeneration && projectScopeRevision == scopeRevision)
+        }
+        requireCurrentExport()
+        val durableId = session.id
+        val profile = session.remoteProfile
+        val transport = http() ?: throw GatewayRpcException("Connect to a Gateway before exporting.")
+        val identity = (connection.client as? AuthorityGatewayRpcClient)?.authoritySessionIdentity
+        val guarded = object : GatewayHttp {
+            override suspend fun execute(request: GatewayHttpRequest): GatewayHttpResult =
+                transport.execute(GatewayHttpRequest(
+                    path = request.path, method = request.method, body = request.body,
+                    timeoutMillis = request.timeoutMillis, query = request.query,
+                    maxResponseBytes = request.maxResponseBytes, captureEnvelope = request.captureEnvelope,
+                    isCurrent = {
+                    request.isCurrent() && synchronized(stateLock) {
+                        connection.generation == connectionGeneration && clientFlow.value === connection.client &&
+                            connection.endpointGeneration == cache.endpointGeneration.value &&
+                            connection.endpointGeneration == expectedEndpointGeneration && projectScopeRevision == scopeRevision
+                    }
+                }))
+        }
+        val boundRest = GatewayRestClient(restContext) { guarded }.also { it.sessionIdentity = { identity } }
+        val exportId = identity?.address(durableId, profile)?.rawId ?: durableId
+        return collectSessionExport(exportId, session.title, clock(),
+            requireCurrent = { requireCurrentExport() },
+        ) { offset ->
+            when (val page = boundRest.sessionMessages(durableId, limit = 100, offset = offset,
+                order = GatewayMessageOrder.Oldest, includeCompacted = true, profile = profile)) {
+                is GatewayRestResult.Success -> page.value.copy(
+                    sessionId = identity?.address(page.value.sessionId, profile)?.rawId ?: page.value.sessionId,
+                )
+                is GatewayRestResult.Failed -> throw GatewayRpcException("Export failed. Check the Gateway and try again.")
             }
         }
     }
