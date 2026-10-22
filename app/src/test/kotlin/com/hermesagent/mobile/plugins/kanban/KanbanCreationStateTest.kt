@@ -23,10 +23,11 @@ class KanbanCreationStateTest {
                 override fun close() { closed = true }
             }
         }
-        val vm = KanbanViewModel(KanbanPluginRepository { _, options ->
+        val vm = KanbanViewModel(KanbanPluginRepository { path, options ->
+            if (path == "boards") return@KanbanPluginRepository PluginRestResult.Success(200, """{"current":"design"}""".toByteArray())
             reads++; queries += options.query
             PluginRestResult.Success(200, """{"columns":[],"assignees":["planner"],"tenants":["design"]}""".toByteArray()) },
-            MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, api)
+            MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, create = api)
         vm.setFilters(filters); runCurrent()
         vm.openCreate(); runCurrent()
         vm.submitTask(KanbanNewTask("Pearl")); vm.submitTask(KanbanNewTask("Pearl")); runCurrent()
@@ -37,7 +38,7 @@ class KanbanCreationStateTest {
         assertEquals(filters, vm.uiState.value.filters)
         assertEquals(listOf("planner"), vm.uiState.value.assignees)
         assertEquals(listOf("design"), vm.uiState.value.tenants)
-        assertEquals(List(2) { mapOf("include_archived" to "true") }, queries)
+        assertEquals(List(2) { mapOf("board" to "design", "include_archived" to "true") }, queries)
     }
 
     @Test fun `unavailable background board closes scope and late failure cannot restore form`() = runTest {
@@ -52,7 +53,7 @@ class KanbanCreationStateTest {
             }
         }
         val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> board.await() },
-            MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, api)
+            MutableStateFlow(false), MutableStateFlow(0L), backgroundScope, create = api)
         vm.refreshBoard(); runCurrent(); vm.openCreate(); runCurrent()
         vm.submitTask(KanbanNewTask("Pearl")); runCurrent()
         board.complete(PluginRestResult.UnavailableOnGateway); runCurrent()
@@ -72,7 +73,7 @@ class KanbanCreationStateTest {
             }
         }
         val endpoint = MutableStateFlow(0L)
-        val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> error("not read") }, MutableStateFlow(false), endpoint, backgroundScope, api)
+        val vm = KanbanViewModel(KanbanPluginRepository { _, _ -> error("not read") }, MutableStateFlow(false), endpoint, backgroundScope, create = api)
         runCurrent(); vm.openCreate(); runCurrent()
         endpoint.value = 1L; runCurrent()
         held.complete(KanbanCreateDefaults("design", "planner")); runCurrent()

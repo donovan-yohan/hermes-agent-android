@@ -1,4 +1,5 @@
 package com.hermesagent.mobile.plugins.kanban
+import androidx.compose.ui.test.performTextInput
 
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -133,7 +134,8 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithText("line one\nline two").assertIsDisplayed()
         compose.onNodeWithTag("Kanban Task actions").performClick()
         compose.waitForIdle()
-        assertWipOrder("Move to", "Copy task id", "Copy title", "Archive", "Delete")
+        assertWipOrder("Copy task id", "Copy title", "Archive", "Delete")
+        compose.onNodeWithText("Move to").assertIsDisplayed()
         compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(2)
         compose.onNodeWithContentDescription("Back to board").performClick()
         compose.onNodeWithTag("Kanban board").assertIsDisplayed()
@@ -177,6 +179,44 @@ class KanbanPluginJourneyTest {
         compose.runOnIdle { state = KanbanUiState(KanbanPhase.Refused) }
         compose.onNodeWithText("Board could not be loaded").assertIsDisplayed()
         compose.onNodeWithTag("Kanban refresh").assertIsDisplayed()
+    }
+
+    @Test fun `move surface shows named board targets and sends only explicitly confirmed status`() {
+        val task = KanbanTask("x", "Pearl", "todo")
+        var state by mutableStateOf(KanbanUiState(detail = KanbanDetail.Value(KanbanTaskDetail(task, emptyList(), emptyList(), emptyList()))))
+        var moved: String? = null
+        compose.setContent { HermesTheme {
+            KanbanScreen(state, {}, {}, {}, {},
+                onMoveTask = { state = state.copy(move = KanbanMoving(KanbanMoveChoices("design", task, listOf("ready", "done")))) },
+                onCloseMove = { state = state.copy(move = null) }, onConfirmMove = { status, _ -> moved = status })
+        } }
+        compose.onNodeWithTag("Kanban Task actions").performClick()
+        compose.onNodeWithText("Move to").performClick()
+        compose.onNodeWithText("Board: design").assertIsDisplayed()
+        compose.onNodeWithText("Ready").performClick()
+        compose.runOnIdle { assertEquals(null, moved) }
+        compose.onNodeWithTag("Kanban confirm move").performClick()
+        compose.runOnIdle { assertEquals("ready", moved) }
+        compose.onAllNodesWithTag("Kanban WIP Move to").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Back to task").performClick()
+        compose.onNodeWithTag("Kanban detail").assertExists()
+    }
+
+    @Test fun `move confirmation redacts backend semantics and collects required Done evidence`() {
+        val task = KanbanTask("x", "password=title-demo", "ready")
+        var submitted: Pair<String, String>? = null
+        compose.setContent { HermesTheme {
+            KanbanMoveScreen(KanbanMoving(KanbanMoveChoices("password=board-demo", task, listOf("done"))), {},
+                { status, summary -> submitted = status to summary })
+        } }
+        compose.onNodeWithText("password=title-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("Board: password=board-demo", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithText("password=<redacted>", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Done").performClick()
+        compose.onNodeWithTag("Kanban confirm move").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Completion summary").performTextInput("Verified the work")
+        compose.onNodeWithTag("Kanban confirm move").performClick()
+        compose.runOnIdle { assertEquals("done" to "Verified the work", submitted) }
     }
 
     @Test fun `new task form requires title and submits title description priority`() {
