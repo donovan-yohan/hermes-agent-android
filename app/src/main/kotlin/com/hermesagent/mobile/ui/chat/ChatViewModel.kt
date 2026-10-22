@@ -2433,6 +2433,16 @@ internal class ChatViewModel(
 
     /** Whole-history branching uses the repository's backend-owned copy, never the visible page. */
     fun branchSession(id: String) {
+        branchSessionInternal(id, null)
+    }
+
+    fun branchProjectSession(session: SessionSummary) {
+        val owner = session.remoteProfile
+        if (owner == null && cache.session(session.id)?.remoteProfile != null) return
+        branchSessionInternal(session.id, owner)
+    }
+
+    private fun branchSessionInternal(id: String, owner: String?) {
         if (refuseBotChatMutation(id) != null) return
         if (id.isBlank() || !branchingSessions.add(id)) return
         val endpoint = cache.endpointGeneration.value
@@ -2441,7 +2451,8 @@ internal class ChatViewModel(
         val profile = profileScopeGeneration
         viewModelScope.launch {
             try {
-                val child = repository.branchSessionAtEndpoint(id, endpoint)
+                val child = if (owner == null) repository.branchSessionAtEndpoint(id, endpoint)
+                    else repository.branchProjectSessionAtEndpoint(id, owner, endpoint)
                 if (cache.endpointGeneration.value == endpoint && activeSessionId.value == selected &&
                     navigationGeneration == navigation && profileScopeGeneration == profile) {
                     selectSession(child)

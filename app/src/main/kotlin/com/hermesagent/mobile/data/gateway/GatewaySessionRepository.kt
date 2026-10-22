@@ -250,6 +250,10 @@ interface GatewaySessionRepository {
         error("Branching is not implemented by this repository.")
     suspend fun branchSessionAtEndpoint(durableId: String, expectedEndpointGeneration: Long): String =
         branchSession(durableId, null)
+    suspend fun branchProjectSessionAtEndpoint(durableId: String, profile: String, expectedEndpointGeneration: Long): String {
+        val resolved = openSessionAtEndpoint(durableId, profile, expectedEndpointGeneration)
+        return branchSessionAtEndpoint(resolved, expectedEndpointGeneration)
+    }
     /** Preserve the exact row selected in the same authoritative visible history used for count. */
     suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long? = null): String =
         branchSession(durableId, count)
@@ -2671,13 +2675,18 @@ internal class LiveGatewaySessionRepository(
     override suspend fun branchSessionAtEndpoint(durableId: String, expectedEndpointGeneration: Long): String =
         branchSessionInternal(durableId, null, null, fromReply = false, expectedEndpointGeneration)
 
+    override suspend fun branchProjectSessionAtEndpoint(durableId: String, profile: String, expectedEndpointGeneration: Long): String {
+        val resolved = openSessionAtEndpoint(durableId, profile, expectedEndpointGeneration)
+        return branchSessionInternal(resolved, null, null, fromReply = false, expectedEndpointGeneration, profile)
+    }
+
     override suspend fun branchSession(durableId: String, count: Int?): String =
         branchSessionInternal(durableId, count, null, fromReply = false)
 
     override suspend fun branchSessionFromReply(durableId: String, count: Int?, selectedRow: TranscriptRowId?, expectedEndpointGeneration: Long?): String =
         branchSessionInternal(durableId, count, selectedRow, fromReply = true, expectedEndpointGeneration)
 
-    private suspend fun branchSessionInternal(durableId: String, count: Int?, selectedRow: TranscriptRowId?, fromReply: Boolean, expectedEndpointGeneration: Long? = null): String {
+    private suspend fun branchSessionInternal(durableId: String, count: Int?, selectedRow: TranscriptRowId?, fromReply: Boolean, expectedEndpointGeneration: Long? = null, expectedProfile: String? = null): String {
         requireEndpoint(expectedEndpointGeneration)
         // Resuming an unopened row takes navigationMutex itself.
         val binding = ensureRuntime(durableId, expectedEndpointGeneration)
@@ -2688,6 +2697,9 @@ internal class LiveGatewaySessionRepository(
         val endpoint = connection.endpointGeneration.takeIf { canonical ||
             (expectedEndpointGeneration != null && connection.client is EndpointDispatchingGatewayRpcClient) }
         val profile = synchronized(stateLock) { runtimeProfiles[binding.runtimeId] }
+        if (expectedProfile != null && profile != expectedProfile) {
+            throw GatewayRpcException("The selected session changed. Reopen it before branching.")
+        }
         fun unsaved(): Nothing = throw GatewayRpcException("This message is not saved yet; wait for it to settle, then branch from it again.")
         val boundary = if (!canonical) null else if (fromReply) {
             selectedRow?.value?.takeIf { it > 0 } ?: unsaved()
@@ -2707,7 +2719,7 @@ internal class LiveGatewaySessionRepository(
                 if (count == null) {
                     val key = synchronized(stateLock) {
                         wholeBranchRequests.keys.removeAll { it.first != connection.endpointGeneration }
-                        val attempt = wholeBranchRequests.getOrPut(connection.endpointGeneration to durableId) {
+                        val attempt = wholeBranchRequests.getOrPut(connection.endpointGeneration to binding.durableId) {
                             WholeBranchAttempt(connection.generation, java.util.UUID.randomUUID().toString())
                         }
                         // Canonical prepared revision/generation belongs to the old socket adapter.
@@ -2746,7 +2758,7 @@ internal class LiveGatewaySessionRepository(
         synchronized(stateLock) {
             ensureCurrent(connection)
             identities.bind(newDurableId, newRuntimeId)
-            if (count == null) wholeBranchRequests.remove(connection.endpointGeneration to durableId)
+            if (count == null) wholeBranchRequests.remove(connection.endpointGeneration to binding.durableId)
             runtimeProfiles[newRuntimeId] = profile
             // Branches are created server-side and therefore already persisted; they are not ephemeral cache rows.
             cache.upsertSession(parseSession(mergedInfo, clock(), newDurableId).let { row ->

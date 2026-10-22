@@ -1437,6 +1437,34 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `compressed root whole branch refuses reconnect retry through resolved tip`() = runTest {
+        val cache = SessionCache().apply {
+            upsertSession(SessionSummary("parent-root", "Long chat", "", CLOCK))
+        }
+        val first = FakeRpc().apply {
+            resumeA = RESUME_COMPRESSION_TIP
+            wholeBranchFailure = GatewayRpcException("Lost receipt", requestMayHaveBeenAccepted = true)
+        }
+        val clients = MutableStateFlow<GatewayRpcClient?>(first)
+        val state = MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected))
+        val repository = LiveGatewaySessionRepository(cache, state, clients, backgroundScope) { CLOCK }
+        runCurrent()
+        assertTrue(runCatching { repository.branchSession("parent-root", null) }.isFailure)
+        assertEquals("runtime-a", first.calls.single { it.method == "session.branch_whole" }.params.string("session_id"))
+        assertNotNull(cache.session("continuation-tip"))
+        clients.value = null
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        runCurrent()
+        val second = FakeRpc().apply { resumeA = RESUME_COMPRESSION_TIP }
+        clients.value = second
+        state.value = GatewayConnectionState(GatewayConnectionStatus.Connected)
+        runCurrent()
+        val failure = runCatching { repository.branchSession("continuation-tip", null) }.exceptionOrNull()
+        assertTrue((failure as? GatewayRpcException)?.requestMayHaveBeenAccepted == true)
+        assertTrue(second.calls.none { it.method in setOf("session.branch", "session.branch_whole", "session.mutate") })
+    }
+
+    @Test
     fun `menu whole branch resumes unopened stored row without reentrant navigation lock`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply { branchResult = CREATE }

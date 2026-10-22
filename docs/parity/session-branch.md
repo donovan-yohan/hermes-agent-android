@@ -17,6 +17,11 @@ The historical menu visuals remain at their original pin in
 Android's existing runtime resolver and canonical protocol own identity/profile routing,
 mutation revision receipts and backend cache publication. The menu now hands the
 selected durable ID to that repository path, with no visible-transcript reconstruction.
+Project previews retain their displayed `remoteProfile` through an endpoint-bound
+owner-aware resume and branch; they never infer ownership from the global raw-ID slot.
+The unresolved-attempt key and settlement removal use the resolved parent durable
+identity, including a compression root resumed onto its tip. Compact drawer Branch
+exits the current route and closes the drawer like selection; Bot Chat still disables it.
 The ViewModel coalesces repeated presses until settlement and opens the child only
 while endpoint and foreground selection still match the initiating context. Failure
 uses the existing safe notice. The operation outlives a row leaving composition.
@@ -54,7 +59,13 @@ for this slice. Independent review and parent-owned rendered/device acceptance r
 ## Regression evidence
 
 `SessionActionsMenuJourneyTest` exercises live dispatch and dismissal.
+It also checks compact drawer dismissal/route exit and the Bot Chat guard.
+`CachedProjectPreviewJourneyTest` holds alpha revalidation over a colliding beta
+raw ID, then branches the alpha preview through the real ViewModel/repository/wire.
 `ChatViewModelTest` exercises whole-history dispatch, duplicate-press coalescing and
 late navigation isolation. `GatewaySessionRepositoryTest` exercises runtime resolution,
 whole versus counted transport and cache publication. `CanonicalBranchRegressionTest`
 covers canonical saved-row boundaries and lost-response retry identity.
+The compression-root reconnect regression verifies that retrying through the resolved
+tip refuses a second write. These are JVM/Robolectric behavior checks, not rendered
+Desktop/Android parity or physical-device evidence; the visual verdict remains Concern.

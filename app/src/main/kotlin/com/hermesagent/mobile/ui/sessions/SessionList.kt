@@ -157,6 +157,7 @@ fun SessionList(
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
     onBranchSession: ((String) -> Unit)? = null,
+    onBranchProjectSession: ((SessionSummary) -> Unit)? = null,
     /** Not `suspend`: the row that owns the press leaves the list it was on. */
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
@@ -487,7 +488,7 @@ fun SessionList(
                             nowMillis = nowMillis,
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelectProjectSession,
-                            onBranchSession = onBranchSession,
+                            onBranchSession = onBranchProjectSession,
                             canCreate = canCreate,
                             onCreate = { onSelectProject(project.id); onCreate() },
                         )
@@ -988,7 +989,7 @@ private fun ProjectRow(
     nowMillis: Long,
     onOpen: () -> Unit,
     onSelectSession: (SessionSummary) -> Unit,
-    onBranchSession: ((String) -> Unit)?,
+    onBranchSession: ((SessionSummary) -> Unit)?,
     canCreate: Boolean,
     onCreate: () -> Unit,
 ) {
@@ -1059,7 +1060,7 @@ private fun ProjectRow(
                 active = session.id == activeSessionId,
                 onClick = { onSelectSession(session) },
                 nowMillis = nowMillis,
-                onBranch = onBranchSession?.let { branch -> { branch(session.id) } },
+                onBranch = onBranchSession?.let { branch -> { branch(session) } },
             )
         }
     }
