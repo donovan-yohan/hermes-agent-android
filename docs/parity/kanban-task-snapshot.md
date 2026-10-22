@@ -10,7 +10,7 @@
 | Gateway board response | same | `plugins/kanban/dashboard/plugin_api.py:265-336` (`GET /board`, `columns[{name,tasks}]`) |
 | Gateway detail response | same | `plugins/kanban/dashboard/plugin_api.py:339-368` (`GET /tasks/{task_id}`, task, links object, child_results and siblings) |
 
-Android implementation is `app/src/main/kotlin/com/hermesagent/mobile/plugins/kanban/KanbanPluginRepository.kt`, `KanbanViewModel.kt`, and `KanbanScreen.kt`. It calls only `GET board` and `GET tasks/{url-encoded task_id}`. It renders typed task id/title/status, optional assignee/priority/body/latest_summary/result, and at most twelve parent/child identifiers or child-result identifiers. Raw metadata, diagnostics, events, comments, run errors, envelopes and safeMessage are never passed to a UI model.
+Android implementation is `app/src/main/kotlin/com/hermesagent/mobile/plugins/kanban/KanbanPluginRepository.kt`, `KanbanViewModel.kt`, and `KanbanScreen.kt`. Snapshot reads call `GET board` and `GET tasks/{url-encoded task_id}`; Move to uses the separately scoped typed host capability described below. It renders typed task id/title/status, optional assignee/priority/body/latest_summary/result, and at most twelve parent/child identifiers or child-result identifiers. Raw metadata, diagnostics, events, comments, run errors, envelopes and safeMessage are never passed to a UI model.
 
 ## Mobile adaptation
 
@@ -24,14 +24,30 @@ A one-pane phone keeps the board snapshot visible after a successful refresh. A 
 | Board switcher | mobile-adaptation | `Board controls` menu shows disabled `Board switcher` with `WIP` | Desktop titlebar `board.tsx:1326-1328`, control `board-switcher.tsx:1-6`; Android `KanbanScreen.kt`; current-board-only snapshot, no board selection read or write |
 | Filters and search | mobile-adaptation | `Board controls` menu shows disabled `Filters`, then `Filter cards…`, with `WIP` | Phone slice prioritizes a readable current-board snapshot; Desktop `apps/desktop/src/plugins/kanban/i18n.ts:240,261`, header `board.tsx:1335-1346`; Android `KanbanScreen.kt` |
 | Orchestration settings and New task | mobile-adaptation | `Board controls` menu keeps both after filtering controls, disabled with `WIP` | Desktop `apps/desktop/src/plugins/kanban/i18n.ts:238-239`, header `board.tsx:1347-1362`; Android `KanbanScreen.kt`; orchestration and task creation are excluded |
-| Lane collapse, bulk selection, drag/drop | omission | Not rendered | out-of-scope: #261; the read-only vertical snapshot has no mutable board model or write API; Desktop `board.tsx:240-301, 945-1078, 1310-1321` |
-| Status and task actions | mobile-adaptation | Detail `Task actions` combines disabled `Move to`, `Copy task id`, `Copy title`, `Archive`, and `Delete` groups with `WIP` | Phone combines Desktop's adjacent status and actions controls while preserving their order and separators; Desktop status transition `ui.tsx:190-228` (`i18n.ts:267` `Move to`, `board.tsx:1017`), `drawer.tsx:680-731`, `i18n.ts:270,372-374`; Android `KanbanScreen.kt`; all actions remain inert in this snapshot |
-| Drawer edit description, assignee menu, comments, attachments, diagnostics, runs | omission | Detail shows only safe inert typed fields | out-of-scope: #261; this slice excludes mutations and unsafe diagnostic/event payloads; Desktop `drawer.tsx:184-475, 899-903`; Android `KanbanScreen.kt` |
+| Lane collapse, bulk selection, drag/drop | omission | Not rendered | out-of-scope: #261; single-task status movement does not add lane, bulk or drag interactions; Desktop `board.tsx:240-301, 945-1078, 1310-1321` |
+| Move to | mobile-adaptation | Enabled task action opens a named-board confirmation with legal server-enumerated destinations and fresh task readback | Phone uses a scrollable confirmation instead of a pointer submenu; retains Desktop target order and excludes Running/Review/Scheduled; source audit below |
+| Remaining task actions | omission | Copy task id/title, Archive and Delete remain visible disabled WIP | coming soon; only status movement is implemented |
+| Drawer edit description, assignee menu, comments, attachments, diagnostics, runs | omission | Detail shows only safe inert typed fields | out-of-scope: #261; drawer field/comment/attachment mutations and unsafe diagnostic/event payloads remain excluded; Desktop `drawer.tsx:184-475, 899-903`; Android `KanbanScreen.kt` |
 | Live socket/poll updates | mobile-adaptation | Explicit manual Refresh, stale notice | Desktop `apps/desktop/src/plugins/kanban/api.ts:63-65,122-125` and `board.tsx:1088-1089`; Android `KanbanViewModel.kt:63-103`; bounded snapshot avoids background navigation and stale overwrites |
 
 ## Visual report
 
 - pending: #261 (implementation issue is the required evidence issue; no separate issue is necessary).
+
+## Move to source audit (2026-10-22)
+
+Movement was additionally inspected at `NousResearch/hermes-agent@81a55437f3f31a9f12a30c53b6c5d49d420898aa`; historical source and visual pins above are unchanged:
+
+- `apps/desktop/src/plugins/kanban/ui.tsx:48-55,194-228` and `apps/desktop/src/plugins/kanban/board.tsx:325-333,1201-1237`: legal targets, order, PATCH handler and reconciliation.
+- `apps/desktop/src/plugins/kanban/api.ts:419-440,506`: namespace PATCH plus best-effort dispatcher nudge.
+- `plugins/kanban/dashboard/plugin_api.py:533-551,594-614,638-716`: status schema, backend dependency/conflict enforcement and task receipt.
+- `tests/plugins/test_kanban_dashboard_plugin.py:203-287`: backend review/reopen/dependency semantics. Android does not recreate backend transition rules.
+- `hermes_cli/web_server.py:412-439,456-493`: authenticated plugin routing.
+- `apps/desktop/src/plugins/kanban/i18n.ts:233-241,280`: verbatim status labels and Move to.
+
+The typed host scope resolves the current board, reads its lane list and selected task with an explicit `board` query, checks task id/title against selection, and shows the named board before confirmation. It does not switch the server-wide pointer. It captures the endpoint/transport before suspension, uses the existing dispatch fence and a close/enqueue lock, disables replay/redirect, and never automatically retries a refused or uncertain mutation. Success requires both the PATCH receipt and fresh named-task readback to match id/status. Existing board/detail reads remain the baseline snapshot contract; the action confirms a freshly resolved board rather than silently mutating through a current-board alias.
+
+The backend offers no version/compare-and-set precondition: a worker may change status after preparation, and a fresh read is not an atomic lock. The server remains authoritative; conflicts or rapid post-write transitions show fixed unconfirmed/recovery copy, not fabricated success or raw backend exceptions. The extra confirmation is a touch/error-recovery adaptation. Tests exercise production authenticated transport, encoded id, explicit board, legal lane exclusion, credential-wait close, endpoint invalidation, conflict and readback mismatch. Rendered/native/live-Gateway acceptance remains Concern, pending #261.
 
 ## Executable evidence
 

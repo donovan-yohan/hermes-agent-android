@@ -128,7 +128,8 @@ class KanbanPluginJourneyTest {
         compose.onNodeWithText("line one\nline two").assertIsDisplayed()
         compose.onNodeWithTag("Kanban Task actions").performClick()
         compose.waitForIdle()
-        assertWipOrder("Move to", "Copy task id", "Copy title", "Archive", "Delete")
+        assertWipOrder("Copy task id", "Copy title", "Archive", "Delete")
+        compose.onNodeWithText("Move to").assertIsDisplayed()
         compose.onAllNodesWithTag("Kanban menu separator").assertCountEquals(2)
         compose.onNodeWithContentDescription("Back to board").performClick()
         compose.onNodeWithTag("Kanban board").assertIsDisplayed()
@@ -172,6 +173,27 @@ class KanbanPluginJourneyTest {
         compose.runOnIdle { state = KanbanUiState(KanbanPhase.Refused) }
         compose.onNodeWithText("Board could not be loaded").assertIsDisplayed()
         compose.onNodeWithTag("Kanban refresh").assertIsDisplayed()
+    }
+
+    @Test fun `move surface shows named board targets and sends only explicitly confirmed status`() {
+        val task = KanbanTask("x", "Pearl", "todo")
+        var state by mutableStateOf(KanbanUiState(detail = KanbanDetail.Value(KanbanTaskDetail(task, emptyList(), emptyList(), emptyList()))))
+        var moved: String? = null
+        compose.setContent { HermesTheme {
+            KanbanScreen(state, {}, {}, {}, {},
+                onMoveTask = { state = state.copy(move = KanbanMoving(KanbanMoveChoices("design", task, listOf("ready", "done")))) },
+                onCloseMove = { state = state.copy(move = null) }, onConfirmMove = { moved = it })
+        } }
+        compose.onNodeWithTag("Kanban Task actions").performClick()
+        compose.onNodeWithText("Move to").performClick()
+        compose.onNodeWithText("Board: design").assertIsDisplayed()
+        compose.onNodeWithText("Ready").performClick()
+        compose.runOnIdle { assertEquals(null, moved) }
+        compose.onNodeWithTag("Kanban confirm move").performClick()
+        compose.runOnIdle { assertEquals("ready", moved) }
+        compose.onAllNodesWithTag("Kanban WIP Move to").assertCountEquals(0)
+        compose.onNodeWithContentDescription("Back to task").performClick()
+        compose.onNodeWithTag("Kanban detail").assertExists()
     }
 
     private fun assertWipOrder(vararg labels: String) {

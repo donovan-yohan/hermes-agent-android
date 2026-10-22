@@ -32,6 +32,8 @@ data class KanbanUiState(
     val columns: List<KanbanColumn> = emptyList(),
     val detail: KanbanDetail = KanbanDetail.None,
     val stale: Boolean = false,
+    val move: KanbanMoving? = null,
+    val moveNotice: String? = null,
 )
 
 /** Endpoint-scoped snapshot. New board/detail intents stamp out older answers. */
@@ -40,6 +42,7 @@ class KanbanViewModel(
     connected: StateFlow<Boolean>,
     private val endpointGeneration: StateFlow<Long>,
     private val pluginScope: CoroutineScope? = null,
+    private val move: KanbanMove = UnavailableKanbanMove,
 ) : ViewModel() {
     private val scope: CoroutineScope
         get() = pluginScope ?: viewModelScope
@@ -49,6 +52,49 @@ class KanbanViewModel(
     private var endpoint = endpointGeneration.value
     private var boardOperation = 0L
     private var detailOperation = 0L
+    private var moveScope: KanbanMoveScope? = null
+
+    fun openMove() {
+        ensureEndpoint()
+        val detail = _uiState.value.detail as? KanbanDetail.Value ?: return
+        if (detail.stale) return
+        closeMove()
+        val bound = move.open(endpointGeneration.value)
+        moveScope = bound
+        _uiState.update { it.copy(move = KanbanMoving(loading = true), moveNotice = null) }
+        scope.launch {
+            val choices = bound?.prepare(detail.detail.task)
+            if (moveScope === bound && _uiState.value.move != null) _uiState.update {
+                it.copy(move = KanbanMoving(choices = choices,
+                    error = if (choices == null) "Task could not be loaded for moving. Close and refresh to try again." else null))
+            }
+        }
+    }
+
+    fun closeMove() {
+        moveScope?.close()
+        moveScope = null
+        _uiState.update { it.copy(move = null) }
+    }
+
+    fun moveTask(status: String) {
+        val dialog = _uiState.value.move ?: return
+        val bound = moveScope ?: return
+        if (dialog.loading || dialog.submitted || status !in dialog.choices?.statuses.orEmpty()) return
+        _uiState.update { it.copy(move = dialog.copy(loading = true, submitted = true)) }
+        scope.launch {
+            val result = bound.move(status)
+            if (moveScope !== bound) return@launch
+            if (result == null) _uiState.update { it.copy(move = dialog.copy(submitted = true,
+                error = "Task move could not be confirmed. Close and refresh before trying again.")) }
+            else {
+                closeMove()
+                closeDetail()
+                _uiState.update { it.copy(moveNotice = "Task moved.") }
+                refreshBoard()
+            }
+        }
+    }
 
     init {
         scope.launch {
@@ -134,6 +180,7 @@ class KanbanViewModel(
     }
 
     fun closeDetail() {
+        closeMove()
         detailOperation++
         _uiState.update { it.copy(detail = KanbanDetail.None) }
     }
@@ -149,6 +196,8 @@ class KanbanViewModel(
     }
 
     private fun clear(generation: Long) {
+        moveScope?.close()
+        moveScope = null
         endpoint = generation
         boardOperation++
         detailOperation++

@@ -59,6 +59,9 @@ interface PluginHost {
     /** Typed MCP inventory and named enabled delta; no generic config or transport details. */
     val mcp: PluginMcp get() = UnavailablePluginMcp
 
+    val kanbanMove: com.hermesagent.mobile.plugins.kanban.KanbanMove
+        get() = com.hermesagent.mobile.plugins.kanban.UnavailableKanbanMove
+
     /**
      * One gateway JSON-RPC call (`session.list`, `bot_relay.deliver`, …).
      *
@@ -353,6 +356,8 @@ internal class GatewayPluginHost(
 ) : PluginHost {
     override val skills: PluginSkills = GatewayPluginSkills(scope, http, endpointGeneration, endpointDispatchFence)
     override val mcp: PluginMcp = GatewayPluginMcp(scope, http, endpointGeneration, endpointDispatchFence)
+    override val kanbanMove: com.hermesagent.mobile.plugins.kanban.KanbanMove =
+        com.hermesagent.mobile.plugins.kanban.GatewayKanbanMove(http, endpointGeneration, endpointDispatchFence)
     private val tokenLock = Any()
     private var tokenClient: GatewayRpcClient? = null
     private var readyToken: PluginConnectionToken? = null
