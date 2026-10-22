@@ -413,6 +413,19 @@ lingers for four seconds so the final checkmark can land. Keep the queue
 profile-scoped and session-keyed locally, and keep runtime IDs and Android URIs
 out of its durable records.
 
+Agent plugin toggles use canonical registry keys, never display names: category
+plugins can share the same leaf name. Keep legacy keyless rows read-only, bind
+every request to a concrete profile plus endpoint/ready-leg/visible owner, and
+confirm a mutation with a fresh exact-key/status inventory readback. A predicate
+inside the endpoint fence does not serialize visible-owner disposal: owner close
+and immediate wire handoff must share their own irrevocable monitor, nested
+inside that fence. Replacement must close the previous lease before opening the
+next, including A → B → A and same-profile reopen. Exercise the actual correlated
+RPC with a held final predicate and a held send; timeout/cancel after admission
+remains uncertain, not permission to replay. The current
+source audit and historical visual provenance are separated in
+[`settings-plugins.md`](../parity/settings-plugins.md).
+
 Two things about *panels* came out of the profiles slice, and both are the same
 mistake in different clothes: reading only the wide layout. Desktop's `Panel`
 already stacks its list above its detail once the card narrows

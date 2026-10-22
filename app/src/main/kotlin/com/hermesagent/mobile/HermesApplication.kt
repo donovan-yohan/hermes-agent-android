@@ -282,6 +282,11 @@ class HermesApplication : Application() {
 
     internal val pluginRegistry: ContributionRegistry by lazy { ContributionRegistry() }
 
+    /** Core Settings door, independent of whether a bundled plugin is enabled. */
+    internal val agentPluginsHost by lazy {
+        GatewayPluginHost(appScope, gatewayConnection.client, cache.endpointGeneration, endpointDispatchFence)
+    }
+
     internal val pluginStore: PluginStore by lazy {
         PluginStore(
             scope = appScope,
