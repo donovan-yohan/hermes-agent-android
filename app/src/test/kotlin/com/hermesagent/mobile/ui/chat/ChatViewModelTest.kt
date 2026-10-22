@@ -131,6 +131,22 @@ class ChatViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
+    @Test
+    fun `prepared export validity follows actual endpoint and row owner`() = runTest(dispatcher) {
+        val prepared = viewModel.exportSession("session-a")
+        assertTrue(prepared.isCurrent())
+        val row = requireNotNull(cache.session("session-a"))
+        cache.upsertSession(row.copy(remoteProfile = "research"))
+        assertFalse(prepared.isCurrent())
+        val owned = viewModel.exportSession("session-a")
+        assertTrue(owned.isCurrent())
+        cache.resetForEndpointSwitch()
+        cache.upsertSession(row.copy(remoteProfile = "research"))
+        assertFalse("recycled row on replacement endpoint cannot authorize old picker", owned.isCurrent())
+        prepared.bytes.fill(0)
+        owned.bytes.fill(0)
+    }
+
     private class LogsHttp(private val text: String) : GatewayHttp {
         val requests = mutableListOf<GatewayHttpRequest>()
         var release: CompletableDeferred<Unit>? = null
@@ -4179,6 +4195,7 @@ class ChatViewModelTest {
     }
 
     private class FakeRepository(private val cache: SessionCache) : GatewaySessionRepository {
+        override suspend fun exportSession(durableId: String): ByteArray = "synthetic export".toByteArray()
         val goalCalls = mutableListOf<String>()
         var goalOutcome: com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome = com.hermesagent.mobile.data.gateway.GatewayGoalStatusOutcome.Unsupported
         var goalGate: CompletableDeferred<Unit>? = null

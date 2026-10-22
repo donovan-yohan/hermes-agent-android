@@ -405,7 +405,7 @@ internal fun SessionActionsControl(
     unread: Boolean = false,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
-    onExport: (suspend () -> ByteArray)? = null,
+    onExport: (suspend () -> PreparedSessionExport)? = null,
     /**
      * Pin, read-state and archive, all deliberately **not** `suspend`.
      *
@@ -427,7 +427,7 @@ internal fun SessionActionsControl(
     if (!hasSessionActions(sessionId)) return
 
     var expanded by remember(sessionId) { mutableStateOf(false) }
-    val exportSession = rememberSessionExport(onExport)
+    val exportSession = rememberSessionExport(sessionId, onExport)
     var renameOpen by remember(sessionId) { mutableStateOf(false) }
     var deleteOpen by remember(sessionId) { mutableStateOf(false) }
     var copyStatus by remember(sessionId) { mutableStateOf(SessionIdCopyStatus.Idle) }

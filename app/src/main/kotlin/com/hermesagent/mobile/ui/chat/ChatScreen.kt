@@ -1237,7 +1237,7 @@ private fun ChatTopBar(
     gatewayDoor: StatusAction? = null,
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
-    onExportSession: (suspend (String) -> ByteArray)? = null,
+    onExportSession: (suspend (String) -> com.hermesagent.mobile.ui.sessions.PreparedSessionExport)? = null,
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
     onSetSessionArchived: ((String, Boolean) -> Unit)? = null,

@@ -25,6 +25,15 @@ never a reported success. The prepared mutable output buffer is cleared after
 write/cancel/disposal (not a claim of whole-process memory erasure). No persisted
 URI grant, intermediate app file, broad storage permission or sharing upload is used.
 
+Only an opaque picker operation id enters saved instance state. Activity recreation
+wipes the in-memory transcript and a delayed Save reports failure, rather than silently
+creating an empty document. Session changes abandon the buffer; endpoint/owner validity
+is checked before opening the provider stream. An abandoned picker's callback must drain
+before another export can launch, so it cannot consume a newer operation's bytes.
+Write-job completion owns wiping even if cancellation occurs before the body starts.
+A refused/recreated save may leave the document created by the external provider empty;
+Android does not claim provider cleanup or successful export in that case.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
@@ -32,6 +41,7 @@ URI grant, intermediate app file, broad storage permission or sharing upload is 
 | Browser JSON download | mobile-adaptation | Android CreateDocument with application/json and a neutral session.json suggestion | Native document provider gives the user control of the destination without leaking a phone path to the Gateway |
 | Bounded whole transcript retrieval | mobile-adaptation | 100-row pages, 10,000-row and 8MiB total bounds; oversize refuses, never a truncated success | Phone memory is bounded; safe-load behavior follows Desktop's regression contract |
 | Toast outcome | mobile-adaptation | Platform short success/failure notice | Native document flow returns to the originating surface; raw provider/transport errors are never displayed |
+| Delayed external picker lifecycle | mobile-adaptation | Recreated or stale exports refuse before write, with no saved transcript | Real Compose launcher/ComponentActivity registry recreation and stale-session/endpoint tests; cancellation-before-start cleanup test |
 | Current live Export states | drift | New rendered side-by-side packet pending | #72 exact-head acceptance; Concern, not visual approval |
 
 ## Visual report
@@ -52,3 +62,6 @@ Existing REST tests cover owner scoping and bounded authenticated transport.
 the production REST client. `SessionExportDestinationTest` verifies exact bytes,
 stream closure and refusal propagation. `SessionExportContractTest` verifies the
 native JSON CreateDocument intent and cancel result; Compose tests verify dispatch.
+`SessionExportLifecycleTest` additionally drives the actual composed control and
+ActivityResult registry through recreation and delayed stale callbacks under Robolectric.
+This is JVM lifecycle regression evidence, not rendered/device acceptance.

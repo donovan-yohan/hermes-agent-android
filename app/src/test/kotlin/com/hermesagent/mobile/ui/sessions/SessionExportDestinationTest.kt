@@ -4,8 +4,19 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Test
+import kotlinx.coroutines.test.runCurrent
 
 class SessionExportDestinationTest {
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun `cancel before write starts still wipes the owned buffer`() = kotlinx.coroutines.test.runTest {
+        val bytes = "synthetic transcript".toByteArray()
+        var opened = false
+        val job = launchSessionExportWrite(this, bytes) { opened = true }
+        job.cancel()
+        runCurrent()
+        assertFalse(opened)
+        assertTrue(bytes.all { it == 0.toByte() })
+    }
     @Test fun `selected destination receives exact bytes and closes`() {
         var closed = false
         val output = object : ByteArrayOutputStream() { override fun close() { closed = true; super.close() } }

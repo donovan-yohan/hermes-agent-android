@@ -156,7 +156,7 @@ fun SessionList(
     onSelectProjectSession: (SessionSummary) -> Unit = {},
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
-    onExportSession: (suspend (String) -> ByteArray)? = null,
+    onExportSession: (suspend (String) -> PreparedSessionExport)? = null,
     /** Not `suspend`: the row that owns the press leaves the list it was on. */
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
@@ -988,7 +988,7 @@ private fun ProjectRow(
     nowMillis: Long,
     onOpen: () -> Unit,
     onSelectSession: (SessionSummary) -> Unit,
-    onExportSession: (suspend (String) -> ByteArray)?,
+    onExportSession: (suspend (String) -> PreparedSessionExport)?,
     canCreate: Boolean,
     onCreate: () -> Unit,
 ) {
@@ -1397,7 +1397,7 @@ private fun SessionRow(
     owner: HermesProfile? = null,
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
-    onExport: (suspend () -> ByteArray)? = null,
+    onExport: (suspend () -> PreparedSessionExport)? = null,
     onSetPinned: ((Boolean) -> Unit)? = null,
     onSetUnread: ((Boolean) -> Unit)? = null,
     onSetArchived: ((Boolean) -> Unit)? = null,

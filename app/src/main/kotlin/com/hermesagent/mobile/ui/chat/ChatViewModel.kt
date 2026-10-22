@@ -2615,7 +2615,14 @@ internal class ChatViewModel(
         }
     }
 
-    suspend fun exportSession(id: String): ByteArray = repository.exportSession(id)
+    suspend fun exportSession(id: String): com.hermesagent.mobile.ui.sessions.PreparedSessionExport {
+        val endpoint = cache.endpointGeneration.value
+        val owner = cache.session(id)?.remoteProfile
+        val bytes = repository.exportSession(id)
+        return com.hermesagent.mobile.ui.sessions.PreparedSessionExport(bytes) {
+            cache.endpointGeneration.value == endpoint && cache.session(id) != null && cache.session(id)?.remoteProfile == owner
+        }
+    }
 
     suspend fun renameSessionAsync(id: String, newTitle: String): String {
         refuseBotChatMutation(id)?.let { throw it }
