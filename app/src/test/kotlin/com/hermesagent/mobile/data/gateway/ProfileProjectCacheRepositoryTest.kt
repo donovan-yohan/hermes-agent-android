@@ -119,7 +119,9 @@ class ProfileProjectCacheRepositoryTest {
             val launchRow = cache.session("s-launch")!!
             cache.upsertSession(launchRow.copy(remoteProfile = "default"))
             assertEquals("research", overview().previewSessions.single().remoteProfile)
-            assertEquals(listOf("detail-launch"), members().map { it.id })
+            assertEquals(listOf("s-launch", "detail-launch"), members().map { it.id })
+            assertEquals("research", members().first().remoteProfile)
+            assertEquals("default", cache.session("s-launch")?.remoteProfile)
             cache.upsertSession(launchRow)
             cache.rehomeSession("s-launch", cache.session("s-launch")!!.copy(id = "tip-launch"), emptyList())
             assertSame(explicitDefault, cache.state.value.projectsForScope("default"))

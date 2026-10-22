@@ -40,7 +40,7 @@ class SidebarCatalogProjectionTest {
         val overview = projection.derive(cache.state.value, 0, alpha, null, "")
         assertEquals("Alpha project", overview.projects.single().label)
         assertEquals("alpha", overview.projects.single().previewSessions.single().remoteProfile)
-        assertTrue(projection.derive(cache.state.value, 0, alpha, "p", "").scopedSessions.isEmpty())
+        assertEquals(listOf("alpha"), projection.derive(cache.state.value, 0, alpha, "p", "").scopedSessions.map { it.remoteProfile })
         assertTrue(projection.derive(cache.state.value, 0, ProfileScope("cold"), null, "").projects.isEmpty())
     }
 
