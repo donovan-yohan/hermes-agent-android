@@ -52,6 +52,8 @@ class ChatActions(
     val onRenameSession: (suspend (String, String) -> Unit) = { _, _ -> },
     val onDeleteSession: (suspend (String) -> Unit) = { _ -> },
     val sessionProjectActions: com.hermesagent.mobile.ui.sessions.SessionProjectActions? = null,
+    val onBranchSession: ((String) -> Unit)? = null,
+    val onBranchProjectSession: ((com.hermesagent.mobile.data.session.SessionSummary) -> Unit)? = null,
     /**
      * Pin, read-state and archive. Not `suspend`: every one of these verbs
      * takes the row off the list it was pressed on, so a coroutine owned by

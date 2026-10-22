@@ -157,6 +157,8 @@ fun SessionList(
     onRenameSession: (suspend (String, String) -> Unit)? = null,
     onDeleteSession: (suspend (String) -> Unit)? = null,
     sessionProjectActions: SessionProjectActions? = null,
+    onBranchSession: ((String) -> Unit)? = null,
+    onBranchProjectSession: ((SessionSummary) -> Unit)? = null,
     /** Not `suspend`: the row that owns the press leaves the list it was on. */
     onSetSessionPinned: ((String, Boolean) -> Unit)? = null,
     onSetSessionUnread: ((String, Boolean) -> Unit)? = null,
@@ -488,6 +490,7 @@ fun SessionList(
                             onOpen = { onSelectProject(project.id) },
                             onSelectSession = onSelectProjectSession,
                             sessionProjectActions = sessionProjectActions,
+                            onBranchSession = onBranchProjectSession,
                             canCreate = canCreate,
                             onCreate = { onSelectProject(project.id); onCreate() },
                         )
@@ -679,6 +682,7 @@ fun SessionList(
                                     onRename = onRenameSession?.let { rename -> { newTitle -> rename(row.session.id, newTitle) } },
                                     onDelete = onDeleteSession?.let { delete -> { delete(row.session.id) } },
                                     projectActions = sessionProjectActions,
+                                    onBranch = onBranchSession?.let { branch -> { branch(row.session.id) } },
                                     onSetPinned = onSetSessionPinned?.let { set -> { pinned -> set(row.session.id, pinned) } },
                                     onSetUnread = onSetSessionUnread?.let { set -> { unread -> set(row.session.id, unread) } },
                                     onSetArchived = onSetSessionArchived?.let { set -> { archived -> set(row.session.id, archived) } },
@@ -989,6 +993,7 @@ private fun ProjectRow(
     onOpen: () -> Unit,
     onSelectSession: (SessionSummary) -> Unit,
     sessionProjectActions: SessionProjectActions?,
+    onBranchSession: ((SessionSummary) -> Unit)?,
     canCreate: Boolean,
     onCreate: () -> Unit,
 ) {
@@ -1060,6 +1065,7 @@ private fun ProjectRow(
                 onClick = { onSelectSession(session) },
                 nowMillis = nowMillis,
                 projectActions = sessionProjectActions,
+                onBranch = onBranchSession?.let { branch -> { branch(session) } },
             )
         }
     }
@@ -1398,6 +1404,7 @@ private fun SessionRow(
     onRename: (suspend (String) -> Unit)? = null,
     onDelete: (suspend () -> Unit)? = null,
     projectActions: SessionProjectActions? = null,
+    onBranch: (() -> Unit)? = null,
     onSetPinned: ((Boolean) -> Unit)? = null,
     onSetUnread: ((Boolean) -> Unit)? = null,
     onSetArchived: ((Boolean) -> Unit)? = null,
@@ -1575,6 +1582,7 @@ private fun SessionRow(
             onDelete = onDelete,
             projectActions = projectActions,
             projectSession = session,
+            onBranch = onBranch,
             onSetPinned = onSetPinned,
             onSetUnread = onSetUnread,
             onSetArchived = onSetArchived,

@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
@@ -77,14 +78,20 @@ class SessionActionsMenuJourneyTest {
     fun `move opens fresh project picker and selected target dispatches once`() {
         var loaded: String? = null
         var moved: String? = null
+        var branches = 0
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
-                SessionActionsControl(sessionId = FIRST_ID, projectActions = SessionProjectActions(
+                SessionActionsControl(sessionId = FIRST_ID, onBranch = { branches++ }, projectActions = SessionProjectActions(
                     load = { id, _ -> loaded = id; listOf(com.hermesagent.mobile.data.session.ProjectSummary("p", "Demo project", "/work/demo")) },
                     move = { id, project -> moved = "$id:${project.id}" },
                 ))
             }
         }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(1, branches)
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
         compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
         compose.onNodeWithText(MOVE_TO_PROJECT).performClick()
         compose.waitForIdle()
@@ -93,6 +100,63 @@ class SessionActionsMenuJourneyTest {
         compose.waitForIdle()
         assertEquals("$FIRST_ID:p", moved)
         compose.onNodeWithText("Demo project").assertDoesNotExist()
+    }
+
+    @Test
+    fun `compact drawer branch leaves route and closes drawer`() {
+        var branches = 0
+        var leftRoutes = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(
+                    state = ChatUiState(sessionRows = listOf(SessionListRow.Row(session(FIRST_ID, FIRST_TITLE)))),
+                    actions = ChatActions(onBranchSession = { assertEquals(FIRST_ID, it); branches++ }),
+                    onOpenSettings = {},
+                    onLeaveRoute = { leftRoutes++ },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(1, branches)
+        assertEquals(1, leftRoutes)
+        compose.onNodeWithTag("Session row $FIRST_ID").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun `branch is live only with an owner and dismisses before dispatch`() {
+        var branches = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                SessionActionsControl(sessionId = FIRST_ID, onBranch = { branches++ })
+            }
+        }
+        compose.onNodeWithContentDescription(SESSION_ACTIONS_LABEL).performClick()
+        compose.onNodeWithText(BRANCH).performClick()
+        compose.waitForIdle()
+        assertEquals(1, branches)
+        compose.onNodeWithTag(SESSION_ACTIONS_MENU_TAG).assertDoesNotExist()
+    }
+
+    @Test
+    fun `bot chat compact drawer keeps branch disabled`() {
+        var branches = 0
+        compose.setContent {
+            HermesTheme(AppearanceSelection()) {
+                ChatScreen(
+                    state = ChatUiState(botChat = true,
+                        sessionRows = listOf(SessionListRow.Row(session(FIRST_ID, FIRST_TITLE)))),
+                    actions = ChatActions(onBranchSession = { branches++ }),
+                    onOpenSettings = {},
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Open sessions").performClick()
+        compose.onAllNodesWithContentDescription(SESSION_ACTIONS_LABEL)[0].performClick()
+        compose.onNodeWithText(BRANCH).assertIsNotEnabled()
+        assertEquals(0, branches)
     }
 
     @Test

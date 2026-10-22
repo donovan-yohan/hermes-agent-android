@@ -255,6 +255,7 @@ fun sessionActionItems(
     /** Either unread source: the backend's durable watermark or this client's finished-turn dot. */
     unread: Boolean = false,
     moveAvailable: Boolean = false,
+    branchAvailable: Boolean = false,
 ): List<SessionActionItem> {
     if (!hasSessionActions(sessionId)) return emptyList()
     return listOf(
@@ -270,7 +271,7 @@ fun sessionActionItems(
             SessionIdCopyStatus.Copied -> CopyIdCopied
             SessionIdCopyStatus.Failed -> CopyIdFailed
         },
-        Branch,
+        Branch.copy(available = branchAvailable),
         Export,
         MoveToProject.copy(available = moveAvailable),
         Archive,
@@ -407,6 +408,7 @@ internal fun SessionActionsControl(
     onDelete: (suspend () -> Unit)? = null,
     projectActions: SessionProjectActions? = null,
     projectSession: com.hermesagent.mobile.data.session.SessionSummary? = null,
+    onBranch: (() -> Unit)? = null,
     /**
      * Pin, read-state and archive, all deliberately **not** `suspend`.
      *
@@ -473,7 +475,8 @@ internal fun SessionActionsControl(
             expanded = expanded,
             // Built by the popup's own content lambda, so a collapsed row —
             // which is nearly every row, nearly always — allocates nothing.
-            items = { sessionActionItems(sessionId, copyStatus, pinned, unread, moveAvailable = projectActions != null) },
+            items = { sessionActionItems(sessionId, copyStatus, pinned, unread,
+                moveAvailable = projectActions != null, branchAvailable = onBranch != null) },
             onDismiss = {
                 expanded = false
                 copyStatus = SessionIdCopyStatus.Idle
@@ -483,6 +486,10 @@ internal fun SessionActionsControl(
                     MoveToProject.copy(available = true) -> {
                         expanded = false
                         moveOpen = true
+                    }
+                    Branch.copy(available = true) -> {
+                        expanded = false
+                        onBranch?.invoke()
                     }
                     Rename -> {
                         expanded = false
