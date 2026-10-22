@@ -32,6 +32,9 @@ data class BotSessionPreview(
     val preview: String? = null,
 )
 
+/** Desktop uses last_session.id, not resolved_id or the freshest worker heartbeat. */
+internal fun recentSessionId(row: BotRosterRow): String? = row.lastSession?.id?.takeIf { it.isNotBlank() }
+
 /**
  * One roster row, built from a `profiles.list` row.
  *
