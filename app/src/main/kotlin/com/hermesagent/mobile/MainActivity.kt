@@ -583,6 +583,7 @@ class MainActivity : ComponentActivity() {
                 connectionsActions = connectionsActions,
                 pluginRegistry = app.pluginRegistry,
                 pluginStore = app.pluginStore,
+                agentPluginsHost = app.agentPluginsHost,
                 notificationsState = notificationsState,
                 notificationsActions = notificationsActions,
                 navigationAsk = navigationAsk,
