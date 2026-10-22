@@ -71,6 +71,7 @@ data class UpdateCheckState(
 
 /** Everything the System panel and its updates sheet paint. */
 data class SystemUiState(
+    val logs: SystemLogsState = SystemLogsState(),
     val status: GatewayStatusSummary? = null,
     /** A failed status load, in this app's or the transport's own words. */
     val statusError: String? = null,
@@ -104,15 +105,19 @@ internal class SystemViewModel(
     private val api: GatewaySystemApi,
     private val updates: GatewayUpdateController,
     private val wait: suspend (Long) -> Unit = { millis -> delay(millis) },
+    logOwners: kotlinx.coroutines.flow.Flow<SystemLogsOwner> = kotlinx.coroutines.flow.flowOf(SystemLogsOwner(null, 0, null)),
+    currentLogOwner: () -> SystemLogsOwner = { SystemLogsOwner(null, 0, null) },
 ) : ViewModel() {
+    internal val logs = SystemLogsController(viewModelScope, logOwners, currentOwner = currentLogOwner)
 
     private val own = MutableStateFlow(OwnState())
 
     private var actionJob: Job? = null
     private var checkJob: Job? = null
 
-    val uiState: StateFlow<SystemUiState> = combine(own, updates.state) { state, apply ->
+    val uiState: StateFlow<SystemUiState> = combine(own, updates.state, logs.state) { state, apply, tail ->
         SystemUiState(
+            logs = tail,
             status = state.status,
             statusError = state.statusError,
             action = state.action,
@@ -285,10 +290,12 @@ internal class SystemViewModel(
         internal fun factory(
             api: GatewaySystemApi,
             updates: GatewayUpdateController,
+            logOwners: kotlinx.coroutines.flow.Flow<SystemLogsOwner>,
+            currentLogOwner: () -> SystemLogsOwner,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                SystemViewModel(api, updates) as T
+                SystemViewModel(api, updates, logOwners = logOwners, currentLogOwner = currentLogOwner) as T
         }
     }
 }

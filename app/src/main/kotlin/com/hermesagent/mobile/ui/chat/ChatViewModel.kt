@@ -680,6 +680,10 @@ internal class ChatViewModel(
     private var archivedPoolJob: Job? = null
     /** UI-only authority, restored from and saved to a preference. */
     private val profileScope = MutableStateFlow(ProfileScope())
+    /** Read-only host scope for lifecycle-bound System logs; never wait for disk persistence. */
+    internal val systemLogProfileScope: StateFlow<ProfileScope> get() = profileScope
+    private val logProfileGeneration = MutableStateFlow(0L)
+    internal val systemLogProfileGeneration: StateFlow<Long> get() = logProfileGeneration
     private val composer = MutableStateFlow(ComposerUiState())
     /** Engine-owned voice state; contains no media bytes. */
     private val voice = MutableStateFlow<VoiceUiState>(VoiceUiState.Idle)
@@ -2065,6 +2069,7 @@ internal class ChatViewModel(
 
     private fun applyProfileScope(scope: ProfileScope) {
         profileScopeGeneration += 1
+        logProfileGeneration.value = profileScopeGeneration
         if (profileScope.value == scope) return
         profileScope.value = scope
         viewModelScope.launch {
