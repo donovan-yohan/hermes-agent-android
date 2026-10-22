@@ -51,8 +51,9 @@ class KanbanViewModelTest {
     fun `manual refresh rejects an older same endpoint answer`() = runTest {
         val first = CompletableDeferred<ByteArray>()
         var read = 0
-        val repository = KanbanPluginRepository { _, _ ->
-            if (read++ == 0) PluginRestResult.Success(200, first.await())
+        val repository = KanbanPluginRepository { path, _ ->
+            if (path == "boards") PluginRestResult.Success(200, """{"current":"design"}""".toByteArray())
+            else if (read++ == 0) PluginRestResult.Success(200, first.await())
             else PluginRestResult.Success(200, newer)
         }
         val vm = KanbanViewModel(repository, MutableStateFlow(false), MutableStateFlow(0))
@@ -75,7 +76,8 @@ class KanbanViewModelTest {
         val repository = KanbanPluginRepository { path, _ ->
             PluginRestResult.Success(
                 200,
-                if (path == "board") board else if (call++ == 0) first.await() else newerDetail,
+                if (path == "boards") """{"current":"design"}""".toByteArray()
+                else if (path == "board") board else if (call++ == 0) first.await() else newerDetail,
             )
         }
         val vm = KanbanViewModel(repository, MutableStateFlow(false), MutableStateFlow(0))
@@ -98,8 +100,9 @@ class KanbanViewModelTest {
         val first = CompletableDeferred<ByteArray>()
         var read = 0
         val endpoint = MutableStateFlow(0L)
-        val repository = KanbanPluginRepository { _, _ ->
-            if (read++ == 0) PluginRestResult.Success(200, first.await())
+        val repository = KanbanPluginRepository { path, _ ->
+            if (path == "boards") PluginRestResult.Success(200, """{"current":"design"}""".toByteArray())
+            else if (read++ == 0) PluginRestResult.Success(200, first.await())
             else PluginRestResult.Success(200, newer)
         }
         val vm = KanbanViewModel(repository, MutableStateFlow(false), endpoint)
@@ -145,7 +148,7 @@ class KanbanViewModelTest {
     fun `detail unavailable gone and refusal stay distinct and never expose safe message`() = runTest {
         var response: PluginRestResult = PluginRestResult.UnavailableOnGateway
         val vm = KanbanViewModel(
-            KanbanPluginRepository { _, _ -> response },
+            KanbanPluginRepository { path, _ -> if (path == "boards") PluginRestResult.Success(200, """{"current":"design"}""".toByteArray()) else response },
             MutableStateFlow(false),
             MutableStateFlow(0),
         )
@@ -170,7 +173,7 @@ class KanbanViewModelTest {
     fun `failed board refresh marks stale and successful empty refresh clears it`() = runTest {
         var response: PluginRestResult = PluginRestResult.Success(200, board)
         val vm = KanbanViewModel(
-            KanbanPluginRepository { _, _ -> response },
+            KanbanPluginRepository { path, _ -> if (path == "boards") PluginRestResult.Success(200, """{"current":"design"}""".toByteArray()) else response },
             MutableStateFlow(false),
             MutableStateFlow(0),
         )
@@ -194,7 +197,7 @@ class KanbanViewModelTest {
     fun `unavailable board clears the prior endpoint snapshot`() = runTest {
         var response: PluginRestResult = PluginRestResult.Success(200, board)
         val vm = KanbanViewModel(
-            KanbanPluginRepository { _, _ -> response },
+            KanbanPluginRepository { path, _ -> if (path == "boards") PluginRestResult.Success(200, """{"current":"design"}""".toByteArray()) else response },
             MutableStateFlow(false),
             MutableStateFlow(0L),
         )
@@ -210,8 +213,8 @@ class KanbanViewModelTest {
         assertFalse(vm.uiState.value.stale)
     }
 
-    private fun repository(answer: ByteArray) = KanbanPluginRepository { _, _ ->
-        PluginRestResult.Success(200, answer)
+    private fun repository(answer: ByteArray) = KanbanPluginRepository { path, _ ->
+        PluginRestResult.Success(200, if (path == "boards") """{"current":"design"}""".toByteArray() else answer)
     }
 
     private companion object {

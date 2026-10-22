@@ -27,7 +27,8 @@ class KanbanFiltersTest {
     @Test fun `filter inventory parsed archived request scoped and endpoint clears filters`() = runTest {
         val generation = MutableStateFlow(0L)
         val requests = mutableListOf<Map<String, String>>()
-        val repository = KanbanPluginRepository { _, options ->
+        val repository = KanbanPluginRepository { path, options ->
+            if (path == "boards") return@KanbanPluginRepository PluginRestResult.Success(200, """{"current":"design"}""".toByteArray())
             requests += options.query
             PluginRestResult.Success(200, """{"columns":[{"name":"todo","tasks":[{"id":"x","title":"Test","status":"todo","tenant":"one"}]}],"assignees":["alpha"],"tenants":["one"]}""".toByteArray())
         }
@@ -37,19 +38,20 @@ class KanbanFiltersTest {
         assertEquals("one", vm.uiState.value.columns.single().tasks.single().tenant)
         vm.setFilters(KanbanFilters(search = "Test", archived = true))
         runCurrent()
-        assertEquals(mapOf("include_archived" to "true"), requests.last())
+        assertEquals(mapOf("board" to "design", "include_archived" to "true"), requests.last())
         vm.setFilters(vm.uiState.value.filters.copy(assignee = "alpha"))
         assertEquals(2, requests.size)
         generation.value = 1L
         runCurrent()
         assertEquals(KanbanFilters(), vm.uiState.value.filters)
-        assertEquals(emptyMap<String, String>(), requests.last())
+        assertEquals(mapOf("board" to "design"), requests.last())
     }
 
     @Test fun `late unarchived snapshot cannot overwrite archived intent`() = runTest {
         val held = CompletableDeferred<PluginRestResult>()
-        val vm = KanbanViewModel(KanbanPluginRepository { _, options ->
-            if (options.query.isEmpty()) held.await()
+        val vm = KanbanViewModel(KanbanPluginRepository { path, options ->
+            if (path == "boards") return@KanbanPluginRepository PluginRestResult.Success(200, """{"current":"design"}""".toByteArray())
+            if (options.query["include_archived"] != "true") held.await()
             else PluginRestResult.Success(200, """{"columns":[]}""".toByteArray())
         }, MutableStateFlow(true), MutableStateFlow(0L), backgroundScope)
         runCurrent()

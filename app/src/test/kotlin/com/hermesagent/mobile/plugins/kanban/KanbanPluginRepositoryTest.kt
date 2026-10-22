@@ -21,13 +21,15 @@ class KanbanPluginRepositoryTest {
         val calls = mutableListOf<Pair<String, PluginRestOptions>>()
         val repository = KanbanPluginRepository { path, options ->
             calls += path to options
-            PluginRestResult.Success(200, if (path == "board") board else detail)
+            PluginRestResult.Success(200, if (path == "boards") """{"current":"design"}""".toByteArray() else if (path == "board") board else detail)
         }
 
         val task = (repository.board() as KanbanRead.Value).value.columns.single().tasks.single()
 
-        assertTrue(repository.task(task.id) is KanbanRead.Value)
-        assertEquals(listOf("board", "tasks/task%20one%2Ftwo"), calls.map { it.first })
+        assertEquals("design", task.boardSlug)
+        assertTrue(repository.task(task.id, task.boardSlug) is KanbanRead.Value)
+        assertEquals(listOf("boards", "board", "tasks/task%20one%2Ftwo"), calls.map { it.first })
+        assertTrue(calls.drop(1).all { it.second.query["board"] == "design" })
         assertTrue(calls.all { it.second.method == "GET" && it.second.body == null })
     }
 
@@ -69,7 +71,8 @@ class KanbanPluginRepositoryTest {
             """{"id":"x","title":"T","status":""}""",
         ).forEach { row ->
             val response = """{"columns":[{"name":"Open","tasks":[$row]}]}""".toByteArray()
-            val repository = KanbanPluginRepository { _, _ -> PluginRestResult.Success(200, response) }
+            val repository = KanbanPluginRepository { path, _ -> PluginRestResult.Success(200,
+                if (path == "boards") """{"current":"design"}""".toByteArray() else response) }
             assertEquals(KanbanRead.Refused, repository.board())
         }
     }
