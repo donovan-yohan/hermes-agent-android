@@ -480,6 +480,7 @@ class MainActivity : ComponentActivity() {
                     onSelectProjectSession = chatViewModel::selectProjectSession,
                     onRetrySessionOpen = chatViewModel::retrySessionOpen,
                     onOpenBotChat = chatViewModel::openBotChat,
+                    onOpenBotRecentSession = chatViewModel::openBotRecentSession,
                     onCreateSession = { chatViewModel.createSession() },
                     onBranchFromReply = chatViewModel::branchFromReply,
                     onRegenerateReply = chatViewModel::regenerateReply,
