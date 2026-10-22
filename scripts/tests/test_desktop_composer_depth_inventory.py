@@ -51,6 +51,12 @@ class ComposerDepthInventoryTest(unittest.TestCase):
         self.assertEqual(self.rows['queue-steer']['android_status'], 'drift')
         self.assertIn('repository.redirect', self.rows['queue-steer']['android_boundary'])
 
+    def test_local_redirect_equivalence_is_not_a_false_writer_regression(self):
+        boundary = self.rows['queue-steer']['android_boundary']
+        self.assertIn('NOT a local writer mismatch', boundary)
+        self.assertIn('SERVER-owned prompt.steer_queued', boundary)
+        self.assertIn('Desktop local', boundary)
+
     def test_concrete_voice_effects_and_reference_toggle_not_generic_forwarders(self):
         self.assertIn('handle.cancel', self.rows['voice-mute']['handler'])
         self.assertIn('handleTurn(true)', self.rows['voice-stop-listening']['handler'])

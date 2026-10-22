@@ -23160,7 +23160,7 @@
       "handler": "Local steerQueuedNow resolves frozen text and only removes accepted redirect; failure leaves entry. Server branch calls prompt.steer_queued and relies on owner fanout; errors notify.",
       "authority": "Consumes admission only on its owner; local correction is not queue reordering.",
       "android_status": "drift",
-      "android_boundary": "Native row labeled Steer calls redirectQueuedEntry -> repository.redirect, not the explicit draft steerAtEndpoint path. It preserves/marks ambiguous entry, but name alone does not establish tool-boundary steer semantics.",
+      "android_boundary": "Native LOCAL row labeled Steer calls redirectQueuedEntry -> repository.redirect, just as Desktop local steerQueuedNow defaults to session.redirect through onSteer/steerPrompt. This is NOT a local writer mismatch or evidence to substitute tool-boundary steer. Drift is the missing Desktop SERVER-owned prompt.steer_queued action; native server-admission rows expose Delete/Discard instead. Local ambiguous entries remain preserved/marked.",
       "parity_page": "docs/parity/composer-status-stack.md",
       "issue": "#266",
       "source": [
@@ -23199,6 +23199,24 @@
           "path": "apps/desktop/src/app/chat/composer/discard-lost-prompt.ts",
           "start": 35,
           "end": 47
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/contrib/wiring.tsx",
+          "start": 1142,
+          "end": 1142
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+          "start": 825,
+          "end": 826
+        },
+        {
+          "sha": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+          "path": "apps/desktop/src/app/session/hooks/use-prompt-actions/index.ts",
+          "start": 888,
+          "end": 891
         }
       ],
       "android_evidence": [

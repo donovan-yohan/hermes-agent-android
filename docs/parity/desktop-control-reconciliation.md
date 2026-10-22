@@ -402,10 +402,13 @@ that Android baseline. The machine records carry each full revision separately.
 - Busy Send follows the backend policy; a waiting answerable card changes the
   branch, while approvals/sudo/secrets do not become text answers. Native
   streaming text instead selects Redirect; its explicit Steer exists but does
-  not establish loaded-policy parity. Empty busy Stop first parks the queue;
-  empty Enter follows a different queue-delivery branch. Native Stop exists
-  and guards NeedsInput, but can discard Gateway queued-next payloads. Both are
-  #266 findings, not missing Send/Stop features
+  not establish loaded-policy parity. Empty busy Stop first parks the renderer
+  queue; empty Enter follows a different queue-delivery branch. Renderer parking
+  is not a server pause verb: the legacy Desktop backend also clears its queue
+  on interrupt. Native Stop parks its durable text queue, guards NeedsInput and
+  warns of discarded Gateway-next payloads. Record the bounded authority/state
+  divergence under #266, not a universal Desktop FIFO-preservation claim or a
+  newly reproduced native data-loss bug
   (`apps/desktop/src/app/chat/composer/busy-submit-state.ts:23-51` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
   `apps/desktop/src/app/chat/composer/index.tsx:377-391,1008-1048` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
   `app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ComposerActions.kt:22-61` @ `65080e8a37e8d546869528e43c162503015b94c7`;
@@ -445,8 +448,11 @@ that Android baseline. The machine records carry each full revision separately.
   replace, steer and resolve-unknown verbs and retire via fanout. Replacement
   preserves an unknown save identity; it is not local reordering. Native queue
   editing already exists in-row (#205 drift). Native separate server admission
-  Delete/Discard groups also exist. The native row labeled Steer calls
-  `repository.redirect`, unlike explicit draft Steer (#266)
+  Delete/Discard groups also exist. BOTH Desktop and native LOCAL queued-row
+  Steer default to `session.redirect`; the label does not establish a writer
+  mismatch. Desktop SERVER-owned rows instead offer `prompt.steer_queued`,
+  missing from the native server-admission actions (#266). No change from local
+  redirect to tool-boundary steer is justified by this inventory
   (`apps/desktop/src/app/chat/composer/queue-slot.tsx:85-151` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
   `apps/desktop/src/app/chat/composer/hooks/use-composer-queue.ts:198-400,403-644,681-773` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
   `apps/desktop/src/app/chat/composer/discard-lost-prompt.ts:4-66` @ `81a55437f3f31a9f12a30c53b6c5d49d420898aa`;
@@ -574,7 +580,7 @@ narrowed; a successful range alone was not treated as independent approval.
 | Specialized Appearance rows, named setters and font editors in the Settings-depth increment | omission | Only native mode/skin/Intro Splash controls are mounted in the compared Appearance tree | pill-owed: #157; 38 new provisional omission templates, not approved native non-goals |
 | Current per-profile skin/mode assignment and inheritance | drift | Native skin is saved on a connection row; mode uses one global DataStore key | #266; two current-source scope records; historical per-connection adaptation and visual pins remain historical |
 | Providers Accounts/Keys, endpoint forms and specialized Settings main-model defaults | omission | No corresponding built-in Settings tree; native named-Bot model-only editing still exists | pill-owed: #73; 39 new provisional omission templates with actual native form/repository comparisons |
-| Busy Send policy, Stop queue consequences and queued-row Steer | drift | Core controls exist, but fixed Redirect policy, Gateway-next discard and redirect-versus-steer writer differ | #266; composer-depth records and exact source/native spans above |
+| Busy Send policy, Stop queue consequences and queued-row Steer | drift | Core controls exist, but fixed busy Redirect policy and missing server-admission Steer differ; renderer parking is not server queue preservation | #266; composer-depth records and exact source/native spans above |
 | Nested preview/Open, folder/clipboard acquisition and queue-preview expansion | omission | Existing file/image acquisition, thumbnail, references and queue editor do not mount every child action | pill-owed: #205 and #278; baseline only, no feature-candidate reclassification |
 | Voice conversation controls, auto-speak, engine selector and whole-stack grip | omission | Dictation/read-aloud and per-group disclosure exist; conversation hooks/conditional composables alone are not production engine wiring | pill-owed: #73; named composer-depth records; rendering remains pending |
 | MoA reference-model enable switch | omission | Native model selection is not a MoA reference-slot editor | pill-owed: #73; one specialized switch, not whole-editor acceptance |
