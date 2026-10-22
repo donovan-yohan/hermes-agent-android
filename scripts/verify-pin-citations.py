@@ -166,8 +166,19 @@ def subprocess_run(command, *, capture_output=True, text=True, errors="replace",
         raise GitFailure(f"git stage={stage}: timed out after {timeout:.0f}s; citation check incomplete") from None
     # Remote stderr, argv, and absolute paths can contain credentials. Never
     # return them to callers that format errors or print exception chains.
-    done = subprocess.CompletedProcess([], process.returncode, stdout,
-                                       f"git stage={stage}: exit {process.returncode}")
+    diagnostic = f"git stage={stage}: exit {process.returncode}"
+    if process.returncode and operation in ("fetch", "clone"):
+        # Publish only a closed vocabulary, never remote-authored text. Retain
+        # enough cause to distinguish unavailable objects from HTTPS failures.
+        cause = "unclassified"
+        if "not our ref" in stderr or "unadvertised object" in stderr:
+            cause = "remote-object-unavailable"
+        elif (code := re.search(r"The requested URL returned error: ([45][0-9]{2})\b", stderr)):
+            cause = f"http-{code.group(1)}"
+        elif "Could not resolve host" in stderr:
+            cause = "dns"
+        diagnostic += f" cause={cause}"
+    done = subprocess.CompletedProcess([], process.returncode, stdout, diagnostic)
     if check and done.returncode:
         raise GitFailure(done.stderr)
     return done
@@ -1198,9 +1209,11 @@ def check_range(
         if not base_bound and not head_bound:
             # Nothing in this file is a citation of an upstream revision.
             continue
-        if base_bound == head_bound and base_pins == head_pins:
+        if base_bound.keys() == head_bound.keys() and base_pins == head_pins:
             # The file changed, but neither a stamp nor a citation binding did:
-            # prose, a table, a test name. Not this gate's business.
+            # prose, a table, a test name, or the carrier's line offsets. Values
+            # are diagnostic locations, not part of citation identity. Comparing
+            # them fetched every historical pin after an unrelated insertion.
             continue
         counts["files"] += 1
         counts["ambiguous"] += base_ambiguous + head_ambiguous
