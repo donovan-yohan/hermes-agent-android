@@ -466,6 +466,9 @@ class CiWorkflowCheckerTest(unittest.TestCase):
             ('GIT_TERMINAL_PROMPT=0 ', ''),
             ('timeout --kill-after=1s 60s git clone', 'git clone'),
             ('--filter=blob:none ', ''),
+            ('--depth=1 ', ''),
+            ('--single-branch ', ''),
+            ('--no-tags ', ''),
             ('--no-checkout ', ''),
             ('"$UPSTREAM_URL" "$upstream"', '"$OTHER_URL" "$upstream"'),
             ('"$UPSTREAM_URL" "$upstream"', '"$UPSTREAM_URL" "$other"'),
@@ -485,7 +488,7 @@ class CiWorkflowCheckerTest(unittest.TestCase):
         # CI, which is the only place it runs unattended.
         broken = self.valid_text.replace(
             '          GIT_TERMINAL_PROMPT=0 timeout --kill-after=1s 60s git clone --quiet \\\n'
-            '            --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {\n',
+            '            --depth=1 --single-branch --no-tags --filter=blob:none --no-checkout "$UPSTREAM_URL" "$upstream" 2>/dev/null || {\n',
             "",
             1,
         )

@@ -239,6 +239,9 @@ def materialize(sha: str) -> None:
 
 def tree_paths(sha: str) -> list[str]:
     if sha not in _tree_paths:
+        if (_FETCH and _READ is not None and FULL_SHA_RE.fullmatch(sha)
+                and subprocess_run(["git", "-C", str(UPSTREAM), "cat-file", "-e", f"{sha}^{{commit}}"]).returncode == 0):
+            materialize(sha)
         if not _has(sha):
             # Not a revision of the read checkout, so it has no tree to list.
             # Returning nothing is honest — "this SHA names no file here" — and it
@@ -271,9 +274,8 @@ def read_root() -> pathlib.Path:
 
     The reference checkout is read-only by policy — never `git fetch` inside it,
     never check anything out in it. A pin it does not have is obtained by fetching
-    into a temporary clone that borrows its object store (`--reference`), and from
-    then on reads come from that clone, which can see everything the reference
-    checkout had plus what was fetched.
+    into an independent scratch object store. Shallow/partial references and
+    their alternates are never inherited; each needed snapshot is materialized.
     """
     return _READ or UPSTREAM
 
@@ -303,16 +305,10 @@ def _scratch_clone() -> pathlib.Path:
             ["git", "-C", str(UPSTREAM), "config", "--get", "remote.origin.url"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
-        clone = subprocess_run(
-            ["git", "clone", "--quiet", "--filter=blob:none", "--no-checkout",
-             "--reference", str(UPSTREAM), str(UPSTREAM), str(target)],
-            capture_output=True, text=True,
-        )
-        if clone.returncode != 0:
-            raise GitFailure(clone.stderr)
+        subprocess_run(["git", "init", "--quiet", str(target)], check=True)
         if origin:
             subprocess_run(
-                ["git", "-C", str(target), "remote", "set-url", "origin", origin],
+                ["git", "-C", str(target), "remote", "add", "origin", origin],
                 capture_output=True, text=True, check=True,
             )
     except BaseException:
@@ -322,6 +318,10 @@ def _scratch_clone() -> pathlib.Path:
     _READ = target
     _tree_paths.clear()
     _blobs.clear()
+    _tree_objects.clear()
+    _blob_objects.clear()
+    _materialized.clear()
+    _ensured.clear()
     return target
 
 
