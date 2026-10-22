@@ -1347,6 +1347,29 @@ class GatewaySessionRepositoryTest {
 
 
     @Test
+    fun `export session uses row owner and compacted oldest REST transcript`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val requests = mutableListOf<GatewayHttpRequest>()
+        val http = FakeGatewayRest { request ->
+            requests += request
+            restPage("""{"session_id":"durable-a","messages":[{"id":1,"role":"user","content":"Full history"}],"pagination":{"limit":100,"offset":0,"order":"oldest"}}""")
+        }
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope,
+            http = { http }, restContext = EmptyCoroutineContext) { CLOCK }
+        runCurrent()
+        requests.clear()
+        cache.upsertSession(SessionSummary("durable-a", "Export title", "", CLOCK, remoteProfile = "research"))
+        val bytes = repository.exportSession("durable-a")
+        val request = requests.single()
+        assertEquals("api/sessions/durable-a/messages", request.path)
+        assertEquals(mapOf("profile" to "research", "limit" to "100", "offset" to "0", "order" to "oldest", "include_compacted" to "true"), request.query)
+        assertTrue(bytes.toString(Charsets.UTF_8).contains("Full history"))
+    }
+
+    @Test
     fun `branchSession sends correct params and upserts response`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc().apply {

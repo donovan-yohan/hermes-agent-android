@@ -10,7 +10,10 @@ was fixed and tested before any verb landed, so no later slice could reorder it
 on its way in. Copy ID landed with the shell (S13), Rename and Delete with #65,
 and **Pin / Unpin, Mark as read / unread and Archive with #66**. The Archived
 view's separate `Unarchive` row action is covered by #138. Branch, Export and
-Move to project are still empty slots.
+Move to project were empty slots in the historical implementation described below.
+Export is now live through the native document flow; see [session-export.md](session-export.md)
+for the inspected behavior pin, regression evidence and pending rendered acceptance.
+References below to four unbuilt verbs describe the historical captures, not current Export.
 
 ## Pin
 

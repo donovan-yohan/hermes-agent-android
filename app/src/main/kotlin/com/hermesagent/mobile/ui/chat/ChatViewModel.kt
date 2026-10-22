@@ -2615,6 +2615,8 @@ internal class ChatViewModel(
         }
     }
 
+    suspend fun exportSession(id: String): ByteArray = repository.exportSession(id)
+
     suspend fun renameSessionAsync(id: String, newTitle: String): String {
         refuseBotChatMutation(id)?.let { throw it }
         return repository.renameSession(id, newTitle)
