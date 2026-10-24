@@ -176,7 +176,8 @@ fun ChatScreen(
     state.diagnostics?.let { diagnostics ->
         SendDiagnosticsDialog(diagnostics, actions.onConfirmDiagnostics, actions.onDismissDiagnostics)
     }
-    (state.composer.mutation as? ComposerMutationUiState.ConfirmationRequired)?.let { consent ->
+    (state.composer.mutation as? ComposerMutationUiState.ConfirmationRequired)
+        ?.takeIf { state.openingPresentationTarget == null }?.let { consent ->
         ModelChangeDialog(consent, { actions.onConfirmModelChange(consent.key) }, { actions.onDismissModelChange(consent.key) })
     }
     state.gatewayLogs?.let { GatewayLogsDialog(it, actions.onConfirmGatewayLogs, actions.onDismissGatewayLogs) }
@@ -207,10 +208,10 @@ fun ChatScreen(
     // endpoint change. Without this the sheet would vanish with it and then
     // re-open by itself when the next breakdown landed, and `rememberSaveable`
     // would carry that latent `true` across an Activity recreate.
-    LaunchedEffect(state.contextMeter) {
-        if (state.contextMeter == null) contextUsageOpen = false
+    LaunchedEffect(state.contextMeter, state.openingPresentationTarget) {
+        if (state.contextMeter == null || state.openingPresentationTarget != null) contextUsageOpen = false
     }
-    if (contextUsageOpen && state.contextMeter != null) {
+    if (contextUsageOpen && state.contextMeter != null && state.openingPresentationTarget == null) {
         ContextUsageSheet(
             meterState = state.contextMeter,
             onDismiss = { contextUsageOpen = false },
@@ -366,9 +367,9 @@ private fun CompactLayout(
                 return@Column
             }
             ChatTopBar(
-                title = state.activeSession?.title ?: "Hermes",
+                title = state.openingPresentationTarget?.title ?: state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
-                sessionId = state.activeSession?.id,
+                sessionId = state.visibleSessionId,
                 onOpenSessions = {
                     actions.onRefreshNavigation()
                     scope.launch { drawerState.open() }
@@ -385,7 +386,7 @@ private fun CompactLayout(
                 onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
                 sessionPinned = state.activeSession?.pinned == true,
                 sessionUnread = state.activeSession.isUnread(),
-                contextMeter = state.contextMeter,
+                contextMeter = state.contextMeter.takeIf { state.openingPresentationTarget == null },
                 onOpenContextUsage = onOpenContextUsage,
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
@@ -422,7 +423,7 @@ private fun CompactLayout(
                 onRetrySessionOpen = actions.onRetrySessionOpen,
                 modifier = Modifier.weight(1f),
             )
-            ComposerPane(state, actions, gatewayDoor)
+            if (state.openingPresentationTarget == null) ComposerPane(state, actions, gatewayDoor)
         }
     }
 }
@@ -481,9 +482,9 @@ private fun WideLayout(
                 return@Column
             }
             ChatTopBar(
-                title = state.activeSession?.title ?: "Hermes",
+                title = state.openingPresentationTarget?.title ?: state.activeSession?.title ?: "Hermes",
                 subtitle = state.chromeSubtitle(),
-                sessionId = state.activeSession?.id,
+                sessionId = state.visibleSessionId,
                 onOpenSessions = null,
                 onOpenSettings = onOpenSettings,
                 gatewayDoor = gatewayDoor,
@@ -497,7 +498,7 @@ private fun WideLayout(
                 onSetSessionArchived = actions.onSetSessionArchived.takeUnless { state.botChat },
                 sessionPinned = state.activeSession?.pinned == true,
                 sessionUnread = state.activeSession.isUnread(),
-                contextMeter = state.contextMeter,
+                contextMeter = state.contextMeter.takeIf { state.openingPresentationTarget == null },
                 onOpenContextUsage = onOpenContextUsage,
                 approvalMode = state.approvalMode,
                 onSelectApprovalMode = actions.onSelectApprovalMode,
@@ -529,7 +530,7 @@ private fun WideLayout(
                 onRetrySessionOpen = actions.onRetrySessionOpen,
                 modifier = Modifier.weight(1f),
             )
-            ComposerPane(state, actions, gatewayDoor)
+            if (state.openingPresentationTarget == null) ComposerPane(state, actions, gatewayDoor)
         }
     }
 }
@@ -558,7 +559,7 @@ private fun SessionsPane(
         sidebarGrouping = state.sidebarGrouping,
         selectedProject = state.selectedProject,
         projectLoading = state.projectLoading,
-        activeSessionId = state.activeSession?.id.takeIf {
+        activeSessionId = state.visibleSessionId.takeIf {
             com.hermesagent.mobile.ui.LocalPluginNavigation.current.currentRoute == null
         },
         // The state's own clock read — the one the rows were bucketed against —
@@ -638,6 +639,11 @@ private fun TranscriptPane(
     onRetrySessionOpen: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    if (state.openingPresentationTarget != null ||
+        state.sessionOpen is SessionOpenState.Opening && state.transcript.isEmpty()) {
+        SessionTranscriptSkeleton(modifier)
+        return
+    }
     val listState = rememberLazyListState()
     val transcript = rememberUpdatedState(state.transcript)
     val scope = rememberCoroutineScope()
@@ -1429,7 +1435,7 @@ private val ChatUiState.gatewayNeedsAttention: Boolean
 
 private fun ChatUiState.chromeSubtitle(): String = when {
     connection.status != GatewayConnectionStatus.Connected -> connection.status.label
-    isStreaming -> "Streaming · Connected"
+    isStreaming && openingPresentationTarget == null -> "Streaming · Connected"
     runningCount > 0 && connection.status == GatewayConnectionStatus.Connected ->
         "$runningCount running · Connected"
     else -> connection.status.label

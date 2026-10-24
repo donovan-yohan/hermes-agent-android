@@ -371,8 +371,11 @@ sealed interface SessionOpenState {
     /** Nothing is being opened, or the open finished without an outcome. */
     data object Idle : SessionOpenState
 
-    /** The named session's open is on the wire. */
-    data class Opening(val sessionId: String) : SessionOpenState
+    /** The target is presentation-only until its explicit owner-aware open succeeds. */
+    data class Opening(
+        val sessionId: String,
+        val presentationTarget: SessionSummary? = null,
+    ) : SessionOpenState
 
     /**
      * The open of [sessionId] failed. [detail] is a bounded, redacted summary of
@@ -502,10 +505,16 @@ data class ChatUiState(
      */
     val botChat: Boolean = false,
 ) {
+    /** Captured title/owner, never looked up through a possibly foreign raw-id slot. */
+    val openingPresentationTarget: SessionSummary?
+        get() = (sessionOpen as? SessionOpenState.Opening)?.presentationTarget
+    /** A pending preview has no readable conversation yet; the previous chat is hidden. */
+    val visibleSessionId: String?
+        get() = activeSession?.id.takeIf { openingPresentationTarget == null }
     val canCreateSession: Boolean
         get() = connection.status == GatewayConnectionStatus.Connected
     val canSend: Boolean
-        get() = canCreateSession &&
+        get() = openingPresentationTarget == null && canCreateSession &&
             activeSession?.status == SessionStatus.Idle &&
             (draft.isNotBlank() || composer.runtime.hasReadyAttachment)
     val transcriptIsEmpty: Boolean get() = transcript.isEmpty()
@@ -703,7 +712,11 @@ internal class ChatViewModel(
     private val queueScopeReady = MutableStateFlow(false)
     private val createdProjectBySession = mutableMapOf<String, String>()
     @Volatile private var navigationGeneration = 0L
-        set(value) { field = value; gatewayLogsController.dismiss() }
+        set(value) {
+            field = value
+            retireOpeningPresentation()
+            gatewayLogsController.dismiss()
+        }
     @Volatile private var goalStatusReadGeneration = 0L
     /**
      * The newest session-open request. `repository.openSession` waits on the
@@ -716,7 +729,19 @@ internal class ChatViewModel(
     private var sessionOpenGeneration = 0L
     private var sidebarGroupingGeneration = 0L
     @Volatile private var profileScopeGeneration = 0L
-        set(value) { sessionSelectionFence.invalidate(); field = value; gatewayLogsController.dismiss() }
+        set(value) {
+            sessionSelectionFence.invalidate()
+            field = value
+            retireOpeningPresentation()
+            gatewayLogsController.dismiss()
+        }
+
+    private fun retireOpeningPresentation() {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) {
+            sessionOpenGeneration += 1
+            sessionOpen.value = SessionOpenState.Idle
+        }
+    }
     private var choseInitialSession = false
     private var previousStatuses = emptyMap<String, SessionStatus>()
     private var draftSnapshot = linkedMapOf<String, String>()
@@ -1440,6 +1465,7 @@ internal class ChatViewModel(
                     diagnosticsController.invalidateIfChanged()
                     if (endpoint != generation) {
                         generation = endpoint
+                        retireOpeningPresentation()
                         // A durable id is only meaningful on the endpoint that
                         // produced it. Drop the Bot Chat capability before any
                         // later cache/rehome event can reuse that id here.
@@ -2293,21 +2319,29 @@ internal class ChatViewModel(
             if (cache.session(session.id)?.remoteProfile == null) selectSession(session.id)
             return
         }
+        // Only the already-visible, owner-verified conversation may keep its
+        // mounted viewport/editor while revalidating. Equal raw ids are not enough.
+        val keepPane = activeSessionId.value == session.id && cache.session(session.id)?.remoteProfile == profile &&
+            (sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget == null
         val generation = ++navigationGeneration
+        val request = ++sessionOpenGeneration
         val endpoint = cache.endpointGeneration.value
+        val connection = connectionGeneration()
+        val profileGeneration = profileScopeGeneration
+        fun ownsRequest() = navigationGeneration == generation && sessionOpenGeneration == request &&
+            cache.endpointGeneration.value == endpoint && profileScopeGeneration == profileGeneration
+        fun stillOwns() = ownsRequest() && connectionGeneration() == connection
+        sessionOpen.value = SessionOpenState.Opening(session.id, presentationTarget = session.takeUnless { keepPane })
         val selection = if (session.source == "cron" || cronWriteGateApplies(session.id)) {
             sessionSelectionFence.capture(endpoint, session.id, profile)
         } else kotlin.coroutines.EmptyCoroutineContext
         viewModelScope.launch(selection) {
             try {
-                // Until the owner-aware open succeeds, leave the current pane
-                // alone: homing the raw id first would paint the foreign row
-                // and run its mark-read/queue side effects.
+                // Presentation changes immediately; cache authority, drafts,
+                // mark-read and queue ownership stay on the previous chat.
+                if (!stillOwns()) return@launch
                 val canonicalId = repository.openSessionAtEndpoint(session.id, profile, endpoint)
-                if (navigationGeneration != generation || cache.endpointGeneration.value != endpoint) return@launch
-                // Retire an older ordinary open only once this owner-aware open
-                // succeeds; a failed preview must not strand the current pane.
-                sessionOpenGeneration += 1
+                if (!stillOwns()) return@launch
                 if (activeSessionId.value != canonicalId) {
                     flushDraft()
                     clearBotChatCapability()
@@ -2318,15 +2352,19 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                if (navigationGeneration == generation && cache.endpointGeneration.value == endpoint) {
-                    noticeLine = SESSION_OPEN_FAILED_COPY
-                }
+                if (stillOwns()) noticeLine = SESSION_OPEN_FAILED_COPY
+            } finally {
+                // A failure restores the previous pane, never a raw-id Retry
+                // which would discard this preview's explicit owner.
+                // Navigation or transport retirement revokes adoption, not
+                // cleanup; only a newer open may take this request's marker.
+                if (sessionOpenGeneration == request) sessionOpen.value = SessionOpenState.Idle
             }
         }
     }
 
     fun selectSession(id: String) {
-        navigationGeneration += 1
+        val navigation = ++navigationGeneration
         if (activeSessionId.value != id) {
             flushDraft()
             clearBotChatCapability()
@@ -2337,6 +2375,7 @@ internal class ChatViewModel(
         // navigation runs when the selection actually changes: rehoming an
         // unchanged id would disturb its draft and composer state instead.
         viewModelScope.launch(captureSessionSelection(id)) {
+            if (navigationGeneration != navigation) return@launch
             openAndAdopt(id)
         }
     }
@@ -3191,6 +3230,7 @@ internal class ChatViewModel(
 
     /** Attachments can use the Gateway's busy queue; the durable local queue remains text-only. */
     private fun submitToGateway(queued: Boolean) {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) return
         if (refuseBotChatMutation(allowPromptSend = !queued) != null) return
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
@@ -3837,6 +3877,7 @@ internal class ChatViewModel(
 
     /** Dispatches the reducer's primary action without ever substituting steer for redirect. */
     fun performComposerPrimaryAction() {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) return
         val state = uiState.value
         val action = composerActionState(
             connected = state.connection.status == GatewayConnectionStatus.Connected,
@@ -3864,6 +3905,7 @@ internal class ChatViewModel(
      * routes cannot drift apart.
      */
     fun queueDraft() {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) return
         if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         if (attachments.value.any { it.durableSessionId == sessionId }) {
@@ -3897,6 +3939,7 @@ internal class ChatViewModel(
     fun steerDraftFromUi() = correctDraftFromUi(steer = true)
 
     private fun correctDraftFromUi(steer: Boolean) {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) return
         if (refuseBotChatMutation(allowLiveTurnControl = true) != null) return
         val sessionId = activeSessionId.value ?: return
         val prompt = draft.value.trim()
@@ -3999,6 +4042,7 @@ internal class ChatViewModel(
     }
 
     fun stop() {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) return
         if (refuseBotChatMutation(allowLiveTurnControl = true) != null) return
         val sessionId = activeSessionId.value ?: return
         val observedTurn = repository.observedTurnGeneration(sessionId)
@@ -4059,6 +4103,7 @@ internal class ChatViewModel(
     }
 
     fun sendNext(entryId: String) {
+        if ((sessionOpen.value as? SessionOpenState.Opening)?.presentationTarget != null) return
         if (refuseBotChatMutation() != null) return
         val sessionId = activeSessionId.value ?: return
         viewModelScope.launch {

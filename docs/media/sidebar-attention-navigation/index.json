@@ -1,0 +1,12 @@
+{
+  "kind": "synthetic Android API34 emulator observations, not paired Desktop acceptance",
+  "source_base": "9ccd0108e8dfd5acd01c5799a12705085453d7d1",
+  "apk_sha256": "40baf9a3c5529fb80511d9edf035b01f8af79bfaa7c118ddcf22d8b32ad67d22",
+  "note": "Captured before notification-main integration. Feature component bytes are unchanged; these are retained observations, not a fresh release capture.",
+  "images": {
+    "light-attention.png": "3106447494162b5c3ac630d9a4675ef34832d3328ac8b287384435c07e66e5a1",
+    "dark-attention.png": "93f5fbaa4631cf8c9ae22ad09821a548942ccccf8fdaeccac7b051499ff8c45a",
+    "light-loading.png": "a24694536b902d300a0a497174d6465668c1f4bd86108e8af9fc41ba27cb06c6",
+    "dark-loading.png": "245de4b0429c67f7d53dba6e37b643107c72861d0222f144528c2c333a4915c3"
+  }
+}
