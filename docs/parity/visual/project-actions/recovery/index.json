@@ -1,0 +1,37 @@
+{
+  "android_source": "6a656667615f5336e69b6a60f766a3c7c6806464",
+  "theme": "mono / dark",
+  "renderer": "Robolectric SDK34 native graphics, WindowInspector modal decor View.draw",
+  "fixture": "ProjectRecoveryDialogTest.reviewFailureInventoryWarningAndAuthorizationHaveNativeTouchTargets",
+  "boundaries": "Real production composable with synthetic state/callbacks, not Activity/backend/device/IME proof",
+  "fixture_and_composable": {
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/ProjectRecoveryDialog.kt": "118c5f5d0efbec2e3cc3a76a6c358379bb6071ca2a90d59660280778afadb790",
+    "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/ProjectRecoveryDialogTest.kt": "3c6607862f18656e48160606ef552d39835b7bdb0efae9acde3dcbb1b300d824"
+  },
+  "states": [
+    {
+      "state": "awaiting-refresh",
+      "label": "Before inventory refresh",
+      "image": "awaiting-refresh.png",
+      "sha256": "1418de5a5a5324e3027007ba82ab8dface35a27a297469970e437b9afdf07ba1"
+    },
+    {
+      "state": "inventory-failed",
+      "label": "Inventory read failed",
+      "image": "inventory-failed.png",
+      "sha256": "9720dbce5bcc4b6559cdff15ec9e94177e06a3dadc2c39b71a169b919fb25bb1"
+    },
+    {
+      "state": "reviewed-inventory",
+      "label": "Reviewed archived inventory",
+      "image": "reviewed-inventory.png",
+      "sha256": "204f040460dcf116a9209512389f66c1618c72cffb26340fbcfa27feb6b88d4e"
+    }
+  ],
+  "assertions": "Failed inventory and archived row displayed; warning displayed; review checkbox enables authorization; authorization target at least48dp; one callback on click. Producer single test passed; independent reviewer inspected hash-bound XML/image, not fresh UI execution.",
+  "limitations": [
+    "Dark-theme selected modal states only; not light-theme or enlarged-text qualification.",
+    "No Desktop counterpart exists at inspected41dfcf2c; no peer screenshot fabricated.",
+    "Robolectric view draw does not establish OS compositor, accessibility node tree, installed device, keyboard or live-server commit behavior."
+  ]
+}

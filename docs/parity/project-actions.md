@@ -28,6 +28,10 @@ Hidden auto-project IDs are device-local preferences scoped to the saved connect
 
 An owner-keyed lane serializes preference reads with admitted writes so a profile round trip cannot read ahead of its pending hide/restore. Editor incarnation retirement blocks old adoption handles without permanently blacklisting a repository path that resurfaces after saved-project deletion. Pending-dialog cleanup retires only its own token even when the original surface has been disposed. These were independent review findings, reproduced against the predecessor and covered by identical-byte successor regressions before re-review acceptance.
 
+Auto-project appearance adoption prepares a durable local attempt before sending `projects.create`. An unconfirmed sent request remains guarded across reconnects and preference/repository restarts; ordinary actions cannot automatically submit another create. Review project changes remains reachable independently of hidden or missing rows. It reads the actual saved projects, including archived rows, and requires a separate checked review and explicit Allow another attempt action. That acknowledgement changes only local authorization, retires previous appearance choices and submits no RPC. A new appearance choice is required to send another create. A refresh, missing row or matching path never implies that the original request failed or succeeded.
+
+This is duplicate-submission protection within one saved connection/address and exact profile, not backend idempotency: the earlier request may still finish after explicit authorization, and renewed intent can create a duplicate. Connection aliases and other devices do not share guards. Storage failure fails closed for adoption without removing Copy, Hide or ordinary saved-project actions.
+
 ## Divergences
 
 | Desktop | Class | Android | Evidence |
@@ -41,12 +45,16 @@ An owner-keyed lane serializes preference reads with admitted writes so a profil
 | Compact desktop appearance popover | mobile-adaptation | Scrollable modal picker with native touch targets and explicit Cancel. | The phone needs touch-sized controls and constrained-height content. Swatch/clear/icon order, filled circles, selection ring and selected-icon tint remain Desktop's. |
 | Incremental explicit Appearance picker | mobile-adaptation | A successful choice closes the modal; reopen to change the other field. | One touch transaction owns one write and its readback; the saved appearance remains visible on the row/header. |
 | Delete may reset Desktop's open project conversation to a fresh draft | mobile-adaptation | Exit the removed sidebar scope while preserving the foreground conversation. | Deleting organization metadata must not discard the phone's current reading/composing context; sessions and transcripts remain intact. |
+| No durable unconfirmed-adoption review at the inspected Desktop pin | mobile-adaptation | Prepare locally before create; expose fresh saved-project inventory and explicit reviewed authorization independently of row visibility. | Timeout/cancellation can lose a response without cancelling host work; renewed user intent is separate from replay. The supplemental report records the new Android-only surface. |
+| Entered-project header's pointer actions | mobile-adaptation | Tap or long-press an entered non-Home project header opens Actions; overview/Home headings expose no dead click actions. | Named click and long-click semantics are regression-tested; source correction is not a restamp of older header pixels. |
 
 ## Verification
 
 Implementation tests cover exact requests, appearance clear/adoption, dispatch-time endpoint/profile/surface revocation, accepted writes with failed readback, duplicate admission, scoped preference loading/writes, restart, Undo expiry, restore, failed persistence, stale dialog callbacks, Home exclusion, and real repository/ViewModel/ChatScreen Compose journeys. The instrumented lane and installed feature journeys are separate evidence, not inferred from Robolectric.
 
 Independent source review accepted the repaired production candidate `d49fb464da2bb2b99b5c4f5d39a3999f428dc6a2`. The original three defects have causal predecessor/successor tests; fresh independent compilation passed all 29 repository/ViewModel tests, and eight adapted boundary scenarios passed. Focused Compose picker tests also verify actual swatch/ring/icon-tint pixels and nonoverlapping 48dp targets.
+
+Final bounded combined review accepted `6a656667615f5336e69b6a60f766a3c7c6806464`, including durable adoption recovery and the later scope-snapshot, authored-folder trimming and header-semantics fixes. All 22 changed-file hashes were independently verified before and after review. Fresh isolated production-seam compilation passed 56 tests, including actual correlated wire, DataStore file close/reopen, compare-and-set, archived-inclusive producer shape and commit-then-exception probes. The reviewer independently reproduced the two duplicate-request failures against `48cc6300` using identical final dispatch-test bytes, and the scope-snapshot failure against `313f20f7`. Focused Gradle evidence has 110 passing tests, including all 82 prior named cases; these overlap the fresh tests and are not additive totals. A composed journey covers hidden-row recovery, failed inventory, local-only acknowledgement and a fresh deliberate appearance choice. Neither producer-shape inspection nor synthetic RPC proves live-server commit behavior.
 
 The six separate native-graphics Robolectric evidence journeys passed with zero failures/errors/skips. They exercised actual long touch and production callbacks for rename, Add folder, set-active, delete/cancel, appearance select/clear, auto adoption, hide/Undo, searched recovery after a virtual 8,100 ms, restore, and Home exclusion. Synthetic RPC/storage is not a live Gateway. No device keyboard was exercised.
 
@@ -56,6 +64,11 @@ The earlier installed-emulator attempt was refused for insufficient storage befo
 
 - report: visual/project-actions/report.html
 - commit: d49fb464da2bb2b99b5c4f5d39a3999f428dc6a2
+
+- supplemental report: visual/project-actions/recovery/report.html
+- supplemental commit: 6a656667615f5336e69b6a60f766a3c7c6806464
+
+The supplemental dark-theme report contains three actual recovery-composable window draws: before inventory refresh, inventory failure and reviewed archived inventory with its duplicate warning and authorization control. It is Robolectric SDK34 native graphics with synthetic state and callback boundaries, not a full Activity journey, light-theme qualification, installed device or IME proof. Its own receipts hash the final composable and test fixture. The original report below retains its earlier provenance unchanged. Parent and independent visual inspection found the selected reviewed-inventory state readable and unclipped.
 
 The report selects eight Desktop and twelve Android images in twelve rows. Four state pairs per theme compare real Desktop components against Android native-graphics modal/root draws. The two recovery states per theme have no Desktop equivalent and say so rather than fabricating a peer. Canonical JSON receipts retain original names; `index.json` maps byte-identical selected images to publication names and checksums.
 
