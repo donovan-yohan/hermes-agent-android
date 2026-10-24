@@ -1,0 +1,179 @@
+{
+    "renderer": "Robolectric SDK34 native graphics synchronous View.draw; not device/IME proof",
+    "composition": "ProjectActionsParityActivity -> real ChatScreen -> real ChatViewModel -> LiveGatewaySessionRepository; synthetic wire and transient store",
+    "theme": "light",
+    "preset": "mono",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clockMillis": 1800000000000,
+    "fontScale": 1,
+    "density": 1,
+    "fontResolution": "Platform SansSerif UI and Monospace code per unchanged Mono preset; ResourcesCompat codicon.ttf and collapse_bold.otf resolve",
+    "appearanceInventory": {
+        "swatches": 12,
+        "icons": 28,
+        "bounds": {}
+    },
+    "compositeLimit": "Decor draws composited at measured screen positions, without OS WindowManager dim/IME/system-bar compositing",
+    "targets": [
+        {
+            "text": "Rename…",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 42.0, 372.0, 90.0)",
+            "enabled": true
+        },
+        {
+            "text": "Add folder",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 98.0, 372.0, 146.0)",
+            "enabled": true
+        },
+        {
+            "text": "Set active",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 154.0, 372.0, 202.0)",
+            "enabled": true
+        },
+        {
+            "text": "Appearance",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 210.0, 372.0, 258.0)",
+            "enabled": true
+        },
+        {
+            "text": "Copy path",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 275.0, 372.0, 323.0)",
+            "enabled": true
+        },
+        {
+            "text": "Delete…",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 340.0, 372.0, 388.0)",
+            "enabled": true
+        },
+        {
+            "text": "Cancel",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 396.0, 87.0, 444.0)",
+            "enabled": true
+        }
+    ],
+    "images": [
+        {
+            "file": "light-overview-explicit-context-composite.png",
+            "width": 412,
+            "height": 915,
+            "uniqueColors": 308,
+            "nontransparentPixels": 376980
+        },
+        {
+            "file": "light-overview-explicit-context-modal.png",
+            "width": 412,
+            "height": 460,
+            "uniqueColors": 359,
+            "nontransparentPixels": 167376
+        }
+    ],
+    "textLayouts": [
+        {
+            "text": "Rename…",
+            "size": "52 x 14",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 285, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.08627451, 0.08627451, 0.08627451, 0.7411765, sRGB IEC61966-2.1), brush=null, alpha=0.7411765, fontSize=12.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=17.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 285.0,
+            "paragraphHeight": 14.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 52.0,
+            "glyphTop": 0.0,
+            "glyphBottom": 14.0
+        },
+        {
+            "text": "Add folder",
+            "size": "56 x 14",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 285, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.08627451, 0.08627451, 0.08627451, 0.7411765, sRGB IEC61966-2.1), brush=null, alpha=0.7411765, fontSize=12.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=17.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 285.0,
+            "paragraphHeight": 14.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 56.0,
+            "glyphTop": 0.0,
+            "glyphBottom": 14.0
+        },
+        {
+            "text": "Set active",
+            "size": "52 x 14",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 285, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.08627451, 0.08627451, 0.08627451, 0.7411765, sRGB IEC61966-2.1), brush=null, alpha=0.7411765, fontSize=12.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=17.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 285.0,
+            "paragraphHeight": 14.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 51.921875,
+            "glyphTop": 0.0,
+            "glyphBottom": 14.0
+        },
+        {
+            "text": "Appearance",
+            "size": "65 x 14",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 285, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.08627451, 0.08627451, 0.08627451, 0.7411765, sRGB IEC61966-2.1), brush=null, alpha=0.7411765, fontSize=12.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=17.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 285.0,
+            "paragraphHeight": 14.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 64.765625,
+            "glyphTop": 0.0,
+            "glyphBottom": 14.0
+        },
+        {
+            "text": "Copy path",
+            "size": "56 x 14",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 285, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.08627451, 0.08627451, 0.08627451, 0.7411765, sRGB IEC61966-2.1), brush=null, alpha=0.7411765, fontSize=12.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=17.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 285.0,
+            "paragraphHeight": 14.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 55.933594,
+            "glyphTop": 0.0,
+            "glyphBottom": 14.0
+        },
+        {
+            "text": "Delete…",
+            "size": "41 x 14",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 285, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.7254902, 0.2901961, 0.22745098, 1.0, sRGB IEC61966-2.1), brush=null, alpha=1.0, fontSize=12.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=17.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 285.0,
+            "paragraphHeight": 14.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 41.0,
+            "glyphTop": 0.0,
+            "glyphBottom": 14.0
+        },
+        {
+            "text": "Cancel",
+            "size": "39 x 15",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 324, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.6039216, 0.6039216, 0.6039216, 1.0, sRGB IEC61966-2.1), brush=null, alpha=1.0, fontSize=13.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=18.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 324.0,
+            "paragraphHeight": 15.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 39.0,
+            "glyphTop": 0.0,
+            "glyphBottom": 15.0
+        }
+    ],
+    "overflowFailures": []
+}
