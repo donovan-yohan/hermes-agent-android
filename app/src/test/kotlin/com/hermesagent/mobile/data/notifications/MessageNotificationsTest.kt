@@ -41,6 +41,44 @@ class MessageNotificationsTest {
         assertEquals(MessageConversation("endpoint", MessageConversationKind.Session, "qualified", "bot"), posts.single().conversation)
     }
 
+    @Test fun implicitLaunchAndConfirmedProfileSuppressTheSameOwnerQualifiedChat() = runTest {
+        val identity = com.hermesagent.mobile.data.gateway.GatewaySessionIdentity("synthetic-endpoint")
+        identity.bind(null, "owner-home")
+        identity.bind("bot", "owner-home")
+        val implicit = identity.qualify("same-raw-id", null)
+        val confirmed = identity.qualify("same-raw-id", "bot", "bot")
+        assertEquals(implicit, confirmed)
+        val presence = NotificationPresence().apply {
+            applicationForegroundChanged(true)
+            visibleConversationChanged(MessageConversation("endpoint", MessageConversationKind.Session, implicit, null))
+        }
+        var admissions = 0
+        var posts = 0
+        val notifier = MessageNotifications({ m, deliver -> admissions++; deliver(m); true }, { "endpoint" },
+            TransientNotificationPreferences(), presence, { _, _ -> posts++ })
+        notifier.accept(message().copy(conversation = MessageConversation("endpoint", MessageConversationKind.Session, confirmed, "bot")))
+        assertEquals(1, admissions)
+        assertEquals("optional profile enrichment must not unsuppress the visible actual chat", 0, posts)
+    }
+
+    @Test fun equalRawSessionIdFromAnotherOwnerDoesNotSuppressItsReply() = runTest {
+        val identity = com.hermesagent.mobile.data.gateway.GatewaySessionIdentity("synthetic-endpoint")
+        identity.bind("alpha", "alpha-home")
+        identity.bind("beta", "beta-home")
+        val alpha = identity.qualify("same-raw-id", "alpha")
+        val beta = identity.qualify("same-raw-id", "beta")
+        assertNotEquals(alpha, beta)
+        val presence = NotificationPresence().apply {
+            applicationForegroundChanged(true)
+            visibleConversationChanged(MessageConversation("endpoint", MessageConversationKind.Session, alpha, "alpha"))
+        }
+        val posts = mutableListOf<BotMessage>()
+        val notifier = MessageNotifications({ m, deliver -> deliver(m); true }, { "endpoint" },
+            TransientNotificationPreferences(), presence, { m, _ -> posts += m })
+        notifier.accept(message().copy(conversation = MessageConversation("endpoint", MessageConversationKind.Session, beta, "beta")))
+        assertEquals(beta, posts.single().conversation.id)
+    }
+
     @Test fun wrongEndpointNeverEntersInbox() = runTest {
         var admissions = 0
         val notifier = MessageNotifications({ _, _ -> admissions++; true }, { "other" },

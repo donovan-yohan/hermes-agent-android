@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.AtomicFile
 import com.hermesagent.mobile.data.ssh.readBounded
 import java.io.File
+import java.io.FileNotFoundException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
@@ -19,8 +20,18 @@ internal class AndroidNotificationCheckpointStore(context: Context) : Notificati
     }
     override suspend fun load(endpoint: String): NotificationCheckpoint = withContext(Dispatchers.IO) {
         val source = file(endpoint)
-        if (!source.baseFile.exists()) return@withContext NotificationCheckpoint()
-        val bytes = source.openRead().use { stream ->
+        // openRead owns AtomicFile's legacy .bak recovery, even without a base.
+        val input = try { source.openRead() }
+        catch (missing: FileNotFoundException) {
+            // FileNotFoundException also means inaccessible or a directory. Only
+            // confirmed absence of both records may create a fresh checkpoint.
+            if (java.nio.file.Files.notExists(source.baseFile.toPath()) &&
+                java.nio.file.Files.notExists(File(source.baseFile.path + ".bak").toPath())) {
+                return@withContext NotificationCheckpoint()
+            }
+            throw missing
+        }
+        val bytes = input.use { stream ->
             val data = stream.readBounded(MAX_BYTES + 1)
             require(data.size <= MAX_BYTES)
             data

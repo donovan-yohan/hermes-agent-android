@@ -11,6 +11,8 @@ import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
 import com.hermesagent.mobile.data.connections.botStorageIdentity
+import com.hermesagent.mobile.data.notifications.awaitNotificationRoute
+import com.hermesagent.mobile.data.notifications.collectBotMessageOutcomes
 import com.hermesagent.mobile.data.notifications.AndroidBotMessageSurface
 import com.hermesagent.mobile.data.notifications.AndroidNotificationCheckpointStore
 import com.hermesagent.mobile.data.notifications.GatewayNotificationCatchUp
@@ -433,7 +435,7 @@ class HermesApplication : Application(), NotificationCatchUpHost {
         if (!notificationPreferences.notificationSettings.first().allows(NotificationKind.TurnDone) ||
             !androidx.core.app.NotificationManagerCompat.from(this@HermesApplication).areNotificationsEnabled()) return@withContext
         val row = preferences.connectionRegistry.first().active ?: return@withContext
-        notificationRoutes.first { it == row }
+        if (!awaitNotificationRoute(notificationRoutes, row)) return@withContext
         val current = { notificationRoutes.value == row &&
             (!interactiveStarted || connectionSwitch.pendingConnectionId.value == null) }
         val transport = SavedGatewayNotificationTransport.capture(row, gatewayAuthenticator, gatewaySecrets, current)
@@ -649,16 +651,14 @@ class HermesApplication : Application(), NotificationCatchUpHost {
     private fun startBotMessageNotifications() {
         notificationRoutes
         appScope.launch {
-            sessionRepository.turnOutcomes.collect { outcome ->
+            collectBotMessageOutcomes(sessionRepository.turnOutcomes, accept = { outcome ->
                 val endpoint = connectionSwitch.botStorageEndpoint.value
                 val owner = outcome.completedMessageOwner
                 val label = profileRepository.roster.value.profiles.singleOrNull { it.name == owner }?.label
                     ?: owner.orEmpty()
                 messageNotifications.acceptOutcome(outcome, endpoint,
                     cache.session(outcome.durableSessionId)?.title.orEmpty(), label)
-                // Missing persisted row_id requires reconciliation, not a synthetic dedupe key.
-                if (!outcome.failed) requestNotificationCatchUp()
-            }
+            }, reconcile = ::requestNotificationCatchUp)
         }
         appScope.launch {
             combine(notificationPresence.appForegrounded, notificationPresence.visibleConversation) { foreground, target ->
