@@ -4,12 +4,22 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.test.SemanticsMatcher
+
+import androidx.compose.ui.test.performTextInputSelection
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.hasAnyAncestor
@@ -41,6 +51,118 @@ import org.robolectric.annotation.Config
 @Config(sdk = [34], qualifiers = "w411dp-h891dp")
 class CachedProjectPreviewJourneyTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    @Config(sdk = [34], qualifiers = "w1100dp-h891dp")
+    fun `project detail reselect keeps verified chat viewport editor selection and focus`() = runTest {
+        val heldResumes = mutableListOf<JsonObject>()
+        var holdResume = false
+        lateinit var rpc: CorrelatedGatewayRpc
+        rpc = CorrelatedGatewayRpc(object : GatewayRpcWire {
+            override fun send(text: String): Boolean {
+                val frame = Json.parseToJsonElement(text).jsonObject
+                val method = frame["method"]?.jsonPrimitive?.content ?: return true
+                if (method in setOf("session.resume", "session.activate") && holdResume) {
+                    heldResumes += frame
+                    return true
+                }
+                val result = when (method) {
+                    "session.list" -> """{"sessions":[]}"""
+                    "projects.tree" -> """{"projects":[{"id":"p","label":"Alpha project","path":"/work/alpha","sessionCount":1,"previewSessions":[{"id":"s","title":"Alpha chat"}]}]}"""
+                    "projects.project_sessions" -> """{"project":{"id":"p","label":"Alpha project","path":"/work/alpha","repos":[{"path":"/work/alpha","groups":[{"sessions":[{"id":"s","title":"Alpha chat"}]}]}]}}"""
+                    "session.resume", "session.activate" -> """{"session_id":"runtime-alpha","session_key":"s","title":"Alpha chat","running":false}"""
+                    "session.history" -> """{"messages":[],"count":0}"""
+                    else -> "{}"
+                }
+                rpc.receive("""{"jsonrpc":"2.0","id":${frame.getValue("id")},"result":$result}""")
+                return true
+            }
+            override fun close() = Unit
+        }, eventPumpDispatcher = UnconfinedTestDispatcher(testScheduler))
+        try {
+            val cache = SessionCache().apply {
+                upsertSession(com.hermesagent.mobile.data.session.SessionSummary("s", "Alpha chat", "", NOW, remoteProfile = "alpha"))
+            }
+            val repository = LiveGatewaySessionRepository(cache,
+                MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+                MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { NOW }
+            val viewModel = ChatViewModel(cache, repository,
+                profileScopeStore = TransientProfileScopeStore(ProfileScope(activeProfile = "alpha")), clock = { NOW })
+            compose.setContent {
+                val state by viewModel.uiState.collectAsState()
+                HermesTheme(AppearanceSelection()) {
+                    ChatScreen(state, ChatActions(
+                        onSidebarGroupingChange = viewModel::setSidebarGrouping,
+                        onSelectProject = viewModel::selectProject,
+                        onSelectSession = viewModel::selectSession,
+                        onSelectProjectSession = viewModel::selectProjectSession,
+                        onDraftChange = viewModel::setDraft,
+                    ), onOpenSettings = {})
+                }
+            }
+            runCurrent()
+            compose.waitForIdle()
+            repository.refreshProjects()
+            viewModel.setSidebarGrouping(com.hermesagent.mobile.data.prefs.SidebarGrouping.Project)
+            runCurrent()
+            compose.waitForIdle()
+            compose.onNodeWithTag("Project row p").performClick()
+            runCurrent()
+            compose.waitForIdle()
+            assertEquals("p", viewModel.uiState.value.selectedProject?.id)
+            assertEquals("alpha", cache.session("s")?.remoteProfile)
+            cache.setTranscript("s", (0..39).map {
+                com.hermesagent.mobile.data.session.AssistantTurn("answer-$it", "History answer $it\n\nA populated conversation paragraph.", NOW)
+            })
+            viewModel.setDraft("keep this editor selection")
+            runCurrent()
+            compose.waitForIdle()
+            val editor = compose.onNodeWithContentDescription("Message Hermes")
+            editor.performClick()
+            editor.performTextInputSelection(TextRange(5, 9))
+            compose.waitForIdle()
+            editor.assertIsFocused()
+            compose.onNodeWithTag("Transcript").performTouchInput { swipeDown() }
+            compose.waitForIdle()
+            val editorBefore = editor.fetchSemanticsNode()
+            val transcriptBefore = compose.onNodeWithTag("Transcript").fetchSemanticsNode()
+            val anchor = compose.onAllNodes(SemanticsMatcher("transcript item") {
+                it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith("Transcript item ") == true
+            }, useUnmergedTree = true).fetchSemanticsNodes().first {
+                it.boundsInRoot.top >= transcriptBefore.boundsInRoot.top &&
+                    it.boundsInRoot.bottom <= transcriptBefore.boundsInRoot.bottom
+            }
+            val anchorTag = anchor.config[SemanticsProperties.TestTag]
+            assertNotEquals("A backward gesture must leave the tail", "Transcript item answer-39", anchorTag)
+            val anchorBefore = compose.onNodeWithTag(anchorTag).fetchSemanticsNode().boundsInRoot
+
+            holdResume = true
+            compose.onNodeWithTag("Session row s").performClick()
+            runCurrent()
+            compose.waitForIdle()
+            assertEquals(1, heldResumes.size)
+            assertEquals(JsonPrimitive("session.activate"), heldResumes.single()["method"])
+            assertEquals(JsonPrimitive("runtime-alpha"), heldResumes.single().getValue("params").jsonObject["session_id"])
+            compose.onNodeWithTag("Session transcript skeleton").assertDoesNotExist()
+            assertEquals("s", viewModel.uiState.value.visibleSessionId)
+            assertNull((viewModel.uiState.value.sessionOpen as SessionOpenState.Opening).presentationTarget)
+            assertEquals(editorBefore.id, editor.fetchSemanticsNode().id)
+            assertEquals(transcriptBefore.id, compose.onNodeWithTag("Transcript").fetchSemanticsNode().id)
+            editor.assertIsFocused()
+            assertEquals(TextRange(5, 9), editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            assertEquals(anchorBefore, compose.onNodeWithTag(anchorTag).fetchSemanticsNode().boundsInRoot)
+            rpc.receive("""{"jsonrpc":"2.0","id":${heldResumes.single().getValue("id")},"error":{"code":-32000,"message":"Fixture open failure"}}""")
+            runCurrent()
+            compose.waitForIdle()
+            assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+            assertEquals(editorBefore.id, editor.fetchSemanticsNode().id)
+            editor.assertIsFocused()
+            assertEquals(TextRange(5, 9), editor.fetchSemanticsNode().config[SemanticsProperties.TextSelectionRange])
+            assertEquals(anchorBefore, compose.onNodeWithTag(anchorTag).fetchSemanticsNode().boundsInRoot)
+        } finally {
+            rpc.close()
+        }
+    }
 
     @Test
     fun `cached alpha preview click resumes alpha while revalidation waits over beta raw id`() = previewCollision()
@@ -257,7 +379,13 @@ class CachedProjectPreviewJourneyTest {
         compose.waitForIdle()
 
         val resumes = frames.drop(beforeClick).filter { it["method"] == JsonPrimitive("session.resume") }
-        if (branch) compose.onNodeWithTag("Session row s").assertIsNotDisplayed()
+        compose.onNodeWithTag("Session row s").assertIsNotDisplayed()
+        if (!branch) {
+            compose.onNodeWithTag("Session transcript skeleton").assertIsDisplayed()
+            compose.onNodeWithTag(CHAT_TITLE_TAG).assertTextEquals("alpha preview")
+            compose.onNodeWithContentDescription("Message Hermes").assertDoesNotExist()
+            compose.onNodeWithContentDescription("Session actions").assertIsNotDisplayed()
+        }
         assertEquals("The displayed alpha preview must never resume beta", listOf(JsonPrimitive("alpha")),
             resumes.map { it.getValue("params").jsonObject["profile"] })
         assertEquals("Do not paint the foreign slot while the intended resume waits", null, viewModel.uiState.value.activeSessionId)
@@ -274,6 +402,10 @@ class CachedProjectPreviewJourneyTest {
             }.map { it.getValue("params").jsonObject["session_id"] })
         }
         compose.onNodeWithText("Beta private reply").assertDoesNotExist()
+        if (!branch) {
+            compose.onNodeWithTag("Session transcript skeleton").assertDoesNotExist()
+            compose.onNodeWithTag(CHAT_TITLE_TAG).assertTextEquals("alpha opened")
+        }
         rpc.close()
     }
 

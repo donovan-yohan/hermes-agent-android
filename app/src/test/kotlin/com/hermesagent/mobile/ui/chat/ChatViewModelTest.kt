@@ -2739,6 +2739,375 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `owner aware sidebar selection publishes loading before its resume completes`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        val preview = summary("collision", CLOCK).copy(title = "Selected preview", remoteProfile = "alpha")
+        cache.upsertSession(preview.copy(title = "Foreign cached chat", remoteProfile = "beta"))
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+
+        val selectedAt = testScheduler.currentTime
+        viewModel.selectProjectSession(preview)
+        runCurrent()
+        val immediate = viewModel.uiState.value.sessionOpen
+        advanceTimeBy(2_000)
+        runCurrent()
+        println("Held owner-aware resume: immediate=$immediate, after ${testScheduler.currentTime - selectedAt}ms=${viewModel.uiState.value.sessionOpen}")
+        assertEquals("Ownership is not adopted before resume", previous, viewModel.uiState.value.activeSessionId)
+        assertTrue("Selection must expose loading without waiting for the network", immediate is SessionOpenState.Opening)
+        assertEquals("collision", (immediate as SessionOpenState.Opening).sessionId)
+        assertEquals(preview, immediate.presentationTarget)
+        assertNull(viewModel.uiState.value.visibleSessionId)
+        assertTrue(viewModel.uiState.value.sessionOpen is SessionOpenState.Opening)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals("collision", viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+    }
+
+    @Test
+    fun `pending owner preview refuses retained send without changing previous draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        viewModel.setDraft("previous unsent draft")
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        viewModel.submit()
+        runCurrent()
+        assertTrue("The hidden previous chat must not receive a retained send", repository.submitted.isEmpty())
+        assertEquals("previous unsent draft", viewModel.uiState.value.draft)
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+        gate.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `pending owner preview refuses retained busy composer actions without stopping live turn`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        cache.upsertSession(requireNotNull(cache.session(previous)).copy(status = SessionStatus.Working))
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        viewModel.performComposerPrimaryAction()
+        viewModel.setDraft("unsent correction")
+        viewModel.redirectDraftFromUi()
+        viewModel.steerDraftFromUi()
+        runCurrent()
+        assertTrue("A retained primary action must not stop the hidden live turn", repository.interrupted.isEmpty())
+        assertTrue(repository.redirects.isEmpty())
+        assertTrue(repository.steers.isEmpty())
+        assertEquals("unsent correction", viewModel.uiState.value.draft)
+        gate.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `pending preview refuses directly bound stop callback on previous live turn`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        cache.upsertSession(requireNotNull(cache.session(previous)).copy(status = SessionStatus.Working))
+        viewModel.setDraft("queued follow-up")
+        viewModel.queueDraft()
+        runCurrent()
+        val queue = viewModel.uiState.value.composer.runtime.queueEntries
+        assertEquals(1, queue.size)
+        assertEquals(ComposerBusyKind.Streaming, viewModel.uiState.value.composer.runtime.busyKind)
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        // MainActivity's onStop calls stop directly, not performComposerPrimaryAction.
+        viewModel.stop()
+        runCurrent()
+        assertTrue("A retained real Stop must not interrupt the hidden chat", repository.interrupted.isEmpty())
+        assertEquals(SessionStatus.Working, cache.session(previous)?.status)
+        assertEquals(queue, viewModel.uiState.value.composer.runtime.queueEntries)
+        gate.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `pending preview refuses directly bound send next on populated previous queue`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        cache.upsertSession(requireNotNull(cache.session(previous)).copy(status = SessionStatus.Working))
+        viewModel.setDraft("first queued follow-up")
+        viewModel.queueDraft()
+        runCurrent()
+        viewModel.setDraft("second queued follow-up")
+        viewModel.queueDraft()
+        runCurrent()
+        val queue = viewModel.uiState.value.composer.runtime.queueEntries
+        assertEquals(2, queue.size)
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        val opensBefore = repository.opened.toList()
+        viewModel.sendNext(queue.last().id)
+        runCurrent()
+        assertEquals("No hidden-chat rehydrate may be dispatched", opensBefore, repository.opened)
+        assertTrue(repository.interrupted.isEmpty())
+        assertTrue(repository.submitted.isEmpty())
+        assertEquals(queue, viewModel.uiState.value.composer.runtime.queueEntries)
+        gate.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `ordinary open queued before preview cannot replace captured loading`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        repository.openGates["session-a"] = CompletableDeferred()
+        repository.botOpenGate = CompletableDeferred()
+        viewModel.selectSession("session-a")
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        assertEquals("preview", (viewModel.uiState.value.sessionOpen as SessionOpenState.Opening).sessionId)
+        repository.openGates.getValue("session-a").complete(Unit)
+        repository.botOpenGate!!.complete(Unit)
+        runCurrent()
+        assertEquals("preview", viewModel.uiState.value.activeSessionId)
+    }
+
+    @Test
+    fun `pending owner preview refuses retained queue without changing previous draft`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        viewModel.setDraft("previous unsent draft")
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        viewModel.queueDraft()
+        runCurrent()
+        assertEquals("previous unsent draft", viewModel.uiState.value.draft)
+        assertTrue(repository.submitted.isEmpty())
+        gate.complete(Unit)
+        runCurrent()
+    }
+
+    @Test
+    fun `preview loading retires on unified profile navigation before late success`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.sessionOpen is SessionOpenState.Opening)
+        viewModel.showAllProfiles()
+        runCurrent()
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+    }
+
+    @Test
+    fun `preview loading retires on endpoint reset before late success`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        assertTrue(viewModel.uiState.value.sessionOpen is SessionOpenState.Opening)
+        cache.resetForEndpointSwitch()
+        runCurrent()
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        val activeAfterReset = viewModel.uiState.value.activeSessionId
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(activeAfterReset, viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+    }
+
+    @Test
+    fun `same endpoint generation failure retires owned preview presentation`() = runTest(dispatcher) {
+        var connectionGeneration = 1L
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK },
+            bucketLabel = stubLabel, connectionGeneration = { connectionGeneration })
+        collectState(subject)
+        runCurrent()
+        val previous = requireNotNull(subject.uiState.value.activeSessionId)
+        subject.setDraft("keep previous draft")
+        val endpoint = cache.endpointGeneration.value
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        subject.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        assertTrue(subject.uiState.value.sessionOpen is SessionOpenState.Opening)
+        assertNull(subject.uiState.value.visibleSessionId)
+        assertEquals(endpoint, repository.botOpenEndpointBindings.last())
+        // Network availability changes the transport generation without changing
+        // the endpoint. The held RPC then terminates on the closed connection.
+        connectionGeneration += 1
+        repository.connection.value = GatewayConnectionState(GatewayConnectionStatus.Disconnected)
+        gate.completeExceptionally(GatewayRpcException("The gateway connection changed."))
+        runCurrent()
+        assertEquals(endpoint, cache.endpointGeneration.value)
+        assertEquals(SessionOpenState.Idle, subject.uiState.value.sessionOpen)
+        assertEquals(previous, subject.uiState.value.visibleSessionId)
+        assertEquals("keep previous draft", subject.uiState.value.draft)
+        assertNull("A retired connection cannot publish a stale open error", subject.uiState.value.notice)
+    }
+
+    @Test
+    fun `same raw id with different owner still hides current pane`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        cache.upsertSession(requireNotNull(cache.session(previous)).copy(remoteProfile = "beta"))
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(requireNotNull(cache.session(previous)).copy(remoteProfile = "alpha"))
+        runCurrent()
+        assertEquals("beta", cache.session(previous)?.remoteProfile)
+        assertEquals("alpha", (viewModel.uiState.value.sessionOpen as SessionOpenState.Opening).presentationTarget?.remoteProfile)
+        assertNull(viewModel.uiState.value.visibleSessionId)
+        gate.cancel()
+        runCurrent()
+    }
+
+    @Test
+    fun `late ordinary completion after preview failure cannot republish opening`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        val old = CompletableDeferred<Unit>()
+        repository.openGates["session-a"] = old
+        viewModel.selectSession("session-a")
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        repository.botOpenFailure = true
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        old.complete(Unit)
+        runCurrent()
+        assertEquals(previous, viewModel.uiState.value.visibleSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertEquals(SESSION_OPEN_FAILED_COPY, viewModel.uiState.value.notice?.text)
+    }
+
+    @Test
+    fun `old transport failure cannot clear newer preview presentation`() = runTest(dispatcher) {
+        var connectionGeneration = 1L
+        val subject = ChatViewModel(cache, repository, sidebarStore, clock = { CLOCK },
+            bucketLabel = stubLabel, connectionGeneration = { connectionGeneration })
+        collectState(subject)
+        runCurrent()
+        val old = CompletableDeferred<Unit>()
+        repository.botOpenGate = old
+        subject.selectProjectSession(summary("old", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        connectionGeneration += 1
+        val newer = CompletableDeferred<Unit>()
+        repository.botOpenGate = newer
+        cache.upsertSession(summary("new", CLOCK).copy(remoteProfile = "beta"))
+        subject.selectProjectSession(summary("new", CLOCK).copy(remoteProfile = "beta"))
+        runCurrent()
+        old.completeExceptionally(GatewayRpcException("The gateway connection changed."))
+        runCurrent()
+        assertEquals("new", (subject.uiState.value.sessionOpen as SessionOpenState.Opening).presentationTarget?.id)
+        assertNull(subject.uiState.value.visibleSessionId)
+        assertNull(subject.uiState.value.notice)
+        newer.complete(Unit)
+        runCurrent()
+        assertEquals("new", subject.uiState.value.visibleSessionId)
+        assertEquals(SessionOpenState.Idle, subject.uiState.value.sessionOpen)
+    }
+
+    @Test
+    fun `preview failure restores previous draft without raw id retry`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        viewModel.setDraft("keep previous draft")
+        repository.botOpenFailure = true
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertEquals(SESSION_OPEN_FAILED_COPY, viewModel.uiState.value.notice?.text)
+        assertEquals("keep previous draft", viewModel.uiState.value.draft)
+    }
+
+    @Test
+    fun `cancelled preview restores previous pane and does not remain loading`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = viewModel.uiState.value.activeSessionId
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        gate.cancel()
+        runCurrent()
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertNull(viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `late ordinary completion cannot clear pending preview loading`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val old = CompletableDeferred<Unit>()
+        repository.openGates["session-a"] = old
+        viewModel.selectSession("session-a")
+        runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        viewModel.selectProjectSession(summary("preview", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        old.complete(Unit)
+        runCurrent()
+        assertEquals("preview", (viewModel.uiState.value.sessionOpen as SessionOpenState.Opening).sessionId)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals("preview", viewModel.uiState.value.activeSessionId)
+    }
+
+    @Test
+    fun `late preview completion cannot clear newer preview loading`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val old = CompletableDeferred<Unit>()
+        repository.botOpenGate = old
+        viewModel.selectProjectSession(summary("old", CLOCK).copy(remoteProfile = "alpha"))
+        runCurrent()
+        val newer = CompletableDeferred<Unit>()
+        repository.botOpenGate = newer
+        viewModel.selectProjectSession(summary("new", CLOCK).copy(remoteProfile = "beta"))
+        runCurrent()
+        old.complete(Unit)
+        runCurrent()
+        assertEquals("new", (viewModel.uiState.value.sessionOpen as SessionOpenState.Opening).sessionId)
+        newer.complete(Unit)
+        runCurrent()
+        assertEquals("new", viewModel.uiState.value.activeSessionId)
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+    }
+
+    @Test
     fun `reselecting current chat retires a held colliding preview open`() = runTest(dispatcher) {
         collectState()
         runCurrent()

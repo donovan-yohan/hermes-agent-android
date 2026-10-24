@@ -37,6 +37,59 @@ class SessionOpenFailureLayoutTest {
     private var retries = 0
 
     @Test
+    fun `uncached session opening shows transcript skeleton instead of an empty pane`() {
+        state = failedState().copy(transcript = emptyList(), sessionOpen = SessionOpenState.Opening(SESSION))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                ChatScreen(state = state, actions = ChatActions(), onOpenSettings = {})
+            }
+        }
+        compose.onNodeWithTag("Session transcript skeleton").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Loading conversation").assertIsDisplayed()
+        compose.runOnIdle {
+            state = state.copy(transcript = listOf(AssistantTurn("loaded", "Loaded answer", NOW)), sessionOpen = SessionOpenState.Idle)
+        }
+        compose.onNodeWithTag("Session transcript skeleton").assertDoesNotExist()
+        compose.onNodeWithText("Loaded answer").assertIsDisplayed()
+    }
+
+    @Test
+    fun `same id different owner preview hides previous transcript composer and actions until opened`() {
+        val previous = failedState().copy(sessionOpen = SessionOpenState.Idle)
+        state = previous.copy(sessionOpen = SessionOpenState.Opening(SESSION,
+            previous.activeSession!!.copy(title = "Captured alpha title", remoteProfile = "alpha")))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                ChatScreen(state = state, actions = ChatActions(), onOpenSettings = {})
+            }
+        }
+        compose.onNodeWithTag(CHAT_TITLE_TAG).assertTextEquals("Captured alpha title")
+        compose.onNodeWithTag("Session transcript skeleton").assertIsDisplayed()
+        compose.onNodeWithText("The current prompt").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Message Hermes").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Session actions").assertDoesNotExist()
+        assertEquals(null, state.visibleSessionId)
+        compose.runOnIdle { state = previous }
+        compose.onNodeWithTag(CHAT_TITLE_TAG).assertTextEquals("Failed open")
+        compose.onNodeWithTag("Session transcript skeleton").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Message Hermes").assertTextEquals("draft survives retry")
+        assertEquals(SESSION, state.visibleSessionId)
+    }
+
+    @Test
+    fun `cached ordinary open keeps its transcript and composer while revalidating`() {
+        state = failedState().copy(sessionOpen = SessionOpenState.Opening(SESSION))
+        compose.setContent {
+            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+                ChatScreen(state = state, actions = ChatActions(), onOpenSettings = {})
+            }
+        }
+        compose.onNodeWithTag("Session transcript skeleton").assertDoesNotExist()
+        compose.onNodeWithText("Paragraph 90", substring = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Message Hermes").assertTextEquals("draft survives retry")
+    }
+
+    @Test
     fun `failed open stays below populated viewport and retry clears it without losing draft`() {
         compose.setContent {
             HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {

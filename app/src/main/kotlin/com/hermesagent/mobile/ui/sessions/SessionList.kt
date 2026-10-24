@@ -1532,7 +1532,17 @@ private fun SessionRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (session.preview.isNotBlank()) {
+                // Touch has no hover tooltip. Put Desktop's attention label in
+                // the preview slot so a blocking question is not just a color.
+                if (!archived && status == SessionStatus.NeedsInput) {
+                    Text(
+                        text = "Needs your input",
+                        style = HermesTheme.type.sessionPreview,
+                        color = tokens.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                } else if (session.preview.isNotBlank()) {
                     Text(
                         text = session.preview,
                         style = HermesTheme.type.sessionPreview,
