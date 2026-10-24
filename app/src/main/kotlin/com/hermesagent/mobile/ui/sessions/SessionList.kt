@@ -10,6 +10,11 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.runtime.DisposableEffect
+import com.hermesagent.mobile.ui.chat.ProjectManagementUi
+import com.hermesagent.mobile.ui.theme.ProjectAppearance
+import com.hermesagent.mobile.data.ssh.redact
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -150,6 +155,9 @@ fun SessionList(
     onSelectProject: (String) -> Unit,
     onExitProject: () -> Unit,
     onCreateProject: (name: String, folderPath: String) -> Unit,
+    projectActions: ProjectActions = ProjectActions(),
+    projectManagement: ProjectManagementUi = ProjectManagementUi(),
+    backendActiveProjectId: String? = null,
     onSelect: (String) -> Unit,
     onCreate: () -> Unit,
     modifier: Modifier = Modifier,
@@ -216,6 +224,14 @@ fun SessionList(
     var menuVisible by rememberSaveable { mutableStateOf(false) }
     var searchVisible by rememberSaveable { mutableStateOf(false) }
     var projectCreateVisible by rememberSaveable { mutableStateOf(false) }
+    var hiddenProjectsVisible by remember(projectManagement.hiddenOwnerToken) { mutableStateOf(false) }
+    val projectSurface = remember(selectedProject?.id, projectManagement.hiddenOwnerToken) { booleanArrayOf(true) }
+    DisposableEffect(projectSurface) {
+        onDispose { projectSurface[0] = false }
+    }
+    val openProjectActions: (ProjectSummary) -> Unit = { project ->
+        if (projectSurface[0]) projectActions.open(project, { projectSurface[0] }, projectManagement.hiddenOwnerToken)
+    }
     var sidebarMode by rememberSaveable { mutableStateOf(SidebarMode.Sessions) }
     var auxiliaryExpanded by rememberSaveable { mutableStateOf(false) }
     val searchIsVisible = searchVisible || query.isNotBlank()
@@ -327,14 +343,26 @@ fun SessionList(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).then(
+                        selectedProject?.takeUnless { it.isHome }?.let { project ->
+                            Modifier.combinedClickable(
+                                onClick = { openProjectActions(project) },
+                                onClickLabel = "Actions",
+                                onLongClick = { openProjectActions(project) },
+                                onLongClickLabel = "Actions",
+                            )
+                        } ?: Modifier,
+                    ).testTag("Project header"),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     if (showingProjectOverview || selectedProject != null) {
-                        DitherMark(tokens.accent)
+                        if (selectedProject != null) HermesIconGlyph(
+                            ProjectAppearance.glyph(selectedProject.icon, selectedProject.isAuto, selectedProject.isHome),
+                            color = ProjectAppearance.color(selectedProject.color, tokens.accent),
+                        ) else DitherMark(tokens.accent)
                         Text(
-                            text = title.uppercase(),
+                            text = redact(title).uppercase(),
                             style = HermesTheme.type.panelLabel,
                             color = tokens.accent,
                             maxLines = 1,
@@ -342,7 +370,12 @@ fun SessionList(
                         )
                     }
                 }
+                if (projectScope.showsCatalog) {
+                    HermesIconButton(icon = HermesIcon.Refresh, contentDescription = "Review project changes",
+                        onClick = { projectActions.recoveryOpen({ projectSurface[0] }, projectManagement.hiddenOwnerToken) })
+                }
                 if (showingProjectOverview) {
+                    HermesIconButton(icon = HermesIcon.Eye, contentDescription = "Hidden projects", onClick = { hiddenProjectsVisible = true })
                     HermesIconButton(
                         icon = HermesIcon.Add,
                         contentDescription = "New project",
@@ -404,6 +437,13 @@ fun SessionList(
                 }
             }
 
+            projectManagement.undo?.let { undo ->
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Hidden from sidebar", style = HermesTheme.type.caption, color = tokens.textSecondary, modifier = Modifier.weight(1f))
+                    TextButton(label = "Undo", enabled = !projectManagement.hiddenBusy,
+                        onClick = { projectActions.restore(undo.project.id, projectManagement.hiddenOwnerToken) })
+                }
+            }
             if (selectedProject != null) {
                 // Desktop's ProjectBackRow; pinned source and copy are recorded
                 // in PR #368 without changing this file's older citation scope.
@@ -488,6 +528,7 @@ fun SessionList(
                     items(items = projects, key = { "project-${it.id}" }) { project ->
                         ProjectRow(
                             project = project,
+                            onActions = { openProjectActions(project) },
                             activeSessionId = activeSessionId,
                             nowMillis = nowMillis,
                             onOpen = { onSelectProject(project.id) },
@@ -714,6 +755,9 @@ fun SessionList(
         }
     }
 
+    projectManagement.dialog?.let { ProjectActionsDialog(it, backendActiveProjectId, projectActions) }
+    if (hiddenProjectsVisible) HiddenProjectsDialog(projectManagement, projectActions) { hiddenProjectsVisible = false }
+    projectManagement.recovery?.let { ProjectRecoveryDialog(it, projectActions) }
     if (projectCreateVisible) {
         ProjectCreateDialog(
             onDismiss = { projectCreateVisible = false },
@@ -1001,6 +1045,7 @@ private fun ProjectCreateDialog(
 @Composable
 private fun ProjectRow(
     project: ProjectSummary,
+    onActions: () -> Unit,
     activeSessionId: String?,
     nowMillis: Long,
     onOpen: () -> Unit,
@@ -1026,21 +1071,16 @@ private fun ProjectRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = HermesTheme.spacing.touchTarget)
-                .clickable(onClick = onOpen)
+                .combinedClickable(onClick = onOpen, onLongClick = onActions.takeUnless { project.isHome }, onLongClickLabel = "Actions")
                 .testTag("Project row ${project.id}")
                 .padding(horizontal = HermesTheme.spacing.pageInset, vertical = 8.dp)
                 .semantics {
-                    contentDescription = "Open project ${project.label}$autoSuffix. $countLabel"
+                    contentDescription = "Open project ${redact(project.label)}$autoSuffix. $countLabel"
                 },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Desktop swaps two glyphs — `repo` for an auto lane,
-            // `folder-library` for an explicit project. This app never carried
-            // the second one, and giving every project row a lead glyph is a
-            // separate parity change, so only the auto lane is marked. The
-            // distinction Desktop draws survives; the glyph it draws it *with*
-            // is half ported, and the ledger says so.
+            // Desktop's semantic project glyph, with its per-project appearance override.
             if (project.isAuto) {
                 // `HermesIconGlyph` clears its own semantics, which is what
                 // this needs: the row above already says the whole phrase, and
@@ -1050,11 +1090,13 @@ private fun ProjectRow(
                 // ends its modifier chain with `clearAndSetSemantics {}`, which
                 // would take the tag with everything else it clears.
                 Box(Modifier.testTag(AUTO_PROJECT_GLYPH)) {
-                    HermesIconGlyph(icon = HermesIcon.Repo, color = tokens.textTertiary)
+                    HermesIconGlyph(icon = ProjectAppearance.glyph(project.icon, true), color = ProjectAppearance.color(project.color, tokens.textTertiary))
                 }
+            } else {
+                HermesIconGlyph(icon = ProjectAppearance.glyph(project.icon, false, project.isHome), color = ProjectAppearance.color(project.color, tokens.textTertiary))
             }
             Text(
-                text = project.label,
+                text = redact(project.label),
                 style = HermesTheme.type.sessionTitle,
                 color = if (project.isHome) tokens.accent else tokens.textPrimary,
                 maxLines = 1,

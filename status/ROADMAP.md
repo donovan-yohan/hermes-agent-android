@@ -135,6 +135,17 @@ lifecycle.
 - Project overview, project creation, authoritative project membership, and
   project-specific session creation when the Gateway exposes the project RPCs.
   Older Gateways retain the flat session view.
+- Long-press a project row or entered-project header for rename, appearance,
+  Add folder, Set active, Copy path and saved-project deletion. Auto-discovered
+  repositories instead offer appearance adoption and Hide from sidebar. Hidden
+  projects has an eight-second Undo and a permanent searchable restore finder;
+  dismissals persist per saved connection/address and exact profile route.
+  Unconfirmed appearance adoption survives reconnect/restart and requires fresh
+  saved-project review plus explicit authorization before a new deliberate
+  attempt. It never replays the old choice; a late request can still finish.
+  [Source review and rendered fallback evidence](../docs/parity/project-actions.md)
+  cover the implementation. Installed feature/keyboard acceptance remains open
+  under #400 after the emulator refused installation for insufficient storage.
 - In-memory project catalogs and hydrated membership are cached per exact
   profile route. Returning to a visited profile restores its snapshot before
   background revalidation, and warm project details keep their rows visible.

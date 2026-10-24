@@ -105,6 +105,8 @@ class MainActivity : ComponentActivity() {
             replySpeaker = app.replySpeaker,
             connectionGeneration = { app.gatewayConnection.currentGeneration },
             gatewayHttp = { app.gatewayHttp },
+            hiddenProjectsStore = preferences,
+            storageEndpoint = app.connectionSwitch.storageEndpoint,
         )
     }
     private val sshViewModel: SshViewModel by viewModels {
@@ -495,6 +497,13 @@ class MainActivity : ComponentActivity() {
                     onSelectProject = chatViewModel::selectProject,
                     onExitProject = chatViewModel::exitProject,
                     onCreateProject = chatViewModel::createProject,
+                    projectActions = com.hermesagent.mobile.ui.sessions.ProjectActions(
+                        chatViewModel::openProjectActions, chatViewModel::dismissProjectActions,
+                        chatViewModel::projectActionPage, chatViewModel::executeProjectAction,
+                        chatViewModel::hideProject, chatViewModel::restoreHiddenProject, chatViewModel::projectPath,
+                        chatViewModel::openProjectRecovery, chatViewModel::dismissProjectRecovery, chatViewModel::selectProjectRecovery,
+                        chatViewModel::refreshProjectRecovery, chatViewModel::reviewProjectRecovery, chatViewModel::allowProjectAttempt,
+                    ),
                     onSelectSession = chatViewModel::selectSession,
                     onSelectProjectSession = chatViewModel::selectProjectSession,
                     onRetrySessionOpen = chatViewModel::retrySessionOpen,

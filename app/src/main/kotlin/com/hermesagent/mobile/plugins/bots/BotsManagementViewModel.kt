@@ -14,7 +14,7 @@ import kotlinx.serialization.json.*
 import java.util.UUID
 
 /** Supplied by the application from its persisted endpoint record, never a transport generation. */
-data class BotStorageEndpoint(val stableId: String, val generation: Long)
+typealias BotStorageEndpoint = com.hermesagent.mobile.data.connections.StorageEndpoint
 
 /** The dialog keeps its original owner/endpoint for its entire lifetime. */
 enum class BotManagementDialog { New, Edit, Duplicate, Delete, Section, Move, Action }

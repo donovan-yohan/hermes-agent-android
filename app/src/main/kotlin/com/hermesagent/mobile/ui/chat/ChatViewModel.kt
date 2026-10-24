@@ -144,6 +144,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Gateway catalog state, kept distinct from an empty-but-resolved catalog. */
@@ -407,6 +408,8 @@ data class ChatUiState(
      */
     val nowMillis: Long = System.currentTimeMillis(),
     val projects: List<ProjectSummary> = emptyList(),
+    val projectManagement: ProjectManagementUi = ProjectManagementUi(),
+    val backendActiveProjectId: String? = null,
     val projectsAvailable: Boolean? = null,
     val sidebarGrouping: SidebarGrouping = SidebarGrouping.Date,
     /** Desktop's `Archived` filter: the list is a view of the archived set instead. */
@@ -554,6 +557,8 @@ internal class ChatViewModel(
      * Robolectric.
      */
     private val bucketLabel: SessionBucketLabel? = null,
+    private val hiddenProjectsStore: com.hermesagent.mobile.data.prefs.HiddenProjectsStore = com.hermesagent.mobile.data.prefs.TransientHiddenProjectsStore(),
+    private val storageEndpoint: StateFlow<com.hermesagent.mobile.data.connections.StorageEndpoint?> = MutableStateFlow(com.hermesagent.mobile.data.connections.StorageEndpoint("transient", 0)),
 ) : ViewModel() {
     private val query = MutableStateFlow("")
     /** UI routing state, never backend/session-cache authority. */
@@ -878,9 +883,22 @@ internal class ChatViewModel(
     fun dismissSendDiagnostics() = diagnosticsController.dismiss()
 
     private val sidebarCatalogProjection = SidebarCatalogProjection()
+    private val hiddenProjectSnapshot = MutableStateFlow(HiddenProjectSnapshot())
+    private val hiddenProjectReload = MutableStateFlow(0L)
+    // Returning scopes must read after their admitted writes, not an older disk snapshot.
+    private val hiddenProjectLanes = mutableMapOf<com.hermesagent.mobile.data.prefs.HiddenProjectsScope, kotlinx.coroutines.sync.Mutex>()
+    private fun hiddenProjectLane(scope: com.hermesagent.mobile.data.prefs.HiddenProjectsScope) =
+        hiddenProjectLanes.getOrPut(scope) { kotlinx.coroutines.sync.Mutex() }
+    private val projectManagement = MutableStateFlow(ProjectManagementUi())
+    private var projectActionSequence = 0L
+    private var projectEditor: com.hermesagent.mobile.data.gateway.ProjectEditor? = null
+    private var projectDialogRoute: String? = null
+    private var projectDialogNavigation = -1L
+    private var projectDialogSurface: String? = null
+    private var hiddenWrite = false
 
     val uiState: StateFlow<ChatUiState> = combine(
-        combine(cache.state, cache.endpointGeneration) { state, endpoint -> state to endpoint },
+        combine(cache.state, cache.endpointGeneration, combine(hiddenProjectSnapshot, projectManagement) { hidden, management -> hidden to management }) { state, endpoint, local -> Triple(state, endpoint, local) },
         combine(query, searchPendingState, searchResults, ::SearchStateBundle),
         draft,
         activeSessionId,
@@ -958,8 +976,16 @@ internal class ChatViewModel(
         val profileScopeState = navigation.sidebarView.profileScope
         val projectCatalog = cacheState.projectsForScope(profileScopeState.sessionProfileParam)
         val projectScope = projectProfileScopeOf(profileScopeState)
+        val hiddenSnapshot = cacheAndEndpoint.third.first
+        val storage = storageEndpoint.value
+        val hiddenCurrent = hiddenSnapshot.scope?.endpoint == storage?.stableId &&
+            hiddenSnapshot.scope?.profile == profileScopeState.sessionProfileParam &&
+            hiddenSnapshot.generation == cacheAndEndpoint.second && storage?.generation == cacheAndEndpoint.second
+        val hiddenReady = hiddenCurrent && hiddenSnapshot.ids != null
+        val hiddenIds = if (hiddenReady) hiddenSnapshot.ids.orEmpty() else emptySet()
         val sidebarCatalog = sidebarCatalogProjection.derive(
             cacheState, cacheAndEndpoint.second, profileScopeState, navigation.projectId, searchState.query,
+            hiddenIds = hiddenIds, hiddenReady = hiddenReady,
         )
         val selectedProject = sidebarCatalog.selectedProject
         val scopedSessions = sidebarCatalog.scopedSessions
@@ -1093,6 +1119,13 @@ internal class ChatViewModel(
             // matching it is the point.
             sessionsLoading = bundle.second.sessionPaging.loading && scopedSessions.isEmpty(),
             projects = projects,
+            backendActiveProjectId = projectCatalog.activeProjectId,
+            projectManagement = cacheAndEndpoint.third.second.copy(
+                hiddenProjects = projectCatalog.projects.values.filter { it.isAuto && it.id in hiddenIds },
+                hiddenLoading = !hiddenReady && hiddenSnapshot.error == null,
+                hiddenError = hiddenSnapshot.error ?: cacheAndEndpoint.third.second.hiddenError,
+                hiddenOwnerToken = hiddenSnapshot.revision,
+            ),
             projectsAvailable = projectCatalog.available,
             sidebarGrouping = navigation.sidebarView.grouping,
             profileRail = ProfileRailState(
@@ -1157,6 +1190,33 @@ internal class ChatViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     init {
+        viewModelScope.launch {
+            combine(storageEndpoint, profileScope, cache.endpointGeneration, logProfileGeneration, hiddenProjectReload) { endpoint, profile, generation, _, _ ->
+                Triple(endpoint, profile.sessionProfileParam, generation)
+            }.collectLatest { (endpoint, profile, generation) ->
+                dismissProjectActions()
+                projectManagement.value = ProjectManagementUi()
+                val scope = endpoint?.takeIf { it.generation == generation }?.let {
+                    com.hermesagent.mobile.data.prefs.HiddenProjectsScope(it.stableId, profile)
+                }
+                val revision = ++projectActionSequence
+                hiddenProjectSnapshot.value = HiddenProjectSnapshot(scope, generation, revision = revision)
+                if (scope != null) {
+                    try {
+                        val ids = hiddenProjectLane(scope).withLock { hiddenProjectsStore.readHiddenProjects(scope) }
+                        hiddenProjectSnapshot.value = HiddenProjectSnapshot(scope, generation, ids, revision = revision)
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { hiddenProjectSnapshot.value = HiddenProjectSnapshot(scope, generation, error = "Hidden projects could not be loaded. Reopen Sessions to retry.", revision = revision) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            combine(selectedProjectId, profileScope, cache.endpointGeneration, repository.connectionState) { _, _, _, _ -> Unit }
+                .collect {
+                    if (projectManagement.value.dialog != null && !ownsProjectDialog()) dismissProjectActions()
+                    projectManagement.value.recovery?.token?.let { if (!ownsProjectRecovery(it)) dismissProjectRecovery(it) }
+                }
+        }
         viewModelScope.launch {
             combine(cache.endpointGeneration, repository.connectionState, activeSessionId, profileScope) { _, _, _, _ -> Unit }
                 .collect { gatewayLogsController.invalidateIfChanged() }
@@ -2135,6 +2195,11 @@ internal class ChatViewModel(
     }
 
     private fun applyProfileScope(scope: ProfileScope) {
+        dismissProjectActions()
+        if (profileScope.value != scope) {
+            hiddenProjectSnapshot.value = HiddenProjectSnapshot(revision = ++projectActionSequence)
+            projectManagement.value = ProjectManagementUi()
+        }
         profileScopeGeneration += 1
         logProfileGeneration.value = profileScopeGeneration
         if (profileScope.value == scope) return
@@ -2162,6 +2227,263 @@ internal class ChatViewModel(
         projectLoadingId.value = null
         flushDraft()
         rehome(null)
+    }
+
+    private var recoveryOwner: com.hermesagent.mobile.data.gateway.ProjectRecovery? = null
+    private var recoveryTicket: com.hermesagent.mobile.data.gateway.ProjectRecoveryTicket? = null
+    private var recoverySurface: () -> Boolean = { false }
+    private var recoveryNavigation = -1L
+    private fun ownsProjectRecovery(token: Long): Boolean = projectManagement.value.recovery?.token == token &&
+        recoverySurface() && recoveryNavigation == navigationGeneration && recoveryOwner?.isCurrent() == true
+
+    fun openProjectRecovery(isSurfaceCurrent: () -> Boolean, ownerToken: Long) {
+        val snapshot = hiddenProjectSnapshot.value
+        val endpoint = storageEndpoint.value ?: return
+        if (!isSurfaceCurrent() || ownerToken != snapshot.revision || snapshot.scope?.endpoint != endpoint.stableId ||
+            snapshot.scope?.profile != profileScope.value.sessionProfileParam || snapshot.generation != endpoint.generation ||
+            endpoint.generation != cache.endpointGeneration.value) return
+        val owner = repository.projectRecovery() ?: return
+        dismissProjectActions()
+        recoveryOwner = owner
+        recoveryTicket = null
+        recoverySurface = isSurfaceCurrent
+        recoveryNavigation = navigationGeneration
+        val token = ++projectActionSequence
+        projectManagement.value = projectManagement.value.copy(recovery = ProjectRecoveryDialog(token, busy = true))
+        viewModelScope.launch {
+            try {
+                val attempts = owner.pending()
+                if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(recovery = ProjectRecoveryDialog(token, attempts))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(
+                    recovery = ProjectRecoveryDialog(token, error = "Project changes could not be loaded. Close and reopen review."))
+            }
+        }
+    }
+
+    fun dismissProjectRecovery(token: Long) {
+        if (projectManagement.value.recovery?.token != token) return
+        recoveryTicket = null
+        recoveryOwner = null
+        projectManagement.value = projectManagement.value.copy(recovery = null)
+    }
+
+    fun selectProjectRecovery(token: Long, attemptId: String) {
+        if (!ownsProjectRecovery(token)) return
+        val state = projectManagement.value.recovery ?: return
+        if (state.busy || state.attempts.none { it.attemptId == attemptId }) return
+        recoveryTicket = null
+        projectManagement.value = projectManagement.value.copy(recovery = state.copy(selectedAttempt = attemptId, projects = null, reviewed = false, error = null))
+    }
+
+    fun refreshProjectRecovery(token: Long) {
+        if (!ownsProjectRecovery(token)) return
+        val state = projectManagement.value.recovery ?: return
+        val attempt = state.selectedAttempt ?: return
+        val owner = recoveryOwner ?: return
+        if (state.busy) return
+        recoveryTicket = null
+        projectManagement.value = projectManagement.value.copy(recovery = state.copy(busy = true, projects = null, reviewed = false, error = null))
+        viewModelScope.launch {
+            try {
+                val ticket = owner.refresh(attempt) { ownsProjectRecovery(token) }
+                if (ownsProjectRecovery(token)) {
+                    recoveryTicket = ticket
+                    projectManagement.value = projectManagement.value.copy(recovery = state.copy(projects = ticket.projects, reviewed = false, error = null))
+                }
+            } catch (cancelled: CancellationException) {
+                if (cancelled !is kotlinx.coroutines.TimeoutCancellationException) throw cancelled
+                projectRecoveryReadFailed(token, state)
+            } catch (_: Exception) { projectRecoveryReadFailed(token, state) }
+        }
+    }
+
+    private fun projectRecoveryReadFailed(token: Long, state: ProjectRecoveryDialog) {
+        if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(
+            recovery = state.copy(projects = null, reviewed = false, error = "Projects could not be loaded. Refresh projects to try again."))
+    }
+
+    fun reviewProjectRecovery(token: Long) {
+        if (!ownsProjectRecovery(token) || recoveryTicket?.isCurrent() != true) return
+        val state = projectManagement.value.recovery ?: return
+        if (!state.busy) projectManagement.value = projectManagement.value.copy(recovery = state.copy(reviewed = !state.reviewed))
+    }
+
+    fun allowProjectAttempt(token: Long) {
+        if (!ownsProjectRecovery(token)) return
+        val state = projectManagement.value.recovery ?: return
+        val ticket = recoveryTicket ?: return
+        if (state.busy || !state.reviewed || !ticket.isCurrent()) return
+        projectManagement.value = projectManagement.value.copy(recovery = state.copy(busy = true, error = null))
+        viewModelScope.launch {
+            try {
+                check(ticket.acknowledge { ownsProjectRecovery(token) })
+                if (ownsProjectRecovery(token)) {
+                    dismissProjectRecovery(token)
+                    noticeLine = "Choose a project appearance to try again."
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(
+                    recovery = state.copy(error = "Another attempt could not be allowed. Refresh projects and review again.", reviewed = false))
+                recoveryTicket = null
+            }
+        }
+    }
+
+    private var projectSurfaceCurrent: () -> Boolean = { false }
+    private fun ownsProjectDialog(token: Long? = projectManagement.value.dialog?.token): Boolean =
+        token != null && token == projectManagement.value.dialog?.token && projectSurfaceCurrent() &&
+            projectDialogRoute == profileScope.value.sessionProfileParam &&
+            projectDialogNavigation == navigationGeneration && projectDialogSurface == selectedProjectId.value &&
+            repository.connectionState.value.status == GatewayConnectionStatus.Connected && projectEditor?.isCurrent() == true
+
+    fun openProjectActions(project: ProjectSummary, isSurfaceCurrent: () -> Boolean = { true }, ownerToken: Long = hiddenProjectSnapshot.value.revision) {
+        if (projectManagement.value.dialog?.busy == true || hiddenWrite) return
+        if (ownerToken != hiddenProjectSnapshot.value.revision) return
+        val hiddenOwner = hiddenProjectSnapshot.value
+        val storage = storageEndpoint.value
+        if (hiddenOwner.generation != cache.endpointGeneration.value || storage?.generation != hiddenOwner.generation ||
+            hiddenOwner.scope?.endpoint != storage.stableId || hiddenOwner.scope?.profile != profileScope.value.sessionProfileParam) return
+        if (project.isHome || !isSurfaceCurrent()) return
+        val route = profileScope.value.sessionProfileParam
+        val original = cache.state.value.projectsForScope(route).projects[project.id] ?: return
+        // Project previews are derived copies; bind the authoritative node, not that copy's list identity.
+        if (original.label != project.label || original.path != project.path) return
+        val editor = repository.projectEditor(original) ?: return
+        if (!editor.isCurrent()) return
+        projectEditor = editor
+        projectDialogRoute = route
+        projectDialogNavigation = navigationGeneration
+        projectDialogSurface = selectedProjectId.value
+        projectSurfaceCurrent = isSurfaceCurrent
+        projectManagement.value = projectManagement.value.copy(dialog = ProjectActionDialog(++projectActionSequence, original))
+    }
+
+    fun dismissProjectActions() {
+        projectEditor = null
+        projectManagement.value = projectManagement.value.copy(dialog = null)
+    }
+    fun dismissProjectActions(token: Long) {
+        if (projectManagement.value.dialog?.token == token) dismissProjectActions()
+    }
+
+    fun projectActionPage(token: Long, page: ProjectActionPage) {
+        if (!ownsProjectDialog(token)) { dismissProjectActions(token); return }
+        val dialog = projectManagement.value.dialog ?: return
+        if (!dialog.busy && !dialog.unconfirmed) projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(page = page, error = null))
+    }
+
+    /** Runs in ViewModel scope: removal of the pressed row must not cancel an admitted write. */
+    fun executeProjectAction(token: Long, operation: com.hermesagent.mobile.data.gateway.ProjectOperation) {
+        if (!ownsProjectDialog(token)) { dismissProjectActions(token); return }
+        val dialog = projectManagement.value.dialog ?: return
+        if (dialog.busy || dialog.unconfirmed) return
+        if (operation == com.hermesagent.mobile.data.gateway.ProjectOperation.SetActive &&
+            cache.state.value.projectsForScope(projectDialogRoute).activeProjectId == dialog.project.id) return
+        val editor = projectEditor ?: return
+        projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(busy = true, error = null))
+        viewModelScope.launch {
+            try {
+                if (!ownsProjectDialog(token)) return@launch
+                val outcome = editor.execute(operation) { ownsProjectDialog(token) }
+                val surfaceCurrent = projectManagement.value.dialog?.token == token && projectSurfaceCurrent() &&
+                    projectDialogNavigation == navigationGeneration && projectDialogSurface == selectedProjectId.value
+                if (!surfaceCurrent || !outcome.scopeCurrent) return@launch
+                dismissProjectActions()
+                if (operation == com.hermesagent.mobile.data.gateway.ProjectOperation.Delete || outcome.projectId != dialog.project.id) {
+                    if (selectedProjectId.value == dialog.project.id) exitProject()
+                }
+                if (outcome.recoveryPending) noticeLine = "Project saved. Open Review project changes before another attempt."
+                else if (!outcome.catalogRefreshed) noticeLine = "Project updated. Projects could not be refreshed; reopen Sessions."
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (ownsProjectDialog(token)) projectManagement.value = projectManagement.value.copy(
+                    dialog = dialog.copy(page = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain) ProjectActionPage.Menu else dialog.page,
+                        unconfirmed = failure is com.hermesagent.mobile.data.gateway.ProjectEditUnconfirmed,
+                        error = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain || failure is com.hermesagent.mobile.data.gateway.ProjectEditUnconfirmed) failure.message else "Project could not be updated. Check the Gateway and try again."),
+                )
+            } finally {
+                // Feedback eligibility can retire before transport settles. Release only this pending lifetime.
+                if (projectManagement.value.dialog?.let { it.token == token && it.busy } == true) {
+                    dismissProjectActions(token)
+                }
+            }
+        }
+    }
+
+    fun projectPath(token: Long): String? = projectManagement.value.dialog?.project?.path?.takeIf { ownsProjectDialog(token) }
+
+    private fun currentHiddenSnapshot(): HiddenProjectSnapshot? = hiddenProjectSnapshot.value.takeIf { snap ->
+        snap.ids != null && snap.scope?.endpoint == storageEndpoint.value?.stableId &&
+            snap.generation == cache.endpointGeneration.value && storageEndpoint.value?.generation == snap.generation &&
+            snap.scope?.profile == profileScope.value.sessionProfileParam
+    }
+
+    fun hideProject(token: Long) {
+        if (!ownsProjectDialog(token) || hiddenWrite) return
+        val dialog = projectManagement.value.dialog ?: return
+        if (!dialog.project.isAuto || dialog.busy) return
+        val snap = currentHiddenSnapshot() ?: return
+        hiddenWrite = true
+        projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(busy = true))
+        viewModelScope.launch {
+            try {
+                if (!ownsProjectDialog(token) || currentHiddenSnapshot() != snap) return@launch
+                val next = snap.ids.orEmpty() + dialog.project.id
+                hiddenProjectLane(requireNotNull(snap.scope)).withLock {
+                    hiddenProjectsStore.writeHiddenProjects(snap.scope, next)
+                }
+                if (currentHiddenSnapshot() != snap) return@launch
+                hiddenProjectSnapshot.value = snap.copy(ids = next)
+                val undo = ProjectHideUndo(++projectActionSequence, dialog.project)
+                projectManagement.value = projectManagement.value.copy(dialog = null, undo = undo)
+                projectEditor = null
+                if (selectedProjectId.value == dialog.project.id) exitProject()
+                launch {
+                    delay(8_000)
+                    if (projectManagement.value.undo?.token == undo.token) projectManagement.value = projectManagement.value.copy(undo = null)
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (ownsProjectDialog(token)) projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(error = "Project could not be hidden. Try again."))
+            } finally {
+                hiddenWrite = false
+                if (projectManagement.value.dialog?.let { it.token == token && it.busy } == true) {
+                    dismissProjectActions(token)
+                }
+            }
+        }
+    }
+
+    fun restoreHiddenProject(id: String, ownerToken: Long = hiddenProjectSnapshot.value.revision) {
+        val snap = currentHiddenSnapshot() ?: return
+        if (snap.revision != ownerToken) return
+        val row = cache.state.value.projectsForScope(snap.scope?.profile).projects[id] ?: return
+        if (!row.isAuto || id !in snap.ids.orEmpty() || hiddenWrite) return
+        hiddenWrite = true
+        projectManagement.value = projectManagement.value.copy(hiddenBusy = true)
+        viewModelScope.launch {
+            try {
+                if (currentHiddenSnapshot() != snap) return@launch
+                val next = snap.ids.orEmpty() - id
+                hiddenProjectLane(requireNotNull(snap.scope)).withLock {
+                    hiddenProjectsStore.writeHiddenProjects(snap.scope, next)
+                }
+                if (currentHiddenSnapshot() != snap) return@launch
+                hiddenProjectSnapshot.value = snap.copy(ids = next)
+                projectManagement.value = projectManagement.value.copy(undo = null, hiddenError = null)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (currentHiddenSnapshot() == snap) projectManagement.value = projectManagement.value.copy(hiddenError = "Project could not be restored. Try again.")
+            } finally {
+                hiddenWrite = false
+                if (hiddenProjectSnapshot.value.revision == snap.revision) {
+                    projectManagement.value = projectManagement.value.copy(hiddenBusy = false)
+                }
+            }
+        }
     }
 
     fun selectProject(id: String) {
@@ -2212,6 +2534,7 @@ internal class ChatViewModel(
 
     /** Refresh when the compact drawer opens; the wide rail stays live through Gateway events. */
     fun refreshSessionNavigation() {
+        if (hiddenProjectSnapshot.value.error != null) hiddenProjectReload.value += 1
         if (repository.connectionState.value.status != GatewayConnectionStatus.Connected) return
         val navigation = navigationGeneration
         val profile = profileScopeGeneration
@@ -5171,6 +5494,8 @@ internal class ChatViewModel(
             replySpeaker: ReplySpeaker? = null,
             connectionGeneration: () -> Long = { 0L },
             gatewayHttp: () -> com.hermesagent.mobile.data.gateway.GatewayHttp? = { null },
+            hiddenProjectsStore: com.hermesagent.mobile.data.prefs.HiddenProjectsStore = com.hermesagent.mobile.data.prefs.TransientHiddenProjectsStore(),
+            storageEndpoint: StateFlow<com.hermesagent.mobile.data.connections.StorageEndpoint?> = MutableStateFlow(null),
         ): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
@@ -5193,6 +5518,8 @@ internal class ChatViewModel(
                         replySpeaker = replySpeaker,
                         connectionGeneration = connectionGeneration,
                         gatewayHttp = gatewayHttp,
+                        hiddenProjectsStore = hiddenProjectsStore,
+                        storageEndpoint = storageEndpoint,
                         composerHistoryController = ComposerHistoryController(
                             cache,
                             SavedStateComposerHistoryBrowseStore(extras.createSavedStateHandle()),

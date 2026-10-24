@@ -255,7 +255,31 @@ class HermesPreferences(private val context: Context) :
     ProfileScopeStore,
     ComposerControlsStore,
     PluginDecisionStore,
-    PluginKeyValueStore {
+    PluginKeyValueStore,
+    HiddenProjectsStore,
+    ProjectAdoptionStore {
+
+    override suspend fun readProjectAdoptions(scope: ProjectAdoptionScope): List<ProjectAdoptionAttempt> =
+        decodeProjectAdoptions(context.hermesDataStore.data.first()[stringPreferencesKey(scope.adoptionPreferenceKey())])
+
+    override suspend fun compareProjectAdoptions(scope: ProjectAdoptionScope, expected: List<ProjectAdoptionAttempt>, replacement: List<ProjectAdoptionAttempt>, canCommit: () -> Boolean): Boolean {
+        var changed = false
+        context.hermesDataStore.edit { prefs ->
+            val key = stringPreferencesKey(scope.adoptionPreferenceKey())
+            if (canCommit() && decodeProjectAdoptions(prefs[key]) == expected) {
+                prefs[key] = encodeProjectAdoptions(replacement)
+                changed = true
+            }
+        }
+        return changed
+    }
+
+    override suspend fun readHiddenProjects(scope: HiddenProjectsScope): Set<String> =
+        decodeHiddenProjects(context.hermesDataStore.data.first()[stringPreferencesKey(scope.preferenceKey())])
+
+    override suspend fun writeHiddenProjects(scope: HiddenProjectsScope, ids: Set<String>) {
+        context.hermesDataStore.edit { it[stringPreferencesKey(scope.preferenceKey())] = encodeHiddenProjects(ids) }
+    }
 
     val appearance: Flow<AppearanceSelection> = context.hermesDataStore.data.map { prefs ->
         AppearanceSelection(

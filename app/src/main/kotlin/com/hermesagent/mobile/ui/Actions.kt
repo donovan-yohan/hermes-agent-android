@@ -27,6 +27,7 @@ class ChatActions(
     val onSelectProject: (String) -> Unit = {},
     val onExitProject: () -> Unit = {},
     val onCreateProject: (name: String, folderPath: String) -> Unit = { _, _ -> },
+    val projectActions: com.hermesagent.mobile.ui.sessions.ProjectActions = com.hermesagent.mobile.ui.sessions.ProjectActions(),
     val onSelectSession: (String) -> Unit = {},
     /** Project previews can outlive the global raw-id slot's profile owner. */
     val onSelectProjectSession: (com.hermesagent.mobile.data.session.SessionSummary) -> Unit = {},

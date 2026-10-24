@@ -292,6 +292,15 @@ own `base..head`. See [`review-desktop-parity.md`](review-desktop-parity.md),
 
 ## 6. Capture what you learned
 
+Project context and kebab menus can order the same actions differently. Compare
+the specific gesture's renderer, not just the shared handler list. Desktop's
+hidden-project restoration is local Undo, not the backend archive RPC. Keep a
+permanent mobile finder explicitly classified as an addition. Retire editor
+incarnations rather than permanently blacklisting raw project paths, and test
+adopt/delete/rediscovery. For persisted hide/restore, hold the write across a
+profile round trip and assert storage, visible rows and recovery finder agree.
+See [project actions](../parity/project-actions.md).
+
 For source inventories, follow imported primitives and the actual mount gate, not
 only the named page: `LogTail` adds Copy/jump actions and `SearchField` adds a
 conditional Clear button. Plain `.js` plugins can ship compiled `jsx`/`jsxs`

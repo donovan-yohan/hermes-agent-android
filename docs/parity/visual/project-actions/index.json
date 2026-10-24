@@ -1,0 +1,201 @@
+{
+  "desktop_pin": "41dfcf2c1bd7146d4ad46aea08b7dd007900602e",
+  "android_source": "d49fb464da2bb2b99b5c4f5d39a3999f428dc6a2",
+  "android_fixture_sha256": "80ddf14816f3f864e6b1459dc5f3d85324c5bf22f4e1e1175efab2783ce6ab2b",
+  "android_renderer": "Robolectric SDK34 native graphics synchronous View.draw, not installed-device or IME proof",
+  "receipt_mapping": "Canonical receipts retain original filenames. This index maps the byte-identical selected images to publication names.",
+  "rows": [
+    {
+      "state": "context",
+      "theme": "dark",
+      "desktop": {
+        "image": "desktop-dark-context.png",
+        "sha256": "b4008aa953e145a6c9a206f526768452ffaf605746ee0c9fddd962dcb5199101",
+        "receipt": "desktop-dark-context.json",
+        "receipt_sha256": "56b1f408c6f04b56e21a181dcac9f3631e0014e0ef901f2d99c34a38564f4dd1",
+        "original_image": "screenshots/dark-explicit-context.png"
+      },
+      "android": {
+        "image": "android-dark-context.png",
+        "sha256": "b52e60274c6b47c73b9614b1867ca034ec4edce4489738a107ec1e27b2f4437a",
+        "receipt": "android-dark-context.json",
+        "receipt_sha256": "f0493d3a316bb38326953fd5fbd90e1ab83e0d78f8d2e84675c4f308f683f435",
+        "original_image": "dark-overview-explicit-context-modal.png"
+      }
+    },
+    {
+      "state": "appearance",
+      "theme": "dark",
+      "desktop": {
+        "image": "desktop-dark-appearance.png",
+        "sha256": "40500595cb1dce77a95ec1e0ac6a645651b2921f6c3cf897a1394c4d280485a0",
+        "receipt": "desktop-dark-appearance.json",
+        "receipt_sha256": "5a240fa8448eecc0ae058b0a55e180597095f7904715d9c50bead66d61032bd8",
+        "original_image": "screenshots/dark-appearance-selected.png"
+      },
+      "android": {
+        "image": "android-dark-appearance.png",
+        "sha256": "15eaa0daa9a3b53dc8137fbf8f3628589abffab068ffa72e2240e018ed5b8695",
+        "receipt": "android-dark-appearance.json",
+        "receipt_sha256": "214f1ed0b6156567c306217d1d072d1c6438d7933ce7d64bdfedc46d09c3ba36",
+        "original_image": "dark-entered-appearance-selected-modal.png"
+      }
+    },
+    {
+      "state": "delete",
+      "theme": "dark",
+      "desktop": {
+        "image": "desktop-dark-delete.png",
+        "sha256": "6916e6882b80a58ca84fcb2935c53d0c5683a166ec3faa9d5974959e4dbc1f24",
+        "receipt": "desktop-dark-delete.json",
+        "receipt_sha256": "f209dc376b14bb6d92bf50b44427f24f748e2027dd3e6905dd4ffa20dcc96cb9",
+        "original_image": "screenshots/dark-delete-confirm.png"
+      },
+      "android": {
+        "image": "android-dark-delete.png",
+        "sha256": "9faed456fa7c33dbe76de3756b429dd0b8b43650f80ce70cf0d9aeaa8504303b",
+        "receipt": "android-dark-delete.json",
+        "receipt_sha256": "f428d630b8719d9e53efdbb4050e94cf7fc6cc8c15b740a964711654bcbbee39",
+        "original_image": "dark-overview-delete-dialog-modal.png"
+      }
+    },
+    {
+      "state": "hide-undo",
+      "theme": "dark",
+      "desktop": {
+        "image": "desktop-dark-hide-undo.png",
+        "sha256": "a456be20541958ca774f94dec9c597ceec475098292a4c57263d469edb67289f",
+        "receipt": "desktop-dark-hide-undo.json",
+        "receipt_sha256": "46b59d9427d93bc91611420dc56906772d1737f2ce1152c83b5225fb33a43a85",
+        "original_image": "screenshots/dark-auto-hidden-undo.png"
+      },
+      "android": {
+        "image": "android-dark-hide-undo.png",
+        "sha256": "9801aa4757aef178cf29af582b0640fbccf1fb6dd5bdacd7affb7d6c10574fde",
+        "receipt": "android-dark-hide-undo.json",
+        "receipt_sha256": "3a16a7a2f8f328ddb4f2126a95106d40348b6f678c4fcfd183722b261faeec37",
+        "original_image": "dark-overview-hidden-undo-composite.png"
+      }
+    },
+    {
+      "state": "hidden-finder",
+      "theme": "dark",
+      "desktop": null,
+      "android": {
+        "image": "android-dark-hidden-finder.png",
+        "sha256": "74dd3e89c3cba64a158a09fa8203ddf404fd3e5f89e1b3e432a268e89aeb1d64",
+        "receipt": "android-dark-hidden-finder.json",
+        "receipt_sha256": "dce6769505d23fef2235ce9124e9d6e948a3fdadef04a7f91637de9b6ea1ca4a",
+        "original_image": "dark-overview-hidden-searched-after-undo-expiry-modal.png"
+      }
+    },
+    {
+      "state": "restored-finder",
+      "theme": "dark",
+      "desktop": null,
+      "android": {
+        "image": "android-dark-restored-finder.png",
+        "sha256": "ff41da57685650ef40217033b83384e271466a3687d6678bf1c4b010fcda4e22",
+        "receipt": "android-dark-restored-finder.json",
+        "receipt_sha256": "429f3791688781620cb45ebff95a6604a36148c3879e43be5084326f4e9f8c9f",
+        "original_image": "dark-overview-hidden-restored-empty-modal.png"
+      }
+    },
+    {
+      "state": "context",
+      "theme": "light",
+      "desktop": {
+        "image": "desktop-light-context.png",
+        "sha256": "1c5e1912efb1fde32b25fe87fc33f9648018c3f369f368fd70eca67eb7ec7452",
+        "receipt": "desktop-light-context.json",
+        "receipt_sha256": "9c46da75bec833bb11e97eb0595011aa70edc187070271e4e538361c3d15e9f0",
+        "original_image": "screenshots/light-explicit-context.png"
+      },
+      "android": {
+        "image": "android-light-context.png",
+        "sha256": "a331d031ee0e0e363859e2e59ab1baff9636f603f2572da5167ef4b5b27d9a5d",
+        "receipt": "android-light-context.json",
+        "receipt_sha256": "16f500dd870786b103e7fd2a1b7776c3e5a1b52c171960dcfad97080ae1544c9",
+        "original_image": "light-overview-explicit-context-modal.png"
+      }
+    },
+    {
+      "state": "appearance",
+      "theme": "light",
+      "desktop": {
+        "image": "desktop-light-appearance.png",
+        "sha256": "820c7f4d9b329f20be5543987610922e594bd4bbfb7cc3db452af513885729f0",
+        "receipt": "desktop-light-appearance.json",
+        "receipt_sha256": "91aa73f738f89ddaffe828a856445092299d458b97861759f17b9ea52b35a8c5",
+        "original_image": "screenshots/light-appearance-selected.png"
+      },
+      "android": {
+        "image": "android-light-appearance.png",
+        "sha256": "53a2c1a285ea230bedab206215c8834fa9753c6b10d9af74bc3c68d359bbb9d0",
+        "receipt": "android-light-appearance.json",
+        "receipt_sha256": "2e67820034fad06f4741f9c687a07c3e277f96e2ef3e7346c1b434653c8aaf14",
+        "original_image": "light-entered-appearance-selected-modal.png"
+      }
+    },
+    {
+      "state": "delete",
+      "theme": "light",
+      "desktop": {
+        "image": "desktop-light-delete.png",
+        "sha256": "7709531e7a7715d08975e377c6b888a334b761d05d3023ead89c7da97945a4bf",
+        "receipt": "desktop-light-delete.json",
+        "receipt_sha256": "041f774baaa685ac3d218caa495aa4a1995e9bdb57194f40c848a66f8d62548c",
+        "original_image": "screenshots/light-delete-confirm.png"
+      },
+      "android": {
+        "image": "android-light-delete.png",
+        "sha256": "0c445723e1cc01b210ecb74b641a457afc4a6750a19ba32f4df7142f95344992",
+        "receipt": "android-light-delete.json",
+        "receipt_sha256": "e012a78128f93494e197893f6b4068793234b96d81d648aad2447df99b3c480c",
+        "original_image": "light-overview-delete-dialog-modal.png"
+      }
+    },
+    {
+      "state": "hide-undo",
+      "theme": "light",
+      "desktop": {
+        "image": "desktop-light-hide-undo.png",
+        "sha256": "47c3ad054e430be5254607b25f9ac4dd3297393a1552f2e35211186cbe02f67f",
+        "receipt": "desktop-light-hide-undo.json",
+        "receipt_sha256": "c827e56ea12f163b937fb24944c0659e90f8cf9b7556124cc96919d339ae5b57",
+        "original_image": "screenshots/light-auto-hidden-undo.png"
+      },
+      "android": {
+        "image": "android-light-hide-undo.png",
+        "sha256": "1135177bec922d4ff48296c9871c5e56b77544a1a5abafd22a5378f005ac5da0",
+        "receipt": "android-light-hide-undo.json",
+        "receipt_sha256": "346e3d1dbc736b37291588421bba406254d8dd407253918a6f412627f84e58e7",
+        "original_image": "light-overview-hidden-undo-composite.png"
+      }
+    },
+    {
+      "state": "hidden-finder",
+      "theme": "light",
+      "desktop": null,
+      "android": {
+        "image": "android-light-hidden-finder.png",
+        "sha256": "a5ae57d55a6574f8cff8cc1bec1f535bc8cc374d3f160ad58d1547b558616aa2",
+        "receipt": "android-light-hidden-finder.json",
+        "receipt_sha256": "12a5944f04a79879dc0f128d65b0927ed41760f3f835844612307c45e66dc1f3",
+        "original_image": "light-overview-hidden-searched-after-undo-expiry-modal.png"
+      }
+    },
+    {
+      "state": "restored-finder",
+      "theme": "light",
+      "desktop": null,
+      "android": {
+        "image": "android-light-restored-finder.png",
+        "sha256": "01df727cfc10e312668af25c390f33670067a38f8b51581c9bca723f1fb51cc9",
+        "receipt": "android-light-restored-finder.json",
+        "receipt_sha256": "90d9fcfe7c945e3eb20a0a4426bc5d6db2ee586bbf34dcff55547ee186c4fbc2",
+        "original_image": "light-overview-hidden-restored-empty-modal.png"
+      }
+    }
+  ]
+}

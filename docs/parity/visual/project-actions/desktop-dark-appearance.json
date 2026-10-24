@@ -1,0 +1,1487 @@
+{
+  "name": "appearance-selected",
+  "theme": "dark",
+  "file": "screenshots/dark-appearance-selected.png",
+  "sha256": "40500595cb1dce77a95ec1e0ac6a645651b2921f6c3cf897a1394c4d280485a0",
+  "pin": "41dfcf2c1bd7146d4ad46aea08b7dd007900602e",
+  "synthetic": true,
+  "liveBackend": false,
+  "scope": "Real unchanged ProjectOverviewRow, ProjectContextMenu, ProjectMenu, ProjectAppearancePicker, ProjectDialog and notification hosts; fixture framing, NOT full Desktop shell",
+  "skin": "mono",
+  "clock": "2026-10-23T12:00:00Z",
+  "locale": "en-US",
+  "timezone": "UTC",
+  "viewport": {
+    "width": 1280,
+    "height": 900,
+    "deviceScaleFactor": 1
+  },
+  "browserVersion": "156.0.8078.4",
+  "sourceHashes": {
+    "apps/desktop/src/app/chat/sidebar/projects/project-menu.tsx": "f41adefe64efb6e2146a26944dd0dbebe787327d0a3ed7b07e9ac9fb5ee81549",
+    "apps/desktop/src/app/chat/sidebar/projects/project-menu.test.tsx": "39ef3cbbfaa944fdc9dba6808ead3c32010be636e354a225633105d498df2d49",
+    "apps/desktop/src/app/chat/sidebar/projects/project-appearance.tsx": "c86951511b0b65e2ae5b09aa2d533c5ee4bd3487053abc223d188d11f9339189",
+    "apps/desktop/src/app/chat/sidebar/projects/overview-row.tsx": "e027732be900eaf81b4fd99c8271b9c03bea5d1d1004ad452922a80b0c586ad6",
+    "apps/desktop/src/app/chat/sidebar/project-dialog.tsx": "4773aedc4c66ac756abf31f97cd413694cbc246115768b174dfb48e6fc9d1cfb",
+    "apps/desktop/src/store/projects.ts": "024dcd5aeaea8d97f7829050c657ce35ff15fb9d3bb2b206036f5460547e2af0",
+    "apps/desktop/src/store/layout.ts": "4ae5310b2f1c0f145baa680483e82698810dbf98d0f6c870f09d33d22b2a3e91",
+    "apps/desktop/src/store/notifications.ts": "5d6eb5a189a60b822df5b6f9a0df09595ef14ca12deb9ad3c80a8a96a31fa9fd",
+    "apps/desktop/src/components/notifications.tsx": "7cd303c2bbe063fc9dac89dea17bc3095a4c22349e1c6aff564d726166717739",
+    "apps/desktop/src/components/ui/color-swatches.tsx": "92685c9a13f74cb375728061062fd4ca5cb1998bd49bfad0eace8e4289b7d01d",
+    "apps/desktop/src/components/ui/confirm-dialog.tsx": "25fb0355827e4e289de19423ff46ab40cff3c74f1013cbe7e0903b2678ec0b36",
+    "apps/desktop/src/components/ui/actions-menu.tsx": "bab167480d6e554aa6c44b79a8375e887cd6aab9c5ac18a90294a6e0f9bb0b62",
+    "apps/desktop/src/components/ui/dropdown-menu.tsx": "1ce60f59a8c8734abf023bb240a629e4bd4a2dd42d009188ed62dee20c5649d1",
+    "apps/desktop/src/components/ui/context-menu.tsx": "55e4f39c49e9041f3373d7fbccebca396c0b9f86ec9bbaeaedd8ed6dd9c1dd8f",
+    "apps/desktop/src/components/ui/menu.ts": "a99de0d6f2c31010d127abaa55cd36abb9954cf626fcda922abe35168683b2d3",
+    "apps/desktop/src/styles.css": "4dbc9cb59f06fd6be4e5ae6ae4e8b861e8ceb26e2165cbc8bbdab7e2fe7dccaf",
+    "apps/desktop/src/themes/context.tsx": "c4c9feea2b7791ec971890df3d7bf22436f9fa29ef92df3142cae553f66afa8a",
+    "apps/desktop/src/themes/presets.ts": "be92a1408f3aa0e5c6e8fe5958169f03a910524a4cdfd77f83579794467a908d",
+    "apps/desktop/src/i18n/en_projects.ts": "f0e8ea3ebedba56017ca5adfac311fb9210f4ac56413d9a543427cd3329b78f5",
+    "apps/desktop/src/lib/profile-color.ts": "3299be74ca51eb48530889d5c1cb215a00c8def41fa89cdbee761db7d0a06c4f",
+    "apps/desktop/vite.config.ts": "34cf897aa99bc60a54dedc58f6a6df06084c0618064a34539eb4282a512290cb",
+    "package.json": "d5c8a996d5fa1ea5738f441c8d002bff804def0f50d73d32e010ce18f4bee8b6",
+    "package-lock.json": "ce171e30fb3bec0158922352023fd220698dac2f932609c462fae1373438cc5e",
+    "apps/desktop/package.json": "3e2b79b66852cd943e5f894f0e3c88524291c340e494a2f7e146b6c9d6320d16",
+    "apps/desktop/project-actions-reference.html": "bdb793de26c02463026cfe28849613341b87ac5a18deaf679259a78e54fd6fb5",
+    "apps/desktop/project-actions-reference.tsx": "71d9143211bbab8099177a40570778ebe6d57548e1615d2090c1e50772393790",
+    "apps/desktop/project-actions-reference.capture.mjs": "7796782904019f0a69a97392dfb2a660490303fa5aca6ac59a3145a3cce011f5",
+    "apps/desktop/project-actions-reference.serve.mjs": "9b3658682defe1eb84b740c938033695a365b6cabbb08914ae39e9e066e21720"
+  },
+  "fontSources": [
+    {
+      "url": "https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap",
+      "file": "courier-prime.css",
+      "sha256": "160f582559dbd9ed04457f91398e961b95142de8e20e2f672ef432296f28e4f7",
+      "contentType": "text/css"
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/courierprime/v11/u-450q2lgwslOqpF_6gQ8kELWwY.ttf",
+      "file": "font-0.ttf",
+      "sha256": "b03b41606b4469bd908aaa83146ba19d34cbeab1ce11fac0074d0d8fe9eba6cc",
+      "contentType": "font/ttf"
+    },
+    {
+      "url": "https://fonts.gstatic.com/s/courierprime/v11/u-4k0q2lgwslOqpF_6gQ8kELY7pMf-c.ttf",
+      "file": "font-1.ttf",
+      "sha256": "79d4be90ecb99d03ca5474a4e688e2fb45abcd4a9c348164c3aa9166c67cd53b",
+      "contentType": "font/ttf"
+    }
+  ],
+  "selector": "[data-slot=\"popover-content\"]",
+  "requiredCopy": [
+    "No color"
+  ],
+  "visibleCopy": "SYNTHETIC FIXTURE — no live backend\nmono · dark · en-US · UTC\nProjects · actual unchanged overview rows\nSynthetic Atlas\nSynthetic Active\nSynthetic No Path\nSynthetic Auto\nHome\n\nComponent reference, not full Desktop shell.\n\nSynthetic explicit, active, missing-path, auto-discovered, and Home rows. Menus, Appearance, dialogs and notifications are production components.\n\nPinned Desktop 41dfcf2c · synthetic data and gateway only · real component styles and actions\nNo color",
+  "target": [
+    {
+      "tag": "DIV",
+      "role": "dialog",
+      "label": "No color",
+      "rect": {
+        "x": 353,
+        "y": 137,
+        "width": 168,
+        "height": 228,
+        "top": 137,
+        "right": 521,
+        "bottom": 365,
+        "left": 353
+      },
+      "disabled": null,
+      "ariaDisabled": null,
+      "className": "z-50 origin-(--radix-popover-content-transform-origin) rounded-lg outline-hidden data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 border border-(--ui-stroke-secondary) bg-(--popover-surface) text-popover-foreground backdrop-blur-md [--popover-surface:color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)] w-auto p-2",
+      "style": "--radix-popover-content-transform-origin: var(--radix-popper-transform-origin); --radix-popover-content-available-width: var(--radix-popper-available-width); --radix-popover-content-available-height: var(--radix-popper-available-height); --radix-popover-trigger-width: var(--radix-popper-anchor-width); --radix-popover-trigger-height: var(--radix-popper-anchor-height);"
+    }
+  ],
+  "controls": [
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Open Synthetic Atlas",
+      "rect": {
+        "x": 72,
+        "y": 143.25,
+        "width": 90.828125,
+        "height": 19.5,
+        "top": 143.25,
+        "right": 162.828125,
+        "bottom": 162.75,
+        "left": 72
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "min-w-0 shrink bg-transparent p-0 text-left",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Actions",
+      "rect": {
+        "x": 300,
+        "y": 145,
+        "width": 16,
+        "height": 16,
+        "top": 145,
+        "right": 316,
+        "bottom": 161,
+        "left": 300
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:opacity-100 group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "New session in Synthetic Atlas",
+      "rect": {
+        "x": 316,
+        "y": 145,
+        "width": 16,
+        "height": 16,
+        "top": 145,
+        "right": 332,
+        "bottom": 161,
+        "left": 316
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Open Synthetic Active",
+      "rect": {
+        "x": 72,
+        "y": 169.25,
+        "width": 98.3125,
+        "height": 19.5,
+        "top": 169.25,
+        "right": 170.3125,
+        "bottom": 188.75,
+        "left": 72
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "min-w-0 shrink bg-transparent p-0 text-left",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Actions",
+      "rect": {
+        "x": 300,
+        "y": 171,
+        "width": 16,
+        "height": 16,
+        "top": 171,
+        "right": 316,
+        "bottom": 187,
+        "left": 300
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:opacity-100 group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "New session in Synthetic Active",
+      "rect": {
+        "x": 316,
+        "y": 171,
+        "width": 16,
+        "height": 16,
+        "top": 171,
+        "right": 332,
+        "bottom": 187,
+        "left": 316
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Open Synthetic No Path",
+      "rect": {
+        "x": 72,
+        "y": 195.25,
+        "width": 108.84375,
+        "height": 19.5,
+        "top": 195.25,
+        "right": 180.84375,
+        "bottom": 214.75,
+        "left": 72
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "min-w-0 shrink bg-transparent p-0 text-left",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Actions",
+      "rect": {
+        "x": 300,
+        "y": 197,
+        "width": 16,
+        "height": 16,
+        "top": 197,
+        "right": 316,
+        "bottom": 213,
+        "left": 300
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:opacity-100 group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "New session in Synthetic No Path",
+      "rect": {
+        "x": 316,
+        "y": 197,
+        "width": 16,
+        "height": 16,
+        "top": 197,
+        "right": 332,
+        "bottom": 213,
+        "left": 316
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Open Synthetic Auto (Auto-discovered)",
+      "rect": {
+        "x": 72,
+        "y": 221.25,
+        "width": 88.875,
+        "height": 19.5,
+        "top": 221.25,
+        "right": 160.875,
+        "bottom": 240.75,
+        "left": 72
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "min-w-0 shrink bg-transparent p-0 text-left",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Actions",
+      "rect": {
+        "x": 300,
+        "y": 223,
+        "width": 16,
+        "height": 16,
+        "top": 223,
+        "right": 316,
+        "bottom": 239,
+        "left": 300
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:opacity-100 group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "New session in Synthetic Auto",
+      "rect": {
+        "x": 316,
+        "y": 223,
+        "width": 16,
+        "height": 16,
+        "top": 223,
+        "right": 332,
+        "bottom": 239,
+        "left": 316
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "Open Home (Auto-discovered)",
+      "rect": {
+        "x": 72,
+        "y": 247.25,
+        "width": 35.765625,
+        "height": 19.5,
+        "top": 247.25,
+        "right": 107.765625,
+        "bottom": 266.75,
+        "left": 72
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "min-w-0 shrink bg-transparent p-0 text-left",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "New session in Home",
+      "rect": {
+        "x": 316,
+        "y": 249,
+        "width": 16,
+        "height": 16,
+        "top": 249,
+        "right": 332,
+        "bottom": 265,
+        "left": 316
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100",
+      "style": null
+    },
+    {
+      "tag": "DIV",
+      "role": "dialog",
+      "label": "No color",
+      "rect": {
+        "x": 353,
+        "y": 137,
+        "width": 168,
+        "height": 228,
+        "top": 137,
+        "right": 521,
+        "bottom": 365,
+        "left": 353
+      },
+      "disabled": null,
+      "ariaDisabled": null,
+      "className": "z-50 origin-(--radix-popover-content-transform-origin) rounded-lg outline-hidden data-[side=bottom]:slide-in-from-top-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 data-[side=top]:slide-in-from-bottom-1 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 border border-(--ui-stroke-secondary) bg-(--popover-surface) text-popover-foreground backdrop-blur-md [--popover-surface:color-mix(in_srgb,var(--ui-bg-elevated)_92%,transparent)] w-auto p-2",
+      "style": "--radix-popover-content-transform-origin: var(--radix-popper-transform-origin); --radix-popover-content-available-width: var(--radix-popper-available-width); --radix-popover-content-available-height: var(--radix-popper-available-height); --radix-popover-trigger-width: var(--radix-popper-anchor-width); --radix-popover-trigger-height: var(--radix-popper-anchor-height);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(0 68% 58%)",
+      "rect": {
+        "x": 362,
+        "y": 146,
+        "width": 20,
+        "height": 20,
+        "top": 146,
+        "right": 382,
+        "bottom": 166,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(221, 75, 75); color: rgb(221, 75, 75);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(30 68% 58%)",
+      "rect": {
+        "x": 388,
+        "y": 146,
+        "width": 20,
+        "height": 20,
+        "top": 146,
+        "right": 408,
+        "bottom": 166,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(221, 148, 75); color: rgb(221, 148, 75);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(60 68% 58%)",
+      "rect": {
+        "x": 414,
+        "y": 146,
+        "width": 20,
+        "height": 20,
+        "top": 146,
+        "right": 434,
+        "bottom": 166,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(221, 221, 75); color: rgb(221, 221, 75);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(90 68% 58%)",
+      "rect": {
+        "x": 440,
+        "y": 146,
+        "width": 20,
+        "height": 20,
+        "top": 146,
+        "right": 460,
+        "bottom": 166,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(148, 221, 75); color: rgb(148, 221, 75);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(120 68% 58%)",
+      "rect": {
+        "x": 466,
+        "y": 146,
+        "width": 20,
+        "height": 20,
+        "top": 146,
+        "right": 486,
+        "bottom": 166,
+        "left": 466
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(75, 221, 75); color: rgb(75, 221, 75);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(150 68% 58%)",
+      "rect": {
+        "x": 492,
+        "y": 146,
+        "width": 20,
+        "height": 20,
+        "top": 146,
+        "right": 512,
+        "bottom": 166,
+        "left": 492
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(75, 221, 148); color: rgb(75, 221, 148);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(180 68% 58%)",
+      "rect": {
+        "x": 362,
+        "y": 172,
+        "width": 20,
+        "height": 20,
+        "top": 172,
+        "right": 382,
+        "bottom": 192,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(75, 221, 221); color: rgb(75, 221, 221);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(210 68% 58%)",
+      "rect": {
+        "x": 388,
+        "y": 172,
+        "width": 20,
+        "height": 20,
+        "top": 172,
+        "right": 408,
+        "bottom": 192,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(75, 148, 221); color: rgb(75, 148, 221); box-shadow: 0 0 0 2px var(--ui-bg-elevated), 0 0 0 3.5px currentColor;"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(240 68% 58%)",
+      "rect": {
+        "x": 414,
+        "y": 172,
+        "width": 20,
+        "height": 20,
+        "top": 172,
+        "right": 434,
+        "bottom": 192,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(75, 75, 221); color: rgb(75, 75, 221);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(270 68% 58%)",
+      "rect": {
+        "x": 440,
+        "y": 172,
+        "width": 20,
+        "height": 20,
+        "top": 172,
+        "right": 460,
+        "bottom": 192,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(148, 75, 221); color: rgb(148, 75, 221);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(300 68% 58%)",
+      "rect": {
+        "x": 466,
+        "y": 172,
+        "width": 20,
+        "height": 20,
+        "top": 172,
+        "right": 486,
+        "bottom": 192,
+        "left": 466
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(221, 75, 221); color: rgb(221, 75, 221);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "hsl(330 68% 58%)",
+      "rect": {
+        "x": 492,
+        "y": 172,
+        "width": 20,
+        "height": 20,
+        "top": 172,
+        "right": 512,
+        "bottom": 192,
+        "left": 492
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "size-5 rounded-full transition-transform hover:scale-110",
+      "style": "background-color: rgb(221, 75, 148); color: rgb(221, 75, 148);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "No color",
+      "rect": {
+        "x": 362,
+        "y": 200,
+        "width": 150,
+        "height": 24,
+        "top": 200,
+        "right": 512,
+        "bottom": 224,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "mt-2 flex w-full items-center justify-center gap-1.5 rounded-md py-1 text-xs text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background) hover:text-foreground",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "folder-library",
+      "rect": {
+        "x": 362,
+        "y": 232,
+        "width": 20,
+        "height": 20,
+        "top": 232,
+        "right": 382,
+        "bottom": 252,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "repo",
+      "rect": {
+        "x": 388,
+        "y": 232,
+        "width": 20,
+        "height": 20,
+        "top": 232,
+        "right": 408,
+        "bottom": 252,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "rocket",
+      "rect": {
+        "x": 414,
+        "y": 232,
+        "width": 20,
+        "height": 20,
+        "top": 232,
+        "right": 434,
+        "bottom": 252,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md transition hover:bg-(--ui-control-hover-background) bg-(--ui-control-active-background) text-foreground",
+      "style": "color: rgb(75, 148, 221);"
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "beaker",
+      "rect": {
+        "x": 440,
+        "y": 232,
+        "width": 20,
+        "height": 20,
+        "top": 232,
+        "right": 460,
+        "bottom": 252,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "flame",
+      "rect": {
+        "x": 466,
+        "y": 232,
+        "width": 20,
+        "height": 20,
+        "top": 232,
+        "right": 486,
+        "bottom": 252,
+        "left": 466
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "star-full",
+      "rect": {
+        "x": 492,
+        "y": 232,
+        "width": 20,
+        "height": 20,
+        "top": 232,
+        "right": 512,
+        "bottom": 252,
+        "left": 492
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "heart",
+      "rect": {
+        "x": 362,
+        "y": 258,
+        "width": 20,
+        "height": 20,
+        "top": 258,
+        "right": 382,
+        "bottom": 278,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "zap",
+      "rect": {
+        "x": 388,
+        "y": 258,
+        "width": 20,
+        "height": 20,
+        "top": 258,
+        "right": 408,
+        "bottom": 278,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "target",
+      "rect": {
+        "x": 414,
+        "y": 258,
+        "width": 20,
+        "height": 20,
+        "top": 258,
+        "right": 434,
+        "bottom": 278,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "lightbulb",
+      "rect": {
+        "x": 440,
+        "y": 258,
+        "width": 20,
+        "height": 20,
+        "top": 258,
+        "right": 460,
+        "bottom": 278,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "tools",
+      "rect": {
+        "x": 466,
+        "y": 258,
+        "width": 20,
+        "height": 20,
+        "top": 258,
+        "right": 486,
+        "bottom": 278,
+        "left": 466
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "device-desktop",
+      "rect": {
+        "x": 492,
+        "y": 258,
+        "width": 20,
+        "height": 20,
+        "top": 258,
+        "right": 512,
+        "bottom": 278,
+        "left": 492
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "device-mobile",
+      "rect": {
+        "x": 362,
+        "y": 284,
+        "width": 20,
+        "height": 20,
+        "top": 284,
+        "right": 382,
+        "bottom": 304,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "terminal",
+      "rect": {
+        "x": 388,
+        "y": 284,
+        "width": 20,
+        "height": 20,
+        "top": 284,
+        "right": 408,
+        "bottom": 304,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "dashboard",
+      "rect": {
+        "x": 414,
+        "y": 284,
+        "width": 20,
+        "height": 20,
+        "top": 284,
+        "right": 434,
+        "bottom": 304,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "globe",
+      "rect": {
+        "x": 440,
+        "y": 284,
+        "width": 20,
+        "height": 20,
+        "top": 284,
+        "right": 460,
+        "bottom": 304,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "broadcast",
+      "rect": {
+        "x": 466,
+        "y": 284,
+        "width": 20,
+        "height": 20,
+        "top": 284,
+        "right": 486,
+        "bottom": 304,
+        "left": 466
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "cloud",
+      "rect": {
+        "x": 492,
+        "y": 284,
+        "width": 20,
+        "height": 20,
+        "top": 284,
+        "right": 512,
+        "bottom": 304,
+        "left": 492
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "database",
+      "rect": {
+        "x": 362,
+        "y": 310,
+        "width": 20,
+        "height": 20,
+        "top": 310,
+        "right": 382,
+        "bottom": 330,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "package",
+      "rect": {
+        "x": 388,
+        "y": 310,
+        "width": 20,
+        "height": 20,
+        "top": 310,
+        "right": 408,
+        "bottom": 330,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "book",
+      "rect": {
+        "x": 414,
+        "y": 310,
+        "width": 20,
+        "height": 20,
+        "top": 310,
+        "right": 434,
+        "bottom": 330,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "organization",
+      "rect": {
+        "x": 440,
+        "y": 310,
+        "width": 20,
+        "height": 20,
+        "top": 310,
+        "right": 460,
+        "bottom": 330,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "bug",
+      "rect": {
+        "x": 466,
+        "y": 310,
+        "width": 20,
+        "height": 20,
+        "top": 310,
+        "right": 486,
+        "bottom": 330,
+        "left": 466
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "shield",
+      "rect": {
+        "x": 492,
+        "y": 310,
+        "width": 20,
+        "height": 20,
+        "top": 310,
+        "right": 512,
+        "bottom": 330,
+        "left": 492
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "key",
+      "rect": {
+        "x": 362,
+        "y": 336,
+        "width": 20,
+        "height": 20,
+        "top": 336,
+        "right": 382,
+        "bottom": 356,
+        "left": 362
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "gift",
+      "rect": {
+        "x": 388,
+        "y": 336,
+        "width": 20,
+        "height": 20,
+        "top": 336,
+        "right": 408,
+        "bottom": 356,
+        "left": 388
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "telescope",
+      "rect": {
+        "x": 414,
+        "y": 336,
+        "width": 20,
+        "height": 20,
+        "top": 336,
+        "right": 434,
+        "bottom": 356,
+        "left": 414
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    },
+    {
+      "tag": "BUTTON",
+      "role": null,
+      "label": "home",
+      "rect": {
+        "x": 440,
+        "y": 336,
+        "width": 20,
+        "height": 20,
+        "top": 336,
+        "right": 460,
+        "bottom": 356,
+        "left": 440
+      },
+      "value": "",
+      "disabled": false,
+      "ariaDisabled": null,
+      "className": "grid aspect-square place-items-center rounded-md text-(--ui-text-tertiary) transition hover:bg-(--ui-control-hover-background)",
+      "style": null
+    }
+  ],
+  "appearance": {
+    "rootClass": "dark",
+    "background": "rgba(0, 0, 0, 0)",
+    "foreground": "color(srgb 0.917647 0.917647 0.917647 / 0.94)",
+    "font": "\"Segoe WPC\", \"Segoe UI\", -apple-system, \"system-ui\", \"SF Pro Text\", \"SF Pro Display\", system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\", emoji"
+  },
+  "fixture": {
+    "backend": {
+      "projects": [
+        {
+          "id": "p_11111111",
+          "name": "Synthetic Atlas",
+          "primary_path": "/synthetic/atlas",
+          "color": "hsl(210 68% 58%)",
+          "icon": "rocket",
+          "folders": [
+            {
+              "path": "/synthetic/atlas",
+              "label": null,
+              "is_primary": true,
+              "added_at": 0
+            }
+          ]
+        },
+        {
+          "id": "p_22222222",
+          "name": "Synthetic Active",
+          "primary_path": "/synthetic/active",
+          "color": null,
+          "icon": null,
+          "folders": [
+            {
+              "path": "/synthetic/active",
+              "label": null,
+              "is_primary": true,
+              "added_at": 0
+            }
+          ]
+        },
+        {
+          "id": "p_33333333",
+          "name": "Synthetic No Path",
+          "primary_path": null,
+          "color": null,
+          "icon": null,
+          "folders": []
+        }
+      ],
+      "tree": [
+        {
+          "id": "p_11111111",
+          "label": "Synthetic Atlas",
+          "path": "/synthetic/atlas",
+          "isAuto": false,
+          "color": "hsl(210 68% 58%)",
+          "icon": "rocket",
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "p_22222222",
+          "label": "Synthetic Active",
+          "path": "/synthetic/active",
+          "isAuto": false,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "p_33333333",
+          "label": "Synthetic No Path",
+          "path": null,
+          "isAuto": false,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "/synthetic/auto-repo",
+          "label": "Synthetic Auto",
+          "path": "/synthetic/auto-repo",
+          "isAuto": true,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "__no_project__",
+          "label": "Home",
+          "path": null,
+          "isAuto": true,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": [],
+          "isNoProject": true
+        }
+      ],
+      "activeId": "p_11111111"
+    },
+    "renderer": {
+      "projects": [
+        {
+          "id": "p_11111111",
+          "name": "Synthetic Atlas",
+          "primary_path": "/synthetic/atlas",
+          "color": "hsl(210 68% 58%)",
+          "icon": "rocket",
+          "folders": [
+            {
+              "path": "/synthetic/atlas",
+              "label": null,
+              "is_primary": true,
+              "added_at": 0
+            }
+          ]
+        },
+        {
+          "id": "p_22222222",
+          "name": "Synthetic Active",
+          "primary_path": "/synthetic/active",
+          "color": null,
+          "icon": null,
+          "folders": [
+            {
+              "path": "/synthetic/active",
+              "label": null,
+              "is_primary": true,
+              "added_at": 0
+            }
+          ]
+        },
+        {
+          "id": "p_33333333",
+          "name": "Synthetic No Path",
+          "primary_path": null,
+          "color": null,
+          "icon": null,
+          "folders": []
+        }
+      ],
+      "tree": [
+        {
+          "id": "p_11111111",
+          "label": "Synthetic Atlas",
+          "path": "/synthetic/atlas",
+          "isAuto": false,
+          "color": "hsl(210 68% 58%)",
+          "icon": "rocket",
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "p_22222222",
+          "label": "Synthetic Active",
+          "path": "/synthetic/active",
+          "isAuto": false,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "p_33333333",
+          "label": "Synthetic No Path",
+          "path": null,
+          "isAuto": false,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "/synthetic/auto-repo",
+          "label": "Synthetic Auto",
+          "path": "/synthetic/auto-repo",
+          "isAuto": true,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": []
+        },
+        {
+          "id": "__no_project__",
+          "label": "Home",
+          "path": null,
+          "isAuto": true,
+          "color": null,
+          "icon": null,
+          "repos": [],
+          "sessionCount": 0,
+          "previewSessions": [],
+          "isNoProject": true
+        }
+      ],
+      "activeId": "p_11111111",
+      "dismissed": [],
+      "dialog": null,
+      "visibleIds": [
+        "p_11111111",
+        "p_22222222",
+        "p_33333333",
+        "/synthetic/auto-repo",
+        "__no_project__"
+      ]
+    },
+    "storage": {},
+    "calls": [
+      {
+        "kind": "api",
+        "request": {
+          "profile": "default",
+          "path": "/api/config?include_defaults=false"
+        }
+      },
+      {
+        "kind": "clipboard",
+        "text": "/synthetic/atlas"
+      },
+      {
+        "kind": "rpc",
+        "method": "projects.set_active",
+        "input": {
+          "id": "p_11111111",
+          "profile": "default"
+        }
+      },
+      {
+        "kind": "rpc",
+        "method": "projects.update",
+        "input": {
+          "id": "p_11111111",
+          "color": "hsl(210 68% 58%)",
+          "profile": "default"
+        }
+      },
+      {
+        "kind": "rpc",
+        "method": "projects.update",
+        "input": {
+          "id": "p_11111111",
+          "icon": "rocket",
+          "profile": "default"
+        }
+      }
+    ],
+    "notifications": []
+  },
+  "fontFaces": [
+    {
+      "family": "codicon",
+      "status": "loaded"
+    },
+    {
+      "family": "Courier Prime",
+      "status": "loaded"
+    }
+  ]
+}

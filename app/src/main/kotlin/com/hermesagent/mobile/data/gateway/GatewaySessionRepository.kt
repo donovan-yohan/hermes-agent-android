@@ -192,6 +192,8 @@ interface GatewaySessionRepository {
      * into the `profile` parameter the session RPCs accept.
      */
     fun setProfileRouting(routing: ProfileRouting) = Unit
+    fun projectRecovery(): ProjectRecovery? = null
+    fun projectEditor(project: ProjectSummary): ProjectEditor? = null
     suspend fun refreshProjects() = Unit
     suspend fun openProject(projectId: String) = Unit
     suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
@@ -886,6 +888,8 @@ internal class LiveGatewaySessionRepository(
      */
     private val endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
     private val skinSourceScope: suspend () -> com.hermesagent.mobile.data.prefs.ComposerControlsScope? = { null },
+    private val projectAdoptionStore: com.hermesagent.mobile.data.prefs.ProjectAdoptionStore = com.hermesagent.mobile.data.prefs.TransientProjectAdoptionStore(),
+    private val projectStorageEndpoint: StateFlow<com.hermesagent.mobile.data.connections.StorageEndpoint?> = MutableStateFlow(com.hermesagent.mobile.data.connections.StorageEndpoint("transient", 0)),
     private val clock: () -> Long = System::currentTimeMillis,
 ) : GatewaySessionRepository {
     constructor(
@@ -894,6 +898,8 @@ internal class LiveGatewaySessionRepository(
         scope: CoroutineScope,
         endpointDispatchFence: EndpointDispatchFence = EndpointDispatchFence(),
         skinSourceScope: suspend () -> com.hermesagent.mobile.data.prefs.ComposerControlsScope? = { null },
+        projectAdoptionStore: com.hermesagent.mobile.data.prefs.ProjectAdoptionStore = com.hermesagent.mobile.data.prefs.TransientProjectAdoptionStore(),
+        projectStorageEndpoint: StateFlow<com.hermesagent.mobile.data.connections.StorageEndpoint?> = MutableStateFlow(null),
         clock: () -> Long = System::currentTimeMillis,
     ) : this(
         cache,
@@ -905,6 +911,8 @@ internal class LiveGatewaySessionRepository(
         clock = clock,
         endpointDispatchFence = endpointDispatchFence,
         skinSourceScope = skinSourceScope,
+        projectAdoptionStore = projectAdoptionStore,
+        projectStorageEndpoint = projectStorageEndpoint,
     )
 
     override val connectionState: StateFlow<GatewayConnectionState> = connectionStateFlow
@@ -2167,6 +2175,228 @@ internal class LiveGatewaySessionRepository(
             worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath,
         )
 
+    private suspend fun removeProjectAdoption(scope: com.hermesagent.mobile.data.prefs.ProjectAdoptionScope,
+        attempt: com.hermesagent.mobile.data.prefs.ProjectAdoptionAttempt): Boolean {
+        val rows = projectAdoptionStore.readProjectAdoptions(scope)
+        if (attempt !in rows) return false
+        return projectAdoptionStore.compareProjectAdoptions(scope, rows, rows - attempt)
+    }
+
+    private class ProjectEditorIncarnation(val auto: Boolean, var retired: Boolean = false)
+    private val projectEditorIncarnations = mutableMapOf<Triple<Long, String?, String>, ProjectEditorIncarnation>()
+
+    /** Only an authoritative absence releases an ID for a fresh incarnation. Old handles keep their retired token. */
+    private fun reconcileProjectEditors(connection: ConnectionSnapshot, profile: String?, projects: List<ProjectSummary>) {
+        val present = projects.mapTo(mutableSetOf()) { it.id }
+        projectEditorIncarnations.keys.removeAll { it.first == connection.generation && it.second == profile && it.third !in present }
+    }
+
+    private var projectRecoveryRead = 0L
+
+    override fun projectRecovery(): ProjectRecovery? {
+        val connection = runCatching { connectionSnapshot() }.getOrNull() ?: return null
+        val owner = runCatching { projectScopeSnapshot(connection) }.getOrNull() ?: return null
+        val storage = projectStorageEndpoint.value?.takeIf { it.generation == connection.endpointGeneration } ?: return null
+        val scope = com.hermesagent.mobile.data.prefs.ProjectAdoptionScope(storage.stableId, owner.profile)
+        fun current() = synchronized(stateLock) { isCurrentProject(connection, owner) && projectStorageEndpoint.value == storage &&
+            connectionStateFlow.value.status == GatewayConnectionStatus.Connected }
+        return object : ProjectRecovery {
+            override fun isCurrent() = current()
+            override suspend fun pending() = projectMutex.withLock {
+                check(current())
+                projectAdoptionStore.readProjectAdoptions(scope).also { check(current()) }
+            }
+            override suspend fun refresh(attemptId: String, isSurfaceCurrent: () -> Boolean): ProjectRecoveryTicket {
+                val read = synchronized(stateLock) { ++projectRecoveryRead }
+                return projectMutex.withLock {
+                    fun eligible() = current() && isSurfaceCurrent() && synchronized(stateLock) { read == projectRecoveryRead }
+                    check(eligible())
+                    val attempt = projectAdoptionStore.readProjectAdoptions(scope).single { it.attemptId == attemptId }
+                    check(eligible())
+                    val rpc = connection.client as? EndpointDispatchingGatewayRpcClient ?: error("Reconnect to review projects.")
+                    val lease = endpointDispatchFence.leaseAt(connection.endpointGeneration, ::eligible) ?: error("Reopen project review.")
+                    val response = rpc.requestAtEndpointDispatch("projects.list", buildJsonObject {
+                        owner.profile?.let { put("profile", JsonPrimitive(it)) }
+                    }) { send -> endpointDispatchFence.dispatchIfCurrent(lease, ::eligible) {
+                        synchronized(stateLock) { eligible() && send() }
+                    } }
+                    check(eligible())
+                    val projects = parseProjectRecoveryInventory(response)
+                    var consumed = false
+                    object : ProjectRecoveryTicket {
+                        override val attempt = attempt
+                        override val projects = projects
+                        override fun isCurrent() = !consumed && eligible()
+                        override suspend fun acknowledge(isSurfaceCurrent: () -> Boolean): Boolean = projectMutex.withLock {
+                            fun allowed() = isCurrent() && isSurfaceCurrent()
+                            if (!allowed()) return@withLock false
+                            val rows = projectAdoptionStore.readProjectAdoptions(scope)
+                            if (!allowed() || attempt !in rows) return@withLock false
+                            try {
+                                projectAdoptionStore.compareProjectAdoptions(scope, rows, rows - attempt, ::allowed)
+                            } finally {
+                                // Storage can commit then throw/cancel. Revoke old choices on every CAS attempt.
+                                consumed = true
+                                synchronized(stateLock) {
+                                    projectEditorIncarnations.entries.removeAll { (key, incarnation) ->
+                                        if (key.second == owner.profile && incarnation.auto) {
+                                            incarnation.retired = true
+                                            true
+                                        } else false
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    override fun projectEditor(project: ProjectSummary): ProjectEditor? {
+        if (project.isHome) return null
+        val connection = runCatching { connectionSnapshot() }.getOrNull() ?: return null
+        val owner = runCatching { projectScopeSnapshot(connection) }.getOrNull() ?: return null
+        if (cache.state.value.projectsForScope(owner.profile).projects[project.id] != project) return null
+        val key = Triple(connection.generation, owner.profile, project.id)
+        val incarnation = synchronized(stateLock) { projectEditorIncarnations.getOrPut(key) { ProjectEditorIncarnation(project.isAuto) } }
+        return object : ProjectEditor {
+            override fun isCurrent(): Boolean = synchronized(stateLock) {
+                !incarnation.retired && projectEditorIncarnations[key] === incarnation && isCurrentProject(connection, owner) && project.id in cache.state.value.projectsForScope(owner.profile).projects
+            }
+            override suspend fun execute(operation: ProjectOperation): ProjectEditOutcome = execute(operation) { true }
+            override suspend fun execute(operation: ProjectOperation, isSurfaceCurrent: () -> Boolean): ProjectEditOutcome = projectMutex.withLock {
+                fun admitted() = isCurrent() && isSurfaceCurrent()
+                check(admitted()) { "Reopen project actions." }
+                require(!project.isAuto || operation is ProjectOperation.Color || operation is ProjectOperation.Icon)
+                val adopt = project.isAuto
+                val method = if (adopt) "projects.create" else when (operation) {
+                    is ProjectOperation.Rename, is ProjectOperation.Color, is ProjectOperation.Icon -> "projects.update"
+                    is ProjectOperation.AddFolder -> "projects.add_folder"
+                    ProjectOperation.SetActive -> "projects.set_active"
+                    ProjectOperation.Delete -> "projects.delete"
+                }
+                val params = buildJsonObject {
+                    if (adopt) {
+                        val path = requireNotNull(project.path).also { require(it.isNotBlank()) }
+                        put("name", JsonPrimitive(project.label))
+                        put("folders", JsonArray(listOf(JsonPrimitive(path))))
+                        put("primary_path", JsonPrimitive(path))
+                        put("use", JsonPrimitive(false))
+                        val color = if (operation is ProjectOperation.Color) operation.value else project.color
+                        val icon = if (operation is ProjectOperation.Icon) operation.value else project.icon
+                        color?.let { put("color", JsonPrimitive(it)) }
+                        icon?.let { put("icon", JsonPrimitive(it)) }
+                    } else {
+                        put("id", JsonPrimitive(project.id))
+                        when (operation) {
+                            is ProjectOperation.Rename -> put("name", JsonPrimitive(operation.name.trim().also { require(it.isNotEmpty()) }))
+                            is ProjectOperation.Color -> put("color", JsonPrimitive(operation.value ?: ""))
+                            is ProjectOperation.Icon -> put("icon", JsonPrimitive(operation.value ?: ""))
+                            is ProjectOperation.AddFolder -> {
+                                require(operation.path.isNotBlank())
+                                put("path", JsonPrimitive(operation.path))
+                                operation.label?.let { put("label", JsonPrimitive(it)) }
+                                put("is_primary", JsonPrimitive(operation.isPrimary))
+                            }
+                            else -> Unit
+                        }
+                    }
+                    owner.profile?.let { put("profile", JsonPrimitive(it)) }
+                }
+                val rpc = connection.client as? EndpointDispatchingGatewayRpcClient ?: error("Reconnect to edit projects.")
+                val lease = endpointDispatchFence.leaseAt(connection.endpointGeneration, ::admitted) ?: error("Reopen project actions.")
+                val storage = projectStorageEndpoint.value
+                val adoptionScope = if (adopt) {
+                    check(storage != null && storage.generation == connection.endpointGeneration)
+                    com.hermesagent.mobile.data.prefs.ProjectAdoptionScope(storage.stableId, owner.profile)
+                } else null
+                val attempt = adoptionScope?.let {
+                    val existing = projectAdoptionStore.readProjectAdoptions(it)
+                    if (existing.isNotEmpty()) throw ProjectAdoptionUncertain()
+                    val prepared = com.hermesagent.mobile.data.prefs.ProjectAdoptionAttempt(
+                        java.util.UUID.randomUUID().toString(), project.id, requireNotNull(project.path),
+                        com.hermesagent.mobile.data.ssh.redact(project.label).ifBlank { "Project" })
+                    check(projectAdoptionStore.compareProjectAdoptions(it, existing, listOf(prepared)))
+                    prepared
+                }
+                // 0 = never entered send, 1 = send threw (unknown), 2 = false, 3 = true.
+                var dispatchState = 0
+                fun dispatchCurrent() = admitted() && (!adopt || projectStorageEndpoint.value == storage)
+                var cleanupPending = false
+                val response = try {
+                    rpc.requestAtEndpointDispatch(method, params) { send ->
+                        endpointDispatchFence.dispatchIfCurrent(lease, ::dispatchCurrent) {
+                            synchronized(stateLock) {
+                                if (!dispatchCurrent()) false else {
+                                    dispatchState = 1
+                                    send().also { dispatchState = if (it) 3 else 2 }
+                                }
+                            }
+                        }
+                    }.also { response ->
+                        if (adopt) check((response as? JsonObject)?.get("project")?.let { it as? JsonObject }?.string("id")?.isNotBlank() == true)
+                    }
+                } catch (failure: Throwable) {
+                    // Only transport refusal before send or a missing method proves no write.
+                    val noWrite = dispatchState == 0 || dispatchState == 2 ||
+                        (failure is GatewayRpcError && failure.code == -32601)
+                    var cleared = attempt == null
+                    if (attempt != null && noWrite) {
+                        cleared = kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                            runCatching { removeProjectAdoption(requireNotNull(adoptionScope), attempt) }.getOrDefault(false)
+                        }
+                    }
+                    if (failure is CancellationException) {
+                        // An RPC's own withTimeout leaves this caller active; a parent's does not.
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (failure !is kotlinx.coroutines.TimeoutCancellationException) throw failure
+                    }
+                    if (attempt != null && (!noWrite || !cleared)) throw ProjectAdoptionUncertain()
+                    // Sent failures without a no-write receipt remain unknown, including post-commit response errors.
+                    if (!noWrite) throw ProjectEditUnconfirmed()
+                    throw failure
+                }
+                if (attempt != null) {
+                    // Acknowledged creation is never replayable, even if durable cleanup fails.
+                    synchronized(stateLock) { incarnation.retired = true }
+                    cleanupPending = try { !removeProjectAdoption(requireNotNull(adoptionScope), attempt) }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { true }
+                }
+                // Retire every handle to an adopted/deleted node before any fallible readback.
+                if (adopt || operation == ProjectOperation.Delete) synchronized(stateLock) { incarnation.retired = true }
+                val resultId = if (adopt) (response as? JsonObject)?.get("project")?.let { it as? JsonObject }?.string("id")
+                    ?: project.id else project.id
+                fun ownsReadback() = synchronized(stateLock) { isCurrentProject(connection, owner) }
+                var refreshed = false
+                if (ownsReadback()) {
+                    try {
+                        val tree = rpc.requestAtEndpointDispatch("projects.tree", buildJsonObject {
+                            put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT))
+                            owner.profile?.let { put("profile", JsonPrimitive(it)) }
+                        }) { send -> endpointDispatchFence.dispatchIfCurrent(lease, ::ownsReadback) {
+                            synchronized(stateLock) { ownsReadback() && send() }
+                        } }
+                        val overview = parseProjectOverview(tree, clock())
+                        synchronized(stateLock) {
+                            ensureCurrentProject(connection, owner)
+                            reconcileProjectEditors(connection, owner.profile, overview.projects)
+                            cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(owner.profile) },
+                                overview.activeProjectId, authoritativeSessionProfiles = true)
+                            refreshed = true
+                        }
+                    } catch (cancelled: CancellationException) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (cancelled !is kotlinx.coroutines.TimeoutCancellationException) throw cancelled
+                        // A local readback deadline cannot turn acknowledged creation into failure.
+                    } catch (_: Exception) { /* The write was accepted. Never ask the caller to replay it. */ }
+                }
+                ProjectEditOutcome(resultId, refreshed, ownsReadback(), cleanupPending)
+            }
+        }
+    }
+
     override suspend fun refreshProjects() {
         val connection = connectionSnapshot()
         val scope = projectScopeSnapshot(connection)
@@ -2193,6 +2423,7 @@ internal class LiveGatewaySessionRepository(
             val overview = parseProjectOverview(payload, clock())
             synchronized(stateLock) {
                 ensureCurrentProject(connection, scope)
+                reconcileProjectEditors(connection, scope.profile, overview.projects)
                 cache.replaceProjectOverview(
                     overview.projects.map { it.inRequestProfile(scope.profile) },
                     overview.activeProjectId,
@@ -4754,6 +4985,7 @@ internal class LiveGatewaySessionRepository(
             }
             synchronized(stateLock) {
                 ensureCurrent(connection)
+                reconcileProjectEditors(connection, profile, overview.projects)
                 cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(profile) },
                     overview.activeProjectId, authoritativeSessionProfiles = true, scope = profile)
                 details.forEach { detail ->
@@ -7943,6 +8175,8 @@ private fun parseProject(root: JsonObject, nowMillis: Long): ProjectSummary {
         sessionCount = root.primitive("sessionCount")?.toIntOrNull() ?: previews.size,
         lastActiveAtMillis = root.primitive("lastActive")?.epochMillisOrNull() ?: 0,
         previewSessions = previews,
+        color = root.string("color"),
+        icon = root.string("icon"),
     )
 }
 

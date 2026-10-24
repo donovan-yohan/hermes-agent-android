@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name=".ProjectActionsParityActivity" android:exported="true" android:screenOrientation="portrait" android:theme="@style/Theme.HermesMobile" />
         <activity android:name=".SidebarChatUxParityActivity" android:exported="true" android:screenOrientation="portrait" android:theme="@style/Theme.HermesMobile" />
         <provider android:name=".SidebarChatUxRuntimeProvider" android:authorities="${applicationId}.sidebar-chat-ux-runtime" android:exported="true" android:permission="android.permission.DUMP" />
         <activity android:name=".BotNotificationParityActivity" android:exported="true" android:theme="@style/Theme.HermesMobile" />

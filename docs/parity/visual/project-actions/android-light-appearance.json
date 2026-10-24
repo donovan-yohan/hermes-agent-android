@@ -1,0 +1,152 @@
+{
+    "renderer": "Robolectric SDK34 native graphics synchronous View.draw; not device/IME proof",
+    "composition": "ProjectActionsParityActivity -> real ChatScreen -> real ChatViewModel -> LiveGatewaySessionRepository; synthetic wire and transient store",
+    "theme": "light",
+    "preset": "mono",
+    "locale": "en-US",
+    "timezone": "UTC",
+    "clockMillis": 1800000000000,
+    "fontScale": 1,
+    "density": 1,
+    "fontResolution": "Platform SansSerif UI and Monospace code per unchanged Mono preset; ResourcesCompat codicon.ttf and collapse_bold.otf resolve",
+    "appearanceInventory": {
+        "swatches": 12,
+        "icons": 28,
+        "bounds": {
+            "hsl(0 68% 58%)": "Rect.fromLTRB(46.0, 42.0, 94.0, 90.0)",
+            "hsl(30 68% 58%)": "Rect.fromLTRB(101.0, 42.0, 149.0, 90.0)",
+            "hsl(60 68% 58%)": "Rect.fromLTRB(155.0, 42.0, 203.0, 90.0)",
+            "hsl(90 68% 58%)": "Rect.fromLTRB(209.0, 42.0, 257.0, 90.0)",
+            "hsl(120 68% 58%)": "Rect.fromLTRB(263.0, 42.0, 311.0, 90.0)",
+            "hsl(150 68% 58%)": "Rect.fromLTRB(318.0, 42.0, 366.0, 90.0)",
+            "hsl(180 68% 58%)": "Rect.fromLTRB(46.0, 98.0, 94.0, 146.0)",
+            "hsl(210 68% 58%)": "Rect.fromLTRB(101.0, 98.0, 149.0, 146.0)",
+            "hsl(240 68% 58%)": "Rect.fromLTRB(155.0, 98.0, 203.0, 146.0)",
+            "hsl(270 68% 58%)": "Rect.fromLTRB(209.0, 98.0, 257.0, 146.0)",
+            "hsl(300 68% 58%)": "Rect.fromLTRB(263.0, 98.0, 311.0, 146.0)",
+            "hsl(330 68% 58%)": "Rect.fromLTRB(318.0, 98.0, 366.0, 146.0)",
+            "folder-library": "Rect.fromLTRB(46.0, 210.0, 94.0, 258.0)",
+            "repo": "Rect.fromLTRB(101.0, 210.0, 149.0, 258.0)",
+            "rocket": "Rect.fromLTRB(155.0, 210.0, 203.0, 258.0)",
+            "beaker": "Rect.fromLTRB(209.0, 210.0, 257.0, 258.0)",
+            "flame": "Rect.fromLTRB(263.0, 210.0, 311.0, 258.0)",
+            "star-full": "Rect.fromLTRB(318.0, 210.0, 366.0, 258.0)",
+            "heart": "Rect.fromLTRB(46.0, 266.0, 94.0, 314.0)",
+            "zap": "Rect.fromLTRB(101.0, 266.0, 149.0, 314.0)",
+            "target": "Rect.fromLTRB(155.0, 266.0, 203.0, 314.0)",
+            "lightbulb": "Rect.fromLTRB(209.0, 266.0, 257.0, 314.0)",
+            "tools": "Rect.fromLTRB(263.0, 266.0, 311.0, 314.0)",
+            "device-desktop": "Rect.fromLTRB(318.0, 266.0, 366.0, 314.0)",
+            "device-mobile": "Rect.fromLTRB(46.0, 322.0, 94.0, 370.0)",
+            "terminal": "Rect.fromLTRB(101.0, 322.0, 149.0, 370.0)",
+            "dashboard": "Rect.fromLTRB(155.0, 322.0, 203.0, 370.0)",
+            "globe": "Rect.fromLTRB(209.0, 322.0, 257.0, 370.0)",
+            "broadcast": "Rect.fromLTRB(263.0, 322.0, 311.0, 370.0)",
+            "cloud": "Rect.fromLTRB(318.0, 322.0, 366.0, 370.0)",
+            "database": "Rect.fromLTRB(46.0, 378.0, 94.0, 426.0)",
+            "package": "Rect.fromLTRB(101.0, 378.0, 149.0, 426.0)",
+            "book": "Rect.fromLTRB(155.0, 378.0, 203.0, 426.0)",
+            "organization": "Rect.fromLTRB(209.0, 378.0, 257.0, 426.0)",
+            "bug": "Rect.fromLTRB(263.0, 378.0, 311.0, 426.0)",
+            "shield": "Rect.fromLTRB(318.0, 378.0, 366.0, 426.0)",
+            "key": "Rect.fromLTRB(68.0, 434.0, 116.0, 482.0)",
+            "gift": "Rect.fromLTRB(144.0, 434.0, 192.0, 482.0)",
+            "telescope": "Rect.fromLTRB(220.0, 434.0, 268.0, 482.0)",
+            "home": "Rect.fromLTRB(296.0, 434.0, 344.0, 482.0)"
+        }
+    },
+    "compositeLimit": "Decor draws composited at measured screen positions, without OS WindowManager dim/IME/system-bar compositing",
+    "targets": [
+        {
+            "text": "Appearance",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 16.0, 119.0, 34.0)",
+            "enabled": true
+        },
+        {
+            "text": "No color",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 154.0, 95.0, 202.0)",
+            "enabled": true
+        },
+        {
+            "text": "Cancel",
+            "boundsInWindow": "Rect.fromLTRB(40.0, 490.0, 87.0, 538.0)",
+            "enabled": true
+        },
+        {
+            "contentDescription": "hsl(30 68% 58%)",
+            "boundsInWindow": "Rect.fromLTRB(101.0, 42.0, 149.0, 90.0)",
+            "enabled": true,
+            "selected": true
+        },
+        {
+            "contentDescription": "rocket",
+            "boundsInWindow": "Rect.fromLTRB(155.0, 210.0, 203.0, 258.0)",
+            "enabled": true,
+            "selected": true
+        }
+    ],
+    "images": [
+        {
+            "file": "light-entered-appearance-selected-composite.png",
+            "width": 412,
+            "height": 915,
+            "uniqueColors": 431,
+            "nontransparentPixels": 376980
+        },
+        {
+            "file": "light-entered-appearance-selected-modal.png",
+            "width": 412,
+            "height": 554,
+            "uniqueColors": 422,
+            "nontransparentPixels": 201592
+        }
+    ],
+    "textLayouts": [
+        {
+            "text": "Appearance",
+            "size": "79 x 18",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 332, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.08627451, 0.08627451, 0.08627451, 0.9411765, sRGB IEC61966-2.1), brush=null, alpha=0.9411765, fontSize=15.0.sp, fontWeight=FontWeight(weight=600), fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=21.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 332.0,
+            "paragraphHeight": 18.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 78.42578,
+            "glyphTop": 0.0,
+            "glyphBottom": 18.0
+        },
+        {
+            "text": "No color",
+            "size": "47 x 15",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 324, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.6039216, 0.6039216, 0.6039216, 1.0, sRGB IEC61966-2.1), brush=null, alpha=1.0, fontSize=13.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=18.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 324.0,
+            "paragraphHeight": 15.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 47.0,
+            "glyphTop": 0.0,
+            "glyphBottom": 15.0
+        },
+        {
+            "text": "Cancel",
+            "size": "39 x 15",
+            "constraints": "Constraints(minWidth = 0, maxWidth = 324, minHeight = 0, maxHeight = Infinity)",
+            "overflowWidth": true,
+            "overflowHeight": false,
+            "lineCount": 1,
+            "font": "TextStyle(color=Color(0.6039216, 0.6039216, 0.6039216, 1.0, sRGB IEC61966-2.1), brush=null, alpha=1.0, fontSize=13.0.sp, fontWeight=null, fontStyle=null, fontSynthesis=null, fontFamily=FontFamily.SansSerif, fontFeatureSettings=null, letterSpacing=Unspecified, baselineShift=null, textGeometricTransform=null, localeList=null, background=Color(0.0, 0.0, 0.0, 0.0, None), textDecoration=null, shadow=null, drawStyle=null, textAlign=Unspecified, textDirection=Unspecified, lineHeight=18.0.sp, textIndent=null, platformStyle=null, lineHeightStyle=null, lineBreak=LineBreak(strategy=Strategy.Unspecified, strictness=Strictness.Unspecified, wordBreak=WordBreak.Unspecified), hyphens=Hyphens.Unspecified, textMotion=null)",
+            "paragraphWidth": 324.0,
+            "paragraphHeight": 15.0,
+            "glyphLeft": 0.0,
+            "glyphRight": 39.0,
+            "glyphTop": 0.0,
+            "glyphBottom": 15.0
+        }
+    ],
+    "overflowFailures": []
+}
