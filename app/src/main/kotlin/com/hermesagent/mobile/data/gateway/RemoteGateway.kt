@@ -478,6 +478,16 @@ internal class NativeGatewayAuthenticator(
     suspend fun tokens(profile: RemoteGatewayProfile): GatewayNativeTokens? =
         profile.secretSlot?.let { store.load(it) }
 
+    /** Stored-only REST access, using the same rotation mutex as foreground tickets.
+     * A missing/rejected credential never launches sign-in or clears a user's slot. */
+    suspend fun backgroundAccessToken(profile: RemoteGatewayProfile): String? {
+        val slot = profile.secretSlot ?: return null
+        val observed = store.load(slot) ?: return null
+        val usable = if (observed.needsRefresh(nowSeconds())) rotate(slot, observed) ?: return null else observed
+        if (usable.needsRefresh(nowSeconds())) return null
+        return usable.accessToken.takeIf { it.isNotBlank() && store.load(slot)?.refreshToken == usable.refreshToken }
+    }
+
     suspend fun ticket(profile: RemoteGatewayProfile, browser: GatewayBrowserLauncher?): String {
         val baseUrl = profile.normalizedBaseUrl
             ?: throw GatewayAuthException("Use an HTTP or HTTPS Gateway URL.")

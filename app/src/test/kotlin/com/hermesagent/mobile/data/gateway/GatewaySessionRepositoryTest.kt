@@ -6479,6 +6479,30 @@ class GatewaySessionRepositoryTest {
     }
 
     @Test
+    fun `completed notification metadata uses persisted row not runtime synthetic identity`() = runTest {
+        val cache = SessionCache()
+        val rpc = FakeRpc()
+        val repository = LiveGatewaySessionRepository(cache,
+            MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)),
+            MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { CLOCK }
+        val outcomes = mutableListOf<GatewayTurnOutcome>()
+        backgroundScope.launch { repository.turnOutcomes.collect { outcomes += it } }
+        runCurrent()
+        repository.openSessionAtEndpoint("durable-a", "researcher", 0L)
+        rpc.emit("message.start", "runtime-a", """{"id":"gateway-assistant-synthetic","role":"assistant"}""")
+        rpc.emit("message.complete", "runtime-a", """{"row_id":42,"text":"Exact persisted reply"}""")
+        runCurrent()
+        assertEquals("42", outcomes.single().completedMessageId)
+        assertEquals("researcher", outcomes.single().completedMessageOwner)
+        assertEquals(CLOCK, outcomes.single().completedAtMillis)
+        assertEquals(0L, outcomes.single().endpointGeneration)
+        rpc.emit("message.start", "runtime-a", """{"id":"stream-only","role":"assistant"}""")
+        rpc.emit("message.complete", "runtime-a", """{"text":"Needs REST reconciliation"}""")
+        runCurrent()
+        assertNull(outcomes.last().completedMessageId)
+    }
+
+    @Test
     fun `completed outcome retains exact assistant prose after next turn replaces cache`() = runTest {
         val cache = SessionCache()
         val rpc = FakeRpc()

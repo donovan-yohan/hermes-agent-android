@@ -10,7 +10,7 @@ data class HostedGroup(
     val id: String, val name: String, val members: List<GroupMember>, val latest: Long,
     val disbanded: Boolean, val authority: String,
 )
-data class GroupEvent(val seq: Long, val kind: String, val memberId: String?, val text: String)
+data class GroupEvent(val seq: Long, val kind: String, val memberId: String?, val text: String, val eventId: String = "", val atMillis: Long = 0)
 data class GroupState(
     val room: HostedGroup, val working: Boolean = false, val blocked: Boolean = false,
     val peerRoutes: List<String> = emptyList(), val pending: List<String> = emptyList(),
@@ -150,10 +150,13 @@ internal fun parseGroupLog(value: JsonElement, id: String, since: Long): GroupLo
         val seq = e.num("seq")
         if (previous == Long.MAX_VALUE || seq != previous + 1) invalid()
         previous = seq
-        e.str("event_id")
+        val eventId = e.str("event_id")
         if (!e.containsKey("authority_epoch")) invalid()
         if (e["authority_epoch"] != JsonNull) e.num("authority_epoch")
         e.timestamp("created_at"); e.bool("idempotent")
+        val seconds = e.getValue("created_at").jsonPrimitive.double
+        if (seconds >= Long.MAX_VALUE / 1000.0) invalid()
+        val atMillis = (seconds * 1000).toLong()
         val actor = e.getValue("actor").obj()
         actor.str("id")
         val actorKind = actor.str("kind")
@@ -193,8 +196,8 @@ internal fun parseGroupLog(value: JsonElement, id: String, since: Long): GroupLo
             }
             else -> "Group Chat updated"
         }
-        if (actorKind in setOf("user", "member", "gateway", "system")) GroupEvent(seq, kind, member, text)
-        else GroupEvent(seq, "unknown", null, "Group Chat updated")
+        if (actorKind in setOf("user", "member", "gateway", "system")) GroupEvent(seq, kind, member, text, eventId, atMillis)
+        else GroupEvent(seq, "unknown", null, "Group Chat updated", eventId, atMillis)
     }
     if (cursor != previous || latest < cursor || more != (cursor < latest) || (more && cursor <= since)) invalid()
     return GroupLog(events, cursor, more, owner)

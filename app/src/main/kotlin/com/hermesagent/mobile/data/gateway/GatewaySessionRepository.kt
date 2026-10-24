@@ -6595,6 +6595,11 @@ internal class LiveGatewaySessionRepository(
         releaseRuntimeGuard(runtimeId)
         turnOutcomeEvents.tryEmit(GatewayTurnOutcome(
             durableId, failed = errorText != null,
+            completedMessageId = if (completed.error == null && completed.termination == null)
+                payload.string("row_id")?.takeIf { it.toLongOrNull()?.let { row -> row > 0 } == true } else null,
+            completedMessageOwner = owningProfileParam(durableId),
+            completedAtMillis = completed.atMillis,
+            endpointGeneration = cache.endpointGeneration.value,
             assistantMessagePreview = completed.markdown.takeIf {
                 completed.error == null && completed.termination == null && it.isNotBlank()
             },

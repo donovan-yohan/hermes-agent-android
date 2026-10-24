@@ -29,7 +29,10 @@ import java.util.concurrent.ConcurrentHashMap
  * drops even that. A locked screen therefore says "Approval needed" and which
  * app, and no more.
  */
-class AndroidNotificationSurface(context: Context) : NotificationSurface {
+class AndroidNotificationSurface(
+    context: Context,
+    private val avatarForSession: (String) -> android.graphics.Bitmap? = { null },
+) : NotificationSurface {
     private val context = context.applicationContext
     private val manager = NotificationManagerCompat.from(this.context)
 
@@ -72,6 +75,7 @@ class AndroidNotificationSurface(context: Context) : NotificationSurface {
         for (child in children) {
             val builder = NotificationCompat.Builder(context, ACTIVITY_CHANNEL_ID)
                 .setSmallIcon(SMALL_ICON)
+                .setLargeIcon(avatarForSession(child.durableSessionId))
                 .setContentTitle(child.title)
                 .setSubText(child.projectLabel)
                 .setContentText(child.preview ?: child.statusLine)
