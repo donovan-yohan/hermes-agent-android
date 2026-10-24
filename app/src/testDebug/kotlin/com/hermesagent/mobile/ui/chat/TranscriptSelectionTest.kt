@@ -34,6 +34,7 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import com.hermesagent.mobile.ui.performPromptJourneyClick as performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.swipe
@@ -206,19 +207,20 @@ class TranscriptSelectionTest {
     }
 
     @Test
-    fun `full overflowing inline prompt selects visible words without disclosure`() {
+    fun `explicitly expanded overflowing inline prompt selects visible words and offers Copy`() {
         val body = (1..60).joinToString("\n") { "Synthetic prompt line $it" }
         launch(listOf(UserTurn(id = "$SESSION-u1", text = body, atMillis = NOW)))
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollToIndex) { it(0) }
+        compose.onNodeWithTag("Prompt clipping fade", true).assertExists()
         compose.onNodeWithContentDescription("You said: $body").performTouchInput { click() }
         compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
-        compose.onNodeWithTag("Inline final prompt").performTouchInput { click() }
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
         compose.onNodeWithTag("Pinned final prompt").assertDoesNotExist()
         val source = compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode()
         assertTrue("full inline layout extends beyond the viewport", source.size.height >
             compose.onNodeWithTag("Transcript").fetchSemanticsNode().size.height)
-        assertTrue("inline source must not require expansion", SemanticsProperties.StateDescription !in
-            compose.onNodeWithContentDescription("You said: $body").fetchSemanticsNode().config)
+        assertEquals("Expanded", compose.onNodeWithContentDescription("You said: $body")
+            .fetchSemanticsNode().config[SemanticsProperties.StateDescription])
         compose.onNodeWithTag("Final prompt body", true).performTouchInput {
             longClick(Offset(30f, 25f))
         }
@@ -228,6 +230,26 @@ class TranscriptSelectionTest {
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
         assertEquals("selection must not resize the full source", source.size,
             compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode().size)
+    }
+
+    @Test
+    fun `expanded historical user body keeps selection and Copy with a newer user present`() {
+        val body = (1..35).joinToString("\n") { "Historical synthetic line $it" }
+        launch(listOf(UserTurn("historical-user", body, NOW),
+            AssistantTurn("historical-answer", "Earlier response", NOW),
+            UserTurn("newer-user", "Newer question", NOW),
+            AssistantTurn("newer-answer", LONG_REPLY, NOW)))
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollToIndex) { it(0) }
+        compose.onNodeWithTag("Transcript").performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, -10000f) }
+        // Use the actual inline owner's tap, never the Return-preferring journey helper.
+        compose.onNodeWithContentDescription("You said: $body").performTouchInput { click() }
+        val full = compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode()
+        assertTrue(full.size.height > compose.onNodeWithTag("Transcript").fetchSemanticsNode().size.height)
+        compose.onNodeWithTag("Final prompt body", true).performTouchInput { longClick(Offset(30f, 25f)) }
+        compose.waitForIdle()
+        assertTrue(selectionHandles() > 0)
+        assertTrue(contextMenu.labels.any { it.equals("copy", ignoreCase = true) })
+        assertEquals(full.size, compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode().size)
     }
 
     @Test

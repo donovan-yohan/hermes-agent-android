@@ -160,6 +160,10 @@ class PromptBubbleDecorationRenderTest {
             if (compose.onAllNodes(hasContentDescription("Current prompt: $PROMPT")).fetchSemanticsNodes().isNotEmpty()) {
                 assertTrue("final sticky waits for the complete source to leave", previousSource.bottom <= viewportTop + 1f)
                 scrollBy(8f * compose.density.density)
+                val owner = compose.onNodeWithContentDescription("Current prompt: $PROMPT")
+                if (owner.fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.StateDescription) { "" } == "Expanded") {
+                    owner.performSemanticsAction(SemanticsActions.OnClick) { it() }
+                }
                 return currentPromptBubble()
             }
             val inline = inlinePrompt()

@@ -266,17 +266,27 @@ class FinalUserPromptHeightTest {
         assertEquals(before, compose.onNodeWithTag("Viewport prompt", true).fetchSemanticsNode().size.height)
     }
 
-    @Test fun `earlier historical user prompt keeps its full rendered height`() {
+    @Test fun `earlier historical user prompt defaults to three lines and expands to full rendered height`() {
         val earlier = "Earlier synthetic line\n".repeat(10).trimEnd()
         state.value = fixture("short").let {
             it.copy(transcript = listOf(UserTurn("historical-user", earlier, 1_700_000_000_000L), it.transcript.first()), isStreaming = false)
         }
         launch()
         compose.onNodeWithTag("Transcript").performScrollToIndex(0)
-        val bubble = compose.onNodeWithTag("Transcript item historical-user").fetchSemanticsNode()
-        val layout = measure(earlier, px(320f))
-        assertTrue(layout.lineCount > 3)
-        assertEquals(layout.size.height + px(18f), bubble.size.height.toFloat(), 1f)
+        val owner = compose.onNodeWithContentDescription("You said: $earlier")
+        val collapsed = owner.fetchSemanticsNode()
+        val cap = measure(earlier, collapsed.size.width.toFloat(), maxLines = 3)
+        assertTrue(cap.didOverflowHeight)
+        assertEquals(cap.size.height + px(18f), collapsed.size.height.toFloat(), 1f)
+        val fade = compose.onNode(hasTestTag("Prompt clipping fade") and hasAnyAncestor(hasContentDescription("You said: $earlier")), true)
+            .fetchSemanticsNode().boundsInRoot
+        assertEquals(collapsed.positionInRoot.y + px(9f) + cap.getLineTop(2), fade.top, 1f)
+        assertEquals(collapsed.positionInRoot.y + px(9f) + cap.getLineBottom(2), fade.bottom, 1f)
+        owner.performTouchInput { click() }
+        val expanded = owner.fetchSemanticsNode()
+        val full = measure(earlier, expanded.size.width.toFloat())
+        assertEquals(full.size.height + px(18f), expanded.size.height.toFloat(), 1f)
+        owner.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
     }
 
     @Test fun `native ink fades only third line without ellipsis or padding overlap`() {
@@ -368,10 +378,11 @@ class FinalUserPromptHeightTest {
         compose.onNodeWithTag("Inline final prompt").assertIsDisplayed()
         val bubble = compose.onNodeWithTag("Final prompt body", true).fetchSemanticsNode()
         val layout = measure(body, bubble.size.width.toFloat())
-        assertEquals("inline original must render the entire message without expansion", layout.size.height + px(18f), bubble.size.height.toFloat(), 1f)
+        assertEquals("explicitly expanded inline original must render the entire message", layout.size.height + px(18f), bubble.size.height.toFloat(), 1f)
         compose.onNodeWithTag("Prompt clipping fade", true).assertDoesNotExist()
-        assertTrue("inline original must not require disclosure", SemanticsProperties.StateDescription !in
-            compose.onNodeWithContentDescription("You said: $body").fetchSemanticsNode().config)
+        val owner = compose.onNodeWithContentDescription("You said: $body").fetchSemanticsNode()
+        if (layout.lineCount > 3) assertEquals("Expanded", owner.config[SemanticsProperties.StateDescription])
+        else assertTrue(SemanticsProperties.StateDescription !in owner.config)
     }
 
     private fun assertCompletePrompt(tag: String, body: String) {

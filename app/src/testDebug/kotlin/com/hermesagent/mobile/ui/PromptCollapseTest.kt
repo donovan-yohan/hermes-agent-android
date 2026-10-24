@@ -343,6 +343,11 @@ class PromptCollapseTest {
             if (promptCount("Current prompt: $prompt") == 1) {
                 assertTrue("pin cannot replace a source still in the viewport", previousSource.bottom <= viewportTop + 1f)
                 scrollBy(8f * compose.density.density)
+                // Expansion follows the same message into chrome; collapse explicitly for cap geometry.
+                val owner = compose.onNodeWithContentDescription("Current prompt: $prompt")
+                if (owner.fetchSemanticsNode().config.getOrElse(androidx.compose.ui.semantics.SemanticsProperties.StateDescription) { "" } == "Expanded") {
+                    owner.performSemanticsAction(SemanticsActions.OnClick) { it() }
+                }
                 return currentPromptBubble()
             }
             val inline = inlinePrompt(prompt)

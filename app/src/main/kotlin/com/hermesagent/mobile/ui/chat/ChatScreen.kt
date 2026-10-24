@@ -191,12 +191,13 @@ fun ChatScreen(
     }
     var contextUsageOpen by rememberSaveable { mutableStateOf(false) }
     val onOpenContextUsage = { contextUsageOpen = true }
-    val finalPromptId = state.transcript.findLast { it is UserTurn }?.id
     val promptSessionId = state.activeSessionId ?: state.activeSession?.id
-    val promptExpanded = rememberSaveable(promptSessionId, finalPromptId) { mutableStateOf(false) }
-    val promptDisclosure = remember(promptSessionId, finalPromptId) { FinalPromptDisclosure(finalPromptId, promptExpanded) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalFinalPromptDisclosure provides promptDisclosure) {
-    BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).collapsePromptOnOutsideTap(promptDisclosure)) {
+    // Fence saved restoration without remounting the drawer, editor or transcript shell.
+    val disclosures = androidx.compose.runtime.key(state.diagnosticsEndpointGeneration, promptSessionId) {
+        rememberSaveable(saver = PromptDisclosures.Saver) { PromptDisclosures() }
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalPromptDisclosures provides disclosures) {
+    BoxWithConstraints(modifier.fillMaxSize().background(HermesTheme.tokens.chatSurface).collapsePromptOnOutsideTap(disclosures)) {
         if (maxWidth >= WIDE_BREAKPOINT) {
             WideLayout(state, actions, onOpenSettings, onOpenProfiles, gatewayDoor, wideRailInsets, imeInsets, sidebarHeader, sidebarNavigation, introSplashEnabled, onOpenContextUsage, routeContent, onLeaveRoute, onOpenCron, cronSection)
         } else {
@@ -772,7 +773,8 @@ private fun TranscriptPane(
         listState.scrollToItem(index + leadingItems, anchor.scrollOffset)
     }
 
-    val promptPin by remember(listState, state.transcript, leadingItems) {
+    val disclosures = LocalPromptDisclosures.current
+    val promptPin by remember(listState, state.transcript, leadingItems, disclosures) {
         derivedStateOf {
             val entries = state.transcript
             if (entries.isEmpty()) return@derivedStateOf null
@@ -795,7 +797,8 @@ private fun TranscriptPane(
                 if (distance <= 0) return@derivedStateOf null
                 // A tall original must remain scrollable in the transcript.
                 // Its compact sticky copy starts only after the source leaves.
-                if (firstEntry.id == entries.lastOrNull { it is UserTurn }?.id && distance < source.size) {
+                if ((disclosures?.entry(firstEntry)?.expanded?.value == true ||
+                        firstEntry.id == entries.lastOrNull { it is UserTurn }?.id) && distance < source.size) {
                     return@derivedStateOf null
                 }
                 ownerIndex = firstVisible
@@ -889,9 +892,14 @@ private fun TranscriptPane(
             // Capture the id and the transcript holder, never the whole
             // ChatUiState: this lambda must keep one identity across every
             // scroll recomposition.
-            val onReturn = remember(state.activeSession?.id, owner.id) {
+            val disclosure = disclosures?.entry(owner)
+            val onReturn = remember(state.activeSession?.id, owner.id, owner.rowId, disclosure) {
                 {
-                    val currentIndex = transcript.value.indexOfFirst { it.id == owner.id }
+                    // Expand the captured message before scrolling; re-projection may have changed its render id.
+                    disclosure?.expanded?.value = true
+                    val currentIndex = transcript.value.indexOfFirst {
+                        it is UserTurn && if (owner.rowId != null) it.rowId == owner.rowId else it.id == owner.id
+                    }
                     if (currentIndex >= 0) {
                         following = false
                         scope.launch { listState.scrollToItem(currentIndex + leadingItemsNow.value) }
@@ -900,6 +908,7 @@ private fun TranscriptPane(
             }
             StickyCurrentPrompt(
                 promptId = owner.id,
+                disclosure = disclosure,
                 body = pin.body,
                 nextPromptTopPx = pin.nextPromptTopPx,
                 hasInterveningReplies = pin.hasInterveningReplies,
@@ -972,6 +981,7 @@ private fun grewAtHead(previous: List<TranscriptEntry>, current: List<Transcript
 @Composable
 private fun StickyCurrentPrompt(
     promptId: String,
+    disclosure: FinalPromptDisclosure?,
     body: String,
     nextPromptTopPx: Int?,
     hasInterveningReplies: Boolean,
@@ -998,20 +1008,12 @@ private fun StickyCurrentPrompt(
                             reverseScrolling = false,
                         ),
                     )
-                    .then(if (LocalFinalPromptDisclosure.current?.messageId == promptId) Modifier else
-                        Modifier.clickable(role = Role.Button, onClickLabel = "Return to prompt", onClick = onClick))
                     .heightIn(min = spacing.touchTarget)
-                    .widthIn(min = spacing.touchTarget)
-                    .then(if (LocalFinalPromptDisclosure.current?.messageId == promptId) Modifier else
-                        Modifier.semantics(mergeDescendants = true) { contentDescription = "Current prompt: $body" }),
+                    .widthIn(min = spacing.touchTarget),
                 contentAlignment = Alignment.TopEnd,
             ) {
-                if (LocalFinalPromptDisclosure.current?.messageId == promptId) {
-                    FinalUserPromptBubble(body, viewportHeight, Modifier.testTag("Current prompt bubble"), onReturn = onClick,
-                        onScrollTranscript = { y -> scope.launch { listState.scrollBy(y) } })
-                } else {
-                    UserTurnBubble(body = body, contentDescription = null, modifier = Modifier.testTag("Current prompt bubble"))
-                }
+                FinalUserPromptBubble(body, viewportHeight, Modifier.testTag("Current prompt bubble"), onReturn = onClick,
+                    onScrollTranscript = { y -> scope.launch { listState.scrollBy(y) } }, disclosure = disclosure)
             }
         }.single().measure(Constraints(maxWidth = minOf(320.dp.roundToPx(), (constraints.maxWidth - inset * 2).coerceAtLeast(0))))
         // When a pinned request approaches the next user turn, explain the
