@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -654,6 +655,56 @@ class SessionListSectionsJourneyTest {
         compose.waitForIdle()
     }
 
+    @Test
+    fun `blocking input has a visible status instead of an ordinary preview`() {
+        launch(listOf(session("waiting", "Review plan", status = SessionStatus.NeedsInput)))
+        compose.onNodeWithText("Needs your input").assertIsDisplayed()
+    }
+
+    @Test
+    fun `attention replaces stale preview without labeling working or unread chats`() {
+        launch(listOf(
+            session("waiting", "Question", status = SessionStatus.NeedsInput).copy(preview = "Old progress"),
+            session("working", "Running", status = SessionStatus.Working),
+            session("unread", "Finished", status = SessionStatus.Unread),
+        ))
+        assertEquals(1, compose.onAllNodes(androidx.compose.ui.test.hasText("Needs your input")).fetchSemanticsNodes().size)
+        compose.onNodeWithText("Old progress").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Question. Waiting for your answer. Updated just now").assertIsDisplayed()
+    }
+
+    @Test
+    fun `archived row does not claim it needs an answer`() {
+        launch(listOf(session("archived", "Archived question", archived = true, status = SessionStatus.NeedsInput)), archivedVisible = true)
+        compose.onNodeWithText("Needs your input").assertDoesNotExist()
+    }
+
+    @Test
+    fun `attention label is readable in light mode`() = assertAttentionInk(HermesThemeMode.Light)
+
+    @Test
+    fun `attention label is readable in dark mode`() = assertAttentionInk(HermesThemeMode.Dark)
+
+    private fun assertAttentionInk(mode: HermesThemeMode) {
+        launch(listOf(session("waiting", "Review plan", status = SessionStatus.NeedsInput)), mode = mode)
+        val label = compose.onNodeWithText("Needs your input", useUnmergedTree = true)
+        label.assertIsDisplayed()
+        val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        assertTrue(requireNotNull(label.fetchSemanticsNode().config[
+            androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult
+        ].action).invoke(layouts))
+        val ink = layouts.single().layoutInput.style.color
+        val bounds = label.fetchSemanticsNode().boundsInWindow
+        val decor = compose.activity.window.decorView
+        val bitmap = Bitmap.createBitmap(decor.width, decor.height, Bitmap.Config.ARGB_8888)
+        decor.draw(Canvas(bitmap))
+        val background = bitmap.getPixel(bounds.left.toInt(), bounds.top.toInt())
+        val contrast = androidx.core.graphics.ColorUtils.calculateContrast(
+            androidx.core.graphics.ColorUtils.compositeColors(ink.toArgb(), background), background,
+        )
+        assertTrue("$mode attention label contrast $contrast must be at least 4.5:1", contrast >= 4.5)
+    }
+
     private fun openFilterMenu() {
         compose.onNodeWithContentDescription("Filters").performClick()
         compose.waitForIdle()
@@ -661,6 +712,7 @@ class SessionListSectionsJourneyTest {
 
     private fun launch(
         sessions: List<SessionSummary>,
+        mode: HermesThemeMode = HermesThemeMode.Dark,
         archivedVisible: Boolean = false,
         archivedPool: ArchivedPoolState = ArchivedPoolState.Loaded,
         nowMillis: Long = NOW,
@@ -673,7 +725,7 @@ class SessionListSectionsJourneyTest {
     ) {
         val rows = buildSessionRows(sessions, NOW, archivedView = archivedVisible)
         compose.setContent {
-            HermesTheme(AppearanceSelection("nous", HermesThemeMode.Dark)) {
+            HermesTheme(AppearanceSelection("nous", mode)) {
                 SessionList(
                     rows = rows,
                     projects = emptyList(),

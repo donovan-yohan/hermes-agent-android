@@ -812,7 +812,7 @@ class MainActivity : ComponentActivity() {
                 val stable = endpoint?.stableId
                 when {
                     stable == null -> null
-                    destination == HermesDestination.Chat -> chat.activeSession?.let {
+                    destination == HermesDestination.Chat -> chat.activeSession?.takeIf { chat.visibleSessionId != null }?.let {
                         MessageConversation(stable, MessageConversationKind.Session, it.id, it.remoteProfile)
                     }
                     destination == HermesDestination.Route("groups:route") -> room?.let {
