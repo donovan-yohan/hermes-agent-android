@@ -136,6 +136,7 @@ internal class ConnectionSwitchController(
 
     /** One atomic pair, published by the switch owner, never combine(registry, generation). */
     val botStorageEndpoint: StateFlow<BotStorageEndpoint?> = storageOwner.asStateFlow()
+    val storageEndpoint: StateFlow<StorageEndpoint?> = botStorageEndpoint
 
     /** Called before the production route follower starts. Serialized with every switch. */
     suspend fun initializeStorageEndpoint() = switching.withLock {

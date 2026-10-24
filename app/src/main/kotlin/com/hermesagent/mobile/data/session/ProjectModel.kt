@@ -17,6 +17,8 @@ data class ProjectSummary(
     val sessionCount: Int = 0,
     val lastActiveAtMillis: Long = 0,
     val previewSessions: List<SessionSummary> = emptyList(),
+    val color: String? = null,
+    val icon: String? = null,
 )
 
 /** Backend-authoritative project catalog plus hydrated project memberships. */

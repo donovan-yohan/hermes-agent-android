@@ -210,6 +210,28 @@ enum class HermesIcon(val glyph: String) {
      * `docs/parity/transcript-selection-copy.md`.
      */
     Unmute("\uEB75"),
+
+    // Curated project-appearance.tsx names at Desktop 41dfcf2c; Codicons 0.0.45.
+    FolderLibrary("\uEBDF"),
+    Rocket("\uEB44"),
+    Beaker("\uEA79"),
+    Flame("\uEAF2"),
+    StarFull("\uEB59"),
+    Heart("\uEB05"),
+    Zap("\uEA86"),
+    Target("\uEBF8"),
+    Lightbulb("\uEA61"),
+    DeviceMobile("\uEADB"),
+    Dashboard("\uEACD"),
+    Broadcast("\uEAAD"),
+    Package("\uEB29"),
+    Book("\uEAA4"),
+    Bug("\uEAAF"),
+    Shield("\uEB53"),
+    Key("\uEB11"),
+    Gift("\uEAF9"),
+    Telescope("\uEB68"),
+    NewFolder("\uEA80"),
 }
 
 /**

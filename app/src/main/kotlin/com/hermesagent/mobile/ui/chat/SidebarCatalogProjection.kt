@@ -23,6 +23,8 @@ internal class SidebarCatalogProjection {
     private var query: String? = null
     private var locale: Locale? = null
     private var result: Result? = null
+    private var hiddenIds: Set<String> = emptySet()
+    private var hiddenReady = true
 
     class Result(
         val selectedProject: ProjectSummary?,
@@ -31,15 +33,17 @@ internal class SidebarCatalogProjection {
     )
 
     fun derive(state: SessionCacheState, endpoint: Long, scope: ProfileScope, projectId: String?,
-        query: String, locale: Locale = Locale.getDefault()): Result {
+        query: String, locale: Locale = Locale.getDefault(), hiddenIds: Set<String> = emptySet(), hiddenReady: Boolean = true): Result {
         val requestedCatalog = state.projectsForScope(scope.sessionProfileParam)
         result?.let {
             if (sessions === state.sessions && catalog === requestedCatalog && this.endpoint == endpoint &&
-                this.scope == scope && this.projectId == projectId && this.query == query && this.locale == locale
+                this.scope == scope && this.projectId == projectId && this.query == query && this.locale == locale &&
+                this.hiddenIds == hiddenIds && this.hiddenReady == hiddenReady
             ) return it
         }
         val showsCatalog = projectProfileScopeOf(scope).showsCatalog
         val selected = projectId?.takeIf { showsCatalog }?.let(requestedCatalog.projects::get)
+            ?.takeUnless { it.isAuto && (!hiddenReady || it.id in hiddenIds) }
         // An omitted route can serve a named launch profile. Its project reply
         // already scopes membership; never erase the producer's concrete owner.
         val omittedRoute = scope.sessionProfileParam == null
@@ -54,7 +58,7 @@ internal class SidebarCatalogProjection {
             if (selected != null && omittedRoute) ALL_PROFILES else scope.key,
         )
         val projects = if (selected == null && showsCatalog) {
-            sortProjectsForOverview(requestedCatalog.projects.values, requestedCatalog.activeProjectId, locale)
+            sortProjectsForOverview(requestedCatalog.projects.values.filterNot { it.isAuto && (!hiddenReady || it.id in hiddenIds) }, requestedCatalog.activeProjectId, locale)
                 .map { project ->
                     project.copy(previewSessions = filterSessionsByProfileScope(
                         project.previewSessions.mapNotNull { preview ->
@@ -77,6 +81,8 @@ internal class SidebarCatalogProjection {
             this.projectId = projectId
             this.query = query
             this.locale = locale
+            this.hiddenIds = hiddenIds
+            this.hiddenReady = hiddenReady
             result = it
         }
     }

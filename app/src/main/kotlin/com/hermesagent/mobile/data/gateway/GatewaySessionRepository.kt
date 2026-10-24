@@ -192,6 +192,7 @@ interface GatewaySessionRepository {
      * into the `profile` parameter the session RPCs accept.
      */
     fun setProfileRouting(routing: ProfileRouting) = Unit
+    fun projectEditor(project: ProjectSummary): ProjectEditor? = null
     suspend fun refreshProjects() = Unit
     suspend fun openProject(projectId: String) = Unit
     suspend fun createProject(name: String, folderPath: String): ProjectCreateOutcome =
@@ -2166,6 +2167,94 @@ internal class LiveGatewaySessionRepository(
             gitBranch = branchByDurableId[row.id] ?: row.gitBranch,
             worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath,
         )
+
+    private val retiredProjectEditors = mutableSetOf<Triple<Long, String?, String>>()
+
+    override fun projectEditor(project: ProjectSummary): ProjectEditor? {
+        if (project.isHome) return null
+        val connection = runCatching { connectionSnapshot() }.getOrNull() ?: return null
+        val owner = projectScopeSnapshot(connection)
+        if (cache.state.value.projectsForScope(owner.profile).projects[project.id] != project) return null
+        val key = Triple(connection.generation, owner.profile, project.id)
+        return object : ProjectEditor {
+            override fun isCurrent(): Boolean = synchronized(stateLock) {
+                key !in retiredProjectEditors && isCurrentProject(connection, owner) && project.id in cache.state.value.projectsForScope(owner.profile).projects
+            }
+            override suspend fun execute(operation: ProjectOperation): ProjectEditOutcome = execute(operation) { true }
+            override suspend fun execute(operation: ProjectOperation, isSurfaceCurrent: () -> Boolean): ProjectEditOutcome = projectMutex.withLock {
+                fun admitted() = isCurrent() && isSurfaceCurrent()
+                check(admitted()) { "Reopen project actions." }
+                require(!project.isAuto || operation is ProjectOperation.Color || operation is ProjectOperation.Icon)
+                val adopt = project.isAuto
+                val method = if (adopt) "projects.create" else when (operation) {
+                    is ProjectOperation.Rename, is ProjectOperation.Color, is ProjectOperation.Icon -> "projects.update"
+                    is ProjectOperation.AddFolder -> "projects.add_folder"
+                    ProjectOperation.SetActive -> "projects.set_active"
+                    ProjectOperation.Delete -> "projects.delete"
+                }
+                val params = buildJsonObject {
+                    if (adopt) {
+                        val path = requireNotNull(project.path).also { require(it.isNotBlank()) }
+                        put("name", JsonPrimitive(project.label))
+                        put("folders", JsonArray(listOf(JsonPrimitive(path))))
+                        put("primary_path", JsonPrimitive(path))
+                        put("use", JsonPrimitive(false))
+                        val color = if (operation is ProjectOperation.Color) operation.value else project.color
+                        val icon = if (operation is ProjectOperation.Icon) operation.value else project.icon
+                        color?.let { put("color", JsonPrimitive(it)) }
+                        icon?.let { put("icon", JsonPrimitive(it)) }
+                    } else {
+                        put("id", JsonPrimitive(project.id))
+                        when (operation) {
+                            is ProjectOperation.Rename -> put("name", JsonPrimitive(operation.name.trim().also { require(it.isNotEmpty()) }))
+                            is ProjectOperation.Color -> put("color", JsonPrimitive(operation.value ?: ""))
+                            is ProjectOperation.Icon -> put("icon", JsonPrimitive(operation.value ?: ""))
+                            is ProjectOperation.AddFolder -> {
+                                require(operation.path.isNotBlank())
+                                put("path", JsonPrimitive(operation.path))
+                                operation.label?.let { put("label", JsonPrimitive(it)) }
+                                put("is_primary", JsonPrimitive(operation.isPrimary))
+                            }
+                            else -> Unit
+                        }
+                    }
+                    owner.profile?.let { put("profile", JsonPrimitive(it)) }
+                }
+                val rpc = connection.client as? EndpointDispatchingGatewayRpcClient ?: error("Reconnect to edit projects.")
+                val lease = endpointDispatchFence.leaseAt(connection.endpointGeneration, ::admitted) ?: error("Reopen project actions.")
+                val response = rpc.requestAtEndpointDispatch(method, params) { send ->
+                    endpointDispatchFence.dispatchIfCurrent(lease, ::admitted) {
+                        synchronized(stateLock) { admitted() && send() }
+                    }
+                }
+                // Retire every handle to an adopted/deleted node before any fallible readback.
+                if (adopt || operation == ProjectOperation.Delete) synchronized(stateLock) { retiredProjectEditors += key }
+                val resultId = if (adopt) (response as? JsonObject)?.get("project")?.let { it as? JsonObject }?.string("id")
+                    ?: project.id else project.id
+                fun ownsReadback() = synchronized(stateLock) { isCurrentProject(connection, owner) }
+                var refreshed = false
+                if (ownsReadback()) {
+                    try {
+                        val tree = rpc.requestAtEndpointDispatch("projects.tree", buildJsonObject {
+                            put("preview_limit", JsonPrimitive(PROJECT_PREVIEW_LIMIT))
+                            owner.profile?.let { put("profile", JsonPrimitive(it)) }
+                        }) { send -> endpointDispatchFence.dispatchIfCurrent(lease, ::ownsReadback) {
+                            synchronized(stateLock) { ownsReadback() && send() }
+                        } }
+                        val overview = parseProjectOverview(tree, clock())
+                        synchronized(stateLock) {
+                            ensureCurrentProject(connection, owner)
+                            cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(owner.profile) },
+                                overview.activeProjectId, authoritativeSessionProfiles = true)
+                            refreshed = true
+                        }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { /* The write was accepted. Never ask the caller to replay it. */ }
+                }
+                ProjectEditOutcome(resultId, refreshed, ownsReadback())
+            }
+        }
+    }
 
     override suspend fun refreshProjects() {
         val connection = connectionSnapshot()
@@ -7938,6 +8027,8 @@ private fun parseProject(root: JsonObject, nowMillis: Long): ProjectSummary {
         sessionCount = root.primitive("sessionCount")?.toIntOrNull() ?: previews.size,
         lastActiveAtMillis = root.primitive("lastActive")?.epochMillisOrNull() ?: 0,
         previewSessions = previews,
+        color = root.string("color"),
+        icon = root.string("icon"),
     )
 }
 
