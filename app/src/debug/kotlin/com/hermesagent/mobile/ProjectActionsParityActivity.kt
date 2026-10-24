@@ -101,7 +101,10 @@ internal class ProjectActionsFixtureRpc : EndpointDispatchingGatewayRpcClient {
         requests += method to params
         fun text(key: String) = params[key]?.jsonPrimitive?.contentOrNull
         val id = text("id")
-        if (method in setOf("projects.update", "projects.add_folder", "projects.set_active", "projects.delete", "projects.create")) check(!failWrites) { "Synthetic refusal" }
+        if (failWrites && method in setOf("projects.update", "projects.add_folder", "projects.set_active", "projects.delete", "projects.create")) {
+            // Model a definite no-write refusal, not a generic error that could follow a commit.
+            throw GatewayRpcError(JSON_RPC_METHOD_NOT_FOUND, "Synthetic missing mutation method")
+        }
         when (method) {
             "projects.tree" -> { check(!failReadback); return buildJsonObject {
                 put("projects", JsonArray(rows.values.map(::node))); put("active_id", active?.let(::JsonPrimitive) ?: JsonNull)
