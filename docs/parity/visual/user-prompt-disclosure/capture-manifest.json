@@ -1,0 +1,524 @@
+{
+  "baseline": "072df3eec91ca75624f2dea67122cd346ff0e1a9",
+  "branch": "fix/bot-user-message-collapse",
+  "dirtySourceInputs": [
+    {
+      "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatScreen.kt",
+      "originalSha256": "064dfedd57429ecaf186cf01b507aa00906574fdabc4bd39d8294efc92bb987e",
+      "finalSha256": "c3a94f4538997e571ab0782cc670fa2ed00464dea391db1ed5495908a4885e4f",
+      "bytes": 80082
+    },
+    {
+      "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/FinalUserPrompt.kt",
+      "originalSha256": "41b48b892fc0b822f1fb57f40af84ae0b25718ffaaf2bc75e308c0c25699f80b",
+      "finalSha256": "ee89b67a458854f32b2fe75f86a0c552781950eb44ad89694bc4eb0c6c821a05",
+      "bytes": 12136
+    },
+    {
+      "path": "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/Transcript.kt",
+      "originalSha256": "2e5f60d493a5ecb9146e6dbe6ac5204a16ccc0a0aaefa56708382aee8c4b3982",
+      "finalSha256": "b81d80f7694d959dc4895b30b182c772e0df83579aee1f117fca1cc1dc570442",
+      "bytes": 103912
+    },
+    {
+      "path": "app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsBotChatJourneyTest.kt",
+      "originalSha256": "0c10dc93e2f018073471590fefb352510da04006a17d2775da04c83904d9ed49",
+      "finalSha256": "628550d616ac188e61b3ea1bccaeeb590120ce740ac373c44db477b5750a8905",
+      "bytes": 13913
+    },
+    {
+      "path": "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/FinalUserPromptHeightTest.kt",
+      "originalSha256": "1cad5e25ea08ea5f4d1c9eb56dd8a9cd68c7d351953984dec0b1c33269661e59",
+      "finalSha256": "759d826423ee3016bc7ad92382636fb64d67d49f95f58703a1efb1ec241117c8",
+      "bytes": 23734
+    },
+    {
+      "path": "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/PromptBubbleDecorationRenderTest.kt",
+      "originalSha256": "f95222e99fa988687bd3fc44ee8ab895e8ef3c1b743ad11f54e053813a6762e3",
+      "finalSha256": "32e13363232ce7a3e14ba8a219f6ce2bd51c934a6868e2f4fadb287afbbcfba5",
+      "bytes": 10406
+    },
+    {
+      "path": "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/PromptCollapseTest.kt",
+      "originalSha256": "d503eea741fee18f189c590dcef6c1d9714d12c52a5db284ddb3cf00acdcf11f",
+      "finalSha256": "bde272bdbb79e88c21009fc898cda4b0515e352f95806ea40551c7340217485c",
+      "bytes": 23010
+    },
+    {
+      "path": "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/UserPromptDisclosureTest.kt",
+      "originalSha256": null,
+      "finalSha256": "18d5571c195ae01a61c059721e5ddf5548e6c58dee28075f8ed07c78cbbdbbe3",
+      "bytes": 17047
+    },
+    {
+      "path": "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/chat/TranscriptSelectionTest.kt",
+      "originalSha256": "d405a061f8bf4c7af447f1637e953e3a82bfa155d546a46a20ecf3cc3fbc34b0",
+      "finalSha256": "c20c74639eaf2b3ab703b3f54a3502e48d86fe25418662ce8cc9c04a102afca9",
+      "bytes": 32098
+    }
+  ],
+  "renderer": "production Compose on Robolectric API 34 native graphics; synchronous decorView.draw(Canvas(bitmap))",
+  "captures": [
+    {
+      "path": "android/bot-users-dark-collapsed.png",
+      "sha256": "30ce5079501296942db169c6698fda9b24f509cd92a5087eaf30fd7d95bcb3c1"
+    },
+    {
+      "path": "android/bot-users-dark-expanded.png",
+      "sha256": "e264db5a7ff0a4deb55c7c65dfb6925d5a9652d5cee94602f8bde52585388249"
+    },
+    {
+      "path": "android/bot-users-light-collapsed.png",
+      "sha256": "e790ed36b6c15b62ce3229fc7daca4c0372e658f098e29435bf36758da841e14"
+    },
+    {
+      "path": "android/bot-users-light-expanded.png",
+      "sha256": "e5ee3d5b7b2370f734bb1e0d26645f3a65a187dd1c459f06c1c09c1836fa4bae"
+    },
+    {
+      "path": "android/ordinary-users-dark-collapsed.png",
+      "sha256": "b74c19f887b44e6a95f9598d783d9813bbc961e5b05dcfbece030722a23335c6"
+    },
+    {
+      "path": "android/ordinary-users-dark-expanded.png",
+      "sha256": "8bd771b422ac25b3b20213b474d36abbc32a7416d0dbe6a645932440593fbc5f"
+    },
+    {
+      "path": "android/ordinary-users-dark-middle.png",
+      "sha256": "cde6ce8e879c5ce45cf121b9d390c107a92d2e1c239073b1c56233f36808da58"
+    },
+    {
+      "path": "android/ordinary-users-dark-sticky.png",
+      "sha256": "64e0da1db4c7b882c19567afc581d9488d5fdaca38f4535b39a188025466d3a2"
+    },
+    {
+      "path": "android/ordinary-users-light-collapsed.png",
+      "sha256": "cc6deb7816cfdc6e02936edad2ed957e11d97b906aad8cd96dfaf5df9bd63581"
+    },
+    {
+      "path": "android/ordinary-users-light-expanded.png",
+      "sha256": "1e299ab603f53501ec48598d8081ca7ebfbcb19d94d1963cdb1fd7153299160d"
+    },
+    {
+      "path": "android/ordinary-users-light-middle.png",
+      "sha256": "51a70c5d8867b4809d62308a6ddb77787f6bb650b8bb22aa845e904f4e8aa090"
+    },
+    {
+      "path": "android/ordinary-users-light-sticky.png",
+      "sha256": "dab0c5c99f0a264fb83c1de89db8a6e69a8e80a2a72f63fd411ba32f5eb9b745"
+    },
+    {
+      "path": "android/prompt-collapsed.png",
+      "sha256": "ca6ed9a75637dda9c8891740586453d1e91842a983daf2d785d0c08cf85b6296"
+    },
+    {
+      "path": "android/prompt-expanded.png",
+      "sha256": "5e551bcd6aa98a1b6e2246da1ad15715ab2ff2edf53ef8d7aa870554d088b948"
+    },
+    {
+      "path": "android/prompt-three-line-ink.png",
+      "sha256": "43ba8011e463c4d06c95f9496ab39239e24aa5f1996634d0237743e300f4b23b"
+    }
+  ],
+  "desktopFallback": {
+    "pin": "36922ad064d65dcf25f8f48df81e1ccf9a55de67",
+    "manifest": "../chat-readability/desktop/capture-manifest.json",
+    "currentSourceInspectionOnlyPin": "41dfcf2c1bd7146d4ad46aea08b7dd007900602e",
+    "preservedPacketFiles": [
+      {
+        "path": "docs/parity/visual/chat-readability/README.md",
+        "sha256": "ab4d25e03faf2925e303245ac0e78ee15e76bf47094b64dc63ee266ff6532ad4"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/prompt-collapsed.png",
+        "sha256": "ca6ed9a75637dda9c8891740586453d1e91842a983daf2d785d0c08cf85b6296"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/prompt-expanded.png",
+        "sha256": "5e551bcd6aa98a1b6e2246da1ad15715ab2ff2edf53ef8d7aa870554d088b948"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/prompt-reply-gap.png",
+        "sha256": "12da70a7b0498599e407b2e1e3ca054acf79631e9395b0b28b9d2899dfa5328c"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/prompt-three-line-ink.png",
+        "sha256": "43ba8011e463c4d06c95f9496ab39239e24aa5f1996634d0237743e300f4b23b"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/source-manifest.json",
+        "sha256": "f2b6c8f5cf154c916bbd82da049c59292982746f804fe9263c1cb06bbaef41ef"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/thinking-before.png",
+        "sha256": "cabff13a578ec1f6852db1ec1a351d32517c54beb2d05e298dac890a34713194"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/thinking-fixed.png",
+        "sha256": "d75967258563ae47c5c0db52b8098347699056b2e5480f09a82ccee9789a4084"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/android/transcript-links.png",
+        "sha256": "879ced588c0b3be542f04f89ce5d5baad73a84c44621581475daaf4c5d4aed88"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/desktop/capture-manifest.json",
+        "sha256": "6d0c6b76665a3ff0910c6eb416f0d9a182bfb0de65ae24a0568a3e948f251e12"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/desktop/capture-only.patch",
+        "sha256": "d39babcc9634b0953b4e64c7412c9a157c29154de51f30e0ed7d4a62fb73dfa5"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/desktop/desktop-markdown-links.png",
+        "sha256": "f89254f8c14a7c964848a0a46263ec959eeee12502b23c8beed6f738d389d791"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/desktop/desktop-production-light.png",
+        "sha256": "04e2ca013eaa208da696742a065b8144b9b143bb3906d6dcd8417a227252dc81"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/desktop/verification.json",
+        "sha256": "2914d8236eda9a0f15d6b4c2a5cc290b356a64ad3faf1376e39e5d70b8fdb13e"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/hashes.json",
+        "sha256": "0172491b5d76dbc11ea572684dfff0bb394420f74d8d7fc15d15486688c35422"
+      },
+      {
+        "path": "docs/parity/visual/chat-readability/report.html",
+        "sha256": "ee1648c70ab0d04132f28ab22d351adccd5919568c0b12ecb38316d9e09686cf"
+      }
+    ]
+  },
+  "commandTemplate": "NATIVE_UI_CAPTURE_DIR=<scratch-captures> ./gradlew -Dorg.gradle.java.home=\"$JAVA_HOME\" :app:testDebugUnitTest --tests '*Prompt*Test*' --tests '*FinalUser*' --tests '*TranscriptSelectionTest*' --tests '*BotsBotChatJourneyTest*' --tests '*TranscriptFollowTest*' --tests '*ShowEarlierJourneyTest*' --tests '*CachedProjectPreviewJourneyTest*' --tests '*Conversation*' --no-daemon --console=plain",
+  "commandTemplatePrerequisites": "Configure JAVA_HOME for JDK 17 and ANDROID_HOME for the installed Android SDK; choose a private scratch capture directory. Machine-specific executed commands are retained privately. Task, flags and test selection are unchanged in these public reproduction templates.",
+  "commandExitCode": 0,
+  "focusedGreen": {
+    "totals": {
+      "tests": 153,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "suites": [
+      {
+        "suite": "com.hermesagent.mobile.BotAvatarFixtureSurfaceTest",
+        "tests": 0,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.data.gateway.VaultPromptTest",
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.data.notifications.AndroidBotMessageSurfaceTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.data.notifications.MessageNotificationsTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.data.notifications.VaultPromptNotificationTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.plugins.bots.BotsBotChatJourneyTest",
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.FinalUserPromptHeightTest",
+        "tests": 19,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.PromptBubbleDecorationRenderTest",
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.PromptCollapseTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.PromptPushOffRenderTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.PromptReplyGapTest",
+        "tests": 5,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.ShowEarlierJourneyTest",
+        "tests": 13,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.TranscriptFollowTest",
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.UserPromptDisclosureTest",
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.VoiceConversationJourneyTest",
+        "tests": 2,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.chat.CachedProjectPreviewJourneyTest",
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.chat.StickyPromptMaskInkTest",
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.chat.TranscriptSelectionTest",
+        "tests": 24,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      {
+        "suite": "com.hermesagent.mobile.ui.chat.VaultPromptDialogTest",
+        "tests": 8,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    ],
+    "failures": []
+  },
+  "causalFinalBytes": {
+    "testPath": "app/src/testDebug/kotlin/com/hermesagent/mobile/plugins/bots/BotsBotChatJourneyTest.kt",
+    "sha256": "628550d616ac188e61b3ea1bccaeeb590120ce740ac373c44db477b5750a8905",
+    "identicalBaselineBytes": true,
+    "baselineProduction": "072df3eec91ca75624f2dea67122cd346ff0e1a9",
+    "red": {
+      "totals": {
+        "tests": 4,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "suite": "com.hermesagent.mobile.BotAvatarFixtureSurfaceTest",
+          "tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.plugins.bots.BotsBotChatJourneyTest",
+          "tests": 4,
+          "failures": 2,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "failures": [
+        {
+          "suite": "com.hermesagent.mobile.plugins.bots.BotsBotChatJourneyTest",
+          "test": "canonical Bot Chat light route collapses historical and current wrapping user bubbles",
+          "kind": "failure",
+          "message": "java.lang.AssertionError: every mounted Bot user body must default to three rendered lines: expected/actual=[(79.0, 351.0), (79.0, 351.0)]"
+        },
+        {
+          "suite": "com.hermesagent.mobile.plugins.bots.BotsBotChatJourneyTest",
+          "test": "canonical Bot Chat collapses consecutive historical and current wrapping user bubbles",
+          "kind": "failure",
+          "message": "java.lang.AssertionError: every mounted Bot user body must default to three rendered lines: expected/actual=[(79.0, 351.0), (79.0, 351.0)]"
+        }
+      ]
+    },
+    "redExitCode": 1,
+    "redCommandTemplate": "./gradlew -Dorg.gradle.java.home=\"$JAVA_HOME\" :app:testDebugUnitTest --tests '*BotsBotChatJourneyTest*' --no-daemon --console=plain",
+    "baselineControls": {
+      "totals": {
+        "tests": 130,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      },
+      "suites": [
+        {
+          "suite": "com.hermesagent.mobile.data.gateway.VaultPromptTest",
+          "tests": 16,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.data.notifications.AndroidBotMessageSurfaceTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.data.notifications.MessageNotificationsTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.data.notifications.VaultPromptNotificationTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.plugins.bots.BotsBotChatJourneyTest",
+          "tests": 0,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.FinalUserPromptHeightTest",
+          "tests": 19,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.PromptBubbleDecorationRenderTest",
+          "tests": 3,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.PromptCollapseTest",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.PromptPushOffRenderTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.PromptReplyGapTest",
+          "tests": 5,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.ShowEarlierJourneyTest",
+          "tests": 13,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.TranscriptFollowTest",
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.VoiceConversationJourneyTest",
+          "tests": 2,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.chat.CachedProjectPreviewJourneyTest",
+          "tests": 7,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.chat.StickyPromptMaskInkTest",
+          "tests": 1,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.chat.TranscriptSelectionTest",
+          "tests": 23,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        {
+          "suite": "com.hermesagent.mobile.ui.chat.VaultPromptDialogTest",
+          "tests": 8,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        }
+      ],
+      "failures": []
+    }
+  },
+  "limits": [
+    "Synthetic correlated RPC wire, no live Gateway/accounts.",
+    "Ordinary captures mount production ChatScreen with synthetic ChatUiState.",
+    "No device/emulator/ADB/IME/TalkBack acceptance; physical paired acceptance remains #72.",
+    "No fresh Desktop render; stored historical production-component fallback.",
+    "No full check/package/assemble/publication."
+  ]
+}

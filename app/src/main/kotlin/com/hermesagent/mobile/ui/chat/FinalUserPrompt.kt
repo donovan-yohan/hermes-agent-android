@@ -51,21 +51,72 @@ import com.hermesagent.mobile.ui.common.HermesIcon
 import com.hermesagent.mobile.ui.common.HermesIconButton
 import kotlinx.coroutines.launch
 
-/** UI-only disclosure shared by the source bubble and its sticky owner. */
-internal class FinalPromptDisclosure(val messageId: String?, val expanded: MutableState<Boolean>) {
-    var bounds: Rect? = null
+/** One message's UI-only state; source and sticky mounts share this object. */
+internal class FinalPromptDisclosure(val messageId: String?, val expanded: MutableState<Boolean>)
+
+/**
+ * One mounted endpoint/session owns disclosure. Durable user-row identity survives re-projection;
+ * rendering identity is a tagged fallback, never text, chronology or a list index.
+ * Only the same rendering id may enrich its previous fallback into a durable row.
+ */
+internal class PromptDisclosures {
+    private val entries = linkedMapOf<String, FinalPromptDisclosure>()
+    private val renderKeys = linkedMapOf<String, String>()
+    private data class Mount(val entry: FinalPromptDisclosure, val bounds: Rect)
+    private val mounts = mutableMapOf<Any, Mount>()
     var rootOffset = Offset.Zero
+
+    fun entry(turn: com.hermesagent.mobile.data.session.UserTurn): FinalPromptDisclosure {
+        val key = turn.rowId?.let { "row:${it.value}" } ?: "render:${turn.id}"
+        val previous = renderKeys.put(turn.id, key)
+        if (previous == "render:${turn.id}" && previous != key && key !in entries) {
+            entries.remove(previous)?.let { entries[key] = it }
+        }
+        return entries.getOrPut(key) { FinalPromptDisclosure(turn.id, mutableStateOf(false)) }
+    }
+
+    fun register(token: Any, entry: FinalPromptDisclosure, bounds: Rect) {
+        if (bounds.width > 0 && bounds.height > 0) mounts[token] = Mount(entry, bounds)
+        else mounts.remove(token)
+    }
+    fun unregister(token: Any) { mounts.remove(token) }
+    fun expandedMounts(): Map<Any, FinalPromptDisclosure> = mounts
+        .filterValues { it.entry.expanded.value }.mapValues { it.value.entry }
+    fun collapseOutside(snapshot: Map<Any, FinalPromptDisclosure>, down: Offset, up: Offset) {
+        snapshot.values.toSet().forEach { entry ->
+            // A retiring source cannot speak for a newly mounted sticky owner (or vice versa).
+            val current = snapshot.filter { (token, captured) -> captured === entry && mounts[token]?.entry === entry }
+                .keys.mapNotNull { mounts[it]?.bounds }
+            if (current.isNotEmpty() && current.none { it.contains(down) || it.contains(up) }) entry.expanded.value = false
+        }
+    }
+
+    companion object {
+        val Saver = androidx.compose.runtime.saveable.mapSaver(
+            save = { owner: PromptDisclosures -> mapOf(
+                "entries" to owner.entries.flatMap { (key, entry) -> listOf(key, entry.expanded.value.toString()) },
+                "renders" to owner.renderKeys.flatMap { (id, key) -> listOf(id, key) },
+            ) },
+            restore = { saved -> PromptDisclosures().apply {
+                (saved["entries"] as List<*>).chunked(2).forEach { (key, expanded) ->
+                    entries[key as String] = FinalPromptDisclosure(null, mutableStateOf(expanded == "true"))
+                }
+                (saved["renders"] as List<*>).chunked(2).forEach { (id, key) -> renderKeys[id as String] = key as String }
+            } },
+        )
+    }
 }
 
+internal val LocalPromptDisclosures = staticCompositionLocalOf<PromptDisclosures?> { null }
 internal val LocalFinalPromptDisclosure = staticCompositionLocalOf<FinalPromptDisclosure?> { null }
 
-/** Observe completed taps, including consumed child taps, but never consume or classify drags as taps. */
-internal fun Modifier.collapsePromptOnOutsideTap(disclosure: FinalPromptDisclosure): Modifier =
-    onGloballyPositioned { disclosure.rootOffset = it.positionInRoot() }
-        .pointerInput(disclosure) {
+/** Observe completed taps without consuming composer, selection or scrolling gestures. */
+internal fun Modifier.collapsePromptOnOutsideTap(disclosures: PromptDisclosures): Modifier =
+    onGloballyPositioned { disclosures.rootOffset = it.positionInRoot() }
+        .pointerInput(disclosures) {
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                val wasExpanded = disclosure.expanded.value
+                val expandedAtDown = disclosures.expandedMounts()
                 var moved = false
                 var up = down.position
                 var upTime = down.uptimeMillis
@@ -73,21 +124,18 @@ internal fun Modifier.collapsePromptOnOutsideTap(disclosure: FinalPromptDisclosu
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     if (event.changes.size != 1) moved = true
                     event.changes.forEach { change ->
-                        if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
+                        if (change.id != down.id || (change.position - down.position).getDistance() > viewConfiguration.touchSlop) moved = true
                         up = change.position
                         upTime = change.uptimeMillis
                     }
                 } while (event.changes.any { it.pressed })
-                val bounds = disclosure.bounds
-                if (wasExpanded && !moved && upTime - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis && bounds != null &&
-                    !bounds.contains(down.position + disclosure.rootOffset) &&
-                    !bounds.contains(up + disclosure.rootOffset)) {
-                    disclosure.expanded.value = false
+                if (!moved && upTime - down.uptimeMillis < viewConfiguration.longPressTimeoutMillis) {
+                    disclosures.collapseOutside(expandedAtDown, down.position + disclosures.rootOffset, up + disclosures.rootOffset)
                 }
             }
         }
 
-/** Only the sticky copy clips; the selectable source stays complete in the transcript. */
+/** Three rendered lines by default; expansion is selectable inline and bounded only in chrome. */
 @Composable
 internal fun FinalUserPromptBubble(
     body: String,
@@ -96,15 +144,21 @@ internal fun FinalUserPromptBubble(
     hidden: Boolean = false,
     onReturn: (() -> Unit)? = null,
     onScrollTranscript: ((Float) -> Unit)? = null,
+    disclosure: FinalPromptDisclosure? = LocalFinalPromptDisclosure.current,
 ) {
-    val disclosure = LocalFinalPromptDisclosure.current ?: return
+    val disclosure = disclosure ?: return
+    val owner = LocalPromptDisclosures.current
+    val mountToken = remember(disclosure, hidden) { Any() }
+    androidx.compose.runtime.DisposableEffect(owner, mountToken, hidden) {
+        onDispose { owner?.unregister(mountToken) }
+    }
     val pinned = onReturn != null
-    val expanded = pinned && disclosure.expanded.value
+    val expanded = disclosure.expanded.value
     val density = LocalDensity.current
     val textStyle = HermesTheme.type.body
     val textMeasurer = rememberTextMeasurer()
     var collapsedLayout by remember(body, density, textStyle) { mutableStateOf<TextLayoutResult?>(null) }
-    val overflows = pinned && collapsedLayout?.didOverflowHeight == true
+    val overflows = collapsedLayout?.didOverflowHeight == true
     val fill = HermesTheme.tokens.userBubble
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -113,11 +167,11 @@ internal fun FinalUserPromptBubble(
         Modifier.heightIn(min = HermesTheme.spacing.touchTarget).widthIn(min = HermesTheme.spacing.touchTarget)
             .testTag(if (onReturn != null) "Pinned final prompt" else "Inline final prompt")
             .then(if (hidden) Modifier else Modifier
-            .onGloballyPositioned { disclosure.bounds = it.boundsInRoot() }
+            .onGloballyPositioned { owner?.register(mountToken, disclosure, it.boundsInRoot()) }
             .then(if (overflows || onReturn != null) Modifier.clickable(
                 role = Role.Button,
                 onClickLabel = if (overflows) { if (expanded) "Collapse prompt" else "Expand prompt" } else "Return to prompt",
-            ) { if (overflows) disclosure.expanded.value = !expanded else onReturn.invoke() } else Modifier)
+            ) { if (overflows) disclosure.expanded.value = !expanded else onReturn?.invoke() } else Modifier)
             .semantics(mergeDescendants = true) {
                 contentDescription = "You said: $body"
                 if (overflows) stateDescription = if (expanded) "Expanded" else "Collapsed"
@@ -135,22 +189,21 @@ internal fun FinalUserPromptBubble(
                     body = body,
                     contentDescription = null,
                     modifier = modifier.then(if (onReturn == null) Modifier.testTag("Final prompt body") else Modifier),
+                    // Selection belongs to the inline source; sticky chrome never selects.
                     selectable = !hidden && onReturn == null,
-                    maxLines = if (pinned && !expanded) 3 else Int.MAX_VALUE,
-                    textModifier = if (expanded) Modifier
+                    maxLines = if (!expanded) 3 else Int.MAX_VALUE,
+                    textModifier = if (pinned && expanded) Modifier
                         .heightIn(max = (viewportHeight * .8f).coerceAtLeast(1.dp))
                         .verticalScroll(scrollState) else Modifier,
                     onTextLayout = {
-                        if (pinned) {
-                            // Expanded owners can mount or reflow without ever laying out collapsed.
-                            // Measure the cap at the current text constraint, including return-control space.
-                            collapsedLayout = if (expanded) textMeasurer.measure(
-                                text = body,
-                                style = textStyle,
-                                maxLines = 3,
-                                constraints = Constraints(maxWidth = it.layoutInput.constraints.maxWidth),
-                            ) else it
-                        }
+                        // Expanded owners can remount or reflow without ever laying out collapsed.
+                        // Measure at this body's actual constraint, including return-control space.
+                        collapsedLayout = if (expanded) textMeasurer.measure(
+                            text = body,
+                            style = textStyle,
+                            maxLines = 3,
+                            constraints = Constraints(maxWidth = it.layoutInput.constraints.maxWidth),
+                        ) else it
                     },
                     overlay = {
                         if (overflows && !expanded && !hidden) {

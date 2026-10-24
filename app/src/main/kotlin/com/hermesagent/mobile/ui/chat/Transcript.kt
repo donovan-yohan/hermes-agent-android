@@ -565,33 +565,17 @@ private fun UserBubble(turn: UserTurn, imageLoader: GatewayImageLoader?, hideBod
         // Desktop parity: no body text, no bubble — the thumbnail stands alone.
         if (bodyText.isNotBlank()) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                if (LocalFinalPromptDisclosure.current?.messageId == turn.id) {
-                    FinalUserPromptBubble(
-                        body = bodyText,
-                        viewportHeight = viewportHeight,
-                        hidden = hideBody,
-                        modifier = Modifier.widthIn(max = 320.dp).then(
-                            if (hideBody) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
-                        ),
-                    )
-                } else {
-                // Selectable here, never in the pinned copy of the same
-                // prompt: the pin is chrome that owns a drag and a return tap.
-                UserTurnBubble(
+                val disclosure = LocalPromptDisclosures.current?.entry(turn)
+                    ?: remember(turn.id) { FinalPromptDisclosure(turn.id, mutableStateOf(false)) }
+                FinalUserPromptBubble(
                     body = bodyText,
-                    contentDescription = if (hideBody) null else "You said: $bodyText",
-                    modifier = Modifier
-                        .widthIn(max = 320.dp)
-                        .then(
-                            if (hideBody) {
-                                Modifier.alpha(0f).clearAndSetSemantics {}
-                            } else {
-                                Modifier
-                            },
-                        ),
-                    selectable = !hideBody,
+                    viewportHeight = viewportHeight,
+                    hidden = hideBody,
+                    disclosure = disclosure,
+                    modifier = Modifier.widthIn(max = 320.dp).then(
+                        if (hideBody) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier,
+                    ),
                 )
-                }
             }
         }
         imageRefs.forEach { ref ->

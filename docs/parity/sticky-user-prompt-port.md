@@ -1,5 +1,54 @@
 # Sticky current user prompt: Desktop-to-Android parity
 
+## All-user default disclosure (Related to #403)
+
+The requested default now applies to **every textual user bubble**, including
+canonical Bot Chats, ordinary chats, historical/current inline sources and their
+sticky owners. This section supersedes the older newest-sticky-only default below;
+its source pins, historical images and execution receipts remain unchanged.
+
+The mounted Bot Chat regression traverses the roster action, `BotsViewModel`,
+`BotsPluginRepository`, `ChatViewModel`, `LiveGatewaySessionRepository` and the real
+`ChatScreen`, with only its correlated RPC wire replaced by synthetic responses.
+Ordinary and Bot chats share the same `Transcript`/user-body rendering path. The
+root cause was a final-id singleton plus pinned-only cap/disclosure predicates;
+older users bypassed the wrapper, and even the final inline source was uncapped.
+
+One saveable UI-only owner is scoped to endpoint generation and mounted session.
+Entries use a tagged durable `UserTurn.rowId`, or a tagged render-id fallback;
+only the same render id can enrich a fallback with its newly supplied durable row.
+There is no text/time/index matching, model mutation or hydration inference.
+The scope key wraps only the owner allocation, not the drawer/editor/transcript
+shell. Each visible source/sticky mount registers its own disposable bounds token.
+Outside taps observe, never consume; drags, long presses and multi-touch do not
+collapse, and the opening tap cannot collapse the newly expanded message.
+
+Collapsed bodies use `maxLines = 3`, `TextOverflow.Clip`, actual overflow and a
+third-rendered-line-only fade. Short and exact-three-line bodies have no disclosure.
+Explicit inline expansion remains full-height and selectable with Copy; sticky
+expansion alone has the existing 80%-viewport inner scroll and is nonselectable.
+Return expands the captured source before resolving its current index and disarming
+follow. Any expanded historical/current source stays painted while partially visible.
+Measured push-off, reverse handoff, mask and intervening-replies cue remain covered.
+Attachment-only messages still have no body excerpt.
+
+Current Desktop source was inspected read-only at
+`41dfcf2c1bd7146d4ad46aea08b7dd007900602e`:
+`apps/desktop/src/components/assistant-ui/thread/user-message.tsx:356-405` measures
+the body, and `apps/desktop/src/styles.css:1888-1901` still applies a four-line CSS
+cap and soft mask. Its two-line comments are not the CSS contract. Existing Android
+labels remain `Expand prompt`, `Collapse prompt` and `Return to prompt`; no visible
+copy, action order, glyph or theme token was added. Desktop's generic `Expand` and
+`Collapse` are at `apps/desktop/src/i18n/en.ts:327,340` at that same pin; the longer
+Android spoken labels distinguish prompt actions on touch/accessibility surfaces.
+
+[All-user synthetic rendered packet](visual/user-prompt-disclosure/report.html)
+uses a stored Desktop reference at its original `36922ad064d65dcf25f8f48df81e1ccf9a55de67`
+pin beside new production-Compose native Robolectric dark/light window draws.
+The manifest identifies exact baseline plus dirty source/test hashes. This is
+source/native-JVM evidence, not a live Gateway, emulator, physical-device, IME or
+TalkBack acceptance. Physical paired acceptance remains pending: #72.
+
 ## Final-prompt viewport disclosure (native Mac slice)
 
 This additive scope was inspected in a disposable local export at
@@ -129,9 +178,14 @@ edge (`Transcript.kt:2295-2301`) where prose would leave exactly the
 | `styles.css:1568-1577` covers the sticky sliver with a `::before`, and `:1562-1565` offsets the bubble a pixel so the cover overlaps it | mobile-adaptation | The overlay's own `chatSurface` box is the cover, and it starts at the viewport's top edge | A Compose overlay is placed rather than offset by CSS sticky, so the sliver a `top:` creates never exists and there is no seam for the extra pixel to close; `StickyPromptMaskInkTest` reads both bands back in pixels |
 | `user-message.tsx:45` declares `data-glass-opaque` so a glass window cannot thin the mask (`styles.css:676-680`) | mobile-adaptation | No glass field exists, and `chatSurface` is the chrome seed on every theme and mode (`HermesTokens.kt:252`) | An Android window has no translucent desktop field behind it to fall through, and the token already resolves to the value that rule forces |
 | Final prompt clamp at `styles.css:1824-1833` @ `36922ad064d65dcf25f8f48df81e1ccf9a55de67` | mobile-adaptation | Newest sticky body uses three rendered lines with an overflow-only third-line fade, independent of keyboard height; original inline text stays full-height | Requested phone reading behavior; `FinalUserPromptHeightTest` covers measured lines, font scale, viewport changes, disclosure and single accessible ownership; physical acceptance pending #72. |
+| All user body default disclosure; current Desktop `user-message.tsx:356-405`, `styles.css:1888-1901` @ `41dfcf2c1bd7146d4ad46aea08b7dd007900602e` | mobile-adaptation | Every inline/sticky user body defaults to three rendered lines; explicit inline expansion is complete/selectable and historical/current state shares one scoped UI owner | Requested phone reading behavior, Related to #403; mounted canonical Bot Chat causal RED/GREEN plus ordinary source, handoff, selection, outside-tap and identity journeys; report below, physical acceptance pending #72. |
 | Desktop has no intervening-replies divider in sticky user handoff | mobile-adaptation | "Replies in between" appears when a previous pin collides with the next user message and actual assistant replies separate them | Requested phone chronology cue; `PromptReplyGapTest` asserts between-bubble placement and no cue for consecutive user messages |
 
 ## Visual report
+
+[All-user disclosure synthetic native report](visual/user-prompt-disclosure/report.html)
+adds dark/light mounted Bot Chat and ordinary inline/middle/sticky states without
+restamping or replacing any historical Desktop/Android image below.
 
 [Three-line prompt and handoff comparison](visual/chat-readability/report.html)
 contains pinned Desktop production components beside native Android window
