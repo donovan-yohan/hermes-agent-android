@@ -343,10 +343,15 @@ fun SessionList(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
-                    modifier = Modifier.weight(1f).combinedClickable(
-                        onClick = {},
-                        onLongClick = selectedProject?.takeUnless { it.isHome }?.let { project -> { openProjectActions(project) } },
-                        onLongClickLabel = "Actions",
+                    modifier = Modifier.weight(1f).then(
+                        selectedProject?.takeUnless { it.isHome }?.let { project ->
+                            Modifier.combinedClickable(
+                                onClick = { openProjectActions(project) },
+                                onClickLabel = "Actions",
+                                onLongClick = { openProjectActions(project) },
+                                onLongClickLabel = "Actions",
+                            )
+                        } ?: Modifier,
                     ).testTag("Project header"),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),

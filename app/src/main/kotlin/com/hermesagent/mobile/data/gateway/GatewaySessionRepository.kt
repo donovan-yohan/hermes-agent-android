@@ -2180,7 +2180,7 @@ internal class LiveGatewaySessionRepository(
     override fun projectEditor(project: ProjectSummary): ProjectEditor? {
         if (project.isHome) return null
         val connection = runCatching { connectionSnapshot() }.getOrNull() ?: return null
-        val owner = projectScopeSnapshot(connection)
+        val owner = runCatching { projectScopeSnapshot(connection) }.getOrNull() ?: return null
         if (cache.state.value.projectsForScope(owner.profile).projects[project.id] != project) return null
         val key = Triple(connection.generation, owner.profile, project.id)
         val incarnation = synchronized(stateLock) { projectEditorIncarnations.getOrPut(key) { ProjectEditorIncarnation() } }

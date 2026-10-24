@@ -104,7 +104,7 @@ internal fun ProjectActionsDialog(dialog: ProjectActionDialog, activeId: String?
                     LabelledField(label = "Label (optional)", value = label, onValueChange = { label = it }, placeholder = "Label")
                     TextButton(label = if (primary) "Primary folder ✓" else "Make primary folder", enabled = !dialog.busy, onClick = { primary = !primary })
                     TextButton(label = "Add folder", enabled = !dialog.busy && path.isNotBlank(), onClick = {
-                        actions.execute(token, ProjectOperation.AddFolder(path, label.takeIf { it.isNotBlank() }, primary))
+                        actions.execute(token, ProjectOperation.AddFolder(path.trim(), label.trim().takeIf { it.isNotBlank() }, primary))
                     })
                 }
                 ProjectActionPage.Delete -> {
