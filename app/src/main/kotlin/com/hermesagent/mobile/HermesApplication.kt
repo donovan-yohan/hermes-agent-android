@@ -356,6 +356,8 @@ class HermesApplication : Application(), NotificationCatchUpHost {
             scope = appScope,
             endpointDispatchFence = endpointDispatchFence,
             skinSourceScope = { preferences.activeScope.first() },
+            projectAdoptionStore = preferences,
+            projectStorageEndpoint = connectionSwitch.storageEndpoint,
         )
     }
 

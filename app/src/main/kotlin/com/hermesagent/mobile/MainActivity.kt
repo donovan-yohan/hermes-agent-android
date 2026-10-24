@@ -501,6 +501,8 @@ class MainActivity : ComponentActivity() {
                         chatViewModel::openProjectActions, chatViewModel::dismissProjectActions,
                         chatViewModel::projectActionPage, chatViewModel::executeProjectAction,
                         chatViewModel::hideProject, chatViewModel::restoreHiddenProject, chatViewModel::projectPath,
+                        chatViewModel::openProjectRecovery, chatViewModel::dismissProjectRecovery, chatViewModel::selectProjectRecovery,
+                        chatViewModel::refreshProjectRecovery, chatViewModel::reviewProjectRecovery, chatViewModel::allowProjectAttempt,
                     ),
                     onSelectSession = chatViewModel::selectSession,
                     onSelectProjectSession = chatViewModel::selectProjectSession,

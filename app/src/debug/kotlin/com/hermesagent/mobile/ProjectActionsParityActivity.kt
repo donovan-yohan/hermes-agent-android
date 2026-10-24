@@ -56,7 +56,9 @@ class ProjectActionsParityActivity : ComponentActivity() {
                     onCreateProject = model::createProject,
                     projectActions = ProjectActions(model::openProjectActions, model::dismissProjectActions,
                         model::projectActionPage, model::executeProjectAction, model::hideProject,
-                        model::restoreHiddenProject, model::projectPath),
+                        model::restoreHiddenProject, model::projectPath,
+                        model::openProjectRecovery, model::dismissProjectRecovery, model::selectProjectRecovery,
+                        model::refreshProjectRecovery, model::reviewProjectRecovery, model::allowProjectAttempt),
                 ), onOpenSettings = {}, modifier = Modifier.fillMaxSize().safeDrawingPadding())
             }
         }
@@ -81,6 +83,8 @@ internal class ProjectActionsFixtureRpc : EndpointDispatchingGatewayRpcClient {
     override val events = emptyFlow<GatewayEvent>()
     override fun close() = Unit
     val requests = mutableListOf<Pair<String, JsonObject>>()
+    var uncertainCreate = false
+    var failInventory = false
     var failWrites = false
     var failReadback = false
     private var active: String? = null
@@ -102,6 +106,16 @@ internal class ProjectActionsFixtureRpc : EndpointDispatchingGatewayRpcClient {
             "projects.tree" -> { check(!failReadback); return buildJsonObject {
                 put("projects", JsonArray(rows.values.map(::node))); put("active_id", active?.let(::JsonPrimitive) ?: JsonNull)
             } }
+            "projects.list" -> {
+                check(!failInventory)
+                return buildJsonObject { put("projects", JsonArray(rows.values.filter { !it.isAuto && !it.isHome }.map { row ->
+                    buildJsonObject {
+                        put("id", row.id); put("name", row.label); put("archived", false)
+                        put("primary_path", row.path?.let(::JsonPrimitive) ?: JsonNull)
+                        put("folders", JsonArray(listOfNotNull(row.path).map { buildJsonObject { put("path", it) } }))
+                    }
+                })) }
+            }
             "projects.project_sessions" -> return buildJsonObject { put("project", node(rows.getValue(text("project_id")!!))) }
             "projects.update" -> {
                 val row = rows.getValue(id!!)
@@ -113,6 +127,7 @@ internal class ProjectActionsFixtureRpc : EndpointDispatchingGatewayRpcClient {
             "projects.set_active" -> active = id
             "projects.delete" -> { rows.remove(id); if (active == id) active = null }
             "projects.create" -> {
+                check(!uncertainCreate) { "Synthetic lost acknowledgement" }
                 val path = text("primary_path")!!
                 rows.entries.removeAll { it.value.isAuto && it.value.path == path }
                 rows["synthetic-adopted"] = ProjectSummary("synthetic-adopted", text("name")!!, path, color = text("color"), icon = text("icon"))

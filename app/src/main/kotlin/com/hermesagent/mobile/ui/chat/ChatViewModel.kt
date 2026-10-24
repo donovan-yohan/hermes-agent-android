@@ -1189,6 +1189,7 @@ internal class ChatViewModel(
             combine(selectedProjectId, profileScope, cache.endpointGeneration, repository.connectionState) { _, _, _, _ -> Unit }
                 .collect {
                     if (projectManagement.value.dialog != null && !ownsProjectDialog()) dismissProjectActions()
+                    projectManagement.value.recovery?.token?.let { if (!ownsProjectRecovery(it)) dismissProjectRecovery(it) }
                 }
         }
         viewModelScope.launch {
@@ -2202,6 +2203,109 @@ internal class ChatViewModel(
         rehome(null)
     }
 
+    private var recoveryOwner: com.hermesagent.mobile.data.gateway.ProjectRecovery? = null
+    private var recoveryTicket: com.hermesagent.mobile.data.gateway.ProjectRecoveryTicket? = null
+    private var recoverySurface: () -> Boolean = { false }
+    private var recoveryNavigation = -1L
+    private fun ownsProjectRecovery(token: Long): Boolean = projectManagement.value.recovery?.token == token &&
+        recoverySurface() && recoveryNavigation == navigationGeneration && recoveryOwner?.isCurrent() == true
+
+    fun openProjectRecovery(isSurfaceCurrent: () -> Boolean, ownerToken: Long) {
+        val snapshot = hiddenProjectSnapshot.value
+        val endpoint = storageEndpoint.value ?: return
+        if (!isSurfaceCurrent() || ownerToken != snapshot.revision || snapshot.scope?.endpoint != endpoint.stableId ||
+            snapshot.scope?.profile != profileScope.value.sessionProfileParam || snapshot.generation != endpoint.generation ||
+            endpoint.generation != cache.endpointGeneration.value) return
+        val owner = repository.projectRecovery() ?: return
+        dismissProjectActions()
+        recoveryOwner = owner
+        recoveryTicket = null
+        recoverySurface = isSurfaceCurrent
+        recoveryNavigation = navigationGeneration
+        val token = ++projectActionSequence
+        projectManagement.value = projectManagement.value.copy(recovery = ProjectRecoveryDialog(token, busy = true))
+        viewModelScope.launch {
+            try {
+                val attempts = owner.pending()
+                if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(recovery = ProjectRecoveryDialog(token, attempts))
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(
+                    recovery = ProjectRecoveryDialog(token, error = "Project changes could not be loaded. Close and reopen review."))
+            }
+        }
+    }
+
+    fun dismissProjectRecovery(token: Long) {
+        if (projectManagement.value.recovery?.token != token) return
+        recoveryTicket = null
+        recoveryOwner = null
+        projectManagement.value = projectManagement.value.copy(recovery = null)
+    }
+
+    fun selectProjectRecovery(token: Long, attemptId: String) {
+        if (!ownsProjectRecovery(token)) return
+        val state = projectManagement.value.recovery ?: return
+        if (state.busy || state.attempts.none { it.attemptId == attemptId }) return
+        recoveryTicket = null
+        projectManagement.value = projectManagement.value.copy(recovery = state.copy(selectedAttempt = attemptId, projects = null, reviewed = false, error = null))
+    }
+
+    fun refreshProjectRecovery(token: Long) {
+        if (!ownsProjectRecovery(token)) return
+        val state = projectManagement.value.recovery ?: return
+        val attempt = state.selectedAttempt ?: return
+        val owner = recoveryOwner ?: return
+        if (state.busy) return
+        recoveryTicket = null
+        projectManagement.value = projectManagement.value.copy(recovery = state.copy(busy = true, projects = null, reviewed = false, error = null))
+        viewModelScope.launch {
+            try {
+                val ticket = owner.refresh(attempt) { ownsProjectRecovery(token) }
+                if (ownsProjectRecovery(token)) {
+                    recoveryTicket = ticket
+                    projectManagement.value = projectManagement.value.copy(recovery = state.copy(projects = ticket.projects, reviewed = false, error = null))
+                }
+            } catch (cancelled: CancellationException) {
+                if (cancelled !is kotlinx.coroutines.TimeoutCancellationException) throw cancelled
+                projectRecoveryReadFailed(token, state)
+            } catch (_: Exception) { projectRecoveryReadFailed(token, state) }
+        }
+    }
+
+    private fun projectRecoveryReadFailed(token: Long, state: ProjectRecoveryDialog) {
+        if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(
+            recovery = state.copy(projects = null, reviewed = false, error = "Projects could not be loaded. Refresh projects to try again."))
+    }
+
+    fun reviewProjectRecovery(token: Long) {
+        if (!ownsProjectRecovery(token) || recoveryTicket?.isCurrent() != true) return
+        val state = projectManagement.value.recovery ?: return
+        if (!state.busy) projectManagement.value = projectManagement.value.copy(recovery = state.copy(reviewed = !state.reviewed))
+    }
+
+    fun allowProjectAttempt(token: Long) {
+        if (!ownsProjectRecovery(token)) return
+        val state = projectManagement.value.recovery ?: return
+        val ticket = recoveryTicket ?: return
+        if (state.busy || !state.reviewed || !ticket.isCurrent()) return
+        projectManagement.value = projectManagement.value.copy(recovery = state.copy(busy = true, error = null))
+        viewModelScope.launch {
+            try {
+                check(ticket.acknowledge { ownsProjectRecovery(token) })
+                if (ownsProjectRecovery(token)) {
+                    dismissProjectRecovery(token)
+                    noticeLine = "Choose a project appearance to try again."
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) {
+                if (ownsProjectRecovery(token)) projectManagement.value = projectManagement.value.copy(
+                    recovery = state.copy(error = "Another attempt could not be allowed. Refresh projects and review again.", reviewed = false))
+                recoveryTicket = null
+            }
+        }
+    }
+
     private var projectSurfaceCurrent: () -> Boolean = { false }
     private fun ownsProjectDialog(token: Long? = projectManagement.value.dialog?.token): Boolean =
         token != null && token == projectManagement.value.dialog?.token && projectSurfaceCurrent() &&
@@ -2265,11 +2369,13 @@ internal class ChatViewModel(
                 if (operation == com.hermesagent.mobile.data.gateway.ProjectOperation.Delete || outcome.projectId != dialog.project.id) {
                     if (selectedProjectId.value == dialog.project.id) exitProject()
                 }
-                if (!outcome.catalogRefreshed) noticeLine = "Project updated. Projects could not be refreshed; reopen Sessions."
+                if (outcome.recoveryPending) noticeLine = "Project saved. Open Review project changes before another attempt."
+                else if (!outcome.catalogRefreshed) noticeLine = "Project updated. Projects could not be refreshed; reopen Sessions."
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) {
+            catch (failure: Exception) {
                 if (ownsProjectDialog(token)) projectManagement.value = projectManagement.value.copy(
-                    dialog = dialog.copy(error = "Project could not be updated. Check the Gateway and try again."),
+                    dialog = dialog.copy(page = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain) ProjectActionPage.Menu else dialog.page,
+                        error = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain) failure.message else "Project could not be updated. Check the Gateway and try again."),
                 )
             } finally {
                 // Feedback eligibility can retire before transport settles. Release only this pending lifetime.

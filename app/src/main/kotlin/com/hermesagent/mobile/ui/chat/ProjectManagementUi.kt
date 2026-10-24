@@ -21,7 +21,18 @@ data class ProjectManagementUi(
     val hiddenBusy: Boolean = false,
     val undo: ProjectHideUndo? = null,
     val hiddenOwnerToken: Long = 0,
+    val recovery: ProjectRecoveryDialog? = null,
 )
+data class ProjectRecoveryDialog(
+    val token: Long,
+    val attempts: List<com.hermesagent.mobile.data.prefs.ProjectAdoptionAttempt> = emptyList(),
+    val selectedAttempt: String? = null,
+    val projects: List<com.hermesagent.mobile.data.gateway.ProjectRecoveryRow>? = null,
+    val busy: Boolean = false,
+    val reviewed: Boolean = false,
+    val error: String? = null,
+)
+
 internal data class HiddenProjectSnapshot(
     val scope: HiddenProjectsScope? = null,
     val generation: Long = -1,

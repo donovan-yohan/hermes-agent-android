@@ -37,6 +37,12 @@ class ProjectActions(
     val hide: (Long) -> Unit = {},
     val restore: (String, Long) -> Unit = { _, _ -> },
     val path: (Long) -> String? = { null },
+    val recoveryOpen: (() -> Boolean, Long) -> Unit = { _, _ -> },
+    val recoveryDismiss: (Long) -> Unit = {},
+    val recoverySelect: (Long, String) -> Unit = { _, _ -> },
+    val recoveryRefresh: (Long) -> Unit = {},
+    val recoveryReviewed: (Long) -> Unit = {},
+    val recoveryAllow: (Long) -> Unit = {},
 )
 
 /** Shared context-order model; unlike Desktop's kebab, Appearance follows Set active. */

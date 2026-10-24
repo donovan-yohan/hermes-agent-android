@@ -82,6 +82,44 @@ class ProjectActionsNativeJourneyTest {
         assertTrue(activity.fixture.rpc.requests.none { it.first == "projects.delete" })
     }
 
+    @Test fun uncertainAdoptionReviewSurvivesHiddenRowAndRequiresFreshChoice() = launch { activity ->
+        activity.fixture.rpc.uncertainCreate = true
+        compose.onNodeWithTag("Project row synthetic-auto").performTouchInput { longClick() }
+        compose.onNodeWithText("Appearance").performClick()
+        compose.onNodeWithContentDescription("rocket").performClick()
+        compose.onNodeWithText("Project changes need review. Open Review project changes before another attempt.").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithTag("Project row synthetic-auto").performTouchInput { longClick() }
+        compose.onNodeWithText("Copy path").assertIsEnabled()
+        compose.onNodeWithText("Hide from sidebar").performClick()
+        compose.onNodeWithTag("Project row synthetic-auto").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Review project changes").performClick()
+        compose.onNodeWithText("Review Synthetic repository").performClick()
+        compose.onNodeWithText("Allow another attempt").assertIsNotEnabled()
+        activity.fixture.rpc.failInventory = true
+        compose.onNodeWithText("Refresh projects").performClick()
+        compose.onNodeWithText("Projects could not be loaded. Refresh projects to try again.").assertIsDisplayed()
+        compose.onNodeWithText("Allow another attempt").assertIsNotEnabled()
+        activity.fixture.rpc.failInventory = false
+        compose.onNodeWithText("Refresh projects").performClick()
+        compose.onAllNodesWithText("Synthetic project").onLast().assertIsDisplayed()
+        compose.onNodeWithText("I reviewed these projects").performClick()
+        val before = activity.fixture.rpc.requests.size
+        compose.onNodeWithText("Allow another attempt").performScrollTo().performClick()
+        assertEquals(before, activity.fixture.rpc.requests.size)
+        assertEquals(1, activity.fixture.rpc.requests.count { it.first == "projects.create" })
+        compose.onNodeWithContentDescription("Hidden projects").performClick()
+        compose.onNodeWithText("Restore Synthetic repository").performClick()
+        compose.onNodeWithText("Done").performClick()
+        activity.fixture.rpc.uncertainCreate = false
+        compose.onNodeWithTag("Project row synthetic-auto").performTouchInput { longClick() }
+        compose.onNodeWithText("Appearance").performClick()
+        compose.onNodeWithText("No color").performClick()
+        val creates = activity.fixture.rpc.requests.filter { it.first == "projects.create" }
+        assertEquals(2, creates.size)
+        assertFalse("Old icon must not replay", "icon" in creates.last().second)
+    }
+
     @Test fun autoAppearanceAdoptsOnceAndOldMenuCloses() = launch { activity ->
         compose.onNodeWithTag("Project row synthetic-auto").performTouchInput { longClick() }
         compose.onNodeWithText("Appearance").performClick()

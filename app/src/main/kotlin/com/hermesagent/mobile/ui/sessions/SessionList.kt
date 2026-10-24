@@ -370,6 +370,10 @@ fun SessionList(
                         )
                     }
                 }
+                if (projectScope.showsCatalog) {
+                    HermesIconButton(icon = HermesIcon.Refresh, contentDescription = "Review project changes",
+                        onClick = { projectActions.recoveryOpen({ projectSurface[0] }, projectManagement.hiddenOwnerToken) })
+                }
                 if (showingProjectOverview) {
                     HermesIconButton(icon = HermesIcon.Eye, contentDescription = "Hidden projects", onClick = { hiddenProjectsVisible = true })
                     HermesIconButton(
@@ -753,6 +757,7 @@ fun SessionList(
 
     projectManagement.dialog?.let { ProjectActionsDialog(it, backendActiveProjectId, projectActions) }
     if (hiddenProjectsVisible) HiddenProjectsDialog(projectManagement, projectActions) { hiddenProjectsVisible = false }
+    projectManagement.recovery?.let { ProjectRecoveryDialog(it, projectActions) }
     if (projectCreateVisible) {
         ProjectCreateDialog(
             onDismiss = { projectCreateVisible = false },
