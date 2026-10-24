@@ -2372,14 +2372,14 @@ internal class ChatViewModel(
     fun projectActionPage(token: Long, page: ProjectActionPage) {
         if (!ownsProjectDialog(token)) { dismissProjectActions(token); return }
         val dialog = projectManagement.value.dialog ?: return
-        if (!dialog.busy) projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(page = page, error = null))
+        if (!dialog.busy && !dialog.unconfirmed) projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(page = page, error = null))
     }
 
     /** Runs in ViewModel scope: removal of the pressed row must not cancel an admitted write. */
     fun executeProjectAction(token: Long, operation: com.hermesagent.mobile.data.gateway.ProjectOperation) {
         if (!ownsProjectDialog(token)) { dismissProjectActions(token); return }
         val dialog = projectManagement.value.dialog ?: return
-        if (dialog.busy) return
+        if (dialog.busy || dialog.unconfirmed) return
         if (operation == com.hermesagent.mobile.data.gateway.ProjectOperation.SetActive &&
             cache.state.value.projectsForScope(projectDialogRoute).activeProjectId == dialog.project.id) return
         val editor = projectEditor ?: return
@@ -2401,7 +2401,8 @@ internal class ChatViewModel(
             catch (failure: Exception) {
                 if (ownsProjectDialog(token)) projectManagement.value = projectManagement.value.copy(
                     dialog = dialog.copy(page = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain) ProjectActionPage.Menu else dialog.page,
-                        error = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain) failure.message else "Project could not be updated. Check the Gateway and try again."),
+                        unconfirmed = failure is com.hermesagent.mobile.data.gateway.ProjectEditUnconfirmed,
+                        error = if (failure is com.hermesagent.mobile.data.gateway.ProjectAdoptionUncertain || failure is com.hermesagent.mobile.data.gateway.ProjectEditUnconfirmed) failure.message else "Project could not be updated. Check the Gateway and try again."),
                 )
             } finally {
                 // Feedback eligibility can retire before transport settles. Release only this pending lifetime.

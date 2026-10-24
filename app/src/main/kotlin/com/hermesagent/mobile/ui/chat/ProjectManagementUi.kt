@@ -11,6 +11,7 @@ data class ProjectActionDialog(
     val page: ProjectActionPage = ProjectActionPage.Menu,
     val busy: Boolean = false,
     val error: String? = null,
+    val unconfirmed: Boolean = false,
 )
 data class ProjectHideUndo(val token: Long, val project: ProjectSummary)
 data class ProjectManagementUi(

@@ -2353,6 +2353,7 @@ internal class LiveGatewaySessionRepository(
                         if (failure !is kotlinx.coroutines.TimeoutCancellationException) throw failure
                     }
                     if (attempt != null && (!noWrite || !cleared)) throw ProjectAdoptionUncertain()
+                    if (!noWrite && failure is kotlinx.coroutines.TimeoutCancellationException) throw ProjectEditUnconfirmed()
                     throw failure
                 }
                 if (attempt != null) {

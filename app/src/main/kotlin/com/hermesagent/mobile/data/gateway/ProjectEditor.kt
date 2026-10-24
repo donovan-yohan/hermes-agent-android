@@ -21,5 +21,7 @@ sealed interface ProjectOperation {
 
 class ProjectAdoptionUncertain : Exception("Project changes need review. Open Review project changes before another attempt.")
 
+class ProjectEditUnconfirmed : Exception("Project change was not confirmed. Reopen Sessions to check it.")
+
 /** Only returned after an acknowledged write; a failed readback must never invite replay. */
 data class ProjectEditOutcome(val projectId: String, val catalogRefreshed: Boolean, val scopeCurrent: Boolean, val recoveryPending: Boolean = false)

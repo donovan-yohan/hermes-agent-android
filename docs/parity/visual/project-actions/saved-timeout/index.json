@@ -1,0 +1,32 @@
+{
+  "base": "6ea5842197dd9fe4b366d482b56f59b87d1213d4",
+  "source": "uncommitted bounded saved-project timeout repair; hashes identify exact source",
+  "source_hashes": {
+    "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/ProjectEditor.kt": "b95a4a39bb7bd1418382d24162677089ba42b210e26d5c51c80871fa1376cfc8",
+    "app/src/main/kotlin/com/hermesagent/mobile/data/gateway/GatewaySessionRepository.kt": "18c5c0915da25309e4f18ac6ad2f614e8aa27bf5e593a88be863d21ee2a17e2e",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ChatViewModel.kt": "53117e9ce306727fa2ca4c7f93ba18e19fdcda9c6c1423595e26f6298c2da394",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/chat/ProjectManagementUi.kt": "b4f41b738a7147d83c28eef699c9328074abf9d8f6cd07d9bb6590509b19e127",
+    "app/src/main/kotlin/com/hermesagent/mobile/ui/sessions/ProjectActions.kt": "86741a074dcdc02f198591ad02052466ae3b095ecfa5ceec310d322c5263a0e9",
+    "app/src/test/kotlin/com/hermesagent/mobile/ui/chat/ProjectActionsTimeoutTest.kt": "70d11e1abd1502b7c4233bbf158fce6b2b56771229c81f1abfe2ac23911ba770",
+    "app/src/testDebug/kotlin/com/hermesagent/mobile/ui/sessions/ProjectActionsTimeoutDialogTest.kt": "c3a496970591e3c16433e33dd9b3b12431f59df165149d1416caada6470b7b08"
+  },
+  "renderer": "Robolectric SDK34 native graphics, WindowInspector dialog decor draw",
+  "fixture": "ProjectActionsTimeoutDialogTest, real CorrelatedGatewayRpc/LiveGatewaySessionRepository/ChatViewModel and production dialog; offline synthetic wire",
+  "states": {
+    "dark": {
+      "image": "dark.png",
+      "sha256": "0a10b661f3ad0edc7d4d26998b7f2ce0c1c6885f9f86d0dc33f87b2e8782bd8c"
+    },
+    "light": {
+      "image": "light.png",
+      "sha256": "8fc4c44983f2441c7ef9a748e564c45d51f558f900b70decea1d7e207c6902fd"
+    }
+  },
+  "assertions": "Native Rename menu and Save dispatch one exact projects.update; held local 100ms deadline advanced to101ms. Visible uncertainty, no Saving/Save/Cancel, enabled48dp Done; retained submit/page callbacks send no second frame; Done dismisses. Both themes.",
+  "limits": [
+    "Not full Activity/ChatScreen, installed device, IME, OS compositor or live-server commit proof.",
+    "Phone412x915dp only; no enlarged text or wide-layout qualification.",
+    "No new Desktop peer capture: Android-specific uncertain-outcome policy; unchanged menu/order covered by existing pinned report and composed native journeys.",
+    "Visual inspection found full feedback legible and unclipped in both captures; light Done uses existing subdued text-button style, semantics and click verified enabled."
+  ]
+}

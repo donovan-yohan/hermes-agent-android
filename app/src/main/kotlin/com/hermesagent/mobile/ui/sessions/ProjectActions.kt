@@ -77,7 +77,7 @@ internal fun ProjectActionsDialog(dialog: ProjectActionDialog, activeId: String?
                 ProjectActionPage.Appearance -> "Appearance"
                 ProjectActionPage.Delete -> "Delete \"${project.label}\"?"
             }), style = HermesTheme.type.bodyStrong, color = tokens.textPrimary)
-            when (dialog.page) {
+            if (!dialog.unconfirmed) when (dialog.page) {
                 ProjectActionPage.Menu -> projectContextLabels(project).forEach { item ->
                     if (item == "Copy path" || item == "Delete…" || item == "Hide from sidebar") {
                         Box(Modifier.fillMaxWidth().height(1.dp).background(tokens.strokePrimary))
@@ -151,7 +151,7 @@ internal fun ProjectActionsDialog(dialog: ProjectActionDialog, activeId: String?
             }
             if (dialog.busy) Text("Saving…", style = HermesTheme.type.caption, color = tokens.textSecondary)
             dialog.error?.let { Text(redact(it), style = HermesTheme.type.caption, color = tokens.destructive) }
-            TextButton(label = "Cancel", enabled = !dialog.busy, onClick = { actions.dismiss(token) })
+            TextButton(label = if (dialog.unconfirmed) "Done" else "Cancel", enabled = !dialog.busy, onClick = { actions.dismiss(token) })
         }
     }
 }
