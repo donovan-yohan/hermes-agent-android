@@ -2967,6 +2967,125 @@ class ChatViewModelTest {
     }
 
     @Test
+    fun `same owner reselect success after project exit retires opening`() = runTest(dispatcher) {
+        verifyReselectCleanupAfterBrowse("exit", fail = false)
+    }
+
+    @Test
+    fun `same owner reselect failure after project exit retires opening`() = runTest(dispatcher) {
+        verifyReselectCleanupAfterBrowse("exit", fail = true)
+    }
+
+    @Test
+    fun `same owner reselect success after project selection retires opening`() = runTest(dispatcher) {
+        verifyReselectCleanupAfterBrowse("project", fail = false)
+    }
+
+    @Test
+    fun `same owner reselect failure after project selection retires opening`() = runTest(dispatcher) {
+        verifyReselectCleanupAfterBrowse("project", fail = true)
+    }
+
+    @Test
+    fun `same owner reselect success after grouping change retires opening`() = runTest(dispatcher) {
+        verifyReselectCleanupAfterBrowse("grouping", fail = false)
+    }
+
+    @Test
+    fun `same owner reselect failure after grouping change retires opening`() = runTest(dispatcher) {
+        verifyReselectCleanupAfterBrowse("grouping", fail = true)
+    }
+
+    private fun TestScope.verifyReselectCleanupAfterBrowse(navigation: String, fail: Boolean) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        val session = requireNotNull(cache.session(previous)).copy(remoteProfile = "default")
+        cache.upsertSession(session)
+        cache.setTranscript(previous, emptyList())
+        cache.replaceProjectOverview(listOf(
+            ProjectSummary("project-a", "A", "/synthetic/a", previewSessions = listOf(session)),
+            ProjectSummary("project-b", "B", "/synthetic/b"),
+        ), "project-a")
+        repository.projectSessions["project-a"] = listOf(session)
+        viewModel.setSidebarGrouping(SidebarGrouping.Project)
+        viewModel.selectProject("project-a")
+        runCurrent()
+        viewModel.setDraft("keep the same chat draft")
+        runCurrent()
+        val row = cache.session(previous)
+        val transcript = cache.transcript(previous)
+        val gate = CompletableDeferred<Unit>()
+        repository.botOpenGate = gate
+        repository.botOpenFailure = fail
+        // A successful stale response must not adopt even a canonical redirect.
+        repository.botOpenResult = "late-canonical"
+        val bindingsBefore = repository.botOpenEndpointBindings.size
+        viewModel.selectProjectSession(requireNotNull(viewModel.uiState.value.selectedProject).previewSessions.single())
+        runCurrent()
+        assertEquals(bindingsBefore + 1, repository.botOpenEndpointBindings.size)
+        assertFalse(gate.isCompleted)
+        assertEquals(SessionOpenState.Opening(previous), viewModel.uiState.value.sessionOpen)
+        assertTrue(viewModel.uiState.value.transcript.isEmpty())
+        assertEquals(previous, viewModel.uiState.value.visibleSessionId)
+
+        when (navigation) {
+            "exit" -> viewModel.exitProject()
+            "project" -> viewModel.selectProject("project-b")
+            "grouping" -> viewModel.setSidebarGrouping(SidebarGrouping.Date)
+            else -> error("Unknown browse navigation")
+        }
+        runCurrent()
+        assertEquals(if (navigation == "project") "project-b" else null, viewModel.uiState.value.selectedProject?.id)
+        assertEquals(if (navigation == "grouping") SidebarGrouping.Date else SidebarGrouping.Project,
+            viewModel.uiState.value.sidebarGrouping)
+        assertEquals(SessionOpenState.Opening(previous), viewModel.uiState.value.sessionOpen)
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+        assertEquals(previous, viewModel.uiState.value.activeSessionId)
+        assertEquals(previous, viewModel.uiState.value.visibleSessionId)
+        assertEquals("keep the same chat draft", viewModel.uiState.value.draft)
+        org.junit.Assert.assertSame(row, cache.session(previous))
+        org.junit.Assert.assertSame(transcript, cache.transcript(previous))
+        assertTrue(viewModel.uiState.value.transcript.isEmpty())
+        assertNull("Browse navigation revoked stale error publication", viewModel.uiState.value.notice)
+    }
+
+    @Test
+    fun `same owner reselect cleanup cannot clear newer ordinary opening`() = runTest(dispatcher) {
+        collectState()
+        runCurrent()
+        val previous = requireNotNull(viewModel.uiState.value.activeSessionId)
+        val session = requireNotNull(cache.session(previous)).copy(remoteProfile = "default")
+        cache.upsertSession(session)
+        val old = CompletableDeferred<Unit>()
+        repository.botOpenGate = old
+        viewModel.selectProjectSession(session)
+        runCurrent()
+        assertEquals(SessionOpenState.Opening(previous), viewModel.uiState.value.sessionOpen)
+        viewModel.exitProject()
+        val newerId = "newer-ordinary"
+        val newer = CompletableDeferred<Unit>()
+        cache.upsertSession(summary(newerId, CLOCK))
+        repository.openGates[newerId] = newer
+        viewModel.selectSession(newerId)
+        runCurrent()
+        viewModel.setDraft("newer chat draft")
+        runCurrent()
+        assertEquals(SessionOpenState.Opening(newerId), viewModel.uiState.value.sessionOpen)
+        old.completeExceptionally(GatewayRpcException("Fixture old open failure"))
+        runCurrent()
+        assertEquals(SessionOpenState.Opening(newerId), viewModel.uiState.value.sessionOpen)
+        assertEquals(newerId, viewModel.uiState.value.visibleSessionId)
+        assertEquals("newer chat draft", viewModel.uiState.value.draft)
+        assertNull(viewModel.uiState.value.notice)
+        newer.complete(Unit)
+        runCurrent()
+        assertEquals(SessionOpenState.Idle, viewModel.uiState.value.sessionOpen)
+    }
+
+    @Test
     fun `same raw id with different owner still hides current pane`() = runTest(dispatcher) {
         collectState()
         runCurrent()

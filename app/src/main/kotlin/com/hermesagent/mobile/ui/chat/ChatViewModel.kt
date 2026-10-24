@@ -2356,8 +2356,9 @@ internal class ChatViewModel(
             } finally {
                 // A failure restores the previous pane, never a raw-id Retry
                 // which would discard this preview's explicit owner.
-                // A retired transport cannot adopt, but still owns its cleanup.
-                if (ownsRequest()) sessionOpen.value = SessionOpenState.Idle
+                // Navigation or transport retirement revokes adoption, not
+                // cleanup; only a newer open may take this request's marker.
+                if (sessionOpenGeneration == request) sessionOpen.value = SessionOpenState.Idle
             }
         }
     }
