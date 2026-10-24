@@ -46,6 +46,10 @@ import com.hermesagent.mobile.ui.ChatActions
 import com.hermesagent.mobile.ui.ConnectionsActions
 import com.hermesagent.mobile.ui.GatewayActions
 import com.hermesagent.mobile.ui.HermesApp
+import com.hermesagent.mobile.data.notifications.*
+import com.hermesagent.mobile.ui.GroupNotificationOpen
+import com.hermesagent.mobile.ui.HermesDestination
+
 import com.hermesagent.mobile.ui.HermesNavigationAsk
 import com.hermesagent.mobile.ui.SshActions
 import com.hermesagent.mobile.ui.chat.ChatViewModel
@@ -288,13 +292,28 @@ class MainActivity : ComponentActivity() {
             }
         }.getOrNull()
 
+    private val notificationNavigation = NotificationNavigation()
+    private var groupNotificationOpen by mutableStateOf<GroupNotificationOpen?>(null)
+    private val visibleDestination = kotlinx.coroutines.flow.MutableStateFlow<HermesDestination>(HermesDestination.Chat)
+    private val visibleGroupRoom = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private var notificationNavigationEpoch = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as HermesApplication).ensureInteractiveStarted()
         enableEdgeToEdge()
         notificationRationaleDismissed = savedInstanceState?.getBoolean(STATE_RATIONALE_DISMISSED) == true
+        @Suppress("DEPRECATION")
+        val pendingNotification = savedInstanceState?.getParcelable<Intent>("notification.pending.target")
+        notificationTarget(pendingNotification)?.let(notificationNavigation::offer)
         openSessionFromIntent(intent)
         returnFromSignIn(intent)
         followVisibleSession()
+        lifecycleScope.launch {
+            combine(app.connectionSwitch.botStorageEndpoint, app.gatewayConnection.state, app.profileRepository.roster) { endpoint, state, _ ->
+                endpoint to (state.status == GatewayConnectionStatus.Connected)
+            }.collect { (endpoint, connected) -> dispatchNotificationTarget(endpoint?.stableId, connected) }
+        }
         followNotificationPermissionNeed()
         // Attachment grants are read on IO; only bytes enter the ViewModel.
         chatViewModel.openAttachmentStream = { uriString ->
@@ -624,6 +643,13 @@ class MainActivity : ComponentActivity() {
                 notificationsState = notificationsState,
                 notificationsActions = notificationsActions,
                 navigationAsk = navigationAsk,
+                groupNotificationOpen = groupNotificationOpen,
+                onGroupNotificationConsumed = { token -> if (groupNotificationOpen?.token == token) groupNotificationOpen = null },
+                onGroupRoomVisible = { visibleGroupRoom.value = it },
+                onDestinationChanged = { destination ->
+                    if (visibleDestination.value != destination) notificationNavigationEpoch++
+                    visibleDestination.value = destination
+                },
                 cronContent = {
                     com.hermesagent.mobile.ui.cron.CronScreen(cronState, app.cronViewModel, openCronRun)
                 },
@@ -733,6 +759,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openSessionFromIntent(intent: Intent?) {
+        notificationTarget(intent)?.let { target ->
+            intent?.action = null // consume on cold and warm delivery, including invalid endpoint taps
+            notificationNavigationEpoch++
+            notificationNavigation.offer(target)
+            dispatchNotificationTarget(app.connectionSwitch.botStorageEndpoint.value?.stableId,
+                app.gatewayConnection.state.value.status == GatewayConnectionStatus.Connected)
+            return
+        }
         if (intent?.action != ACTION_OPEN_SESSION) return
         val durableSessionId = intent.getStringExtra(EXTRA_DURABLE_SESSION_ID)?.takeIf(String::isNotBlank) ?: return
         intent.removeExtra(EXTRA_DURABLE_SESSION_ID)
@@ -745,12 +779,46 @@ class MainActivity : ComponentActivity() {
      * (`apps/desktop/src/store/native-notifications.ts:142` @
      * `3ca096de5f8183cb2e0ec23673f294d5978656a3`).
      */
+    private fun dispatchNotificationTarget(endpoint: String?, connected: Boolean) {
+        val pending = notificationNavigation.pending
+        // Owner-aware session admission needs the already-read profile roster on cold startup.
+        if (pending is NotificationTarget.Session && pending.endpoint == endpoint &&
+            app.profileRepository.roster.value.profiles.none { it.name == pending.profile }) return
+        notificationNavigation.ready(endpoint, connected, session = { target ->
+            val generation = app.cache.endpointGeneration.value
+            val epoch = notificationNavigationEpoch
+            fun current() = !isDestroyed && epoch == notificationNavigationEpoch &&
+                app.connectionSwitch.botStorageEndpoint.value?.stableId == target.endpoint &&
+                app.cache.endpointGeneration.value == generation
+            chatViewModel.openBotRecentSession(target.profile, target.id, generation, ::current) { opened ->
+                if (opened && current()) {
+                    navigationAsks++
+                    navigationAsk = HermesNavigationAsk(HermesDestination.Chat, navigationAsks)
+                }
+            }
+        }, room = { target ->
+            if (app.connectionSwitch.botStorageEndpoint.value?.stableId != target.endpoint) return@ready
+            navigationAsks++
+            groupNotificationOpen = GroupNotificationOpen(target.endpoint, app.cache.endpointGeneration.value, target.id, navigationAsks)
+            navigationAsk = HermesNavigationAsk(HermesDestination.Route("groups:route"), navigationAsks, awaitRoute = true)
+        })
+    }
+
     private fun followVisibleSession() {
         lifecycleScope.launch {
-            chatViewModel.uiState
-                .map { it.activeSession?.id }
-                .distinctUntilChanged()
-                .collect(app.notificationPresence::visibleSessionChanged)
+            combine(chatViewModel.uiState, visibleDestination, visibleGroupRoom, app.connectionSwitch.botStorageEndpoint) { chat, destination, room, endpoint ->
+                val stable = endpoint?.stableId
+                when {
+                    stable == null -> null
+                    destination == HermesDestination.Chat -> chat.activeSession?.let {
+                        MessageConversation(stable, MessageConversationKind.Session, it.id, it.remoteProfile)
+                    }
+                    destination == HermesDestination.Route("groups:route") -> room?.let {
+                        MessageConversation(stable, MessageConversationKind.Room, it)
+                    }
+                    else -> null
+                }
+            }.distinctUntilChanged().collect(app.notificationPresence::visibleConversationChanged)
         }
     }
 
@@ -838,6 +906,7 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean(STATE_RATIONALE_DISMISSED, notificationRationaleDismissed)
+        notificationNavigation.pending?.let { outState.putParcelable("notification.pending.target", it.writeTo(Intent())) }
     }
 
     override fun onStop() {

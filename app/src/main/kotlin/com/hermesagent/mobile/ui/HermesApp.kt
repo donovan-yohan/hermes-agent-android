@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.flow.first
 import com.hermesagent.mobile.data.profiles.AvatarRosterCoordinator
 import com.hermesagent.mobile.ui.common.LocalProfileAvatarRoster
 import androidx.compose.ui.Alignment
@@ -78,6 +79,9 @@ data class PluginNavigation(
     val onOpenBotChat: (profile: String, durableId: String, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
     val onOpenBotRecentSession: (profile: String, durableId: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _, _ -> },
     val onNewBotSession: (profile: String, endpoint: Long, onFinished: (Boolean) -> Unit) -> Unit = { _, _, _ -> },
+    val groupNotificationOpen: GroupNotificationOpen? = null,
+    val onGroupNotificationConsumed: (Long) -> Unit = {},
+    val onGroupRoomVisible: (String?) -> Unit = {},
     val currentRoute: String? = null,
 )
 
@@ -141,7 +145,9 @@ val HermesDestinationSaver: Saver<HermesDestination, String> = Saver(
  * the same value as the first and change nothing, which is the failure this
  * exists to fix rather than a smaller version of it.
  */
-data class HermesNavigationAsk(val destination: HermesDestination, val token: Long)
+data class GroupNotificationOpen(val endpoint: String, val generation: Long, val roomId: String, val token: Long)
+
+data class HermesNavigationAsk(val destination: HermesDestination, val token: Long, val awaitRoute: Boolean = false)
 
 /**
  * What a finished sign-in asks the shell for, or null when it asks for nothing.
@@ -194,6 +200,10 @@ fun HermesApp(
      * and the entry points are inside it.
      */
     onSignInOriginChange: (SignInOrigin) -> Unit = {},
+    groupNotificationOpen: GroupNotificationOpen? = null,
+    onGroupNotificationConsumed: (Long) -> Unit = {},
+    onGroupRoomVisible: (String?) -> Unit = {},
+    onDestinationChanged: (HermesDestination) -> Unit = {},
     cronContent: (@Composable () -> Unit)? = null,
     cronSection: @Composable (onChosen: () -> Unit) -> Unit = {},
 ) {
@@ -226,7 +236,21 @@ fun HermesApp(
      */
     var signInOrigin by rememberSaveable { mutableStateOf(SignInOrigin.Gateways) }
     LaunchedEffect(signInOrigin) { onSignInOriginChange(signInOrigin) }
-    LaunchedEffect(navigationAsk) { navigationAsk?.let { navigate(it.destination) } }
+    LaunchedEffect(destination) { onDestinationChanged(destination) }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { onDestinationChanged(HermesDestination.Settings) }
+    }
+    LaunchedEffect(navigationAsk) {
+        navigationAsk?.let { ask ->
+            val route = ask.destination as? HermesDestination.Route
+            if (ask.awaitRoute && route != null) {
+                pluginRegistry.areaFlow(PluginAreas.ROUTES_AREA).first { entries ->
+                    entries.any { it.id == route.id && it.render != null }
+                }
+            }
+            navigate(ask.destination)
+        }
+    }
 
     var routeOrigin by rememberSaveable(stateSaver = HermesDestinationSaver) {
         mutableStateOf<HermesDestination>(HermesDestination.Settings)
@@ -254,8 +278,11 @@ fun HermesApp(
     }
     val onOpenGateways = { openGateways(SignInOrigin.Gateways) }
     val onOpenGatewaysFromSessions = { openGateways(SignInOrigin.Sessions) }
-    val pluginNavigation = remember(openGateways, destination) {
+    val pluginNavigation = remember(openGateways, destination, groupNotificationOpen, onGroupRoomVisible) {
         PluginNavigation(
+            groupNotificationOpen = groupNotificationOpen,
+            onGroupNotificationConsumed = onGroupNotificationConsumed,
+            onGroupRoomVisible = onGroupRoomVisible,
             currentRoute = (destination as? HermesDestination.Route)?.id,
             onBack = onBack,
             onOpenGateways = openGateways,

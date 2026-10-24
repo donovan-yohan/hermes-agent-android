@@ -34,6 +34,17 @@ class GroupsPlugin : HermesPlugin {
             PluginContribution(id = "route", area = PluginAreas.ROUTES_AREA, title = name, render = {
                 val navigation = LocalPluginNavigation.current
                 val state by model.uiState.collectAsStateWithLifecycle()
+                val open = navigation.groupNotificationOpen
+                androidx.compose.runtime.LaunchedEffect(open?.token) {
+                    if (open != null && open.generation == ctx.host.endpointGeneration.value) {
+                        model.openNotification(open.roomId, open.generation)
+                    }
+                    open?.let { navigation.onGroupNotificationConsumed(it.token) }
+                }
+                androidx.compose.runtime.LaunchedEffect(state.selected) { navigation.onGroupRoomVisible(state.selected) }
+                androidx.compose.runtime.DisposableEffect(Unit) {
+                    onDispose { navigation.onGroupRoomVisible(null) }
+                }
                 // Reuse the app's already-read roster; this surface sends no profiles RPC or ui_meta read.
                 val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.hermesagent.mobile.HermesApplication
                 val profiles = app?.profileRepository?.roster?.collectAsStateWithLifecycle()?.value?.profiles.orEmpty()

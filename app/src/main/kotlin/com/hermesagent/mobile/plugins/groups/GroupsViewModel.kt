@@ -122,6 +122,15 @@ class GroupsViewModel(
             expired = false, authorityConflict = false, stale = false) }
         selected.value = id
     }
+    /** A typed shade tap may precede the first room list; state/log remain the read authority. */
+    fun openNotification(id: String, expectedEndpoint: Long) {
+        clearIfMoved()
+        if (endpoint.value != expectedEndpoint || id.isBlank() || id in retired || id == selected.value) return
+        mutable.update { it.copy(selected = id, transcript = cache[id], roomLoading = true,
+            expired = false, authorityConflict = false, stale = false) }
+        selected.value = id
+    }
+
     fun closeRoom() {
         selected.value = null
         mutable.update { it.copy(selected = null, transcript = null, expired = false, authorityConflict = false, roomLoading = false) }

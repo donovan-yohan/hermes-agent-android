@@ -1,6 +1,9 @@
 # OS notifications: source and deviation ledger
 
-Connected-only OS notifications for approvals, questions and idle turns —
+OS notifications for approvals, questions and bot replies. The historical
+connected-only implementation below is extended by bounded background recovery
+and native per-bot cards described in [Bot reply recovery](#bot-reply-recovery).
+The original implementation comprises
 slices S-N1, S-N3 and S-N4 of
 [#99](https://github.com/donovan-yohan/hermes-agent-android/issues/99), ported
 per [`docs/workflows/port-desktop-surface.md`](../workflows/port-desktop-surface.md).
@@ -228,6 +231,8 @@ given a class they do not deserve.
 
 | Desktop | Class | Android | Evidence |
 |---|---|---|---|
+| Electron notification body and application icon | mobile-adaptation | Native MessagingStyle cards per conversation/sender, with Person bot identities and accepted local avatar bitmaps | Android's shade supports independently dismissible message children and sender images. [Synthetic expanded shade](../media/bot-notifications-v1/android-expanded.png); missing images use native fallback, peers never borrow a same-named local profile |
+| Renderer-owned event delivery | mobile-adaptation | Persisted network-constrained 30-minute background catch-up for active saved Remote/Local Gateway | A phone process may not exist when Desktop starts a conversation. Read-only session/message and hosted-room log recovery does not attach a viewer or start a turn; exact backend scope and limits below. This is not immediate push |
 | One preference per kind, and the OS layer has no notion of a channel | mobile-adaptation | Two channels, `Approvals` and `Responses` | Android importance is a property of a channel and can never be lowered after the OS creates it, so per-kind channels would freeze seven importances on first launch. The names are the issue's own event matrix; the descriptions are Desktop's per-kind sentences (`en.ts:437`, `:441`, `:445`) |
 | No grouping layer: Electron files each notification on its own | mobile-adaptation | A conversation's group summary rides the channel of the *first* notification filed under it | Android needs a summary before it will bundle a group, and a summary has to sit on some channel. `GROUP_ALERT_CHILDREN` keeps the summary silent whichever channel it lands on, so the channel decides nothing the user can hear. Pinning it to `Approvals`, as the first version did, was not harmless: it gave a finished turn an approval's importance |
 | An approval's body is `command \|\| description` (`gateway-event/input-requests.ts:261`) | mobile-adaptation | The body is the **session title**, never the command — and an approval carries no preview line at any setting | A phone renders that on a lock screen. #99's security section forbids commands, tool output, sudo prompts and secret names in a notification; the only Gateway text that reaches the shade is a session title, through `redact()` and bounded |
@@ -340,6 +345,49 @@ each (`index.ts:772` against `gateway-event/status.ts:140-145`). It is a signal,
 state: nothing renders from it and nothing persists it. It also makes S-N5's
 `turnError` row a wiring change rather than a repository change.
 
+## Bot reply recovery
+
+This addition inspects backend
+`046094df28b712f62a5e3c728a9e59da05dcbf1e`; historical Desktop pins and visual
+obligations above retain their provenance. `GatewayNotificationReadTransport`
+names the inspected REST and read-only RPC contract. Recovery uses persisted
+numeric assistant row IDs and hosted-room event IDs/sequence, never shared
+read watermarks, activity timestamps or a registry preview as reply evidence.
+
+One `NotificationInbox` admits live/recovered messages. Live terminal frames
+without an explicit persisted `row_id` trigger reconciliation instead of
+inventing equivalence with runtime stream IDs. Initial endpoint enrollment
+avoids replaying an old inbox. Later scans keep session insertion highwater,
+room cursors and unfinished scan positions in atomic no-backup storage. The
+45-second/24-page budget and offset pagination are not exhaustive delivery under
+unlimited or changing history; an unknown old history with regressed
+pre-enrollment timestamps cannot be classified reliably. The 4096-ID retained
+dedupe window and post-before-checkpoint crash window are explicit limits.
+
+`HermesApplication` now separates process creation from interactive startup.
+Scheduled reads use the same silent token-rotation owner as foreground access,
+never browser sign-in, session resume, prompt submission, queued sends, SSH
+startup or Termux process ownership. Remote/Local support unattended reads;
+Managed SSH retains connected notifications. Native JobScheduler uses an
+inexact 30-minute period and 10-minute flex. Network, Doze and force-stop rules
+remain Android's. There is no server push registration or delivery deadline.
+
+`AndroidBotMessageSurface` keeps one child per endpoint/conversation/sender,
+with up to eight sanitized messages. Android may automatically bundle children
+under the application header. A current accepted local avatar is used when
+available; a cold background-only process does not start an avatar socket.
+Peers never alias a local bot name. The preview preference is checked again
+after waiting for an image. Public lock-screen payloads remain generic.
+Typed immutable taps carry endpoint and owner; a replaced endpoint cannot
+reinterpret them. Existing Chat/Groups chrome and action order are unchanged.
+The native fallback copy `New message` and `You` have no Electron shade peer.
+
+Focused real-loopback fixture tests exercise saved-route capture through
+read transport, recovery and durable admission. The combined debug/release
+unit tests, lint, invariants and APK assembly have been run locally. The
+synthetic emulator capture proves native child/avatar presentation, not real
+Gateway delivery, physical Pixel Doze acceptance or end-to-end cold navigation.
+
 ## Evidence
 
 | Claim | Where it is proved |
@@ -365,6 +413,10 @@ server-mac emulator lane driving real events through the Termux Local route.
 
 ## Visual report
 
+- [Bot notification shade capture](../media/bot-notifications-v1/README.md):
+  synthetic API 34 emulator, collapsed app bundle, expanded separate sender
+  children with avatars, and previews off. The OS shade has no Desktop peer;
+  this evidence does not close the older settings/action matrix below.
 - pending: #99 — the settings screen, and the shade at each kind: an approval
   with three choices, a question with its own choices, a question with a reply
   box, a preview on and off, and the status-bar mark at real density

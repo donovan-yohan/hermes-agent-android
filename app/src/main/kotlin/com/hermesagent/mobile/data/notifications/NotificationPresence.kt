@@ -26,6 +26,14 @@ class NotificationPresence {
     /** The durable id of the conversation the chat surface currently has open. */
     val visibleSessionId: StateFlow<String?> = visible.asStateFlow()
 
+    private val conversation = MutableStateFlow<MessageConversation?>(null)
+    internal val visibleConversation = conversation.asStateFlow()
+
+    internal fun visibleConversationChanged(value: MessageConversation?) {
+        conversation.value = value
+        visibleSessionChanged(value?.takeIf { it.kind == MessageConversationKind.Session }?.id)
+    }
+
     fun applicationForegroundChanged(inForeground: Boolean) {
         foreground.value = inForeground
     }
