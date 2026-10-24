@@ -22,8 +22,10 @@ class ProjectActionsViewModelTest {
         var gate: CompletableDeferred<Unit>? = null
         var fail = false
         var failRead = false
+        var writeGate: CompletableDeferred<Unit>? = null
+        var writeCount = 0
         override suspend fun readHiddenProjects(scope: HiddenProjectsScope): Set<String> { gate?.await(); check(!failRead); return disk[scope].orEmpty() }
-        override suspend fun writeHiddenProjects(scope: HiddenProjectsScope, ids: Set<String>) { gate?.await(); check(!fail); disk[scope] = ids }
+        override suspend fun writeHiddenProjects(scope: HiddenProjectsScope, ids: Set<String>) { writeCount++; writeGate?.await(); gate?.await(); check(!fail); disk[scope] = ids }
     }
     private inner class Fixture(val store: Store = Store()) {
         val endpoint = MutableStateFlow<StorageEndpoint?>(StorageEndpoint("row-address", 0))
@@ -55,6 +57,37 @@ class ProjectActionsViewModelTest {
     }
     private fun TestScope.collect(f: Fixture) { backgroundScope.launch { f.model.uiState.collect {} }; runCurrent() }
     private fun token(f: Fixture) = f.model.uiState.value.projectManagement.dialog!!.token
+
+    @Test fun `held hide reconciles returning owner before sibling write`() = hiddenWriteAba(restore = false)
+    @Test fun `held restore reconciles returning owner before sibling write`() = hiddenWriteAba(restore = true)
+
+    private fun hiddenWriteAba(restore: Boolean) = runTest(dispatcher) {
+        val owner = HiddenProjectsScope("row-address", "default")
+        val other = HiddenProjectsScope("row-address", "other")
+        val sibling = auto.copy(id = "sibling", label = "Sibling")
+        val f = Fixture()
+        if (restore) f.store.disk[owner] = setOf(auto.id)
+        f.store.disk[other] = setOf("other-only")
+        f.cache.replaceProjectOverview(listOf(auto, sibling, explicit), null)
+        collect(f)
+        f.store.writeGate = CompletableDeferred()
+        if (restore) f.model.restoreHiddenProject(auto.id) else {
+            f.model.openProjectActions(auto); runCurrent(); f.model.hideProject(token(f))
+        }
+        runCurrent(); assertEquals(1, f.store.writeCount)
+        f.model.selectProfile("other"); runCurrent()
+        f.model.selectProfile("default"); runCurrent()
+        f.store.writeGate!!.complete(Unit); runCurrent()
+        assertEquals(!restore, auto.id in f.store.disk[owner].orEmpty())
+        assertEquals("Returning projection must reflect committed preference", restore, f.model.uiState.value.projects.any { it.id == auto.id })
+        assertEquals(!restore, f.model.uiState.value.projectManagement.hiddenProjects.any { it.id == auto.id })
+        f.model.refreshSessionNavigation(); runCurrent()
+        assertEquals(restore, f.model.uiState.value.projects.any { it.id == auto.id })
+        f.model.openProjectActions(sibling); runCurrent(); f.model.hideProject(token(f)); runCurrent()
+        assertEquals((if (restore) emptySet() else setOf(auto.id)) + sibling.id, f.store.disk[owner])
+        assertEquals(setOf("other-only"), f.store.disk[other])
+        assertEquals(2, f.store.writeCount)
+    }
 
     @Test fun `hide persists before success keeps raw catalog and restores after undo expiry and restart`() = runTest(dispatcher) {
         val f = Fixture(); collect(f)
@@ -139,6 +172,91 @@ class ProjectActionsViewModelTest {
         f.model.selectProfile("other"); f.model.selectProfile("default")
         f.model.restoreHiddenProject(auto.id, owner); runCurrent()
         assertEquals(setOf(auto.id), f.store.disk[HiddenProjectsScope("row-address", "default")])
+    }
+
+    @Test fun `disposed rename success releases its pending dialog`() = disposedRename(fail = false, beforeDispatch = false)
+    @Test fun `disposed rename failure releases its pending dialog`() = disposedRename(fail = true, beforeDispatch = false)
+    @Test fun `rename revoked before coroutine dispatch releases its pending dialog`() = disposedRename(fail = false, beforeDispatch = true)
+
+    private fun disposedRename(fail: Boolean, beforeDispatch: Boolean) = runTest(dispatcher) {
+        val f = Fixture(); collect(f)
+        var mounted = true
+        f.model.openProjectActions(explicit, { mounted }); runCurrent(); val old = token(f)
+        f.gate = CompletableDeferred(); f.fail = fail
+        f.model.executeProjectAction(old, ProjectOperation.Rename("Updated"))
+        if (!beforeDispatch) { runCurrent(); assertEquals(1, f.writes.size); assertTrue(f.model.uiState.value.projectManagement.dialog!!.busy) }
+        mounted = false
+        f.gate!!.complete(Unit); runCurrent()
+        f.model.openProjectActions(explicit, { true }); runCurrent()
+        val fresh = f.model.uiState.value.projectManagement.dialog!!
+        assertNotEquals("Settled retired dialog must not block a fresh surface", old, fresh.token)
+        assertFalse(fresh.busy)
+        f.fail = false
+        f.model.executeProjectAction(fresh.token, ProjectOperation.Rename("Fresh")); runCurrent()
+        assertNull(f.model.uiState.value.projectManagement.dialog)
+        assertEquals(if (beforeDispatch) 1 else 2, f.writes.size)
+    }
+
+    @Test fun `old completion cannot dismiss or unlock a newer busy dialog`() = runTest(dispatcher) {
+        val f = Fixture(); collect(f)
+        f.model.openProjectActions(explicit); runCurrent(); val old = token(f)
+        val oldGate = CompletableDeferred<Unit>(); f.gate = oldGate
+        f.model.executeProjectAction(old, ProjectOperation.Rename("Old")); runCurrent()
+        f.model.dismissProjectActions(old)
+        f.model.openProjectActions(explicit); runCurrent(); val fresh = token(f)
+        val freshGate = CompletableDeferred<Unit>(); f.gate = freshGate
+        f.model.executeProjectAction(fresh, ProjectOperation.Rename("Fresh")); runCurrent()
+        oldGate.complete(Unit); runCurrent()
+        assertEquals(fresh, token(f)); assertTrue(f.model.uiState.value.projectManagement.dialog!!.busy)
+        freshGate.complete(Unit); runCurrent()
+        assertNull(f.model.uiState.value.projectManagement.dialog); assertEquals(2, f.writes.size)
+    }
+
+    @Test fun `held hide completion preserves another owners load error`() = runTest(dispatcher) {
+        val f = Fixture(); collect(f)
+        f.model.openProjectActions(auto); runCurrent()
+        f.store.writeGate = CompletableDeferred(); f.model.hideProject(token(f)); runCurrent()
+        f.store.failRead = true
+        f.model.selectProfile("other"); runCurrent()
+        val before = f.model.uiState.value.projectManagement
+        assertNotNull(before.hiddenError)
+        f.store.writeGate!!.complete(Unit); runCurrent()
+        assertEquals(before, f.model.uiState.value.projectManagement)
+        assertEquals(setOf(auto.id), f.store.disk[HiddenProjectsScope("row-address", "default")])
+        assertFalse(f.store.disk.containsKey(HiddenProjectsScope("row-address", "other")))
+    }
+
+    @Test fun `held restore completion preserves returning owners load error`() = runTest(dispatcher) {
+        val f = Fixture(); f.store.disk[HiddenProjectsScope("row-address", "default")] = setOf(auto.id); collect(f)
+        f.store.writeGate = CompletableDeferred(); f.model.restoreHiddenProject(auto.id); runCurrent()
+        f.model.selectProfile("other"); runCurrent()
+        f.store.failRead = true
+        f.model.selectProfile("default"); runCurrent()
+        f.store.writeGate!!.complete(Unit); runCurrent()
+        assertNotNull(f.model.uiState.value.projectManagement.hiddenError)
+        assertFalse(f.model.uiState.value.projects.any { it.id == auto.id })
+        assertTrue(f.store.disk[HiddenProjectsScope("row-address", "default")].orEmpty().isEmpty())
+        f.store.failRead = false; f.model.refreshSessionNavigation(); runCurrent()
+        assertNull(f.model.uiState.value.projectManagement.hiddenError)
+        assertTrue(f.model.uiState.value.projects.any { it.id == auto.id })
+    }
+
+    @Test fun `disposed hide success releases its pending dialog`() = disposedHide(fail = false, beforeDispatch = false)
+    @Test fun `disposed hide failure releases its pending dialog`() = disposedHide(fail = true, beforeDispatch = false)
+    @Test fun `hide revoked before coroutine dispatch releases its pending dialog`() = disposedHide(fail = false, beforeDispatch = true)
+
+    private fun disposedHide(fail: Boolean, beforeDispatch: Boolean) = runTest(dispatcher) {
+        val f = Fixture(); collect(f)
+        var mounted = true
+        f.model.openProjectActions(auto, { mounted }); runCurrent(); val old = token(f)
+        f.store.writeGate = CompletableDeferred(); f.store.fail = fail
+        f.model.hideProject(old)
+        if (!beforeDispatch) { runCurrent(); assertEquals(1, f.store.writeCount) }
+        mounted = false
+        f.store.writeGate!!.complete(Unit); runCurrent()
+        f.model.openProjectActions(explicit); runCurrent()
+        assertNotEquals(old, token(f)); assertFalse(f.model.uiState.value.projectManagement.dialog!!.busy)
+        assertEquals(if (beforeDispatch) 0 else 1, f.store.writeCount)
     }
 
     @Test fun `home and retained disposed surface callbacks cannot dispatch`() = runTest(dispatcher) {

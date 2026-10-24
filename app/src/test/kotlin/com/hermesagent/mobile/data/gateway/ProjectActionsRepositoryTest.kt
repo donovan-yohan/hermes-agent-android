@@ -37,6 +37,53 @@ class ProjectActionsRepositoryTest {
         }
     }
 
+    @Test fun `rediscovered auto has fresh actions while adopted incarnation stays retired`() = runTest {
+        val cache = SessionCache()
+        var saved = false
+        var failTree = false
+        val writes = mutableListOf<String>()
+        val rpc = object : EndpointDispatchingGatewayRpcClient {
+            override val events = emptyFlow<GatewayEvent>()
+            override fun close() = Unit
+            override suspend fun request(method: String, params: JsonObject): JsonElement {
+                check(method == "projects.tree"); check(!failTree)
+                return Json.parseToJsonElement(if (saved)
+                    """{"projects":[{"id":"p_saved","label":"Project","path":"/workspace/project","isAuto":false}]}"""
+                else """{"projects":[{"id":"/workspace/project","label":"Project","path":"/workspace/project","isAuto":true}]}""")
+            }
+            override suspend fun requestAtEndpointDispatch(method: String, params: JsonObject, dispatch: (() -> Boolean) -> Boolean): JsonElement {
+                check(dispatch { true })
+                if (method == "projects.tree") return request(method, params)
+                writes += method
+                if (method == "projects.create") { saved = true; return Json.parseToJsonElement("""{"project":{"id":"p_saved"}}""") }
+                if (method == "projects.delete") saved = false
+                return JsonObject(emptyMap())
+            }
+        }
+        val repo = LiveGatewaySessionRepository(cache, MutableStateFlow(GatewayConnectionState(GatewayConnectionStatus.Connected)), MutableStateFlow<GatewayRpcClient?>(rpc), backgroundScope) { 0 }
+        runCurrent(); repo.refreshProjects()
+        val original = cache.state.value.projects.projects.getValue("/workspace/project")
+        val old = repo.projectEditor(original)!!
+        val sibling = repo.projectEditor(original)!!
+        failTree = true
+        assertFalse(old.execute(ProjectOperation.Icon("rocket")).catalogRefreshed)
+        assertFalse(sibling.isCurrent())
+        assertTrue(runCatching { sibling.execute(ProjectOperation.Icon("beaker")) }.isFailure)
+        // No authoritative absence yet: even a newly requested handle must not adopt twice.
+        assertFalse(repo.projectEditor(original)!!.isCurrent())
+        repo.setProfileRouting(ProfileRouting(activeProfile = "other")); repo.setProfileRouting(ProfileRouting())
+        failTree = false; repo.refreshProjects()
+        repo.projectEditor(cache.state.value.projects.projects.getValue("p_saved"))!!.execute(ProjectOperation.Delete)
+        val resurfaced = cache.state.value.projects.projects.getValue("/workspace/project")
+        assertEquals(original, resurfaced)
+        val fresh = repo.projectEditor(resurfaced)!!
+        assertTrue("Fresh rediscovery must be actionable", fresh.isCurrent())
+        assertFalse(old.isCurrent()); assertFalse(sibling.isCurrent())
+        assertTrue(runCatching { sibling.execute(ProjectOperation.Color(null)) }.isFailure)
+        fresh.execute(ProjectOperation.Color("hsl(30 68% 58%)"))
+        assertEquals(listOf("projects.create", "projects.delete", "projects.create"), writes)
+    }
+
     @Test fun `rename is scoped exact and accepted read failure never invites replay`() = runTest {
         val cache = SessionCache()
         val rpc = Rpc()

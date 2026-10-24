@@ -1,5 +1,11 @@
 package com.hermesagent.mobile.ui.sessions
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
@@ -106,20 +112,31 @@ internal fun ProjectActionsDialog(dialog: ProjectActionDialog, activeId: String?
                     TextButton(label = "Delete", enabled = !dialog.busy, onClick = { actions.execute(token, ProjectOperation.Delete) })
                 }
                 ProjectActionPage.Appearance -> {
-                    TextButton(label = "No color", enabled = !dialog.busy, onClick = { actions.execute(token, ProjectOperation.Color(null)) })
                     ProjectAppearance.swatches.chunked(6).forEach { row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             row.forEach { color ->
-                                HermesIconButton(icon = if (project.color == color) HermesIcon.Check else HermesIcon.SymbolColor,
-                                    contentDescription = color, tint = ProjectAppearance.color(color, tokens.textPrimary),
-                                    enabled = !dialog.busy, onClick = { actions.execute(token, ProjectOperation.Color(color)) })
+                                val ink = ProjectAppearance.color(color, tokens.textPrimary)
+                                val selected = project.color == color
+                                Box(Modifier.size(HermesTheme.spacing.touchTarget)
+                                    .selectable(selected = selected, enabled = !dialog.busy, role = Role.Button,
+                                        onClick = { actions.execute(token, ProjectOperation.Color(color)) })
+                                    .semantics { contentDescription = color }, contentAlignment = Alignment.Center) {
+                                    // Desktop size-5 fill + 2px elevated gap + 1.5px swatch-colored ring.
+                                    Canvas(Modifier.size(27.dp)) {
+                                        drawCircle(ink, radius = 10.dp.toPx())
+                                        if (selected) drawCircle(ink, radius = 12.75.dp.toPx(), style = Stroke(1.5.dp.toPx()))
+                                    }
+                                }
                             }
                         }
                     }
+                    TextButton(label = "No color", enabled = !dialog.busy, onClick = { actions.execute(token, ProjectOperation.Color(null)) })
                     ProjectAppearance.icons.entries.chunked(6).forEach { row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                             row.forEach { (name, icon) ->
                                 HermesIconButton(icon = icon, contentDescription = name, active = project.icon == name,
+                                    modifier = Modifier.semantics { selected = project.icon == name },
+                                    tint = if (project.icon == name) ProjectAppearance.color(project.color, tokens.textPrimary) else tokens.textTertiary,
                                     enabled = !dialog.busy, onClick = { actions.execute(token, ProjectOperation.Icon(name.takeUnless { it == project.icon })) })
                             }
                         }

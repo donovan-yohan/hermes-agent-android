@@ -144,6 +144,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /** Gateway catalog state, kept distinct from an empty-but-resolved catalog. */
@@ -859,6 +860,10 @@ internal class ChatViewModel(
     private val sidebarCatalogProjection = SidebarCatalogProjection()
     private val hiddenProjectSnapshot = MutableStateFlow(HiddenProjectSnapshot())
     private val hiddenProjectReload = MutableStateFlow(0L)
+    // Returning scopes must read after their admitted writes, not an older disk snapshot.
+    private val hiddenProjectLanes = mutableMapOf<com.hermesagent.mobile.data.prefs.HiddenProjectsScope, kotlinx.coroutines.sync.Mutex>()
+    private fun hiddenProjectLane(scope: com.hermesagent.mobile.data.prefs.HiddenProjectsScope) =
+        hiddenProjectLanes.getOrPut(scope) { kotlinx.coroutines.sync.Mutex() }
     private val projectManagement = MutableStateFlow(ProjectManagementUi())
     private var projectActionSequence = 0L
     private var projectEditor: com.hermesagent.mobile.data.gateway.ProjectEditor? = null
@@ -1173,7 +1178,7 @@ internal class ChatViewModel(
                 hiddenProjectSnapshot.value = HiddenProjectSnapshot(scope, generation, revision = revision)
                 if (scope != null) {
                     try {
-                        val ids = hiddenProjectsStore.readHiddenProjects(scope)
+                        val ids = hiddenProjectLane(scope).withLock { hiddenProjectsStore.readHiddenProjects(scope) }
                         hiddenProjectSnapshot.value = HiddenProjectSnapshot(scope, generation, ids, revision = revision)
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { hiddenProjectSnapshot.value = HiddenProjectSnapshot(scope, generation, error = "Hidden projects could not be loaded. Reopen Sessions to retry.", revision = revision) }
@@ -2266,6 +2271,11 @@ internal class ChatViewModel(
                 if (ownsProjectDialog(token)) projectManagement.value = projectManagement.value.copy(
                     dialog = dialog.copy(error = "Project could not be updated. Check the Gateway and try again."),
                 )
+            } finally {
+                // Feedback eligibility can retire before transport settles. Release only this pending lifetime.
+                if (projectManagement.value.dialog?.let { it.token == token && it.busy } == true) {
+                    dismissProjectActions(token)
+                }
             }
         }
     }
@@ -2289,7 +2299,9 @@ internal class ChatViewModel(
             try {
                 if (!ownsProjectDialog(token) || currentHiddenSnapshot() != snap) return@launch
                 val next = snap.ids.orEmpty() + dialog.project.id
-                hiddenProjectsStore.writeHiddenProjects(requireNotNull(snap.scope), next)
+                hiddenProjectLane(requireNotNull(snap.scope)).withLock {
+                    hiddenProjectsStore.writeHiddenProjects(snap.scope, next)
+                }
                 if (currentHiddenSnapshot() != snap) return@launch
                 hiddenProjectSnapshot.value = snap.copy(ids = next)
                 val undo = ProjectHideUndo(++projectActionSequence, dialog.project)
@@ -2303,7 +2315,12 @@ internal class ChatViewModel(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 if (ownsProjectDialog(token)) projectManagement.value = projectManagement.value.copy(dialog = dialog.copy(error = "Project could not be hidden. Try again."))
-            } finally { hiddenWrite = false }
+            } finally {
+                hiddenWrite = false
+                if (projectManagement.value.dialog?.let { it.token == token && it.busy } == true) {
+                    dismissProjectActions(token)
+                }
+            }
         }
     }
 
@@ -2318,14 +2335,21 @@ internal class ChatViewModel(
             try {
                 if (currentHiddenSnapshot() != snap) return@launch
                 val next = snap.ids.orEmpty() - id
-                hiddenProjectsStore.writeHiddenProjects(requireNotNull(snap.scope), next)
+                hiddenProjectLane(requireNotNull(snap.scope)).withLock {
+                    hiddenProjectsStore.writeHiddenProjects(snap.scope, next)
+                }
                 if (currentHiddenSnapshot() != snap) return@launch
                 hiddenProjectSnapshot.value = snap.copy(ids = next)
                 projectManagement.value = projectManagement.value.copy(undo = null, hiddenError = null)
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 if (currentHiddenSnapshot() == snap) projectManagement.value = projectManagement.value.copy(hiddenError = "Project could not be restored. Try again.")
-            } finally { hiddenWrite = false; projectManagement.value = projectManagement.value.copy(hiddenBusy = false) }
+            } finally {
+                hiddenWrite = false
+                if (hiddenProjectSnapshot.value.revision == snap.revision) {
+                    projectManagement.value = projectManagement.value.copy(hiddenBusy = false)
+                }
+            }
         }
     }
 

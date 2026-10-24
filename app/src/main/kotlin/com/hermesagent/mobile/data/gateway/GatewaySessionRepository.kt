@@ -2168,7 +2168,14 @@ internal class LiveGatewaySessionRepository(
             worktreePath = worktreeByDurableId[row.id] ?: row.worktreePath,
         )
 
-    private val retiredProjectEditors = mutableSetOf<Triple<Long, String?, String>>()
+    private class ProjectEditorIncarnation(var retired: Boolean = false)
+    private val projectEditorIncarnations = mutableMapOf<Triple<Long, String?, String>, ProjectEditorIncarnation>()
+
+    /** Only an authoritative absence releases an ID for a fresh incarnation. Old handles keep their retired token. */
+    private fun reconcileProjectEditors(connection: ConnectionSnapshot, profile: String?, projects: List<ProjectSummary>) {
+        val present = projects.mapTo(mutableSetOf()) { it.id }
+        projectEditorIncarnations.keys.removeAll { it.first == connection.generation && it.second == profile && it.third !in present }
+    }
 
     override fun projectEditor(project: ProjectSummary): ProjectEditor? {
         if (project.isHome) return null
@@ -2176,9 +2183,10 @@ internal class LiveGatewaySessionRepository(
         val owner = projectScopeSnapshot(connection)
         if (cache.state.value.projectsForScope(owner.profile).projects[project.id] != project) return null
         val key = Triple(connection.generation, owner.profile, project.id)
+        val incarnation = synchronized(stateLock) { projectEditorIncarnations.getOrPut(key) { ProjectEditorIncarnation() } }
         return object : ProjectEditor {
             override fun isCurrent(): Boolean = synchronized(stateLock) {
-                key !in retiredProjectEditors && isCurrentProject(connection, owner) && project.id in cache.state.value.projectsForScope(owner.profile).projects
+                !incarnation.retired && projectEditorIncarnations[key] === incarnation && isCurrentProject(connection, owner) && project.id in cache.state.value.projectsForScope(owner.profile).projects
             }
             override suspend fun execute(operation: ProjectOperation): ProjectEditOutcome = execute(operation) { true }
             override suspend fun execute(operation: ProjectOperation, isSurfaceCurrent: () -> Boolean): ProjectEditOutcome = projectMutex.withLock {
@@ -2228,7 +2236,7 @@ internal class LiveGatewaySessionRepository(
                     }
                 }
                 // Retire every handle to an adopted/deleted node before any fallible readback.
-                if (adopt || operation == ProjectOperation.Delete) synchronized(stateLock) { retiredProjectEditors += key }
+                if (adopt || operation == ProjectOperation.Delete) synchronized(stateLock) { incarnation.retired = true }
                 val resultId = if (adopt) (response as? JsonObject)?.get("project")?.let { it as? JsonObject }?.string("id")
                     ?: project.id else project.id
                 fun ownsReadback() = synchronized(stateLock) { isCurrentProject(connection, owner) }
@@ -2244,6 +2252,7 @@ internal class LiveGatewaySessionRepository(
                         val overview = parseProjectOverview(tree, clock())
                         synchronized(stateLock) {
                             ensureCurrentProject(connection, owner)
+                            reconcileProjectEditors(connection, owner.profile, overview.projects)
                             cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(owner.profile) },
                                 overview.activeProjectId, authoritativeSessionProfiles = true)
                             refreshed = true
@@ -2282,6 +2291,7 @@ internal class LiveGatewaySessionRepository(
             val overview = parseProjectOverview(payload, clock())
             synchronized(stateLock) {
                 ensureCurrentProject(connection, scope)
+                reconcileProjectEditors(connection, scope.profile, overview.projects)
                 cache.replaceProjectOverview(
                     overview.projects.map { it.inRequestProfile(scope.profile) },
                     overview.activeProjectId,
@@ -4843,6 +4853,7 @@ internal class LiveGatewaySessionRepository(
             }
             synchronized(stateLock) {
                 ensureCurrent(connection)
+                reconcileProjectEditors(connection, profile, overview.projects)
                 cache.replaceProjectOverview(overview.projects.map { it.inRequestProfile(profile) },
                     overview.activeProjectId, authoritativeSessionProfiles = true, scope = profile)
                 details.forEach { detail ->
