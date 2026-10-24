@@ -299,6 +299,28 @@ lifecycle.
 
 ### Notifications
 
+- Bot replies use native message cards with a bot name, available accepted-roster
+  avatar and a separate child per conversation/sender. Repeated replies retain
+  up to eight sanitized messages on that bot's card. Android may collapse them
+  into an app bundle. Previews obey the existing preference; the private
+  lock-screen payload carries no sender, avatar or conversation text.
+- A persisted native background job checks the active saved Remote or Local
+  Gateway on an inexact 30-minute schedule with network constraints. It also
+  reconciles on foreground/connection edges and successful live completions.
+  It reads assistant message rows and hosted-room member messages without
+  opening sessions, marking read or sending prompts. Managed SSH remains
+  connected-only because its credentials are not persisted. This is delayed
+  catch-up, not server push: Doze and force-stop can postpone or prevent checks.
+  Initial enrollment avoids historical floods; durable IDs/cursors deduplicate
+  later reads. Bounded offset scans cannot guarantee an unlimited/changing
+  backlog, and previously unknown old histories with pre-enrollment clock drift
+  remain ambiguous. Background-only startup does not create a live asset socket,
+  so it may use the native missing-avatar fallback.
+- Synthetic API 34 shade captures show separate bot children and avatars in
+  [bot-notifications-v1](../docs/media/bot-notifications-v1/README.md). JVM and
+  loopback fixture tests cover the read/admission/presentation contracts. Real
+  Gateway delivery, physical Pixel Doze behavior and end-to-end cold navigation
+  are not qualified by those captures.
 - OS notifications while a Gateway connection is live, from the same events
   every route delivers, so Remote, Managed SSH and Local behave identically:
   an approval, a question, a sudo or secret prompt, and a finished turn.

@@ -25,4 +25,9 @@ data class GatewayTurnOutcome(
      * another turn may already have replaced that cache by delivery time.
      */
     val assistantMessagePreview: String? = null,
+    /** Explicit persisted REST row identity only; synthetic stream IDs require catch-up reconciliation. */
+    val completedMessageId: String? = null,
+    val completedMessageOwner: String? = null,
+    val completedAtMillis: Long? = null,
+    val endpointGeneration: Long? = null,
 )

@@ -34,6 +34,23 @@ class GroupsViewModelTest {
         }), { true })
     }
 
+    @Test fun notificationOpensUnlistedRoomOnlyAtItsCapturedEndpoint() = runTest {
+        val wire = Wire()
+        val endpoint = MutableStateFlow(3L)
+        val vm = GroupsViewModel(backgroundScope, MutableStateFlow(wire.connection()), endpoint)
+        vm.openNotification("room", 2L)
+        assertNull(vm.uiState.value.selected)
+        vm.openNotification("room", 3L)
+        vm.setForeground(true)
+        runCurrent()
+        assertEquals("room", vm.uiState.value.selected)
+        assertNotNull(vm.uiState.value.transcript)
+        endpoint.value = 4
+        runCurrent()
+        vm.openNotification("room", 3L)
+        assertNull(vm.uiState.value.selected)
+    }
+
     @Test fun unsupportedCapabilityIsRememberedAcrossResumeButOtherRefusalsAreErrors() = runTest {
         for (result in listOf(PluginHostResult.UnavailableOnGateway, PluginHostResult.Refused(4000, "secret"))) {
             var calls = 0

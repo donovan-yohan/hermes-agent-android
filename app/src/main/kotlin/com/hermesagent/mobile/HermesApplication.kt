@@ -10,6 +10,17 @@ import com.hermesagent.mobile.data.composer.ProfileSwitchingComposerQueueStore
 import com.hermesagent.mobile.data.composer.QueueSubmissionOutcome
 import com.hermesagent.mobile.data.connections.ConnectionRegistryStore
 import com.hermesagent.mobile.data.connections.ConnectionSwitchController
+import com.hermesagent.mobile.data.connections.botStorageIdentity
+import com.hermesagent.mobile.data.notifications.AndroidBotMessageSurface
+import com.hermesagent.mobile.data.notifications.AndroidNotificationCheckpointStore
+import com.hermesagent.mobile.data.notifications.GatewayNotificationCatchUp
+import com.hermesagent.mobile.data.notifications.MessageNotifications
+import com.hermesagent.mobile.data.notifications.NotificationAvatarPresenter
+import com.hermesagent.mobile.data.notifications.NotificationCatchUpHost
+import com.hermesagent.mobile.data.notifications.NotificationCatchUpScheduler
+import com.hermesagent.mobile.data.notifications.NotificationInbox
+import com.hermesagent.mobile.data.notifications.NotificationKind
+import com.hermesagent.mobile.data.notifications.SavedGatewayNotificationTransport
 import com.hermesagent.mobile.data.gateway.AndroidGatewayNetworkGate
 import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInForeground
 import com.hermesagent.mobile.data.gateway.AndroidGatewaySignInLog
@@ -91,7 +102,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
 
 /** Process-scoped live Gateway graph and backend-authoritative session cache. */
-class HermesApplication : Application() {
+class HermesApplication : Application(), NotificationCatchUpHost {
     internal val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http by lazy {
         com.hermesagent.mobile.data.gateway.gatewayTransportClient().newBuilder()
@@ -127,13 +138,14 @@ class HermesApplication : Application() {
      */
     private val gatewaySecrets: AndroidGatewayTokenStore by lazy { AndroidGatewayTokenStore(this) }
 
-    internal val gatewayConnection: GatewayConnectionManager by lazy {
+    /** One token-rotation owner for both foreground connections and scheduled reads. */
+    private val gatewayAuthenticator by lazy {
         val authApi = OkHttpGatewayNativeAuthApi(
             http,
             log = AndroidGatewaySignInLog,
             networkGate = AndroidGatewayNetworkGate(this),
         )
-        val authenticator = NativeGatewayAuthenticator(
+        NativeGatewayAuthenticator(
             api = authApi,
             store = gatewaySecrets,
             login = LoopbackGatewayNativeLogin(
@@ -145,11 +157,14 @@ class HermesApplication : Application() {
             ),
             log = AndroidGatewaySignInLog,
         )
+    }
+
+    internal val gatewayConnection: GatewayConnectionManager by lazy {
         GatewayConnectionManager(
             scope = appScope,
             installStore = preferences,
             http = http,
-            remoteConnector = RemoteGatewayConnector(authenticator) { baseUrl, ticket ->
+            remoteConnector = RemoteGatewayConnector(gatewayAuthenticator) { baseUrl, ticket ->
                 OkHttpGatewayRpcClient.connectRemote(http, baseUrl, ticket)
             },
             // Without this a crash in this app's own connection plumbing is
@@ -375,7 +390,64 @@ class HermesApplication : Application() {
      * withdraw the same notification the notifier posted, and its group
      * bookkeeping only works if there is one of it.
      */
-    internal val notificationSurface: NotificationSurface by lazy { AndroidNotificationSurface(this) }
+    internal val notificationSurface: NotificationSurface by lazy {
+        AndroidNotificationSurface(this, avatarForSession = { id ->
+            if (interactiveStarted) notificationAvatarPresenter.current(cache.session(id)?.remoteProfile) else null
+        })
+    }
+
+    private val notificationRoutes by lazy {
+        preferences.connectionRegistry.map { it.active }.stateIn(appScope, SharingStarted.Eagerly, null)
+    }
+    private val notificationCheckpoints by lazy { AndroidNotificationCheckpointStore(this) }
+    private val notificationInbox by lazy { NotificationInbox(notificationCheckpoints) }
+    private val notificationCatchUp by lazy { GatewayNotificationCatchUp(notificationCheckpoints) }
+    internal val botMessageSurface by lazy { AndroidBotMessageSurface(this) }
+    private val notificationAvatarPresenter by lazy {
+        NotificationAvatarPresenter(avatarRoster) { profileRepository.roster.value.profiles }
+    }
+    private val messageNotifications by lazy {
+        MessageNotifications(notificationInbox::accept,
+            { notificationRoutes.value?.botStorageIdentity() }, notificationPreferences, notificationPresence,
+        ) { message, _ ->
+            // A background-only process owns no live roster or asset socket.
+            val avatar = if (interactiveStarted) {
+                var bitmap: android.graphics.Bitmap? = null
+                notificationAvatarPresenter.withAvatar(message.senderProfile) { bitmap = it }
+                bitmap
+            } else null
+            val settings = notificationPreferences.notificationSettings.first()
+            if (notificationRoutes.value?.botStorageIdentity() != message.conversation.endpoint) {
+                throw kotlinx.coroutines.CancellationException("Notification endpoint changed")
+            }
+            val visible = notificationPresence.visibleConversation.value
+            if (settings.allows(NotificationKind.TurnDone) &&
+                !(notificationPresence.appForegrounded.value && visible?.endpoint == message.conversation.endpoint &&
+                    visible.kind == message.conversation.kind && visible.id == message.conversation.id)) {
+                botMessageSurface.postMessage(message, settings.preview, avatar)
+            }
+        }
+    }
+
+    override suspend fun runNotificationCatchUp() = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        if (!notificationPreferences.notificationSettings.first().allows(NotificationKind.TurnDone) ||
+            !androidx.core.app.NotificationManagerCompat.from(this@HermesApplication).areNotificationsEnabled()) return@withContext
+        val row = preferences.connectionRegistry.first().active ?: return@withContext
+        notificationRoutes.first { it == row }
+        val current = { notificationRoutes.value == row &&
+            (!interactiveStarted || connectionSwitch.pendingConnectionId.value == null) }
+        val transport = SavedGatewayNotificationTransport.capture(row, gatewayAuthenticator, gatewaySecrets, current)
+            ?: return@withContext
+        notificationCatchUp.run(transport, accept = messageNotifications::accept)
+    }
+
+    private fun requestNotificationCatchUp() {
+        appScope.launch {
+            try { runNotificationCatchUp() }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (_: Exception) { /* A later periodic read retries without interrupting chat. */ }
+        }
+    }
 
     /**
      * The profile roster follows the one live Gateway connection, so it is
@@ -432,6 +504,22 @@ class HermesApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // A scheduled notification read can create this process without a screen.
+        // Live sockets, queues and plugins belong to explicit interactive startup.
+        appScope.launch {
+            notificationPreferences.notificationSettings.map { it.enabled }.distinctUntilChanged().collect { enabled ->
+                if (enabled) NotificationCatchUpScheduler.schedule(this@HermesApplication)
+                else NotificationCatchUpScheduler.cancel(this@HermesApplication)
+            }
+        }
+    }
+
+    @Volatile private var interactiveStarted = false
+
+    @Synchronized
+    internal fun ensureInteractiveStarted() {
+        if (interactiveStarted) return
+        interactiveStarted = true
         // Force the process graph once. There is no demo seed: sessions arrive
         // only from an authenticated Gateway connection.
         sessionRepository
@@ -450,6 +538,7 @@ class HermesApplication : Application() {
                     notificationPresence.applicationForegroundChanged(true)
                     avatarRoster.syncOwner()
                     avatarRoster.refreshAvatars()
+                    requestNotificationCatchUp()
                 }
 
                 override fun onStop(owner: androidx.lifecycle.LifecycleOwner) {
@@ -460,6 +549,7 @@ class HermesApplication : Application() {
         )
         gatewayActivity.start(appScope)
         startSessionNotifier()
+        startBotMessageNotifications()
         startTurnProtection()
         pluginLoader.discover(com.hermesagent.mobile.plugins.BundledPlugins.create(
             com.hermesagent.mobile.plugins.bots.BotsPlugin(
@@ -534,7 +624,10 @@ class HermesApplication : Application() {
     private fun startSessionNotifier() {
         SessionNotifier(
             pendingInputs = sessionRepository.pendingInputs,
-            turnOutcomes = sessionRepository.turnOutcomes,
+            turnOutcomes = sessionRepository.turnOutcomes.filter {
+                it.failed || (it.completedMessageId == null &&
+                    notificationRoutes.value?.kind == com.hermesagent.mobile.data.connections.ConnectionKind.Ssh)
+            },
             sessions = cache.state,
             // A new client instance is a new socket, which is a new replay.
             socketOpens = gatewayConnection.client.filterNotNull().map { },
@@ -551,6 +644,41 @@ class HermesApplication : Application() {
             surface = notificationSurface,
             clock = System::currentTimeMillis,
         ).start(appScope)
+    }
+
+    private fun startBotMessageNotifications() {
+        notificationRoutes
+        appScope.launch {
+            sessionRepository.turnOutcomes.collect { outcome ->
+                val endpoint = connectionSwitch.botStorageEndpoint.value
+                val owner = outcome.completedMessageOwner
+                val label = profileRepository.roster.value.profiles.singleOrNull { it.name == owner }?.label
+                    ?: owner.orEmpty()
+                messageNotifications.acceptOutcome(outcome, endpoint,
+                    cache.session(outcome.durableSessionId)?.title.orEmpty(), label)
+                // Missing persisted row_id requires reconciliation, not a synthetic dedupe key.
+                if (!outcome.failed) requestNotificationCatchUp()
+            }
+        }
+        appScope.launch {
+            combine(notificationPresence.appForegrounded, notificationPresence.visibleConversation) { foreground, target ->
+                target.takeIf { foreground }
+            }.filterNotNull().collect(botMessageSurface::clearConversation)
+        }
+        appScope.launch {
+            var previous: String? = null
+            var observed = false
+            notificationRoutes.collect { row ->
+                val next = row?.botStorageIdentity()
+                if (observed && previous != next) botMessageSurface.clearAll()
+                if (next != null) observed = true
+                previous = next
+            }
+        }
+        appScope.launch {
+            gatewayConnection.state.map { it.status == GatewayConnectionStatus.Connected }
+                .distinctUntilChanged().collect { connected -> if (connected) requestNotificationCatchUp() }
+        }
     }
 
     /** Holds the socket for pending input or the Gateway's live-work projection. */
